@@ -252,7 +252,12 @@ export interface MotivoBucket {
   culpa: CancelCulpa;
   cancelados: number;
   valor: number;
-  /** Denominador = cobertura.conMotivo. */
+  /**
+   * Denominador = `explicadas` (las que la taxonomía puede nombrar), NO
+   * `cobertura.conMotivo` (las que la asesora escribió). El nombre del campo
+   * quedó del modelo viejo, cuando eran el mismo número; desde que existe
+   * `sin_whatsapp` no lo son. Ver el comentario de `explicadas`.
+   */
   pctSobreConMotivo: number | null;
   evitables: number;
   /** Hasta 3 textos CRUDOS distintos, tal cual los escribió la asesora. */
@@ -352,6 +357,19 @@ export interface CancelacionesResumen {
   /** generados < cancelados → dato incoherente, la tasa NO se imprime. */
   universoInconsistente: boolean;
   cobertura: CoberturaMotivo;
+  /**
+   * Cancelaciones que la taxonomía SÍ puede explicar — el denominador REAL del
+   * ranking de motivos y de culpa.
+   *
+   * NO es lo mismo que `cobertura.conMotivo`, y confundirlos ya rompió la
+   * pantalla una vez (23-ago-2026): `cobertura.conMotivo` mide **disciplina de
+   * registro** (¿la asesora escribió algo?), mientras que acá entra además
+   * `sin_whatsapp`, que sale de una señal automática y a la que nadie le
+   * escribió un motivo — pero que SÍ explica por qué se perdió la venta. Es,
+   * de hecho, la razón de existir de esa categoría: ponerle nombre a un pedazo
+   * del bucket ciego.
+   */
+  explicadas: number;
   plata: PlataCancelada;
   topMotivos: MotivoBucket[];
   motivosCrudos: MotivoCrudo[];
@@ -368,6 +386,7 @@ export const EMPTY_RESUMEN: CancelacionesResumen = {
   generados: null, tasaCancelacion: null, tasaCancelacionReal: null,
   recreados: 0, valorRecreados: 0, universoInconsistente: false,
   cobertura: { total: 0, conMotivo: 0, sinMotivo: 0, pctConMotivo: null, nivel: 'nula', porOrigen: [] },
+  explicadas: 0,
   plata: {
     valorCancelado: 0,
     evitable: { cancelados: 0, valor: 0, pctSobreTotal: null },
@@ -485,6 +504,24 @@ export function summarizeCancelaciones(
   // `classifyCancelRow` ya manda a `sin_motivo` todo lo que no tiene texto útil.
   const conMotivoFlags = list.map(r => hayMotivoEscrito(r.motivo));
   const conMotivo = conMotivoFlags.filter(Boolean).length;
+  // ── DOS gates distintos, y no se pueden mezclar ─────────────────────────
+  // `conMotivoFlags` mide DISCIPLINA (¿escribió la asesora?) y alimenta la
+  // cobertura y la tabla por operadora.
+  // `explicadaFlags` mide si la taxonomía le puede poner NOMBRE a la pérdida, y
+  // es lo que decide quién entra al ranking de motivos. `sin_whatsapp` no tiene
+  // texto escrito pero SÍ explica: usar el gate de disciplina acá lo dejaba
+  // clasificado y jamás visible, o sea justo lo contrario de para lo que existe.
+  //
+  // ⚠️ Se listan las DOS categorías a mano y NO se usa `!c.esGenerica`: son
+  // TRES las genéricas, y la tercera es `'otro'` — «la asesora escribió algo
+  // que la taxonomía todavía no entiende». Esa SÍ tiene que entrar: es la que
+  // alimenta el detector de vocabulario nuevo (`motivosCrudos`), o sea la lista
+  // de reglas de la próxima iteración. Sacarla la hace invisible y el reporte
+  // deja de aprender. (En `agruparDimension` sí se usa `esGenerica`, y ahí es a
+  // propósito: el motivo DOMINANTE de una ciudad no puede llamarse "otro".)
+  const explicadaFlags = clases.map(c =>
+    c.categoria !== 'sin_motivo' && c.categoria !== 'externo_dropi' && c.cuentaEnTasa !== false);
+  const explicadas = explicadaFlags.filter(Boolean).length;
   const pctCob = pct(conMotivo, total);
   const porOrigen = (['guardian', 'externo'] as const).map(origen => {
     const idx = list.map((r, i) => (r.origen === origen ? i : -1)).filter(i => i >= 0);
@@ -539,11 +576,11 @@ export function summarizeCancelaciones(
   const crudos = new Map<string, { texto: string; veces: number; valor: number }>();
   list.forEach((r, i) => {
     const clase = clases[i];
-    if (!conMotivoFlags[i]) return;      // sin motivo no entra al top de motivos
-    // Un pedido recreado no es un MOTIVO de cancelación: la venta siguió con
-    // otro número. Listarlo entre los motivos lo pone a competir con las
-    // pérdidas de verdad.
-    if (clase.cuentaEnTasa === false) return;
+    // `explicadaFlags` ya trae las DOS exclusiones: lo genérico (sin_motivo /
+    // externo_dropi, que no dicen nada) y lo recreado — un pedido rehecho no es
+    // un MOTIVO de cancelación, la venta siguió con otro número, y listarlo acá
+    // lo pone a competir con las pérdidas de verdad.
+    if (!explicadaFlags[i]) return;
     let b = motMap.get(clase.categoria);
     if (!b) { b = { culpa: clase.culpa, cancelados: 0, valor: 0, evitables: 0, ejemplos: new Map() }; motMap.set(clase.categoria, b); }
     b.cancelados += 1;
@@ -567,7 +604,7 @@ export function summarizeCancelaciones(
   });
   const topMotivos: MotivoBucket[] = [...motMap.entries()].map(([categoria, b]) => ({
     categoria, culpa: b.culpa, cancelados: b.cancelados, valor: b.valor,
-    pctSobreConMotivo: pct(b.cancelados, conMotivo),
+    pctSobreConMotivo: pct(b.cancelados, explicadas),
     evitables: b.evitables, ejemplos: [...b.ejemplos.values()],
   })).sort((a, b) =>
     b.cancelados - a.cancelados || b.valor - a.valor || a.categoria.localeCompare(b.categoria));
@@ -707,7 +744,7 @@ export function summarizeCancelaciones(
     recreados,
     valorRecreados,
     universoInconsistente,
-    cobertura, plata, topMotivos, motivosCrudos, porCulpa, gestion,
+    cobertura, explicadas, plata, topMotivos, motivosCrudos, porCulpa, gestion,
     porOperadora, porProducto, porCiudad, antiguedad,
   };
 }

@@ -605,3 +605,51 @@ describe('cobertura: "motivo anotado" tiene que ser texto que alguien escribió'
     expect(r.cobertura.conMotivo).toBe(2);
   });
 });
+
+describe('disciplina de registro y capacidad de explicar son DOS medidas', () => {
+  // Regresión propia del 23-ago-2026, atrapada al auditar: al pasar la cobertura
+  // a medir el TEXTO escrito, el ranking de motivos quedó colgado del MISMO
+  // gate — y `sin_whatsapp` (que no tiene texto pero SÍ explica la pérdida)
+  // dejó de aparecer. La categoría clasificaba y no se veía nunca, o sea justo
+  // lo contrario de para lo que se creó: ponerle nombre al bucket ciego.
+  it('sin_whatsapp NO cuenta como motivo anotado pero SÍ explica', () => {
+    const r = summarizeCancelaciones([
+      row({ motivo: null, riesgoChat: 'mudo' }),
+      row({ motivo: null, riesgoChat: 'mudo' }),
+      row({ motivo: 'Precio muy alto' }),
+    ]);
+    expect(r.cobertura.conMotivo).toBe(1);   // disciplina: una sola escribió
+    expect(r.explicadas).toBe(3);            // explicación: las tres tienen nombre
+  });
+
+  it('sin_whatsapp aparece en el ranking de motivos', () => {
+    const r = summarizeCancelaciones([
+      row({ motivo: null, riesgoChat: 'mudo' }),
+      row({ motivo: null, riesgoChat: 'mudo' }),
+      row({ motivo: 'Precio muy alto' }),
+    ]);
+    expect(r.topMotivos.map(m => m.categoria)).toContain('sin_whatsapp');
+  });
+
+  it('un período entero de cancelados mudos NO esconde la sección de motivos', () => {
+    // Con el gate de disciplina, `explicadas` habría sido 0 y la pantalla
+    // ocultaba motivo y culpa teniendo justo la explicación para mostrar.
+    const r = summarizeCancelaciones([
+      row({ motivo: null, riesgoChat: 'mudo' }),
+      row({ motivo: null, riesgoChat: 'mudo' }),
+    ]);
+    expect(r.cobertura.conMotivo).toBe(0);
+    expect(r.explicadas).toBe(2);
+  });
+
+  it('lo genérico y lo recreado siguen fuera del ranking', () => {
+    const r = summarizeCancelaciones([
+      row({ origen: 'externo', motivo: null }),   // externo_dropi: no dice nada
+      row({ motivo: null }),                       // sin_motivo
+      row({ motivo: null, recreado: true }),       // se rehizo: no es una pérdida
+      row({ motivo: 'Precio muy alto' }),
+    ]);
+    expect(r.explicadas).toBe(1);
+    expect(r.topMotivos.map(m => m.categoria)).toEqual(['precio_flete']);
+  });
+});

@@ -380,7 +380,13 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
   // intentos, el tiempo al primer toque y la tabla NO necesitan ni un motivo
   // para funcionar. Al 0% de cobertura el reporte todavía contesta dos de las
   // cinco preguntas, y se convierte en el argumento para empezar a anotar.
-  const hayMotivos = r.cobertura.conMotivo > 0;
+  // Se mira `explicadas` y NO `cobertura.conMotivo`: son cosas distintas.
+  // `conMotivo` mide disciplina de registro (texto que escribio la asesora);
+  // `explicadas` es lo que la taxonomia puede nombrar, e incluye `sin_whatsapp`,
+  // al que nadie le escribio un motivo pero SI explica la perdida. Con el gate
+  // de disciplina, un periodo entero de cancelados mudos escondia las dos
+  // secciones teniendo justo la explicacion para mostrar.
+  const hayMotivos = r.explicadas > 0;
   const maxMotivo = r.topMotivos[0]?.cancelados || 1;
 
   return (
@@ -468,7 +474,11 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
                   </h3>
                   <p className="text-xs text-muted-foreground mt-1">
                     Los bloques de <span className="text-foreground font-medium">motivo</span> y{' '}
-                    <span className="text-foreground font-medium">culpa</span> describen solo esos {r.cobertura.conMotivo}.
+                    <span className="text-foreground font-medium">culpa</span> describen {r.explicadas}
+                    {r.explicadas !== r.cobertura.conMotivo && (
+                      <>: las {r.cobertura.conMotivo} con motivo escrito más las que se explican por{' '}
+                      la señal del WhatsApp</>
+                    )}.
                     El resto de la pantalla (plata, seguimiento, operadoras) cubre las {r.cobertura.total}.
                   </p>
                   <div className="flex gap-2 mt-2 flex-wrap">
@@ -610,7 +620,7 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
           {hayMotivos && (
             <motion.div {...fadeUp(0.18)}>
               <NovCard title="¿Por qué cancelan?" icon={XCircle} iconClass="text-danger"
-                note={`sobre ${r.cobertura.conMotivo} con motivo`}>
+                note={`sobre ${r.explicadas} explicadas`}>
                 <ul className="space-y-1">
                   {r.topMotivos.slice(0, 8).map((m, i) => (
                     <MetricBar
