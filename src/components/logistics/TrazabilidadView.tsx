@@ -193,10 +193,18 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
 
       {/* HERO — los 3 números que pidió el user, grandes y claros */}
       <motion.div {...fadeUp(0.05)} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* logistics_summary no devuelve el valor de los pedidos en
+            PREPARACION (guia generada / alistamiento): el conteo del hero los
+            incluye y la plata no. Se DICE en el subline en vez de dejar que el
+            numero grande y el dinero hablen de poblaciones distintas. Sumarlos
+            de verdad requiere una columna nueva en la RPC (pedir
+            pg_get_functiondef primero — REGLA #1). */}
         <HeroKpi
           label="Total entrados"
           value={totalEntrados.toLocaleString('es-CO')}
-          subline={formatCOP(valorTotal)}
+          subline={enPreparacion > 0
+            ? `${formatCOP(valorTotal)} · sin la plata de ${enPreparacion} en preparación`
+            : formatCOP(valorTotal)}
           tone="info"
           icon={Inbox}
         />
@@ -255,7 +263,13 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
                 <td className="px-5 py-2.5 text-foreground font-bold">Total despachadas</td>
                 <td className="px-3 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">{formatCOP(valorDespachadas)}</td>
                 <td className="px-3 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">{despachadasReales.toLocaleString('es-CO')}</td>
-                <td className="px-5 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">100.0%</td>
+                <td className="px-5 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">
+                  {/* Un "100.0%" fijo sobre CERO despachadas era un porcentaje
+                      sin denominador — mismo patron que la fila de pendientes. */}
+                  {despachadasReales > 0
+                    ? '100.0%'
+                    : <span className="text-muted-foreground/60" title="No hay guías despachadas en el rango: no hay sobre qué calcular el porcentaje">—</span>}
+                </td>
               </tr>
             </tbody>
           </table>

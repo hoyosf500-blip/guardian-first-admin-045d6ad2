@@ -115,6 +115,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // o ProtectedLayout desmonta toda la app y la operadora pierde su lugar.
   const hasLoadedRef = useRef(false);
 
+  // ── Serialización de la sincronización del scope server-side ──────────────
+  // `set_active_store` escribe profiles.active_store_id, de donde las RPCs
+  // admin resuelven su tienda. Es un UPDATE con reintento (+400 ms) y sin
+  // timeout: una llamada LENTA de la tienda vieja puede aterrizar en el server
+  // DESPUÉS de que la nueva ya sincronizó — y deja el scope apuntando a la
+  // tienda equivocada mientras la UI muestra la nueva. Un simple "descartar el
+  // callback viejo" no alcanza: el UPDATE viejo YA aterrizó en la base, así
+  // que al detectar la carrera hay que RE-sincronizar la vigente, no callar.
+  const syncSeqRef = useRef(0);
+  const idVigenteRef = useRef<string | null>(null);
+
+  const sincronizarScope = useCallback(async (id: string): Promise<boolean> => {
+    idVigenteRef.current = id;
+    const token = ++syncSeqRef.current;
+    const ok = await syncActiveStore(id);
+    if (token !== syncSeqRef.current) {
+      // Llegó tarde: mientras esperábamos se pidió sincronizar otra tienda.
+      // Nuestro UPDATE pudo haber PISADO el de la más nueva → se re-sincroniza
+      // la vigente. Acotado: cada aterrizaje tardío dispara a lo sumo un
+      // reintento, y el más nuevo siempre termina siendo el que manda.
+      void sincronizarScope(idVigenteRef.current!);
+      return false;
+    }
+    setScopeSynced(ok);
+    return ok;
+  }, []);
+
   const refresh = useCallback(async () => {
     if (!user) {
       setStores([]); setActiveStoreIdState(null); setLoading(false);
@@ -239,13 +266,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // Al esperar acá, los reportes (que montan recién con loading=false) ya leen
     // la tienda correcta y NO combinan CO+EC.
     if (valid) {
-      const ok = await syncActiveStore(valid);
-      setScopeSynced(ok);
+      await sincronizarScope(valid);
     }
 
     hasLoadedRef.current = true;
     setLoading(false);
-  }, [user]);
+  }, [user, sincronizarScope]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -263,11 +289,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // sincronizada (las de fecha-only no refetchean solas porque su key no tiene
     // store; las de store-key podrían haber corrido contra la tienda vieja).
     void (async () => {
-      const ok = await syncActiveStore(id);
-      setScopeSynced(ok);
+      const ok = await sincronizarScope(id);
       // Si no se sincronizó NO invalidamos: refetchear ahora traería la tienda
       // vieja (o vacío, con el resolver fail-closed). Mejor dejar lo que hay y
-      // que el banner avise, que pintar datos del país equivocado.
+      // que el banner avise, que pintar datos del país equivocado. También
+      // cubre el caso "llegó tarde" (otro cambio más nuevo en el medio): la
+      // invalidación le corresponde a ese cambio, no a este.
       if (!ok) return;
       for (const key of [
         'ganancia-neta-dropi', 'operativo-cohorte', 'orders-estado-breakdown',
@@ -291,7 +318,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         queryClient.invalidateQueries({ queryKey: [key] });
       }
     })();
-  }, [queryClient]);
+  }, [queryClient, sincronizarScope]);
 
   const activeStore = stores.find(s => s.id === activeStoreId) ?? null;
   // Sincroniza el país del rastreo de transportadoras (getTrackingUrl) con la

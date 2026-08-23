@@ -112,7 +112,11 @@ export function useLiveTeam(): LiveTeam {
         .eq('store_id', storeId).ilike('estado', 'PENDIENTE CONFIRMACION'),
       supabase.from('orders').select('id', { count: 'exact', head: true })
         .eq('store_id', storeId)
-        .or('estado.eq.NOVEDAD,estado.ilike.%INTENTO DE ENTREGA%').eq('novedad_sol', false),
+      // Red ancha = la de la cola real (useNovedades). El eq.NOVEDAD estricto
+      // subcontaba las variantes ('NOVEDAD PENDIENTE', 'NOVEDAD EN RUTA')
+      // que la cola SI atrapa; se excluye la resuelta en el filtro porque un
+      // COUNT head:true no tiene client-side.
+        .or('and(estado.ilike.%NOVEDAD%,estado.not.ilike.%SOLUCIONADA%),estado.ilike.%INTENTO DE ENTREGA%').eq('novedad_sol', false),
       // Última actividad de trabajo de HOY (para presencia real + "última acción").
       supabase.from('order_results').select('operator_id, result, created_at')
         .eq('store_id', storeId).eq('result_date', today)

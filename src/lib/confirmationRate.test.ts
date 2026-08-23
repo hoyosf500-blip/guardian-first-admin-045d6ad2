@@ -46,8 +46,8 @@ describe('confRateByCohort (día con inflow conocido)', () => {
   it('tasa madura = conf÷resueltos, no ÷entrantes', () => {
     // 10 entrantes, 5 conf + 3 canc resueltos
     const r = confRateByCohort(5, 3, 10);
-    expect(r.tasa).toBe(63);          // 5/8
-    expect(r.tasaCanc).toBe(38);      // 3/8
+    expect(r.tasa).toBe(62);          // 5/8 = 62,5 → floor (23-ago: la tasa favorable nunca redondea a su favor)
+    expect(r.tasaCanc).toBe(38);      // 3/8 = 37,5 → ceil (la adversa redondea en contra; 62+38 = 100)
     expect(r.resueltos).toBe(8);
     expect(r.pctProcesado).toBe(80);  // 8/10
     expect(r.inmaduro).toBe(true);    // 80 < 90
@@ -69,8 +69,8 @@ describe('confRateByCohort (día con inflow conocido)', () => {
   it('tasaDia = confirmados ÷ ENTRANTES (la "confirmación del día"), distinta de tasa ÷resueltos', () => {
     // Caso real María José: 26 entraron, 14 conf, 5 canc, 3 no contestaron.
     const r = confRateByCohort(14, 5, 26);
-    expect(r.tasaDia).toBe(54);       // 14/26 = 53.8 → 54 (cómo va el día, NO infla)
-    expect(r.tasa).toBe(74);          // 14/19 efectividad de cierre (÷resueltos, la vieja)
+    expect(r.tasaDia).toBe(53);       // 14/26 = 53,8 → floor (favorable: no se redondea a favor)
+    expect(r.tasa).toBe(73);          // 14/19 = 73,7 -> floor; efectividad de cierre (÷resueltos, la vieja)
     expect(r.pctProcesado).toBe(73);  // 19/26 trabajado
     expect(r.inmaduro).toBe(true);    // 73 < 90 → el día no terminó → provisional, NO rojo
   });
@@ -82,7 +82,7 @@ describe('confRateByCohort (día con inflow conocido)', () => {
   it('tasaDia siempre <= tasa (÷entrantes nunca infla sobre ÷resueltos)', () => {
     const r = confRateByCohort(8, 1, 20); // 9 resueltos de 20
     expect(r.tasaDia).toBe(40);  // 8/20
-    expect(r.tasa).toBe(89);     // 8/9
+    expect(r.tasa).toBe(88);     // 8/9 = 88,9 → floor
     expect(r.tasaDia! <= r.tasa!).toBe(true);
   });
 });
@@ -149,5 +149,29 @@ describe('isBelowTarget (por debajo de la meta oficial 85%)', () => {
   it('null/undefined (sin datos) → false, no penaliza muestra vacía', () => {
     expect(isBelowTarget(null)).toBe(false);
     expect(isBelowTarget(undefined)).toBe(false);
+  });
+});
+
+describe('redondeo direccional: 100% solo con cero en contra (23-ago-2026)', () => {
+  it('250 conf + 1 canc NO es "100%" de cierre', () => {
+    // Con Math.round, 250/251 = 99,6% imprimia "100%" habiendo una
+    // cancelacion real en el periodo.
+    const r = confRateBySample(250, 1);
+    expect(r.tasa).toBe(99);
+  });
+
+  it('199 resueltos de 200 NO es "100% procesado"', () => {
+    const r = confRateByCohort(150, 49, 200);
+    expect(r.pctProcesado).toBe(99);
+  });
+
+  it('con cero en contra el 100% sigue saliendo exacto', () => {
+    expect(confRateBySample(50, 0).tasa).toBe(100);
+    expect(confRateByCohort(180, 20, 200).pctProcesado).toBe(100);
+  });
+
+  it('tasa + tasaCanc de un mismo cohorte suman 100 exacto', () => {
+    const r = confRateByCohort(250, 1, 300);
+    expect((r.tasa ?? 0) + (r.tasaCanc ?? 0)).toBe(100);
   });
 });

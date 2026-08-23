@@ -474,11 +474,15 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
                   </h3>
                   <p className="text-xs text-muted-foreground mt-1">
                     Los bloques de <span className="text-foreground font-medium">motivo</span> y{' '}
-                    <span className="text-foreground font-medium">culpa</span> describen {r.explicadas}
-                    {r.explicadas !== r.cobertura.conMotivo && (
-                      <>: las {r.cobertura.conMotivo} con motivo escrito más las que se explican por{' '}
-                      la señal del WhatsApp</>
-                    )}.
+                    <span className="text-foreground font-medium">culpa</span> describen{' '}
+                    {/* Sin afirmar la aritmética: explicadas NO es conMotivo +
+                        sinWhatsapp — también descuenta los rehechos con motivo
+                        escrito (cambio de transportadora), que no son pérdida.
+                        La versión anterior imprimía una suma que podía no
+                        cerrar ("describen 35: las 45 con motivo más…"). */}
+                    {r.explicadas}: las que tienen motivo escrito (sin contar los
+                    pedidos rehechos, que no son pérdida) más las que se explican
+                    por la señal del WhatsApp.
                     El resto de la pantalla (plata, seguimiento, operadoras) cubre las {r.cobertura.total}.
                   </p>
                   <div className="flex gap-2 mt-2 flex-wrap">

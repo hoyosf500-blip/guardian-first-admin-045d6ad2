@@ -195,7 +195,11 @@ export const SEG_STATUS_MATCHERS: ReadonlyArray<{ key: SegStatusKey; match: (e: 
   { key: 'devolucion_transito', match: (e) => e === 'DEVOLUCION EN TRANSITO' || e === 'EN PROCESO DE DEVOLUCION' || e === 'DEVOLUCION A ORIGEN' },
   { key: 'devolucion', match: (e) => e === 'DEVOLUCION' || e.startsWith('DEVUELT') || e.startsWith('DEVOLUC') },
   { key: 'indemnizada', match: (e) => e.includes('INDEMNIZADA') },
-  { key: 'entregado', match: (e) => e === 'ENTREGADO' },
+  // 'ENTREGADO A DESTINO' es la variante de Ecuador (misma familia que
+  // 'DEVOLUCION A ORIGEN'); _estado_bucket en SQL ya los junta. Sin esto caía
+  // en 'otros': columna de vivos en el tablero, punto de frescura en rojo y
+  // candidato a "detenido" — un pedido ENTREGADO tratado como trabado.
+  { key: 'entregado', match: (e) => e === 'ENTREGADO' || e === 'ENTREGADO A DESTINO' },
   // 'ARCHIVADO GHOST' con ESPACIO es la escritura canónica (la que reconoce
   // _estado_bucket en SQL y la que escribe dropi-nightly-reconcile); el guion
   // bajo son filas históricas. Faltaba la primera: los pedidos borrados en

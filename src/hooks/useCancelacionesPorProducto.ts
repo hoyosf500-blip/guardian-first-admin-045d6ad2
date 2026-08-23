@@ -65,6 +65,11 @@ export function useCancelacionesPorProducto(
     }
     const seq = ++seqRef.current;
     setLoading(true);
+    // Blanquear ANTES de leer: sin esto, al cambiar el rango el ranking del
+    // período anterior quedaba en pantalla toda la carga como si fuera el del
+    // nuevo, y el "Leyendo los productos…" (gateado por ranking vacío) nunca
+    // aparecía. Mismo arreglo que el hook principal de cancelaciones.
+    setResumen(EMPTY_POR_PRODUCTO);
     try {
       const { data, error } = await (supabase.rpc as unknown as (
         fn: string, args: Record<string, unknown>,

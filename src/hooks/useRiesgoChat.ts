@@ -44,12 +44,22 @@ export function useRiesgoChat(storeId: string | null, orderIds: string[]): Riesg
     if (!storeId || !idsKey) { setIndex(VACIO); setStatus('ok'); return; }
     const seq = ++seqRef.current;
     const ids = idsKey.split(',');
-    const { data, error } = await supabase
-      .from('orders')
-      .select('id, chat_riesgo, chat_leido_at')
-      .eq('store_id', storeId)
-      .in('id', ids);
+    // POR LOTES: mismo motivo que useOrderNotesIndex — los ids van en la URL
+    // del GET y la cola completa puede pasar de mil pedidos; un solo .in()
+    // reventaba la petición entera y la señal del chat desaparecía en silencio.
+    const LOTE = 150;
+    const lotes: string[][] = [];
+    for (let i = 0; i < ids.length; i += LOTE) lotes.push(ids.slice(i, i + LOTE));
+    const resultados = await Promise.all(lotes.map((b) =>
+      supabase
+        .from('orders')
+        .select('id, chat_riesgo, chat_leido_at')
+        .eq('store_id', storeId)
+        .in('id', b)));
     if (seq !== seqRef.current) return;
+    const conError = resultados.find((r) => r.error);
+    const error = conError?.error ?? null;
+    const data = error ? null : resultados.flatMap((r) => r.data ?? []);
 
     if (error) {
       const code = (error as { code?: string }).code;

@@ -79,8 +79,20 @@ export interface CohortRate extends SampleRate {
   tasaDia: number | null;
 }
 
-function round(n: number): number {
-  return Math.round(n);
+/**
+ * Redondeo DIRECCIONAL, no simétrico (23-ago-2026, misma regla que
+ * logisticsRates): las tasas favorables van con floor y las adversas con ceil.
+ * Con Math.round, 250 confirmados y 1 cancelado (99,6%) imprimía "100%" de
+ * cierre — un 100% con una cancelación existente es mentira — y 199 resueltos
+ * de 200 marcaban "100% procesado" con un pedido sin tocar. floor solo llega a
+ * 100 cuando NO queda nada en contra, y floor+ceil de tasas complementarias
+ * siguen sumando 100 exacto.
+ */
+function abajo(n: number): number {
+  return Math.floor(n);
+}
+function arriba(n: number): number {
+  return Math.ceil(n);
 }
 
 export interface OfficialRate {
@@ -110,7 +122,7 @@ export function confRateOficial(
   const n = Math.max(0, noresp || 0);
   const gestionados = c + x + n;
   return {
-    tasa: gestionados > 0 ? round((c / gestionados) * 100) : null,
+    tasa: gestionados > 0 ? abajo((c / gestionados) * 100) : null,
     gestionados,
     inmaduro: gestionados < minGestionados,
   };
@@ -129,7 +141,7 @@ export function confRateBySample(
   const x = Math.max(0, canc || 0);
   const resueltos = c + x;
   return {
-    tasa: resueltos > 0 ? round((c / resueltos) * 100) : null,
+    tasa: resueltos > 0 ? abajo((c / resueltos) * 100) : null,
     resueltos,
     inmaduro: resueltos < minResueltos,
   };
@@ -146,11 +158,11 @@ export function confRateByCohort(conf: number, canc: number, entrantes: number):
   const x = Math.max(0, canc || 0);
   const e = Math.max(0, entrantes || 0);
   const resueltos = c + x;
-  const pctProcesado = e > 0 ? round((resueltos / e) * 100) : 0;
+  const pctProcesado = e > 0 ? abajo((resueltos / e) * 100) : 0;
   return {
-    tasa: resueltos > 0 ? round((c / resueltos) * 100) : null,
-    tasaCanc: resueltos > 0 ? round((x / resueltos) * 100) : null,
-    tasaDia: e > 0 ? round((c / e) * 100) : null,
+    tasa: resueltos > 0 ? abajo((c / resueltos) * 100) : null,
+    tasaCanc: resueltos > 0 ? arriba((x / resueltos) * 100) : null,
+    tasaDia: e > 0 ? abajo((c / e) * 100) : null,
     resueltos,
     pctProcesado,
     inmaduro: pctProcesado < COHORTE_MATURITY_PCT,
@@ -165,5 +177,5 @@ export function confRateByCohort(conf: number, canc: number, entrantes: number):
 export function contactRate(conf: number, canc: number, atendidos: number): number {
   const a = Math.max(0, atendidos || 0);
   if (a === 0) return 0;
-  return round(((Math.max(0, conf || 0) + Math.max(0, canc || 0)) / a) * 100);
+  return abajo(((Math.max(0, conf || 0) + Math.max(0, canc || 0)) / a) * 100);
 }

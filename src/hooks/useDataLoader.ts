@@ -139,6 +139,9 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
           .eq('store_id', storeId)
           .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
           .not('estado', 'eq', 'ENTREGADO')
+          // Variante EC del mismo terminal — sin esta línea entraba a la data
+          // de Seguimiento y el hero la contaba como "en ruta".
+          .not('estado', 'eq', 'ENTREGADO A DESTINO')
           .not('estado', 'eq', 'CANCELADO')
           .not('estado', 'eq', 'REEMPLAZADA')
           .not('estado', 'eq', 'RECHAZADO')

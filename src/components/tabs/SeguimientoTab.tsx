@@ -527,10 +527,26 @@ export default function SeguimientoTab() {
     const detenidos = feedBase.filter((o) => estaDetenido(o)).length;
     const asesorasHoy = asesorasEnSeguimientoHoy(feedBase, gestionSegPorTelefono);
     // Cola vacía = día cumplido: el aro se pinta lleno, no en 0%.
-    const pct = total > 0 ? Math.round((gestionados / total) * 100) : 100;
+    // floor y no round: con 199 de 200 gestionados, round pintaba el aro LLENO
+    // ("100%") con un pedido todavía por gestionar — la misma mentira del
+    // pctConcluido de logística (fix 23-ago). El 100 solo llega en cero real.
+    const pct = total > 0 ? Math.floor((gestionados / total) * 100) : 100;
+    // LO QUE FIRMA EL CIERRE se calcula SIEMPRE sobre lo accionable, con o sin
+    // lista SLA activa. El contrato del diálogo es "cola accionable de hoy",
+    // pero total/gestionados cambian de población cuando hay una lista activa
+    // (que además queda pegada en sessionStorage y en la URL): una asesora con
+    // "Detenidos" en 0 y 15 accionables reales en otras listas firmaba un
+    // cierre "en cero" sin motivo, y el correo del dueño decía que el día
+    // quedó limpio. El hero puede mostrar la lista activa; el cierre no.
+    const accionables = counterSource.filter(esAccionable);
+    const colaCierre = accionables.length;
+    const gestionadosCierre = contarGestionadosHoy(accionables, mySegTouchedToday, gestionSegPorTelefono);
     // El hero vive mientras haya pedidos cargados: una cola de hoy en 0 con
     // 150 en ruta es un LOGRO que se muestra en verde, no una pantalla vacía.
-    return { enRuta, total, gestionados, faltan, detenidos, asesorasHoy, pct, heroVisible: counterSource.length > 0 };
+    return {
+      enRuta, total, gestionados, faltan, detenidos, asesorasHoy, pct,
+      colaCierre, gestionadosCierre, heroVisible: counterSource.length > 0,
+    };
   }, [viewMode, chipsBase, dedupedByDate, listaActiva, mySegTouchedToday, gestionSegPorTelefono]);
 
   /**
@@ -1270,13 +1286,16 @@ export default function SeguimientoTab() {
         )}
 
         {/* El cierre del día. `gestionados` va en null si la lectura falló:
-            el diálogo se niega a firmar números que nadie midió. */}
+            el diálogo se niega a firmar números que nadie midió.
+            OJO: firma `colaCierre`/`gestionadosCierre` (SIEMPRE lo accionable),
+            NO `total`/`gestionados` del hero, que con una lista SLA activa
+            miden solo esa lista — y una lista en 0 no es el día en 0. */}
         <CierreSeguimientoDialog
           open={cierreAbierto}
           onClose={() => setCierreAbierto(false)}
           storeId={activeStoreId}
-          cola={hero.total}
-          gestionados={coverageSegError ? null : hero.gestionados}
+          cola={hero.colaCierre}
+          gestionados={coverageSegError ? null : hero.gestionadosCierre}
         />
 
         {/* Listas de trabajo (SLA) — forma PRINCIPAL de priorizar. Reemplaza

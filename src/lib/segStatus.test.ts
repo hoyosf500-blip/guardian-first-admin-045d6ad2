@@ -210,3 +210,13 @@ describe('esNovedadResuelta — sacar de la cola lo que ya se resolvió', () => 
     expect(esNovedadResuelta(undefined)).toBe(false);
   });
 });
+
+describe('variantes terminales de Ecuador', () => {
+  // Auditoria 23-ago-2026 (visto ademas en la consola de produccion: el
+  // clasificador avisaba "ENTREGADO A DESTINO cae en otros"). Un ENTREGADO
+  // tratado como vivo entra al tablero, cuenta como "en ruta" y hasta puede
+  // salir en detenidos: un pedido TERMINADO presentado como trabado.
+  it("'ENTREGADO A DESTINO' clasifica como entregado, no como otros", () => {
+    expect(classifySegEstado('ENTREGADO A DESTINO')).toBe('entregado');
+  });
+});

@@ -39,20 +39,33 @@ export function useOrderNotesIndex(
   const load = useCallback(async () => {
     if (!storeId || !idsKey) { setIndex(EMPTY_INDEX); return; }
     const ids = idsKey.split(',');
-    const { data, error } = await supabase
-      .from('notes')
-      .select('order_id, remind_at')
-      .eq('store_id', storeId)
-      .in('order_id', ids);
-    if (error || !data) {
+    // POR LOTES: los ids viajan en la URL del GET y los call-sites pasan la
+    // cola COMPLETA (visibleQueue). Con colas de más de mil pedidos —incidente
+    // documentado en OrderContext— un solo .in() pasaba el largo máximo de URL
+    // y la petición fallaba ENTERA: los recordatorios de TODA la cola
+    // desaparecían en silencio, justo en la tienda con más trabajo.
+    const LOTE = 150;
+    const lotes: string[][] = [];
+    for (let i = 0; i < ids.length; i += LOTE) lotes.push(ids.slice(i, i + LOTE));
+    const resultados = await Promise.all(lotes.map((b) =>
+      supabase
+        .from('notes')
+        .select('order_id, remind_at')
+        .eq('store_id', storeId)
+        .in('order_id', b)));
+    if (resultados.some((r) => r.error || !r.data)) {
       // Fallo transitorio (red/RLS/timeout) ≠ "ningún pedido tiene notas".
       // Vaciar acá hacía desaparecer EN SILENCIO los badges y los RECORDATORIOS
       // de todas las tarjetas (el hook refetchea por realtime e idsKey, así que
       // un solo blip borraba un índice que ya estaba bien cargado). El índice
-      // anterior sigue siendo mejor aproximación que "nada".
-      console.warn('[useOrderNotesIndex] error cargando índice de notas; se conserva el anterior:', error);
+      // anterior sigue siendo mejor aproximación que "nada". Con lotes aplica
+      // igual: un lote caído dejaría un índice a medias que se leería como
+      // "estos pedidos no tienen recordatorio" — mentira parcial, peor aún.
+      console.warn('[useOrderNotesIndex] error cargando índice de notas; se conserva el anterior:',
+        resultados.find((r) => r.error)?.error);
       return;
     }
+    const data = resultados.flatMap((r) => r.data ?? []);
     const m: NoteIndex = new Map();
     for (const row of data as Array<{ order_id: string | null; remind_at: string | null }>) {
       if (!row.order_id) continue;

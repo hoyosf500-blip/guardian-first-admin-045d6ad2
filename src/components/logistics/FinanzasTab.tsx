@@ -114,8 +114,15 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
   // Tasa de entrega MADURA: ÷ (entregadas + devueltas), no ÷ total_ordenes (que
   // incluye cancelados, pendientes y en-tránsito → diluye la tasa en rangos
   // recientes). El donut de al lado sigue mostrando la composición sobre el total.
+  //
+  // El `total` (madurez del cohorte) va SIN cancelados: un cancelado jamás va a
+  // concluir logísticamente, así que dejarlo en el denominador subestimaba
+  // pctConcluido para siempre — un mes cerrado hace meses con 32% de
+  // cancelación quedaba "prelim." eterno mientras KPIs mensuales (que ya usa
+  // despachables = generados − cancelados, y lo documenta) lo mostraba firme.
   const entregaMaturity = deriveDeliveryMaturity(
-    data?.total_entregadas ?? 0, data?.total_devueltas ?? 0, data?.total_ordenes ?? 0,
+    data?.total_entregadas ?? 0, data?.total_devueltas ?? 0,
+    Math.max(0, (data?.total_ordenes ?? 0) - (data?.total_cancelados ?? 0)),
     data?.total_rechazadas ?? 0,
   );
 

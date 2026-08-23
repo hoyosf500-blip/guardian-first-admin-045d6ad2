@@ -7,6 +7,7 @@ import { useStore } from '@/contexts/StoreContext';
 import { useWaChat } from '@/contexts/WaChatContext';
 import { formatCOP } from '@/lib/utils';
 import { CANCEL_REASONS } from '@/lib/constants';
+import { diasReales } from '@/components/WorkList';
 import { useSessionState } from '@/hooks/useSessionState';
 // AI script generator removed — operadoras no lo usaban
 import { supabase } from '@/integrations/supabase/client';
@@ -224,13 +225,24 @@ export default function CallView({ items, alerts }: Props) {
     let cancelled = false;
     supabase
       .from('orders')
-      .select('estado')
+      .select('id, estado')
       .eq('phone', o.phone)
       .eq('store_id', activeStoreId)
       .then(({ data }) => {
         if (cancelled || !data) return;
-        const total = data.length;
-        const entregados = data.filter(r => (r.estado || '').toUpperCase().includes('ENTREGADO')).length;
+        // Excluir los borrados lógicos Y el propio pedido en pantalla. Cada
+        // edición vía OrderEditorDialog deja una fila REEMPLAZADA del mismo
+        // teléfono, y el pendiente actual no es un desenlace: con 3 entregas
+        // reales + 3 ediciones + el pendiente, la "efectividad" daba 43% y el
+        // mejor cliente de la tienda nunca llegaba al badge VIP (80%). Filtro
+        // client-side a propósito — un `.not()` encadenado descarta filas con
+        // estado NULL (regla de CLAUDE.md).
+        const filas = data.filter(r => {
+          const e = (r.estado || '').toUpperCase().replace(/_/g, ' ');
+          return e !== 'REEMPLAZADA' && e !== 'ARCHIVADO GHOST' && r.id !== o.dbId;
+        });
+        const total = filas.length;
+        const entregados = filas.filter(r => (r.estado || '').toUpperCase().includes('ENTREGADO')).length;
         const efectividad = total > 0 ? Math.round((entregados / total) * 100) : 0;
         setVip({
           isVip: total >= 3 && efectividad >= 80,
@@ -741,10 +753,17 @@ export default function CallView({ items, alerts }: Props) {
   // Mismos cortes de antigüedad de siempre (7 / 4 días): lo único que cambia
   // es que ahora el tono viste una pastilla completa (fondo + borde + texto),
   // no un puntito de 10px al lado de un número gris.
-  const pDot = o.dias >= 7 ? 'bg-danger glow-danger' : o.dias >= 4 ? 'bg-warning glow-warning' : 'bg-success glow-success';
-  const pChip = o.dias >= 7
+  //
+  // `diasReales` y NO `o.dias`: la columna del DB se escribe en el último sync
+  // y se congela cuando el sync se atrasa (por eso WorkList y los chips D7+ del
+  // header ya la usan). La ficha era la única que leía el valor crudo: la lista
+  // marcaba un pedido "D7 · CANCELAR" y al abrirlo la ficha decía "D5" en
+  // ámbar — la asesora no encontraba los que el contador señalaba.
+  const diasFicha = diasReales(o);
+  const pDot = diasFicha >= 7 ? 'bg-danger glow-danger' : diasFicha >= 4 ? 'bg-warning glow-warning' : 'bg-success glow-success';
+  const pChip = diasFicha >= 7
     ? 'bg-danger/14 border-danger/30 text-danger'
-    : o.dias >= 4
+    : diasFicha >= 4
       ? 'bg-warning/14 border-warning/30 text-warning'
       : 'bg-success/14 border-success/30 text-success';
 
@@ -984,7 +1003,15 @@ export default function CallView({ items, alerts }: Props) {
         if (!opt) return;
         e.preventDefault();
         if (opt.kind === 'texto') setCancelOtroMode(true);
-        else void handleMark('canc', opt.value);
+        else if (opt.sugiereReagenda) {
+          // Espejo EXACTO del onClick del mismo motivo. El teclado saltaba el
+          // desvío a reagenda y cancelaba directo en Dropi: la operadora que
+          // trabaja con atajos (el flujo para el que existen los atajos)
+          // perdía la venta que el click salvaba. "No tiene plata ahora" es
+          // una venta con fecha, no una pérdida.
+          setReagendaMode(opt.value);
+          setReagendaFecha(REAGENDA_PRESETS.find(p => p.key === 'proximo_pago')!.build());
+        } else void handleMark('canc', opt.value);
       }
       return;
     }
@@ -1193,7 +1220,7 @@ export default function CallView({ items, alerts }: Props) {
         <div className="relative flex items-center gap-2 mb-2.5 flex-wrap">
           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border ${pChip}`}>
             <span className={`w-1.5 h-1.5 rounded-full ${pDot}`} aria-hidden="true" />
-            <span className="font-mono tabular-nums">D{o.dias}</span>
+            <span className="font-mono tabular-nums">D{diasFicha}</span>
           </span>
           <span className="hud-label-cased px-2.5 py-1 rounded-lg bg-card/40 border border-border text-muted-foreground">{o.estado}</span>
         </div>

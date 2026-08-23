@@ -5,6 +5,7 @@ import { useOrders } from '@/contexts/OrderContext';
 import { useStore } from '@/contexts/StoreContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { siguienteAccion, type AccionKey } from '@/lib/siguienteAccion';
+import { segVisiblesParaCola } from '@/lib/segVisibles';
 import { useSegTouchIndex } from '@/hooks/useSegTouchIndex';
 import { cn } from '@/lib/utils';
 
@@ -78,11 +79,20 @@ export default function SiguienteAccionBar() {
   // touchpoints que ya usa el tablero: sin él, la barra manda a avisar a gente
   // a la que el equipo ya avisó, y una barra que pide trabajo hecho se aprende
   // a ignorar.
-  const { avisosAgencia } = useSegTouchIndex(activeStoreId);
+  const { closed, avisosAgencia } = useSegTouchIndex(activeStoreId);
+
+  // La MISMA población que muestra la pantalla de Seguimiento (ventana 45d +
+  // dedup + cierres del equipo). Con segData crudo la barra contaba trabajo
+  // que la pantalla ya descarta — pedidos cerrados ayer, duplicados, pedidos
+  // de hace dos meses — y mandaba a rehacer trabajo hecho.
+  const segVisibles = useMemo(
+    () => segVisiblesParaCola(segData, closed, Date.now()),
+    [segData, closed],
+  );
 
   const accion = useMemo(
-    () => siguienteAccion({ workQueue, novedadesQueue, segData, segCargado: segLoaded, avisosAgencia }),
-    [workQueue, novedadesQueue, segData, segLoaded, avisosAgencia],
+    () => siguienteAccion({ workQueue, novedadesQueue, segData: segVisibles, segCargado: segLoaded, avisosAgencia }),
+    [workQueue, novedadesQueue, segVisibles, segLoaded, avisosAgencia],
   );
 
   // Todavía no se leyó la cola: no se dibuja NADA. Un "Todo al día" en verde

@@ -1717,7 +1717,12 @@ function ResolutionTable({
             const denom = hasDistinct ? (pedDist as number) : acc;
             const res = hasDistinct ? (resDist as number) : resueltos(r);
             const pendientes = Math.max(0, denom - res);
-            const tasa = denom > 0 ? Math.round((res / denom) * 100) : 0;
+            // null y no 0: sin pedidos tocados en este modulo NO hay tasa que
+            // medir. El 0% en rojo era un veredicto reprobatorio sobre una
+            // operadora que nadie midio — identico al de alguien que toco 20
+            // y no resolvio ninguno. Regla de todo el archivo: sin denominador
+            // se muestra "—".
+            const tasa = denom > 0 ? Math.round((res / denom) * 100) : null;
             return (
               <tr key={r.operator_id}>
                 <td>
@@ -1734,7 +1739,11 @@ function ResolutionTable({
                 {/* Tasa de RESOLUCIÓN (Seguimiento/Novedades) — NO es la
                     confirmación; mantiene su benchmark operativo (70%), no la
                     meta oficial de confirmación (CONF_TARGET_PCT). */}
-                <td className="text-right"><RateBar value={tasa} target={70} /></td>
+                <td className="text-right">
+                  {tasa == null
+                    ? <span className="font-mono tabular-nums text-xs text-muted-foreground" title="Sin pedidos tocados en este módulo — no hay tasa que medir.">—</span>
+                    : <RateBar value={tasa} target={70} />}
+                </td>
               </tr>
             );
           })}

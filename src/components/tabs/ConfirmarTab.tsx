@@ -16,7 +16,7 @@ import { formatDateES, OrderData, parseDate, dbToOrderData } from '@/lib/orderUt
 import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { fetchPendientesDeConfirmar } from '@/lib/fetchPendientes';
 import { isLockedByOther } from '@/lib/callQueueNav';
-import { MAX_DAILY_ATTEMPTS, COOLDOWN_LABEL, REMIND_LOOKAHEAD_MS, estaAplazado } from '@/lib/confirmarQueue';
+import { MAX_DAILY_ATTEMPTS, COOLDOWN_LABEL, REMIND_LOOKAHEAD_MS, estaAplazado, hasDueReminder } from '@/lib/confirmarQueue';
 import { toast } from 'sonner';
 import WorkList, { diasReales } from '@/components/WorkList';
 import CallView from '@/components/CallView';
@@ -460,6 +460,17 @@ export default function ConfirmarTab({ profile }: Props) {
     // Solo desempata: `compararRiesgo` trata la ausencia de señal como neutro,
     // así que con el índice vacío devuelve 0 para todo par y `Array.sort`
     // conserva el orden que ya venía (es estable desde ES2019).
+    // RECORDATORIO VENCIDO PRIMERO. Todo el sistema promete que el reagendado
+    // "vuelve solo al tope" el dia que vence (toast de CallView, doc de
+    // useReagendarPedido), pero la senal vive en `notes` y nunca llegaba a
+    // buildWorkQueue: el pedido reentraba ordenado por su edad REAL y caia al
+    // FONDO, en la zona "por cancelar" — la pantalla pedia CANCELAR justo el
+    // pedido que el cliente pidio que le confirmaran hoy.
+    const remA = a.dbId ? notesIndex.get(a.dbId)?.nextReminderAt ?? null : null;
+    const remB = b.dbId ? notesIndex.get(b.dbId)?.nextReminderAt ?? null : null;
+    const dueA = hasDueReminder({ nextReminderAt: remA });
+    const dueB = hasDueReminder({ nextReminderAt: remB });
+    if (dueA !== dueB) return dueA ? -1 : 1;
     const ra = a.dbId ? riesgoIndex.get(a.dbId) ?? null : null;
     const rb = b.dbId ? riesgoIndex.get(b.dbId) ?? null : null;
     return compararRiesgo(ra, rb);
@@ -480,8 +491,11 @@ export default function ConfirmarTab({ profile }: Props) {
   // "por confirmar" debe alinearse con lo que la operadora realmente ve/puede
   // accionar: la lista (filteredItems) esconde los lockeados por otra asesora
   // (isLockedByOther). Si el headline los contara, superaría la lista.
+  // `!esAplazado`: los reagendados a futuro no estan en la lista de hoy (el
+  // filtro "Pendientes" los saca), asi que contarlos aca dejaba un headline
+  // imposible de bajar a cero — la asesora reportaba "la cola no baja".
   const pending = visibleQueue.filter(
-    o => !o.result && !isLockedByOther(o, user?.id ?? null, Date.now()),
+    o => !o.result && !esAplazado(o) && !isLockedByOther(o, user?.id ?? null, Date.now()),
   ).length;
 
   return (
@@ -811,7 +825,7 @@ export default function ConfirmarTab({ profile }: Props) {
             // lista NO muestra ("1 cancelar (D7+)" imposible de encontrar) —
             // la misma divergencia ya corregida en el chip "Tu cola hoy".
             const accionables = visibleQueue.filter(
-              o => !o.result && !isLockedByOther(o, user?.id ?? null, Date.now()),
+              o => !o.result && !esAplazado(o) && !isLockedByOther(o, user?.id ?? null, Date.now()),
             );
             const d7 = accionables.filter(o => diasReales(o) >= 7).length;
             const d46 = accionables.filter(o => { const d = diasReales(o); return d >= 4 && d <= 6; }).length;
@@ -1051,7 +1065,7 @@ export default function ConfirmarTab({ profile }: Props) {
               </div>
             </div>
 
-            <WorkFilters workQueue={visibleQueue} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} notesIndex={notesIndex} />
+            <WorkFilters workQueue={visibleQueue} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} notesIndex={notesIndex} currentUserId={user?.id ?? null} />
           </motion.div>
 
           {/* ⚠ DUPLICADOS VIVOS (incidente 2026-07-13, #6107398): el pedido viejo

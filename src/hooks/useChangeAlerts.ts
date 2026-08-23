@@ -64,7 +64,13 @@ export function useChangeAlerts(userId: string | undefined, storeId?: string | n
     const [novRes, devRes, ofiRes] = await Promise.all([
       supabase.from('orders').select('id', { count: 'exact', head: true })
         .eq('store_id', storeId)
-        .or('estado.eq.NOVEDAD,estado.ilike.%INTENTO DE ENTREGA%').eq('novedad_sol', false),
+        // La MISMA red ancha que la cola real (useNovedades: ilike %NOVEDAD%,
+        // porque Dropi usa variantes como 'NOVEDAD PENDIENTE' / 'NOVEDAD EN
+        // RUTA' y el match estricto dejaba pedidos fuera — bug ya pagado).
+        // Al ser un COUNT head:true no puede filtrar client-side como la cola,
+        // asi que la variante resuelta se excluye en el propio filtro
+        // (NOVEDAD SOLUCIONADA; 'SOLUCION APROBADA' no contiene NOVEDAD).
+        .or('and(estado.ilike.%NOVEDAD%,estado.not.ilike.%SOLUCIONADA%),estado.ilike.%INTENTO DE ENTREGA%').eq('novedad_sol', false),
       supabase.from('orders').select('id', { count: 'exact', head: true })
         .eq('store_id', storeId)
         .ilike('estado', '%DEVOL%'),

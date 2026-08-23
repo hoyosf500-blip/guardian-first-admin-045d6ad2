@@ -53,6 +53,16 @@ function mapRow(d: Record<string, unknown>): RootCauseRow {
     novedad: (d.novedad as string) ?? null,
     validationDecision: (d.validation_decision as string) ?? null,
     addressKind: (d.address_kind as string) ?? null,
+    // El SELLO al despachar (migración 20260822180000). `evitableReasons` lo
+    // prefiere sobre el valor mutable — pero mapRow no lo mapeaba, así que
+    // llegaba siempre undefined y el ?? caía SIEMPRE al semáforo vivo: el sesgo
+    // exacto que el sello vino a arreglar (los pedidos más gestionados pierden
+    // la marca roja y el % evitable sale subestimado). Con la RPC vieja (sin
+    // estas columnas) queda null y el comportamiento es el actual — para que el
+    // sello VIAJE falta actualizar `novedades_root_cause` a devolverlas (pedir
+    // pg_get_functiondef primero, REGLA #1).
+    validacionAlDespachar: (d.validacion_al_despachar as string) ?? null,
+    addressKindAlDespachar: (d.address_kind_al_despachar as string) ?? null,
     valor: (d.valor as number) ?? null,
     transportadora: (d.transportadora as string) ?? null,
     ciudad: (d.ciudad as string) ?? null,
@@ -71,14 +81,20 @@ function mapRow(d: Record<string, unknown>): RootCauseRow {
 export function useNovedadRootCause(): NovedadRootCauseData {
   const { activeStoreId } = useStore();
   const [range, setRange] = useState<RootCauseRange>('30d');
-  const [loading, setLoading] = useState(false);
+  // Arranca en TRUE: el efecto que dispara la carga corre después del primer
+  // render, y con false ese primer frame pasaba los gates `!s.loading` — el
+  // EmptyCard "No hay devoluciones" llegaba a pintarse antes de medir nada.
+  const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<RootCauseStatus>('ok');
   const [summary, setSummary] = useState<RootCauseSummary>(EMPTY);
   const [partial, setPartial] = useState(false);
   const seqRef = useRef(0);
 
   const load = useCallback(async () => {
-    if (!activeStoreId) { setSummary(EMPTY); setStatus('ok'); return; }
+    // setLoading(false) explícito: `loading` ahora ARRANCA en true y esta rama
+    // retorna sin pasar por el finally — sin esto, sin tienda activa la
+    // pantalla quedaba "leyendo…" para siempre.
+    if (!activeStoreId) { setSummary(EMPTY); setStatus('ok'); setLoading(false); return; }
     const seq = ++seqRef.current;
     setLoading(true);
     const today = bogotaToday();

@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { Search, CheckCircle2, XCircle, PhoneOff, Clock, LayoutGrid, Bell, CalendarClock } from 'lucide-react';
 import type { NoteIndex } from '@/hooks/useOrderNotesIndex';
 import { REMIND_LOOKAHEAD_MS, estaAplazado } from '@/lib/confirmarQueue';
+import { isLockedByOther } from '@/lib/callQueueNav';
 
 interface Props {
   workQueue: OrderData[];
@@ -13,6 +14,10 @@ interface Props {
   /** Mapa agregado de notas por pedido. Si trae alguno con recordatorio
    *  cercano (≤1h o ya vencido), aparece el chip "Recordatorios". */
   notesIndex?: NoteIndex;
+  /** Quién soy: para descontar del chip "Pendientes" los pedidos lockeados por
+   *  OTRA asesora (la lista ya los esconde; el chip prometía filas que la lista
+   *  no muestra). Sin el id, el conteo queda como antes. */
+  currentUserId?: string | null;
 }
 
 const filterMeta: Record<string, { icon: typeof Clock; color: string }> = {
@@ -29,7 +34,7 @@ const filterMeta: Record<string, { icon: typeof Clock; color: string }> = {
 // de ConfirmarTab y la regla de aplazado tienen que usar el MISMO número, o un
 // pedido puede quedar escondido de la cola y fuera del chip a la vez.
 
-export default function WorkFilters({ workQueue, filter, setFilter, search, setSearch, notesIndex }: Props) {
+export default function WorkFilters({ workQueue, filter, setFilter, search, setSearch, notesIndex, currentUserId }: Props) {
   const counts = useMemo(() => {
     const confCount = workQueue.filter(o => o.result === 'conf').length;
     const cancCount = workQueue.filter(o => o.result === 'canc').length;
@@ -46,8 +51,12 @@ export default function WorkFilters({ workQueue, filter, setFilter, search, setS
     const aplazadoCount = notesIndex
       ? workQueue.filter(o => estaAplazado({ result: o.result, nextReminderAt: reminderDe(o) }, now)).length
       : 0;
+    // `!isLockedByOther`: la lista esconde lo que otra asesora tiene tomado;
+    // si el chip lo cuenta, promete una fila que no existe en pantalla.
     const pendCount = workQueue.filter(o =>
-      !o.result && !estaAplazado({ result: o.result, nextReminderAt: reminderDe(o) }, now)).length;
+      !o.result &&
+      !estaAplazado({ result: o.result, nextReminderAt: reminderDe(o) }, now) &&
+      !(currentUserId !== undefined && isLockedByOther(o, currentUserId ?? null, now))).length;
 
     const remindCount = notesIndex
       ? workQueue.filter(o => {
@@ -65,7 +74,7 @@ export default function WorkFilters({ workQueue, filter, setFilter, search, setS
       .sort();
 
     return { confCount, cancCount, nrCount, pendCount, remindCount, aplazadoCount, products };
-  }, [workQueue, notesIndex]);
+  }, [workQueue, notesIndex, currentUserId]);
 
   const filters = [
     { id: 'pending', label: 'Pendientes', count: counts.pendCount },

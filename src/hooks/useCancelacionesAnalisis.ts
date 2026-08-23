@@ -231,6 +231,17 @@ export function useCancelacionesAnalisis(filtros: CancelacionesFiltros): Cancela
         return;
       }
       setRangoAncho(null);
+      // Se BLANQUEA el reporte anterior antes de leer. Sin esto, al cambiar el
+      // rango la pantalla mostraba el reporte COMPLETO del rango viejo (motivos,
+      // operadoras, hasta su banner de "días sin leer") bajo el encabezado de
+      // las fechas nuevas durante los ~10-12 s del troceo — y el aviso
+      // "Leyendo el período…" nunca aparecía, porque su gate es
+      // `totalCancelados === 0` y con datos viejos nunca lo es. Es el espejo
+      // exacto del bug "No hubo cancelaciones mientras cargaba": en vez de
+      // afirmar un cero falso, afirmaba el dato de OTRO período. Costo
+      // aceptado: "Recargar" sobre el mismo rango también blanquea — mejor
+      // decir "leyendo" que sostener un dato que quizá ya no es.
+      setResumen(EMPTY_RESUMEN); setRows([]); setPartial(false); setDiasSinLeer([]);
       setProgreso({ listos: 0, total: tramos.length });
 
       // ── El universo del período, aparte y de una sola vez ───────────────

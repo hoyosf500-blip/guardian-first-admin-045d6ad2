@@ -1,8 +1,11 @@
 import { useMemo } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
+import { useStore } from '@/contexts/StoreContext';
 import { useInactivityGuard } from '@/hooks/useInactivityGuard';
+import { useSegTouchIndex } from '@/hooks/useSegTouchIndex';
 import InactivityWarningModal from '@/components/InactivityWarningModal';
 import { hasSeguimientoWork } from '@/lib/segLists';
+import { segVisiblesParaCola } from '@/lib/segVisibles';
 
 /**
  * Monta el guard de inactividad DENTRO de OrderProvider para poder leer los
@@ -12,6 +15,11 @@ import { hasSeguimientoWork } from '@/lib/segLists';
  */
 export default function InactivityGuard() {
   const { workQueue, segData, novedadesQueue } = useOrders();
+  const { activeStoreId } = useStore();
+  // Los cierres del equipo, para no regañar por trabajo YA hecho. El canal
+  // realtime del hook lleva nombre por instancia (useId), así que montarlo acá
+  // además de en la barra y en Seguimiento no colisiona.
+  const { closed } = useSegTouchIndex(activeStoreId);
 
   // Memoizado por REFERENCIA de las colas: este componente vive bajo
   // OrderProvider y se re-renderiza con cada cambio del context (counter, sets
@@ -20,12 +28,17 @@ export default function InactivityGuard() {
   // miles de pedidos de segData contra los predicados SLA (calcBusinessDays
   // adentro) en cada tick. smartMerge conserva la referencia cuando nada cambió
   // de fondo, así que el memo casi nunca recomputa.
+  //
+  // `segVisiblesParaCola`: la MISMA población filtrada que la pantalla y que la
+  // barra «Lo que sigue» — el invariante guardián (guard ve trabajo ⟹ la barra
+  // no dice "al día") solo se sostiene si los dos filtran IGUAL. Con segData
+  // crudo, el guard regañaba por pedidos que el equipo ya cerró.
   const hasPendingWork = useMemo(
     () =>
       workQueue.some((o) => !o.result) ||    // Confirmar: pedidos sin gestionar
       novedadesQueue.length > 0 ||           // Novedades abiertas
-      hasSeguimientoWork(segData),           // Seguimiento: listas accionables
-    [workQueue, novedadesQueue, segData],
+      hasSeguimientoWork(segVisiblesParaCola(segData, closed, Date.now())),
+    [workQueue, novedadesQueue, segData, closed],
   );
 
   const { warning, acknowledge } = useInactivityGuard({ hasPendingWork });

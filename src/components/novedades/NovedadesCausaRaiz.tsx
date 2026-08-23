@@ -110,20 +110,29 @@ export default function NovedadesCausaRaiz() {
 
       {s.status === 'ok' && (
         <>
-          {/* KPIs hero */}
+          {/* KPIs hero. Mientras la RPC carga, los tiles dicen "—" (no se pudo
+              medir todavía), NUNCA 0: "Devoluciones 0 · $0 perdido" durante los
+              segundos del LATERAL por fila era una afirmación de negocio falsa
+              — la misma clase del "No hubo cancelaciones mientras cargaba". */}
           <motion.div {...fadeUp(0.05)} className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Stat icon={<TriangleAlert size={17} />} label="Devoluciones" value={summary.totalDevoluciones} hint="en el período" />
+            <Stat icon={<TriangleAlert size={17} />} label="Devoluciones"
+              value={s.loading ? '—' : summary.totalDevoluciones}
+              hint={s.loading ? 'leyendo…' : 'en el período'} />
             <Stat
-              icon={<Target size={17} />} label="% evitables" value={pct(summary.pctEvitable)}
-              tone={summary.pctEvitable != null && summary.pctEvitable >= 0.3 ? 'danger' : 'default'}
-              hint="prevenibles de nuestro lado"
+              icon={<Target size={17} />} label="% evitables"
+              value={s.loading ? '—' : pct(summary.pctEvitable)}
+              tone={!s.loading && summary.pctEvitable != null && summary.pctEvitable >= 0.3 ? 'danger' : 'default'}
+              hint={s.loading ? 'leyendo…' : 'prevenibles de nuestro lado'}
             />
             <Stat
-              icon={<DollarSign size={17} />} label="$ perdido evitable" value={formatCOP(summary.valorPerdidoEvitable)}
-              tone={summary.valorPerdidoEvitable > 0 ? 'danger' : 'default'} hint={`de ${formatCOP(summary.valorPerdidoTotal)} total`}
+              icon={<DollarSign size={17} />} label="$ perdido evitable"
+              value={s.loading ? '—' : formatCOP(summary.valorPerdidoEvitable)}
+              tone={!s.loading && summary.valorPerdidoEvitable > 0 ? 'danger' : 'default'}
+              hint={s.loading ? 'leyendo…' : `de ${formatCOP(summary.valorPerdidoTotal)} total`}
             />
-            <Stat icon={<Users size={17} />} label="Con confirmador" value={summary.conConfirmador}
-              hint={`${summary.sinConfirmador} carga directa`} />
+            <Stat icon={<Users size={17} />} label="Con confirmador"
+              value={s.loading ? '—' : summary.conConfirmador}
+              hint={s.loading ? 'leyendo…' : `${summary.sinConfirmador} carga directa`} />
           </motion.div>
 
           {summary.totalDevoluciones === 0 && !s.loading && (
