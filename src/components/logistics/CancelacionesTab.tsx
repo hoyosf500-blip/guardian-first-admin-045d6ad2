@@ -187,7 +187,7 @@ function LadoDelProblema({
  * Toda la aritmética está en `src/lib/cancelacionesPorProducto.ts`.
  */
 function TasaPorProductoCard({ data }: { data: ReturnType<typeof useCancelacionesPorProducto> }) {
-  const { status, resumen: pp } = data;
+  const { status, resumen: pp, loading } = data;
 
   if (status === 'not_ready') {
     return (
@@ -202,6 +202,16 @@ function TasaPorProductoCard({ data }: { data: ReturnType<typeof useCancelacione
         <EmptyCard msg={status === 'forbidden'
           ? 'Solo los encargados de la tienda pueden ver esto.'
           : 'No se pudo cargar. Volvé a intentar en un momento.'} />
+      </NovCard>
+    );
+  }
+  // Mismo defecto que tenía `sinDatos` del tab (medido el 23-ago-2026): sin
+  // mirar `loading`, mientras carga se afirma "Sin pedidos en el período" —
+  // que es una respuesta, no un estado de espera.
+  if (loading && !pp.ranking.length && !pp.bajoMinimo.length) {
+    return (
+      <NovCard title="Tasa por producto" icon={Package}>
+        <EmptyCard msg="Leyendo los productos del período…" />
       </NovCard>
     );
   }
@@ -352,7 +362,19 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
         : 'Falló la consulta. Probá recargar; si sigue, revisá la conexión con Supabase.'} />;
   }
 
-  const sinDatos = r.totalCancelados === 0;
+  // ⛔ El vacío SOLO se afirma cuando terminó de leer.
+  //
+  // Medido en producción el 23-ago-2026: durante 12 SEGUNDOS la pantalla decía
+  // "No hubo cancelaciones en el período. Es un buen resultado, no un error."
+  // con 244 cancelaciones reales. No es una pantalla en blanco: es una
+  // afirmación FALSA Y TRANQUILIZADORA sobre datos que todavía no se leyeron.
+  //
+  // Lo destapó el troceo por tramos: la consulta pasó de menos de un segundo a
+  // doce, y este `sinDatos` nunca había mirado `loading` porque hasta entonces
+  // esa ventana no se veía. Un cero que aparece mientras se carga es la misma
+  // falla de siempre — cero NUNCA sustituye a "no se pudo medir".
+  const leyendo = s.loading && r.totalCancelados === 0;
+  const sinDatos = !s.loading && r.totalCancelados === 0;
   // Con cobertura nula las secciones de MOTIVO y CULPA no se dibujan: no hay
   // nada que mostrar. Pero el resto SÍ — la clasificación por "sin gestión", los
   // intentos, el tiempo al primer toque y la tabla NO necesitan ni un motivo
@@ -399,7 +421,11 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
         </div>
       </motion.div>
 
-      {sinDatos ? (
+      {leyendo ? (
+        <EmptyCard msg={s.progreso.total > 1
+          ? `Leyendo el período por tramos… ${s.progreso.listos} de ${s.progreso.total}. La consulta se parte para que no se caiga por tiempo.`
+          : 'Leyendo las cancelaciones del período…'} />
+      ) : sinDatos ? (
         <EmptyCard msg="No hubo cancelaciones en el período. Es un buen resultado, no un error." />
       ) : (
         <>

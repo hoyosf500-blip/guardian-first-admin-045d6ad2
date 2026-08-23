@@ -121,3 +121,39 @@ describe('la pantalla usa las etiquetas nuevas', () => {
     expect(src).not.toMatch(/<DimensionCard[^>]*title="Por producto"/);
   });
 });
+
+describe('el vacio solo se afirma cuando termino de leer', () => {
+  const TAB2 = path.join(process.cwd(), 'src/components/logistics/CancelacionesTab.tsx');
+  const src2 = fs.readFileSync(TAB2, 'utf8');
+  const lineas = src2.split('\n').map((l) => l.replace('\r', ''));
+
+  it('`sinDatos` mira `loading`, no solo el total', () => {
+    // Medido en producción el 23-ago-2026: durante 12 SEGUNDOS la pantalla
+    // decía "No hubo cancelaciones en el período. Es un buen resultado, no un
+    // error." con 244 cancelaciones reales. No es una pantalla en blanco: es
+    // una afirmación falsa y tranquilizadora sobre datos que no se leyeron.
+    //
+    // Lo destapó el troceo por tramos (la consulta pasó de menos de 1s a 12s),
+    // pero el defecto estaba desde antes: `sinDatos` nunca miró `loading`.
+    const linea = lineas.find((l) => l.includes('const sinDatos') && l.includes('=')) || '';
+    expect(linea, 'no se encontró la definición de sinDatos').not.toBe('');
+    expect(
+      linea.includes('!s.loading') || linea.includes('!loading'),
+      '`sinDatos` no mira `loading`: el vacío se afirma mientras todavía carga',
+    ).toBe(true);
+  });
+
+  it('mientras carga hay un mensaje propio, no el de "no hubo cancelaciones"', () => {
+    // Doce segundos de pantalla muda también se leen como "está caído".
+    const def = lineas.find((l) => l.includes('const leyendo') && l.includes('=')) || '';
+    expect(def, 'no hay estado de carga propio').not.toBe('');
+    expect(def.includes('s.loading') || def.includes('loading')).toBe(true);
+
+    const iLeyendo = src2.indexOf('{leyendo ?');
+    // El indexOf a secas caia en el COMENTARIO que documenta el bug (la
+    // pantalla nombra el mensaje dos veces). Se busca el render, no el texto.
+    const iVacio = src2.indexOf('<EmptyCard msg="No hubo cancelaciones');
+    expect(iLeyendo, 'no hay rama de carga en el render').toBeGreaterThan(-1);
+    expect(iLeyendo, 'la rama de carga tiene que ir ANTES del estado vacío').toBeLessThan(iVacio);
+  });
+});

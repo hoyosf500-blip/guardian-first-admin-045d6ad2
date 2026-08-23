@@ -65,6 +65,11 @@ export interface CancelacionesData {
    * hubieran tenido cancelaciones. Cero nunca sustituye a "no se pudo medir".
    */
   diasSinLeer: string[];
+  /**
+   * Avance de la lectura por tramos, para poder decir "voy por 3 de 5" en vez
+   * de dejar la pantalla muda 12 segundos.
+   */
+  progreso: { listos: number; total: number };
   refresh: () => void;
 }
 
@@ -98,6 +103,7 @@ export function useCancelacionesAnalisis(filtros: CancelacionesFiltros): Cancela
   const [rows, setRows] = useState<CancelacionRow[]>([]);
   const [partial, setPartial] = useState(false);
   const [diasSinLeer, setDiasSinLeer] = useState<string[]>([]);
+  const [progreso, setProgreso] = useState({ listos: 0, total: 0 });
   const seqRef = useRef(0);
 
   const { fromDate, toDate } = filtros;
@@ -180,12 +186,13 @@ export function useCancelacionesAnalisis(filtros: CancelacionesFiltros): Cancela
       };
 
       const tramos = partirRango(fromDate, toDate, DIAS_POR_TRAMO);
+      setProgreso({ listos: 0, total: tramos.length });
       for (let i = 0; i < tramos.length; i += TRAMOS_EN_PARALELO) {
         if (fatal) break;
-        await Promise.all(
-          tramos.slice(i, i + TRAMOS_EN_PARALELO).map(([a, b]) => leerTramo(a, b)),
-        );
+        const lote = tramos.slice(i, i + TRAMOS_EN_PARALELO);
+        await Promise.all(lote.map(([a, b]) => leerTramo(a, b)));
         if (seq !== seqRef.current) return;
+        setProgreso(p => ({ listos: Math.min(p.listos + lote.length, tramos.length), total: tramos.length }));
       }
       if (seq !== seqRef.current) return;
       if (fatal) {
@@ -285,5 +292,5 @@ export function useCancelacionesAnalisis(filtros: CancelacionesFiltros): Cancela
 
   useEffect(() => { void load(); }, [load]);
 
-  return { loading, status, resumen, rows, partial, diasSinLeer, refresh: () => void load() };
+  return { loading, status, resumen, rows, partial, diasSinLeer, progreso, refresh: () => void load() };
 }
