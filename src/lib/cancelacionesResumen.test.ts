@@ -559,3 +559,49 @@ describe('el motivo dominante por ciudad/producto no nombra lo que el resto excl
     expect(quito?.topMotivo).toBeNull();
   });
 });
+
+describe('cobertura: "motivo anotado" tiene que ser texto que alguien escribió', () => {
+  // Auditoría 23-ago-2026. La cobertura se calculaba desde la CATEGORÍA
+  // (`!== 'sin_motivo' && !== 'externo_dropi'`), y dos categorías llegan sin que
+  // nadie haya escrito nada: `sin_whatsapp` (sale de `chat_riesgo`, señal
+  // automática) y `recreado_externo` (sale de detectar que el pedido se rehizo).
+  // Las dos inflaban el % de la portada y le regalaban disciplina de registro a
+  // una operadora que no anotó una línea.
+  it('un cancelado que nunca escribió por WhatsApp NO cuenta como motivo anotado', () => {
+    const r = summarizeCancelaciones([
+      row({ motivo: null, riesgoChat: 'mudo' }),
+      row({ motivo: null, riesgoChat: 'mudo' }),
+      row({ motivo: 'Precio muy alto' }),
+    ]);
+    expect(r.cobertura.total).toBe(3);
+    expect(r.cobertura.conMotivo).toBe(1);
+    expect(r.cobertura.sinMotivo).toBe(2);
+  });
+
+  it('un pedido recreado sin motivo escrito tampoco cuenta', () => {
+    const r = summarizeCancelaciones([
+      row({ motivo: null, recreado: true }),
+      row({ motivo: 'Se arrepintió' }),
+    ]);
+    expect(r.cobertura.conMotivo).toBe(1);
+  });
+
+  it('la operadora no recibe disciplina de registro por una señal automática', () => {
+    const r = summarizeCancelaciones([
+      row({ operatorId: 'op-9', operatorName: 'Sol', motivo: null, riesgoChat: 'mudo' }),
+      row({ operatorId: 'op-9', operatorName: 'Sol', motivo: null, riesgoChat: 'mudo' }),
+    ]);
+    const sol = r.porOperadora.find(o => o.operatorId === 'op-9');
+    expect(sol?.cancelados).toBe(2);
+    expect(sol?.conMotivo).toBe(0);
+  });
+
+  it('sigue contando igual lo que la asesora SÍ escribió', () => {
+    const r = summarizeCancelaciones([
+      row({ motivo: 'No tiene la plata' }),
+      row({ motivo: 'Pidió otro color' }),
+      row({ origen: 'externo', motivo: null }),
+    ]);
+    expect(r.cobertura.conMotivo).toBe(2);
+  });
+});

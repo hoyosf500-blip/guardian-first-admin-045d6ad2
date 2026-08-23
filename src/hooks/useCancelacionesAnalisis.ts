@@ -172,6 +172,10 @@ export function useCancelacionesAnalisis(filtros: CancelacionesFiltros): Cancela
       // `generados_periodo`. Sumar de menos infla la tasa en silencio, así que
       // en ese caso el denominador se marca incompleto y se muestra "—".
       let denominadorParcial = false;
+      // Truncado: se mira POR TRAMO. `mapped.length >= ROW_CAP` comparaba el
+      // TOTAL sumado contra el tope de UNA consulta, así que 8 tramos de 700
+      // filas (ninguno truncado) gritaban "faltan datos" sin faltar ninguno.
+      let truncadoAlgunTramo = false;
 
       const leerTramo = async (desde: string, hasta: string): Promise<void> => {
         // `p_limite` va EXPLÍCITO: el default de la RPC es 3000 y el chequeo de
@@ -184,6 +188,7 @@ export function useCancelacionesAnalisis(filtros: CancelacionesFiltros): Cancela
         if (!error) {
           const filas = data ?? [];
           crudas.push(...filas);
+          if (filas.length >= ROW_CAP) truncadoAlgunTramo = true;
           const cabeza = filas[0] as Record<string, unknown> | undefined;
           if (cabeza) {
             totalPeriodo += Number(cabeza.total_periodo ?? 0);
@@ -206,6 +211,12 @@ export function useCancelacionesAnalisis(filtros: CancelacionesFiltros): Cancela
         if (!mitades) {
           // Un solo día que no entra, o un error que no es de tiempo: se anota.
           sinLeer.push(desde === hasta ? desde : `${desde}→${hasta}`);
+          // Y el universo queda incompleto: de este tramo se perdieron TANTO las
+          // cancelaciones como los generados. Sin esta marca la tasa se seguía
+          // imprimiendo con los dos lados cortos — un porcentaje que no es el
+          // del rango que la persona pidió, y sin nada que lo dijera. El aviso
+          // de "días sin leer" avisa que falta DETALLE, no que la tasa mienta.
+          denominadorParcial = true;
           return;
         }
         await leerTramo(mitades[0][0], mitades[0][1]);
@@ -221,6 +232,35 @@ export function useCancelacionesAnalisis(filtros: CancelacionesFiltros): Cancela
       }
       setRangoAncho(null);
       setProgreso({ listos: 0, total: tramos.length });
+
+      // ── El universo del período, aparte y de una sola vez ───────────────
+      // Dos COUNT agregados sobre `orders` por el rango COMPLETO: no lleva las
+      // subconsultas por pedido que hacen lenta a `cancelaciones_analisis`, así
+      // que no hay que trocearlo. Se dispara ACÁ para que corra en paralelo con
+      // los tramos y no sume espera.
+      //
+      // Es lo que hace que la TASA no dependa de que el troceo salga completo.
+      // Sumando por tramos, un tramo vacío (5 días sin cancelar) o uno caído
+      // dejaba el denominador corto; ahora el detalle puede venir incompleto —
+      // y se avisa — mientras el porcentaje de arriba sigue siendo el del rango
+      // que la persona pidió.
+      //
+      // ADITIVA: si la migración 20260823120000 no está aplicada, esto falla,
+      // se ignora, y se cae a la suma por tramos de siempre.
+      const universoPromise = (async (): Promise<{ generados: number; cancelados: number } | null> => {
+        try {
+          const { data, error } = await rpc('cancelaciones_universo', {
+            p_store_id: activeStoreId, p_desde: fromDate, p_hasta: toDate,
+          });
+          if (error) return null;
+          const fila = (data ?? [])[0] as Record<string, unknown> | undefined;
+          if (!fila) return null;
+          const g = Number(fila.generados ?? NaN);
+          const c = Number(fila.cancelados ?? NaN);
+          if (!isFinite(g) || !isFinite(c)) return null;
+          return { generados: g, cancelados: c };
+        } catch { return null; }
+      })();
       for (let i = 0; i < tramos.length; i += TRAMOS_EN_PARALELO) {
         if (fatal) break;
         const lote = tramos.slice(i, i + TRAMOS_EN_PARALELO);
@@ -305,14 +345,21 @@ export function useCancelacionesAnalisis(filtros: CancelacionesFiltros): Cancela
         }
       } catch { /* la señal es información de más, nunca un bloqueo */ }
 
+      // El universo manda sobre la suma por tramos cuando está disponible: es
+      // el rango entero medido de una, sin depender de qué tramo salió bien.
+      const universo = await universoPromise;
+      if (seq !== seqRef.current) return;
+
       setRows(mapped);
       setResumen(summarizeCancelaciones(mapped, {
         // null y no 0: sin denominador la tasa se muestra "—". Un 0 acá haría
         // una división que da infinito o un 100% inventado.
-        generados: (denominadorParcial || !crudas.length) ? null : generados,
-        totalPeriodo,
+        generados: universo
+          ? universo.generados
+          : (denominadorParcial || !crudas.length) ? null : generados,
+        totalPeriodo: universo ? universo.cancelados : totalPeriodo,
       }));
-      setPartial(mapped.length >= ROW_CAP);
+      setPartial(truncadoAlgunTramo);
       setDiasSinLeer(sinLeer);
       setStatus('ok');
     } catch {

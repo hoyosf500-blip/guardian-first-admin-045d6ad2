@@ -561,11 +561,23 @@ export interface CancelRowLike {
  * El tamaño de `externo_dropi` es el KPI cero del proyecto: mientras sea grande,
  * ninguna conclusión sobre motivos describe a toda la operación.
  */
-/** ¿La asesora dejó un motivo que diga algo? Vacío, muy corto o ruido no cuenta. */
-function tieneMotivoUtil(motivo: string | null | undefined): boolean {
+/**
+ * ¿La asesora dejó un motivo que diga algo? Vacío, muy corto o ruido no cuenta.
+ *
+ * Se EXPORTA porque la cobertura ("N de M cancelaciones tienen motivo anotado")
+ * y la disciplina de registro por operadora tienen que medir ESTO y no la
+ * categoría. No es lo mismo: `sin_whatsapp` sale de una señal automática
+ * (`chat_riesgo`) y `recreado_externo` de detectar que el pedido se rehizo —
+ * en los dos casos NADIE anotó nada, y contarlos como "motivo anotado" inflaba
+ * la cobertura y le regalaba disciplina a una operadora que no escribió.
+ */
+export function hayMotivoEscrito(motivo: string | null | undefined): boolean {
   const n = norm(motivo || '');
   return !!n && n.length >= MIN_LEN && !GENERIC_NOISE.has(n);
 }
+
+/** Alias interno histórico. */
+const tieneMotivoUtil = hayMotivoEscrito;
 
 export function classifyCancelRow(row: CancelRowLike): CancelClass {
   // Va PRIMERO, antes que el origen: el pedido se rehizo, no se perdió. Da

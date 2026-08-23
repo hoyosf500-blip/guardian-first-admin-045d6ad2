@@ -28,6 +28,7 @@
 
 import {
   classifyCancelRow,
+  hayMotivoEscrito,
   type CancelCulpa,
   CANCEL_CULPA_ORDER,
 } from './cancelTaxonomy';
@@ -475,7 +476,14 @@ export function summarizeCancelaciones(
 
   // ── (a) Cobertura ─────────────────────────────────────────────────────────
   const clases = list.map(r => classifyCancelRow({ motivo: r.motivo, origen: r.origen, recreado: r.recreado, riesgoChat: r.riesgoChat }));
-  const conMotivoFlags = clases.map(c => c.categoria !== 'sin_motivo' && c.categoria !== 'externo_dropi');
+  // Se mide el TEXTO que escribió la asesora, NO la categoría. Con la categoría,
+  // `sin_whatsapp` (que sale de `chat_riesgo`, una señal automática) y
+  // `recreado_externo` (que sale de detectar que el pedido se rehizo) contaban
+  // como "motivo anotado" sin que nadie hubiera anotado nada: inflaban la
+  // cobertura de la portada y le sumaban disciplina de registro a operadoras que
+  // no escribieron una línea. Para las demás categorías da idéntico, porque
+  // `classifyCancelRow` ya manda a `sin_motivo` todo lo que no tiene texto útil.
+  const conMotivoFlags = list.map(r => hayMotivoEscrito(r.motivo));
   const conMotivo = conMotivoFlags.filter(Boolean).length;
   const pctCob = pct(conMotivo, total);
   const porOrigen = (['guardian', 'externo'] as const).map(origen => {
