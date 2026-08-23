@@ -421,7 +421,31 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
         </div>
       </motion.div>
 
-      {leyendo ? (
+      {/* Rango demasiado ancho: se dice el costo y decide la persona. Antes del
+          troceo estos rangos fallaban rapido; con tramos se ponen a moler la
+          base minutos MIENTRAS las asesoras trabajan, y la pantalla parece
+          colgada. No se afirma ni un dato ni un vacio: se ofrece la decision. */}
+      {s.rangoAncho ? (
+        <div className="rounded-xl border border-warning/35 bg-warning/12 px-4 py-3.5">
+          <p className="text-sm font-semibold text-warning">
+            El rango es muy ancho para este reporte
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Son {s.rangoAncho.tramos} consultas y tardaría alrededor de{' '}
+            {s.rangoAncho.segundos >= 60
+              ? `${Math.round(s.rangoAncho.segundos / 60)} minuto(s)`
+              : `${s.rangoAncho.segundos} segundos`}, cargando la base mientras el equipo trabaja.
+            Achicá el rango (hasta unos 40 días va solo) o leelo igual.
+          </p>
+          <button
+            type="button"
+            onClick={s.leerIgual}
+            className="mt-2.5 px-3 py-1.5 rounded-lg bg-warning/20 border border-warning/40 text-warning text-xs font-semibold hover:bg-warning/30 transition-colors"
+          >
+            Leer igual
+          </button>
+        </div>
+      ) : leyendo ? (
         <EmptyCard msg={s.progreso.total > 1
           ? `Leyendo el período por tramos… ${s.progreso.listos} de ${s.progreso.total}. La consulta se parte para que no se caiga por tiempo.`
           : 'Leyendo las cancelaciones del período…'} />

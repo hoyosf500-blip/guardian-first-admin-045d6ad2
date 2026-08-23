@@ -68,3 +68,20 @@ describe('partirALaMitad', () => {
     expect(partirALaMitad('2026-08-05', '2026-08-01')).toBeNull();
   });
 });
+
+describe('cuanto cuesta leer un rango', () => {
+  // Medido en produccion el 23-ago-2026 sobre una tienda de EC: cada lote de
+  // dos tramos de 5 dias tarda ~3 s. De ahi salen los topes.
+  it('los rangos de trabajo entran holgados', () => {
+    expect(partirRango('2026-08-01', '2026-08-23', 5).length).toBe(5);   // mes en curso
+    expect(partirRango('2026-07-01', '2026-07-31', 5).length).toBe(7);   // el mes pasado
+    expect(partirRango('2026-07-25', '2026-08-23', 5).length).toBe(6);   // 30d
+  });
+
+  it('los rangos largos son los que hay que frenar', () => {
+    // 90d = 18 consultas (~27 s) · 365d = 73 (~2 min). Antes del troceo estos
+    // fallaban rapido; con tramos muelen la base mientras el equipo trabaja.
+    expect(partirRango('2026-05-26', '2026-08-23', 5).length).toBe(18);
+    expect(partirRango('2025-08-24', '2026-08-23', 5).length).toBe(73);
+  });
+});

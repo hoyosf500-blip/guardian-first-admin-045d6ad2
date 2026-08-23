@@ -55,6 +55,39 @@ búsqueda por `external_id` necesita `store_id` al lado. `storeIdFromExternalId`
 guardián `src/test/externalIdPorTienda.test.ts` falla si alguien vuelve a upsertear con
 `onConflict: "external_id"` a secas.
 
+## ⛔ REGLA #2 — PROHIBIDO SUPONER: se verifica EN LA PANTALLA
+
+Dicho por el dueño el 23-ago-2026: **"te queda prohibido suponer, siempre tenés que
+revisar"**. No es una preferencia de estilo — salió de tres fallos seguidos en una sola
+sesión, todos con typecheck, 2.300 pruebas y build en verde:
+
+1. Se dio por bueno un cambio de Seguimiento con las pruebas verdes. `/seguimiento` estaba
+   **caída entera** en producción (canal de realtime con nombre repetido → ErrorBoundary).
+2. Se puso un chip nuevo en la vista **Lista** y se reportó como hecho. La vista por defecto
+   es **Tablero**: la asesora no lo veía nunca.
+3. Se verificó el troceo de `cancelaciones_analisis` solo con el rango por DEFECTO (23 días).
+   Nunca se abrió "el mes pasado" ni los presets largos — y ahí estaban los dos fallos que
+   encontró el dueño: 18 s afirmando *"No hubo cancelaciones"* sobre julio (que tuvo 345), y
+   `365d`/`Histórico` disparando 73 consultas (~2 min) contra la base mientras el equipo
+   trabaja.
+
+El patrón es siempre el mismo: **se verificó la pieza, no la pantalla.** Verde en consola no
+es verde para quien la usa.
+
+Qué exige esta regla, en concreto:
+
+- Un cambio no está hecho hasta **abrir la pantalla en producción** y ver el dato correcto.
+- Con **la tienda y el rango que usa el dueño de verdad**, no solo el default, y en la
+  **vista por defecto** (no la que abrió quien programó).
+- Los estados intermedios se miden **en el tiempo** — muestrear a 2 s, 6 s, 12 s, 20 s — no
+  con un solo vistazo. Los peores errores viven en esa ventana: un estado vacío que no mira
+  `loading` **afirma un cero** sobre datos que todavía no llegaron, y eso se lee como "está
+  caído" o, peor, como una buena noticia.
+- Si algo no se pudo comprobar, **se dice cuál y por qué**. Nunca se rellena con una
+  suposición razonable.
+- Cuando el dueño reporta un síntoma, **se reproduce primero**, aunque uno crea que ya sabe
+  la causa. La causa que uno creía saber ya fue la equivocada.
+
 ## Commands
 
 ```bash

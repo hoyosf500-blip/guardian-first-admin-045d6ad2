@@ -42,6 +42,22 @@ const DIAS_POR_TRAMO = 5;
 /** Cuántos tramos se consultan a la vez. Más paralelo = más timeouts. */
 const TRAMOS_EN_PARALELO = 2;
 
+/**
+ * Tramos que se leen SIN preguntar (≈ 40 días, que cubre "el mes pasado").
+ *
+ * Medido el 23-ago-2026: cada lote de dos tramos tarda ~3 s, así que 365d son
+ * 73 consultas ≈ 2 minutos y "Histórico" 62 ≈ 1,5 min. Antes del troceo esos
+ * rangos fallaban rápido; con tramos se ponen a moler la base durante minutos
+ * MIENTRAS las asesoras trabajan, y la pantalla parece colgada. Pasado este
+ * tope no se dispara solo: se dice cuánto va a tardar y decide la persona.
+ */
+const MAX_TRAMOS_AUTO = 8;
+
+/** Segundos estimados para N tramos (~3 s por lote de dos, medido). */
+export function segundosEstimados(tramos: number): number {
+  return Math.ceil(tramos / TRAMOS_EN_PARALELO) * 3;
+}
+
 export type CancelacionesStatus = 'ok' | 'forbidden' | 'not_ready' | 'error';
 
 export interface CancelacionesFiltros {
@@ -70,6 +86,13 @@ export interface CancelacionesData {
    * de dejar la pantalla muda 12 segundos.
    */
   progreso: { listos: number; total: number };
+  /**
+   * Rango demasiado ancho para leerlo solo. No es un error ni un vacío: es una
+   * decisión que se le devuelve a la persona, con el costo en la mano.
+   */
+  rangoAncho: { tramos: number; segundos: number } | null;
+  /** Leer igual el rango ancho (lo dispara el botón de la pantalla). */
+  leerIgual: () => void;
   refresh: () => void;
 }
 
@@ -104,6 +127,10 @@ export function useCancelacionesAnalisis(filtros: CancelacionesFiltros): Cancela
   const [partial, setPartial] = useState(false);
   const [diasSinLeer, setDiasSinLeer] = useState<string[]>([]);
   const [progreso, setProgreso] = useState({ listos: 0, total: 0 });
+  const [rangoAncho, setRangoAncho] = useState<{ tramos: number; segundos: number } | null>(null);
+  // Clave del rango que la persona autorizó leer entero. Cambiar de fechas la
+  // invalida sola: autorizar un rango no autoriza el siguiente.
+  const [forzado, setForzado] = useState<string | null>(null);
   const seqRef = useRef(0);
 
   const { fromDate, toDate } = filtros;
@@ -186,6 +213,13 @@ export function useCancelacionesAnalisis(filtros: CancelacionesFiltros): Cancela
       };
 
       const tramos = partirRango(fromDate, toDate, DIAS_POR_TRAMO);
+      if (tramos.length > MAX_TRAMOS_AUTO && forzado !== `${fromDate}|${toDate}`) {
+        setRangoAncho({ tramos: tramos.length, segundos: segundosEstimados(tramos.length) });
+        setResumen(EMPTY_RESUMEN); setRows([]); setPartial(false); setDiasSinLeer([]);
+        setStatus('ok');
+        return;
+      }
+      setRangoAncho(null);
       setProgreso({ listos: 0, total: tramos.length });
       for (let i = 0; i < tramos.length; i += TRAMOS_EN_PARALELO) {
         if (fatal) break;
@@ -288,9 +322,13 @@ export function useCancelacionesAnalisis(filtros: CancelacionesFiltros): Cancela
     } finally {
       if (seq === seqRef.current) setLoading(false);
     }
-  }, [activeStoreId, fromDate, toDate]);
+  }, [activeStoreId, fromDate, toDate, forzado]);
 
   useEffect(() => { void load(); }, [load]);
 
-  return { loading, status, resumen, rows, partial, diasSinLeer, progreso, refresh: () => void load() };
+  return {
+    loading, status, resumen, rows, partial, diasSinLeer, progreso, rangoAncho,
+    leerIgual: () => setForzado(`${fromDate}|${toDate}`),
+    refresh: () => void load(),
+  };
 }
