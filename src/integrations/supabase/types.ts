@@ -1061,6 +1061,7 @@ export type Database = {
           google_place_id: string | null
           guia: string | null
           id: string
+          importchat_chat_id: string | null
           last_edit_sync_at: string | null
           last_edited_by: string | null
           last_movement_at: string | null
@@ -1126,6 +1127,7 @@ export type Database = {
           google_place_id?: string | null
           guia?: string | null
           id?: string
+          importchat_chat_id?: string | null
           last_edit_sync_at?: string | null
           last_edited_by?: string | null
           last_movement_at?: string | null
@@ -1191,6 +1193,7 @@ export type Database = {
           google_place_id?: string | null
           guia?: string | null
           id?: string
+          importchat_chat_id?: string | null
           last_edit_sync_at?: string | null
           last_edited_by?: string | null
           last_movement_at?: string | null
@@ -2452,6 +2455,7 @@ export type Database = {
           google_place_id: string | null
           guia: string | null
           id: string
+          importchat_chat_id: string | null
           last_edit_sync_at: string | null
           last_edited_by: string | null
           last_movement_at: string | null
