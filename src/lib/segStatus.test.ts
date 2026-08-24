@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifySegEstado, matchOficina, matchTransito, esNovedadResuelta } from './segStatus';
+import { classifySegEstado, matchOficina, matchTransito, esNovedadResuelta, estadoDifiereDeFase } from './segStatus';
 
 // Regression: SeguimientoTab antes tenía su propio clasificador que no
 // reconocía variantes EC → pedidos EC caían en 'otros' y el resumen mostraba
@@ -218,5 +218,38 @@ describe('variantes terminales de Ecuador', () => {
   // salir en detenidos: un pedido TERMINADO presentado como trabado.
   it("'ENTREGADO A DESTINO' clasifica como entregado, no como otros", () => {
     expect(classifySegEstado('ENTREGADO A DESTINO')).toBe('entregado');
+  });
+});
+
+// Careo vs panel Dropi 24-ago-2026: paridad de datos perfecta (1.084/1.084) y
+// aun así el dueño leyó "guía generada" donde había un POR RECOLECTAR del
+// 31-jul con 24 días sin recoger — porque la tarjeta solo mostraba el TÍTULO
+// de la columna (una fase que agrupa varios estados). El chip del estatus
+// crudo existe para eso; estas pruebas fijan cuándo se dibuja y cuándo sobra.
+describe('estadoDifiereDeFase — el chip del estatus crudo en la tarjeta', () => {
+  it('POR RECOLECTAR difiere de la columna "Guía Generada" → chip visible', () => {
+    expect(estadoDifiereDeFase('POR RECOLECTAR', 'Guía Generada')).toBe(true);
+  });
+
+  it('GUIA_GENERADA (guion bajo) ES el rótulo de la columna → sin chip redundante', () => {
+    expect(estadoDifiereDeFase('GUIA_GENERADA', 'Guía Generada')).toBe(false);
+    expect(estadoDifiereDeFase('GUIA GENERADA', 'Guía Generada')).toBe(false);
+  });
+
+  it('las tildes de EC no fabrican una diferencia falsa', () => {
+    expect(estadoDifiereDeFase('EN TRÁNSITO', 'En Tránsito')).toBe(false);
+    expect(estadoDifiereDeFase('EN TRANSITO', 'En Tránsito')).toBe(false);
+  });
+
+  it('las variantes EC de tránsito sí muestran su estatus exacto', () => {
+    expect(estadoDifiereDeFase('EN RUTA A CONCESION', 'En Tránsito')).toBe(true);
+    expect(estadoDifiereDeFase('INGRESANDO OPERATIVO A', 'En Tránsito')).toBe(true);
+    expect(estadoDifiereDeFase('PARA RETIRO EN AGENCIA SERVIENTREGA', 'En Oficina')).toBe(true);
+  });
+
+  it('sin estado no hay chip (no se inventa una diferencia)', () => {
+    expect(estadoDifiereDeFase('', 'Guía Generada')).toBe(false);
+    expect(estadoDifiereDeFase(null, 'Guía Generada')).toBe(false);
+    expect(estadoDifiereDeFase(undefined, 'Guía Generada')).toBe(false);
   });
 });

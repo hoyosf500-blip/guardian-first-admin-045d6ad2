@@ -276,3 +276,32 @@ export function classifySegEstado(estado: string): SegStatusKey {
 export function esNovedadResuelta(estado: string | null | undefined): boolean {
   return classifySegEstado(estado || '') === 'novedad_sol';
 }
+
+/** Normaliza un rótulo para comparar: sin tildes, `_`→espacio, mayúsculas. */
+function normalizaRotulo(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .toUpperCase()
+    .trim();
+}
+
+/**
+ * ¿El estado CRUDO de Dropi dice algo DISTINTO que el título de su columna?
+ *
+ * Las columnas del tablero son FASES que agrupan varios estados (la columna
+ * "Guía Generada" junta GUIA_GENERADA + POR RECOLECTAR + PREPARADO/ENTREGADO A
+ * TRANSPORTADORA a propósito). El dato de cada pedido está bien, pero la
+ * tarjeta solo mostraba el título de la columna — y el dueño leyó "guía
+ * generada" donde había un POR RECOLECTAR del 31-jul con 24 días sin que la
+ * transportadora recogiera (careo vs panel Dropi, 24-ago-2026: paridad de datos
+ * 1.084/1.084 y aun así la pantalla "mentía" por la etiqueta). Con esto la
+ * tarjeta muestra el estatus exacto cuando NO coincide con el rótulo de la
+ * columna; cuando coincide, el chip sobraría y no se dibuja.
+ */
+export function estadoDifiereDeFase(estado: string | null | undefined, columnLabel: string): boolean {
+  if (!estado) return false;
+  return normalizaRotulo(estado) !== normalizaRotulo(columnLabel);
+}

@@ -7,7 +7,7 @@ import {
   ChevronUp, ChevronDown, ChevronLeft, Maximize2, CheckCircle2, Building2,
 } from 'lucide-react';
 import { OrderData, getTrackingUrl, getWhatsAppPhone, calcBusinessDays, parseDate } from '@/lib/orderUtils';
-import { classifySegEstado, type SegStatusKey } from '@/lib/segStatus';
+import { classifySegEstado, estadoDifiereDeFase, type SegStatusKey } from '@/lib/segStatus';
 import { estadoAvisoAgencia, diasDesdeAviso } from '@/lib/avisoAgencia';
 import { metodosRapidosParaEstado, esContactoEfectivo, faseConGestion } from '@/lib/segMetodosEstado';
 import { haceCuanto, type GestionDelPedido } from '@/lib/gestionPorPedido';
@@ -237,7 +237,7 @@ function freshnessDot(o: OrderData): { cls: string; ring: string; title: string;
   return { cls: 'bg-danger glow-danger', ring: 'ring-danger/25', title: `Sin moverse hace ${Math.floor(h / 24)} días` };
 }
 
-const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, touchedTodayPhones, gestionEquipo, nombreDe, avisoMs }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisoMs?: number | null }) {
+const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, touchedTodayPhones, gestionEquipo, nombreDe, avisoMs, columnLabel }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisoMs?: number | null; columnLabel?: string }) {
   const navigate = useNavigate();
   const { refresh, isRefreshing } = useRefreshOrder();
   const { activeStoreId } = useStore();
@@ -390,6 +390,20 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
         >
           <span className="text-[10px] font-semibold text-muted-foreground">D</span>{dias}
         </span>
+        {/* ESTATUS CRUDO cuando difiere del título de la columna. Las columnas
+            son FASES que agrupan varios estados ("Guía Generada" también junta
+            POR RECOLECTAR); sin este chip el dueño leía el rótulo de la columna
+            como si fuera el estatus literal y concluía "Guardian está viejo"
+            cuando el dato estaba perfecto (careo Dropi 24-ago-2026: 1.084/1.084
+            en paridad). Se muestra tal cual lo manda Dropi, sin traducir. */}
+        {columnLabel && o.estado && estadoDifiereDeFase(o.estado, columnLabel) && (
+          <span
+            className="min-w-0 truncate text-[10px] font-semibold px-1.5 py-0.5 rounded-md border border-info/30 bg-info/10 text-info"
+            title={`Estatus exacto en Dropi: ${o.estado}`}
+          >
+            {o.estado}
+          </span>
+        )}
         {pLevel !== 'low' && (
           <span className={cn('ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-lg border shrink-0', pConfig.bgClass, pConfig.color)}>
             {pConfig.label}
@@ -812,6 +826,7 @@ function FocusedColumn({ col, countryCode, touchedTodayPhones, gestionEquipo, no
                 tone={col.tone}
                 selected={i === selIdx}
                 cardRef={i === selIdx ? selRef : undefined}
+                columnLabel={col.label}
                 touchedTodayPhones={touchedTodayPhones}
                 gestionEquipo={gestionEquipo}
                 nombreDe={nombreDe}
@@ -1213,6 +1228,7 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
                   o={o}
                   countryCode={countryCode}
                   tone={col.tone}
+                  columnLabel={col.label}
                   touchedTodayPhones={touchedTodayPhones}
                   gestionEquipo={gestionEquipo}
                   nombreDe={nombreDe}
