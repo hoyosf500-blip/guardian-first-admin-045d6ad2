@@ -277,8 +277,10 @@ export function esNovedadResuelta(estado: string | null | undefined): boolean {
   return classifySegEstado(estado || '') === 'novedad_sol';
 }
 
-/** Normaliza un rótulo para comparar: sin tildes, `_`→espacio, mayúsculas. */
-function normalizaRotulo(s: string): string {
+/** Normaliza un rótulo para comparar: sin tildes, `_`→espacio, mayúsculas.
+ *  Lo usa también SegBoard para juntar variantes de ESCRITURA del mismo estado
+ *  (GUIA_GENERADA / GUIA GENERADA / con tilde) sin fundir estados distintos. */
+export function normalizaRotulo(s: string): string {
   return s
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')

@@ -7,7 +7,7 @@ import {
   ChevronUp, ChevronDown, ChevronLeft, Maximize2, CheckCircle2, Building2,
 } from 'lucide-react';
 import { OrderData, getTrackingUrl, getWhatsAppPhone, calcBusinessDays, parseDate } from '@/lib/orderUtils';
-import { classifySegEstado, estadoDifiereDeFase, type SegStatusKey } from '@/lib/segStatus';
+import { classifySegEstado, estadoDifiereDeFase, normalizaRotulo, type SegStatusKey } from '@/lib/segStatus';
 import { estadoAvisoAgencia, diasDesdeAviso } from '@/lib/avisoAgencia';
 import { metodosRapidosParaEstado, esContactoEfectivo, faseConGestion } from '@/lib/segMetodosEstado';
 import { haceCuanto, type GestionDelPedido } from '@/lib/gestionPorPedido';
@@ -100,6 +100,45 @@ function columnasDeEstadosSinMapear(sinMapear: OrderData[]): (ColumnDef & { orde
       icon: <Layers size={13} />,
       tone: 'neutral' as Tone,
       orders,
+    }));
+}
+
+/**
+ * Una columna POR ESTADO CRUDO dentro de cada fase (pedido del dueño,
+ * 24-ago-2026: "quiero ver el estatus real, no agrupes nada" — leía "Guía
+ * Generada" en pedidos que estaban POR RECOLECTAR y concluía que Guardian
+ * mentía, cuando el careo contra Dropi dio paridad 1.084/1.084).
+ *
+ * La FASE no desaparece: sigue siendo el `baseKey` que gobierna el tono, el
+ * corte vivo/terminal, la historia plegada, el divisor y el filtro del resumen
+ * (que filtra por `baseKey`, así tocar una card del resumen muestra TODAS las
+ * columnas de esa fase). Lo que cambia es el DIBUJO: el tablero ya no funde
+ * varios estados bajo un cartel — cada estado real de Dropi es su propia
+ * columna, rotulada tal cual llega.
+ *
+ * Variantes de ESCRITURA del mismo estado (GUIA_GENERADA / GUIA GENERADA, con
+ * y sin tilde) sí se juntan vía `normalizaRotulo`: eso no es agrupar dos
+ * estados, es no duplicar uno. El rótulo visible es el texto crudo del primer
+ * pedido del grupo.
+ */
+function columnasPorEstadoCrudo(base: ColumnDef, orders: OrderData[]): (ColumnDef & { orders: OrderData[] })[] {
+  if (orders.length === 0) return [];
+  const porEstado = new Map<string, { label: string; orders: OrderData[] }>();
+  for (const o of orders) {
+    const crudo = (o.estado || '').trim() || 'Sin estado en Dropi';
+    const k = normalizaRotulo(crudo);
+    const g = porEstado.get(k);
+    if (g) g.orders.push(o); else porEstado.set(k, { label: crudo, orders: [o] });
+  }
+  return Array.from(porEstado.entries())
+    .sort((a, b) => b[1].orders.length - a[1].orders.length)
+    .map(([k, g]) => ({
+      key: `${base.key}:${k}`,
+      baseKey: base.baseKey,
+      label: g.label,
+      icon: base.icon,
+      tone: base.tone,
+      orders: g.orders,
     }));
 }
 
@@ -1003,7 +1042,9 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
   // columna de historia siga funcionando aunque esté plegada.
   const todasLasColumnas = useMemo(
     () => [
-      ...BOARD_COLUMNS.map((c) => ({ ...c, orders: byColumn.get(c.baseKey) ?? [] })),
+      // Una columna POR ESTADO REAL, en el orden del embudo (BOARD_COLUMNS) y
+      // por volumen dentro de cada fase. Ver columnasPorEstadoCrudo.
+      ...BOARD_COLUMNS.flatMap((c) => columnasPorEstadoCrudo(c, byColumn.get(c.baseKey) ?? [])),
       // Una columna por cada estado real que no cae en las fases de arriba.
       ...columnasDeEstadosSinMapear(byColumn.get('otros') ?? []),
     ]
@@ -1214,7 +1255,10 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
                     {col.orders.length}
                   </span>
                 </div>
-                <h3 className="hud-label truncate mt-1.5">{col.label}</h3>
+                {/* `title`: los estados crudos de EC son largos ("PARA RETIRO EN
+                    AGENCIA SERVIENTREGA") y el truncate los cortaba sin forma
+                    de leerlos enteros. */}
+                <h3 className="hud-label truncate mt-1.5" title={col.label}>{col.label}</h3>
               </div>
               {/* Affordance de enfoque PERMANENTE: era un Maximize2 que solo
                   aparecía al hover, o sea invisible en móvil/táctil — que es
