@@ -78,6 +78,15 @@ export interface CancelacionRow {
   /** `orders.chat_riesgo` — qué hizo el cliente con el botón del WhatsApp.
    *  Solo se usa `'mudo'`, y solo cuando no hay motivo escrito. */
   riesgoChat?: string | null;
+  /** `orders.chat_saliente_at` — último mensaje del NEGOCIO a este cliente
+   *  según ImporChat. `undefined` = migración sin correr; null CON chatLeido
+   *  = se leyó el chat y NADIE le escribió jamás. */
+  chatSalienteAt?: string | null;
+  /** 'plantilla' | 'directo' del último saliente. */
+  chatSalienteTipo?: string | null;
+  /** La conversación de este pedido fue LEÍDA por importchat-sync. Sin esto,
+   *  chatSalienteAt null no afirma nada. */
+  chatLeido?: boolean;
 }
 
 export type NivelConfianza = 'alta' | 'media' | 'baja' | 'nula';
@@ -304,6 +313,16 @@ export interface GestionCancelacion {
   ttfcMedidos: number;
   ttfcNunca: number;
   reagendasQuemadas: number;
+  /**
+   * Cancelados a los que —según ImporChat, no según lo declarado— el negocio
+   * no les mandó NI UN mensaje de WhatsApp en toda la historia del chat.
+   * `null` = ninguna conversación del período está leída todavía (sin
+   * medición no se afirma un cero). Denominador honesto: `chatLeidos`.
+   */
+  sinMensajeWhatsapp: number | null;
+  sinMensajeWhatsappValor: number;
+  /** Cuántos cancelados del período tienen la conversación LEÍDA. */
+  chatLeidos: number;
 }
 
 export interface OperadoraCancelacion {
@@ -418,6 +437,7 @@ export const EMPTY_RESUMEN: CancelacionesResumen = {
     distribucionIntentos: [], sinGestion: 0, sinGestionValor: 0, pctSinGestion: null,
     toqueMismoDia: 0, toqueDiaSiguiente: 0, toqueDosOMasDias: 0, ttfcMedidos: 0, ttfcNunca: 0,
     reagendasQuemadas: 0,
+    sinMensajeWhatsapp: null, sinMensajeWhatsappValor: 0, chatLeidos: 0,
   },
   porOperadora: [], porProducto: [], porCiudad: [],
   antiguedad: { frescos: 0, arrastre: 0, sinFecha: 0, medianaDias: null, valorFrescos: 0, valorArrastre: 0 },
@@ -668,6 +688,12 @@ export function summarizeCancelaciones(
   // Distribución por DÍAS, no mediana en horas: ver diasAPrimerToque — sin
   // hora real del pedido, una mediana en horas medía el horario del equipo.
   const ttfc = list.map(diasAPrimerToque).filter((d): d is number => d !== null);
+  // WhatsApp VERIFICADO contra ImporChat: solo sobre conversaciones LEÍDAS
+  // (chatLeido). Un período sin lecturas devuelve null, jamás un 0 — la
+  // pregunta del dueño era "¿a los cancelados ya se les escribió?", y la única
+  // respuesta honesta sin medición es "todavía no se midió".
+  const conChatLeido = list.filter(r => r.chatLeido === true);
+  const sinMensajeRows = conChatLeido.filter(r => !r.chatSalienteAt);
   const gestion: GestionCancelacion = {
     distribucionIntentos,
     sinGestion: sinGestionRows.length,
@@ -679,6 +705,9 @@ export function summarizeCancelaciones(
     ttfcMedidos: ttfc.length,
     ttfcNunca: total - ttfc.length,
     reagendasQuemadas: list.filter(r => val(r.reagendas) > 0).length,
+    sinMensajeWhatsapp: conChatLeido.length ? sinMensajeRows.length : null,
+    sinMensajeWhatsappValor: sinMensajeRows.reduce((s, r) => s + val(r.valor), 0),
+    chatLeidos: conChatLeido.length,
   };
 
   // ── (f) Por operadora ─────────────────────────────────────────────────────

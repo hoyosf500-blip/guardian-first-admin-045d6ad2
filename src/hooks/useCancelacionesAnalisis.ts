@@ -340,25 +340,57 @@ export function useCancelacionesAnalisis(filtros: CancelacionesFiltros): Cancela
         // UUIDs — la petición se pasa del largo máximo y falla ENTERA, así que
         // se perdía la señal de todo el período por culpa del tamaño.
         const LOTE = 200;
-        type Fila = { id: string; chat_riesgo: unknown; chat_leido_at: string | null };
+        type Fila = {
+          id: string; chat_riesgo: unknown; chat_leido_at: string | null;
+          chat_saliente_at?: string | null; chat_saliente_tipo?: string | null;
+        };
         const porId = new Map<string, string>();
+        // ¿Se le ESCRIBIÓ antes de perderlo? (columnas 20260824230000). Se
+        // guarda aparte del riesgo: leído + sin saliente = "nadie le escribió
+        // jamás", que es la respuesta directa a "¿a los cancelados ya se les
+        // escribió?". Fallback en dos fases: si la migración nueva no corrió,
+        // se repite el lote solo con las columnas viejas para no perder
+        // TAMBIÉN el riesgo, que ya funciona.
+        const salientePorId = new Map<string, { at: string | null; tipo: string | null }>();
+        let conActividad = true;
         for (let i = 0; i < ids.length; i += LOTE) {
-          const { data: ch, error: chErr } = await supabase
+          const lote = ids.slice(i, i + LOTE);
+          // El cast por `unknown` es el mismo de useRiesgoChat: types.ts se
+          // autogenera y no conoce las columnas nuevas; con el select dinámico
+          // el typegen de supabase-js además infiere un ParserError inservible.
+          const consulta = (cols: string) => supabase
             .from('orders')
-            .select('id, chat_riesgo, chat_leido_at')
+            .select(cols)
             .eq('store_id', activeStoreId)
-            .in('id', ids.slice(i, i + LOTE));
+            .in('id', lote) as unknown as Promise<{ data: unknown; error: { message?: string } | null }>;
+          let { data: ch, error: chErr } = await consulta(conActividad
+            ? 'id, chat_riesgo, chat_leido_at, chat_saliente_at, chat_saliente_tipo'
+            : 'id, chat_riesgo, chat_leido_at');
+          if (chErr && conActividad && /chat_saliente/i.test(chErr.message || '')) {
+            conActividad = false;
+            ({ data: ch, error: chErr } = await consulta('id, chat_riesgo, chat_leido_at'));
+          }
           if (chErr || !Array.isArray(ch)) continue;
           for (const row of ch as unknown as Fila[]) {
             // Sin `chat_leido_at` nadie miró esa conversación: no se afirma nada.
             if (!row.chat_leido_at) continue;
             if (row.chat_riesgo) porId.set(String(row.id), String(row.chat_riesgo));
+            if (conActividad) {
+              salientePorId.set(String(row.id), {
+                at: row.chat_saliente_at ?? null,
+                tipo: row.chat_saliente_tipo ?? null,
+              });
+            }
           }
         }
-        if (porId.size) {
-          mapped = mapped.map(r => (
-            porId.has(r.orderId) ? { ...r, riesgoChat: porId.get(r.orderId)! } : r
-          ));
+        if (porId.size || salientePorId.size) {
+          mapped = mapped.map(r => {
+            const sal = salientePorId.get(r.orderId);
+            const extra: Record<string, unknown> = {};
+            if (porId.has(r.orderId)) extra.riesgoChat = porId.get(r.orderId)!;
+            if (sal) { extra.chatSalienteAt = sal.at; extra.chatSalienteTipo = sal.tipo; extra.chatLeido = true; }
+            return Object.keys(extra).length ? { ...r, ...extra } : r;
+          });
         }
       } catch { /* la señal es información de más, nunca un bloqueo */ }
 

@@ -600,6 +600,19 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
                   {pctTecho(r.gestion.pctSinGestion)} del total. Acá el motivo anotado no se verificó con nadie.
                 </p>
               </div>
+              {/* Verificado contra ImporChat, no contra lo declarado: de las
+                  conversaciones LEÍDAS, ¿a cuántos jamás les salió NI UN
+                  mensaje del negocio? Sin lecturas no se dibuja (null ≠ 0). */}
+              {r.gestion.sinMensajeWhatsapp != null && (
+                <div className="rounded-xl bg-danger/10 border border-danger/30 px-3 py-2.5 mb-3">
+                  <p className="text-sm font-bold text-danger">
+                    {r.gestion.sinMensajeWhatsapp} sin NI UN mensaje de WhatsApp del negocio = {formatCOP(r.gestion.sinMensajeWhatsappValor)}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Verificado contra ImporChat sobre {r.gestion.chatLeidos} conversaciones leídas — no es lo que se declaró, es lo que salió de verdad.
+                  </p>
+                </div>
+              )}
               <ul className="space-y-1">
                 {r.gestion.distribucionIntentos.map(b => (
                   <MetricBar

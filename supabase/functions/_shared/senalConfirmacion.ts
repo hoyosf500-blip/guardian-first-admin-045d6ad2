@@ -205,3 +205,59 @@ export const PRIORIDAD_RIESGO: Record<NivelRiesgo, number> = {
   sin_dato: 3,
   confirmado: 4,
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Actividad del chat: ¿le escribimos? ¿nos escribió? (24-ago-2026)
+//
+// Nació de: "hay 75 pedidos en oficina, me dicen que ya les escribieron —
+// ¿cómo verifico yo eso?". La respuesta no puede ser el touchpoint que declara
+// la asesora: tiene que salir de lo que ImporChat registró de verdad.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Lo que la actividad del chat afirma de un cliente. Todo nullable: sin
+ *  historial leído no se afirma nada (null = no medido, jamás "no escribió"). */
+export interface ActividadChat {
+  /** Último mensaje del NEGOCIO al cliente (excluye notificaciones internas
+   *  y borrados). null con historial leído = NADIE le escribió jamás. */
+  salienteAt: Date | null;
+  /** Cómo fue ese último saliente. 'plantilla' = template; 'directo' = texto/
+   *  imagen/audio/video/documento escrito en el chat. El export NO dice si lo
+   *  mandó el bot o una asesora — esto registra el TIPO, que sí es un hecho. */
+  salienteTipo: "plantilla" | "directo" | null;
+  /** Último mensaje del CLIENTE (texto, botón, audio, foto, ubicación…). */
+  entranteAt: Date | null;
+}
+
+/** Tipos de fila que NO son un mensaje real hacia el cliente. `notificacion`
+ *  es tráfico interno ("Te has asignado este chat"); `revoke` es un borrado. */
+const TIPOS_NO_MENSAJE = new Set(["notificacion", "revoke"]);
+
+/**
+ * Deriva la actividad del chat sobre el historial COMPLETO.
+ *
+ * A diferencia de `derivarSenal` (que trabaja la ventana del pedido), acá
+ * interesa el crudo "¿cuándo fue la última vez que ALGUIEN de acá le habló?"
+ * — la comparación contra la llegada a la agencia o la fecha de cancelación
+ * la hace la pantalla, que es donde vive ese contexto.
+ */
+export function derivarActividadChat(historial: MensajeChat[] | null): ActividadChat {
+  if (!historial || historial.length === 0) {
+    return { salienteAt: null, salienteTipo: null, entranteAt: null };
+  }
+  let saliente: MensajeChat | null = null;
+  let entrante: MensajeChat | null = null;
+  for (const m of historial) {
+    if (TIPOS_NO_MENSAJE.has(m.tipo)) continue;
+    if (m.rol === "Propietario") {
+      if (!saliente || m.fecha.getTime() > saliente.fecha.getTime()) saliente = m;
+    } else if (m.rol === "Cliente") {
+      if (!entrante || m.fecha.getTime() > entrante.fecha.getTime()) entrante = m;
+    }
+    // Otros roles (Notificacion (transferencia)…) no afirman nada.
+  }
+  return {
+    salienteAt: saliente ? saliente.fecha : null,
+    salienteTipo: saliente ? (saliente.tipo === "template" || saliente.plantilla ? "plantilla" : "directo") : null,
+    entranteAt: entrante ? entrante.fecha : null,
+  };
+}

@@ -12,6 +12,7 @@ import { turnoDelEquipo } from '@/lib/turnoDelEquipo';
 import TurnoDelEquipoPanel from '@/components/seguimiento/TurnoDelEquipoPanel';
 import CierreSeguimientoDialog from '@/components/seguimiento/CierreSeguimientoDialog';
 import { useSegTouchIndex } from '@/hooks/useSegTouchIndex';
+import { useRiesgoChat } from '@/hooks/useRiesgoChat';
 import { useRefreshVisibleOrders } from '@/hooks/useRefreshVisibleOrders';
 import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List, Search, User as UserIcon, Users, Moon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -420,6 +421,18 @@ export default function SeguimientoTab() {
   // pedidos en el feed pero todos están gestionados). Para mostrar un vacío
   // celebratorio en vez de "Sin pedidos".
   const allManagedToday = onlyUntouchedSeg && boardData.length === 0 && displayDataMias.length > 0;
+
+  // Actividad de chat VERIFICADA contra ImporChat (la escribe importchat-sync
+  // en orders.chat_saliente_at). Alimenta el chip "WhatsApp real: …" de las
+  // tarjetas en Oficina — la respuesta a "me dicen que ya les escribieron,
+  // ¿cómo verifico eso?" (dueño, 24-ago-2026). Va por query aparte (no por
+  // ORDER_COLUMNS) para que una migración sin aplicar jamás tumbe la pantalla.
+  const { activeStoreId: storeIdChat } = useStore();
+  const boardIds = useMemo(
+    () => boardData.map((o) => o.dbId).filter(Boolean) as string[],
+    [boardData],
+  );
+  const { actividad: chatActividad } = useRiesgoChat(storeIdChat, boardIds);
 
   const stats = useMemo(() => {
     const s = {
@@ -1486,6 +1499,7 @@ export default function SeguimientoTab() {
       {viewMode === 'board' ? (
         <SegBoard
             avisosAgencia={avisosAgencia}
+          actividadChat={chatActividad}
           data={boardData}
           countryCode={activeStore?.country_code}
           statusFilter={statusFilter}

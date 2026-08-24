@@ -9,6 +9,7 @@ import {
 import { OrderData, getTrackingUrl, getWhatsAppPhone, calcBusinessDays, parseDate } from '@/lib/orderUtils';
 import { classifySegEstado, estadoDifiereDeFase, normalizaRotulo, type SegStatusKey } from '@/lib/segStatus';
 import { estadoAvisoAgencia, diasDesdeAviso } from '@/lib/avisoAgencia';
+import { veredictoAviso, haceCuantoMs, type ActividadChatOrden } from '@/lib/actividadChat';
 import { metodosRapidosParaEstado, esContactoEfectivo, faseConGestion } from '@/lib/segMetodosEstado';
 import { haceCuanto, type GestionDelPedido } from '@/lib/gestionPorPedido';
 import { FASES_VIVAS, HORAS_DETENIDO, horasSinMovimiento } from '@/lib/segPulso';
@@ -303,7 +304,7 @@ function freshnessDot(o: OrderData): { cls: string; ring: string; title: string;
   return { cls: 'bg-danger glow-danger', ring: 'ring-danger/25', title: `Sin moverse hace ${Math.floor(h / 24)} días` };
 }
 
-const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, touchedTodayPhones, gestionEquipo, nombreDe, avisoMs, columnLabel }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisoMs?: number | null; columnLabel?: string }) {
+const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, touchedTodayPhones, gestionEquipo, nombreDe, avisoMs, columnLabel, actividad }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisoMs?: number | null; columnLabel?: string; actividad?: ActividadChatOrden | null }) {
   const navigate = useNavigate();
   const { refresh, isRefreshing } = useRefreshOrder();
   const { activeStoreId } = useStore();
@@ -384,15 +385,20 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   // esa regla el aviso de un pedido anterior del mismo cliente saca a éste de
   // la cola sin que nadie lo haya llamado. Sin reloj de llegada no se dibuja
   // nada — no saber no es "sin avisar".
-  const avisoEstado = classifySegEstado(o.estado || '') === 'oficina'
-    ? estadoAvisoAgencia({
-        avisoMs,
-        llegadaMs: o.lastMovementAt ? new Date(o.lastMovementAt).getTime() : null,
-      })
+  const esOficina = classifySegEstado(o.estado || '') === 'oficina';
+  const llegadaOficinaMs = o.lastMovementAt ? new Date(o.lastMovementAt).getTime() : null;
+  const avisoEstado = esOficina
+    ? estadoAvisoAgencia({ avisoMs, llegadaMs: llegadaOficinaMs })
     : null;
   const avisoDias = avisoEstado === 'avisado'
-    ? diasDesdeAviso({ avisoMs, llegadaMs: o.lastMovementAt ? new Date(o.lastMovementAt).getTime() : null }, Date.now())
+    ? diasDesdeAviso({ avisoMs, llegadaMs: llegadaOficinaMs }, Date.now())
     : null;
+  // Verificación CONTRA ImporChat, no contra la palabra de nadie (pedido del
+  // dueño, 24-ago-2026: "me dicen que ya les escribieron — ¿cómo verifico
+  // eso?"). El chip de arriba ("Avisado") sale del touchpoint que DECLARA la
+  // asesora; este sale de lo que ImporChat registró de verdad. `sin_dato` no
+  // dibuja nada: la conversación no se leyó y no se afirma.
+  const chatVeredicto = esOficina ? veredictoAviso(actividad, llegadaOficinaMs) : null;
 
   return (
     <div
@@ -519,6 +525,52 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           <span className="truncate">
             {avisoDias === null || avisoDias === 0 ? 'Avisado hoy' : avisoDias === 1 ? 'Avisado ayer' : `Avisado hace ${avisoDias} días`}
           </span>
+        </div>
+      )}
+
+      {/* El VERIFICADO contra ImporChat: qué salió DE VERDAD por WhatsApp.
+          Convive a propósito con el chip declarado de arriba — cuando los dos
+          dicen lo mismo se refuerzan, y cuando se contradicen ("Avisado" pero
+          ImporChat no registra nada desde la llegada) el dueño ve exactamente
+          la mentira que quería poder detectar. */}
+      {chatVeredicto === 'escrito_despues' && actividad?.salienteAt != null && (
+        <div
+          className="mt-1.5 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border bg-success/15 text-success border-success/35"
+          title={`ImporChat registró un mensaje del negocio DESPUÉS de la llegada del paquete (${actividad.salienteTipo === 'directo' ? 'mensaje directo' : 'plantilla'}).`}
+        >
+          <MessageCircle size={10} aria-hidden="true" className="shrink-0" />
+          <span className="truncate">
+            WhatsApp real: {actividad.salienteTipo === 'directo' ? 'mensaje' : 'plantilla'} {haceCuantoMs(actividad.salienteAt)}
+          </span>
+        </div>
+      )}
+      {chatVeredicto === 'escrito_antes' && (
+        <div
+          className="mt-1.5 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border bg-danger/15 text-danger border-danger/35"
+          title={actividad?.salienteAt != null
+            ? `ImporChat NO registra ningún mensaje del negocio después de la llegada. El último fue ${haceCuantoMs(actividad.salienteAt)}.`
+            : 'ImporChat no registra mensajes del negocio después de la llegada.'}
+        >
+          <MessageCircle size={10} aria-hidden="true" className="shrink-0" />
+          <span className="truncate">WhatsApp real: nada desde que llegó</span>
+        </div>
+      )}
+      {chatVeredicto === 'nunca_escrito' && (
+        <div
+          className="mt-1.5 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border bg-danger/15 text-danger border-danger/35"
+          title="Se leyó la conversación completa de este cliente en ImporChat y no hay NI UN mensaje del negocio."
+        >
+          <MessageCircle size={10} aria-hidden="true" className="shrink-0" />
+          <span className="truncate">WhatsApp real: nunca se le escribió</span>
+        </div>
+      )}
+      {chatVeredicto === 'escrito_sin_reloj' && actividad?.salienteAt != null && (
+        <div
+          className="mt-1.5 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border border-muted-foreground/25 text-muted-foreground"
+          title="Hay mensajes del negocio en ImporChat, pero este pedido no tiene fecha de llegada para comparar."
+        >
+          <MessageCircle size={10} aria-hidden="true" className="shrink-0" />
+          <span className="truncate">WhatsApp real: escrito {haceCuantoMs(actividad.salienteAt)}</span>
         </div>
       )}
 
@@ -752,7 +804,7 @@ function ColumnBody({ colKey, scrollRefs, children }: {
  * (botones + teclado) que recorre SOLO los pedidos de esa columna. Pensado para
  * que la operadora se concentre en una fase (ej. "En Reparto") y vaya uno por uno.
  */
-function FocusedColumn({ col, countryCode, touchedTodayPhones, gestionEquipo, nombreDe, avisosAgencia, onBack }: { col: ColumnDef & { orders: OrderData[] }; countryCode?: string | null; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisosAgencia?: Map<string, number>; onBack: () => void }) {
+function FocusedColumn({ col, countryCode, touchedTodayPhones, gestionEquipo, nombreDe, avisosAgencia, actividadChat, onBack }: { col: ColumnDef & { orders: OrderData[] }; countryCode?: string | null; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisosAgencia?: Map<string, number>; actividadChat?: Map<string, ActividadChatOrden>; onBack: () => void }) {
   const navigate = useNavigate();
   const { activeStoreId } = useStore();
   const t = TONE[col.tone];
@@ -900,6 +952,7 @@ function FocusedColumn({ col, countryCode, touchedTodayPhones, gestionEquipo, no
                 gestionEquipo={gestionEquipo}
                 nombreDe={nombreDe}
                 avisoMs={o.phone ? avisosAgencia?.get(o.phone) ?? null : null}
+                actividad={o.dbId ? actividadChat?.get(String(o.dbId)) ?? null : null}
                 onOpen={() => { focusByIndex(i); if (o.externalId) navigate(`/pedido/${o.externalId}`, { state: { siblingIds, storeId: activeStoreId } }); }}
               />
             ))}
@@ -1025,6 +1078,12 @@ interface SegBoardProps {
    * invisible.
    */
   avisosAgencia?: Map<string, number>;
+  /**
+   * `dbId → actividad de chat` verificada contra ImporChat (de `useRiesgoChat`).
+   * Alimenta el chip "WhatsApp real: …" de las tarjetas en Oficina — el que
+   * responde "¿le escribieron DE VERDAD?" sin depender de lo declarado.
+   */
+  actividadChat?: Map<string, ActividadChatOrden>;
   data: OrderData[];
   countryCode?: string | null;
   /** Filtro de la fila "resumen por estado" — si está, muestra solo esa columna. */
@@ -1050,7 +1109,7 @@ interface SegBoardProps {
   celebratory?: boolean;
 }
 
-export default function SegBoard({ data, countryCode, statusFilter, touchedTodayPhones, gestionEquipo, avisosAgencia, celebratory = false, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
+export default function SegBoard({ data, countryCode, statusFilter, touchedTodayPhones, gestionEquipo, avisosAgencia, actividadChat, celebratory = false, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
   // Nombre de la asesora que gestionó: cache módulo-level compartido, una sola
   // lectura de profiles por sesión (no una por tarjeta).
   const { nameOf: nombreDe } = useOperatorNames();
@@ -1237,7 +1296,7 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
     // aunque el tablero las tenga plegadas.
     const focusedCol = todasLasColumnas.find((c) => c.key === focusedKey);
     if (focusedCol) {
-      return <FocusedColumn key={focusedKey} col={focusedCol} countryCode={countryCode} touchedTodayPhones={touchedTodayPhones} gestionEquipo={gestionEquipo} nombreDe={nombreDe} avisosAgencia={avisosAgencia} onBack={() => setFocusedKey(null)} />;
+      return <FocusedColumn key={focusedKey} col={focusedCol} countryCode={countryCode} touchedTodayPhones={touchedTodayPhones} gestionEquipo={gestionEquipo} nombreDe={nombreDe} avisosAgencia={avisosAgencia} actividadChat={actividadChat} onBack={() => setFocusedKey(null)} />;
     }
   }
 
@@ -1441,6 +1500,7 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
                   gestionEquipo={gestionEquipo}
                   nombreDe={nombreDe}
                   avisoMs={o.phone ? avisosAgencia?.get(o.phone) ?? null : null}
+                  actividad={o.dbId ? actividadChat?.get(String(o.dbId)) ?? null : null}
                   onOpen={() => o.externalId && navigate(`/pedido/${o.externalId}`, { state: { siblingIds, storeId: activeStoreId } })}
                 />
               ))}

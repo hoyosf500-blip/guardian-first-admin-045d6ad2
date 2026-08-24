@@ -41,6 +41,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import * as XLSX from "../_shared/vendor/xlsx-0.20.3.mjs";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import {
+  derivarActividadChat,
   derivarSenal,
   type MensajeChat,
 } from "../_shared/senalConfirmacion.ts";
@@ -256,7 +257,7 @@ Deno.serve(async (req) => {
       const pedidos = await traerPedidos(base, token, Number(cfg.id_configuracion), fmt(desde), fmt(hasta));
       const chats = await traerMensajes(base, token, Number(cfg.id_configuracion));
 
-      let tocados = 0, conBoton = 0, mudos = 0;
+      let tocados = 0, conBoton = 0, mudos = 0, sinSaliente = 0;
       for (const p of pedidos) {
         const historial = chats.get(p.chatId) ?? null;
         const desdeMs = p.creadoLocal.getTime() - VENTANA_ANTES_MS;
@@ -269,14 +270,25 @@ Deno.serve(async (req) => {
           : null;
 
         const s = derivarSenal(ventana, historial);
+        // Actividad sobre el historial COMPLETO: ¿le escribimos alguna vez?
+        // ¿cuándo fue la última? La comparación con "llegó a la agencia" o
+        // "se canceló" vive en la pantalla; acá solo el hecho crudo.
+        const act = derivarActividadChat(historial);
         if (s.apretoBotonAt) conBoton++;
         if (s.mudo) mudos++;
+        if (historial && !act.salienteAt) sinSaliente++;
         if (dryRun) continue;
 
-        // UPDATE dirigido por (store_id, external_id). El par es único desde la
-        // migración 20260820140000: el número de pedido solo NO identifica una
-        // tienda y filtrar sin store_id podría escribirle a otro país.
-        const { error: upErr } = await sb.from("orders").update({
+        // Columnas de 20260824230000. Van en un objeto aparte para poder
+        // REINTENTAR sin ellas si esa migración todavía no corrió (Lovable no
+        // auto-aplica): sin este fallback, una columna faltante tumbaba
+        // también la señal del botón, que ya funcionaba.
+        const columnasNuevas = {
+          chat_saliente_at: act.salienteAt ? aUTC(act.salienteAt, cc).toISOString() : null,
+          chat_saliente_tipo: act.salienteTipo,
+          chat_entrante_at: act.entranteAt ? aUTC(act.entranteAt, cc).toISOString() : null,
+        };
+        const payloadBase = {
           confirmo_boton_at: s.apretoBotonAt ? aUTC(s.apretoBotonAt, cc).toISOString() : null,
           chat_cliente_escribio_at: s.clienteEscribioAt
             ? aUTC(s.clienteEscribioAt, cc).toISOString() : null,
@@ -284,7 +296,20 @@ Deno.serve(async (req) => {
           chat_riesgo: s.riesgo,
           chat_leido_at: new Date().toISOString(),
           pedido_creado_at: aUTC(p.creadoLocal, cc).toISOString(),
-        }).eq("store_id", storeId).eq("external_id", p.externalId);
+        };
+
+        // UPDATE dirigido por (store_id, external_id). El par es único desde la
+        // migración 20260820140000: el número de pedido solo NO identifica una
+        // tienda y filtrar sin store_id podría escribirle a otro país.
+        let { error: upErr } = await sb.from("orders")
+          .update({ ...payloadBase, ...columnasNuevas })
+          .eq("store_id", storeId).eq("external_id", p.externalId);
+        if (upErr && /chat_saliente|chat_entrante/i.test(upErr.message)) {
+          console.warn(`[${SOURCE}] migración 20260824230000 sin aplicar — escribo sin actividad de chat`);
+          ({ error: upErr } = await sb.from("orders")
+            .update(payloadBase)
+            .eq("store_id", storeId).eq("external_id", p.externalId));
+        }
         if (upErr) {
           console.error(`[${SOURCE}] update ${p.externalId}: ${upErr.message}`);
           continue;
@@ -295,7 +320,8 @@ Deno.serve(async (req) => {
       totalTocados += tocados;
       resumen.push({
         store_id: storeId, ok: true, pedidos: pedidos.length,
-        actualizados: tocados, con_boton: conBoton, mudos, dry_run: dryRun,
+        actualizados: tocados, con_boton: conBoton, mudos,
+        sin_saliente: sinSaliente, dry_run: dryRun,
       });
     }
 
