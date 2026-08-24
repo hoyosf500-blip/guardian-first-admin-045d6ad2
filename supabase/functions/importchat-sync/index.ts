@@ -470,14 +470,34 @@ Deno.serve(async (req) => {
       // principio y muere siempre en el mismo lugar; con esto, cada corrida
       // avanza y el cron termina el trabajo solo.
       const leidoPrevio = new Map<string, number>();
+      // Pedidos que YA tienen guardado el id de conversación. Los que no lo
+      // tienen fueron leídos por una versión anterior de esta función, cuando
+      // esa columna todavía no se escribía: darlos por frescos deja la columna
+      // vacía PARA SIEMPRE mientras la corrida informa "success".
+      // Pasó de verdad el 24-ago-2026: 1.522 chats leídos, 0 con id de chat.
+      const conChatId = new Set<string>();
       const ids = pedidos.map((p) => p.externalId);
       for (let i = 0; i < ids.length; i += 200) {
-        const { data: prev } = await sb.from("orders")
-          .select("external_id, chat_leido_at")
+        const trozo = ids.slice(i, i + 200);
+        const conNueva = await sb.from("orders")
+          .select("external_id, chat_leido_at, importchat_chat_id")
           .eq("store_id", storeId)
-          .in("external_id", ids.slice(i, i + 200));
-        for (const row of (prev ?? []) as { external_id: string; chat_leido_at: string | null }[]) {
+          .in("external_id", trozo);
+        // Si la migración 20260825010000 no corrió, se reintenta sin esa
+        // columna (mismo patrón que el UPDATE de más abajo): sin el reintento
+        // la lectura previa queda vacía y cada corrida repite todo desde cero.
+        const res = conNueva.error
+          ? await sb.from("orders")
+              .select("external_id, chat_leido_at")
+              .eq("store_id", storeId)
+              .in("external_id", trozo)
+          : conNueva;
+        const filas = (res.data ?? []) as unknown as {
+          external_id: string; chat_leido_at: string | null; importchat_chat_id?: string | null;
+        }[];
+        for (const row of filas) {
           if (row.chat_leido_at) leidoPrevio.set(String(row.external_id), Date.parse(row.chat_leido_at));
+          if (row.importchat_chat_id) conChatId.add(String(row.external_id));
         }
       }
 
@@ -515,7 +535,13 @@ Deno.serve(async (req) => {
         // diez minutos se vuelve a escribir aunque se haya leído hace una hora.
         const leido = leidoPrevio.get(p.externalId);
         const ultimoMs = historial?.length ? historial[historial.length - 1].fecha.getTime() : 0;
-        if (leido && ahoraMs - leido < FRESCURA_MS && ultimoMs <= leido) { frescos++; continue; }
+        // Tercera condición: que no falte NADA de lo que hoy se guarda. Si
+        // ImporChat tiene chat para este pedido y nosotros todavía no tenemos
+        // su id, hay algo nuevo que traer por más reciente que sea la lectura.
+        // (Si ImporChat tampoco tiene chat no hay nada que buscar y el pedido
+        // sí puede quedarse fresco — si no, cada corrida lo repetiría.)
+        const faltaChatId = !!p.chatId && !conChatId.has(p.externalId);
+        if (!faltaChatId && leido && ahoraMs - leido < FRESCURA_MS && ultimoMs <= leido) { frescos++; continue; }
 
         tareas.push({
           externalId: p.externalId,
