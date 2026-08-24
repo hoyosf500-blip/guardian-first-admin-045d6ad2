@@ -737,7 +737,10 @@ function ColumnBody({ colKey, scrollRefs, children }: {
     <div
       ref={ref}
       onScroll={(e) => scrollRefs.current.set(colKey, (e.target as HTMLDivElement).scrollTop)}
-      className="flex-1 overflow-y-auto p-1.5 space-y-1.5 max-h-[68vh] [scrollbar-width:thin]"
+      // seg-colbody: sus hijas directas (las tarjetas) llevan render diferido
+      // por CSS — de 30 tarjetas montadas por columna, solo se pintan las ~5
+      // visibles; el resto entra al acercarse con el scroll (ver index.css).
+      className="seg-colbody flex-1 overflow-y-auto p-1.5 space-y-1.5 max-h-[68vh] [scrollbar-width:thin]"
     >
       {children}
     </div>
@@ -936,6 +939,82 @@ function saveBoardScroll(m: Map<string, number>): void {
   }
 }
 
+/**
+ * Flechas ◀ ▶ + riel gemelo de arriba, como componente PROPIO a propósito.
+ *
+ * La primera versión (a00349b) guardaba el estado prendido/apagado de las
+ * flechas EN SegBoard y lo recalculaba en el onScroll del tablero: cada vez que
+ * el scroll cruzaba un borde (o sea, justo al ARRANCAR a deslizar desde la
+ * izquierda) ese setState re-renderizaba el tablero entero — cientos de
+ * tarjetas — en plena pasada. Ese era el tirón que el dueño sintió como
+ * "lageado y pesado" (24-ago-2026). Acá adentro, el mismo cambio de estado
+ * re-renderiza dos botones y un div vacío; el tablero ni se entera.
+ *
+ * Escucha el scroll del tablero por addEventListener pasivo (no por props), y
+ * se re-engancha cuando cambia `anchoTablero` — que es la señal de que el
+ * contenido creció o se achicó y los extremos se movieron.
+ */
+function RielTablero({ boardRef, topBarRef, anchoTablero, sincronizar }: {
+  boardRef: React.RefObject<HTMLDivElement>;
+  topBarRef: React.RefObject<HTMLDivElement>;
+  anchoTablero: number;
+  sincronizar: (origen: HTMLDivElement | null, destino: HTMLDivElement | null) => void;
+}) {
+  const [flechas, setFlechas] = useState({ izq: false, der: false });
+  useEffect(() => {
+    const el = boardRef.current;
+    if (!el) return;
+    const actualizar = () => {
+      const izq = el.scrollLeft > 1;
+      const der = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+      setFlechas((prev) => (prev.izq === izq && prev.der === der ? prev : { izq, der }));
+    };
+    actualizar();
+    el.addEventListener('scroll', actualizar, { passive: true });
+    return () => el.removeEventListener('scroll', actualizar);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchoTablero]);
+  const desplazar = (dir: 1 | -1) => {
+    const el = boardRef.current;
+    if (!el) return;
+    // `smooth` acá es feedback de un click, no animación ambiental — y el
+    // global de index.css ya lo vuelve `auto` con prefers-reduced-motion.
+    el.scrollBy({ left: dir * Math.max(320, Math.round(el.clientWidth * 0.8)), behavior: 'smooth' });
+  };
+  return (
+    <div className="flex items-center gap-1.5 mb-1.5">
+      <button
+        type="button"
+        onClick={() => desplazar(-1)}
+        disabled={!flechas.izq}
+        title="Correr el tablero a la izquierda"
+        aria-label="Correr el tablero a la izquierda"
+        className="p-2 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-35 shrink-0"
+      >
+        <ChevronLeft size={15} aria-hidden="true" />
+      </button>
+      <div
+        ref={topBarRef}
+        onScroll={() => sincronizar(topBarRef.current, boardRef.current)}
+        aria-hidden="true"
+        className="rail-scroll flex-1 min-w-0 overflow-x-auto overflow-y-hidden"
+      >
+        <div style={{ width: anchoTablero || 1, height: 1 }} />
+      </div>
+      <button
+        type="button"
+        onClick={() => desplazar(1)}
+        disabled={!flechas.der}
+        title="Correr el tablero a la derecha"
+        aria-label="Correr el tablero a la derecha"
+        className="p-2 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-35 shrink-0"
+      >
+        <ChevronRight size={15} aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
 interface SegBoardProps {
   /**
    * `phone → ms` del último «Avisé: en oficina» (de `useSegTouchIndex`).
@@ -1029,27 +1108,6 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
     }
   };
 
-  // Flechas ◀ ▶ para correr el tablero SIN agarrar ninguna barra (pedido del
-  // dueño, 24-ago-2026: "esa barrita para deslizar me cuesta deslizar"). Cada
-  // click corre ~80% del ancho visible; se apagan en los extremos. El estado se
-  // actualiza idempotente desde el onScroll del tablero, así el arrastre, la
-  // rueda y las propias flechas lo mantienen al día sin renders de más.
-  const [flechas, setFlechas] = useState({ izq: false, der: false });
-  const actualizarFlechas = () => {
-    const el = boardRef.current;
-    if (!el) return;
-    const izq = el.scrollLeft > 1;
-    const der = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
-    setFlechas((prev) => (prev.izq === izq && prev.der === der ? prev : { izq, der }));
-  };
-  const desplazar = (dir: 1 | -1) => {
-    const el = boardRef.current;
-    if (!el) return;
-    // `smooth` acá es feedback de un click, no animación ambiental — y el
-    // global de index.css ya lo vuelve `auto` con prefers-reduced-motion.
-    el.scrollBy({ left: dir * Math.max(320, Math.round(el.clientWidth * 0.8)), behavior: 'smooth' });
-  };
-
   // Arrastre con el MOUSE sobre el espacio muerto del tablero (fondos de
   // columna, huecos entre tarjetas): agarrar y correr, como en un mapa. Solo
   // pointerType 'mouse' — en táctil el swipe nativo ya funciona y meterse ahí
@@ -1093,16 +1151,10 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
     // que vuelve a medir. Y como este efecto NO tenía lista de dependencias,
     // corría en cada render: creaba y destruía un ResizeObserver por render,
     // justo mientras la asesora arrastraba.
-    const medir = () => {
-      setAnchoTablero((prev) => {
-        const w = el.scrollWidth;
-        return Math.abs(prev - w) > 1 ? w : prev;
-      });
-      // Las flechas dependen de la misma medida (¿hay más tablero a la
-      // derecha?), así que se recalculan con cada medición — incluida la del
-      // montaje, que es la que las enciende por primera vez.
-      actualizarFlechas();
-    };
+    const medir = () => setAnchoTablero((prev) => {
+      const w = el.scrollWidth;
+      return Math.abs(prev - w) > 1 ? w : prev;
+    });
     medir();
     if (typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(medir);
@@ -1253,37 +1305,8 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
         para tener barra ARRIBA (no lleva contenido: un div del ancho del
         tablero, fuera del árbol de accesibilidad — el tablero de abajo es el
         que se anuncia). Las flechas son para quien no quiere agarrar ninguna
-        barra: un click y el tablero corre casi una pantalla. */}
-    <div className="flex items-center gap-1.5 mb-1.5">
-      <button
-        type="button"
-        onClick={() => desplazar(-1)}
-        disabled={!flechas.izq}
-        title="Correr el tablero a la izquierda"
-        aria-label="Correr el tablero a la izquierda"
-        className="p-2 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-35 shrink-0"
-      >
-        <ChevronLeft size={15} aria-hidden="true" />
-      </button>
-      <div
-        ref={topBarRef}
-        onScroll={() => sincronizar(topBarRef.current, boardRef.current)}
-        aria-hidden="true"
-        className="rail-scroll flex-1 min-w-0 overflow-x-auto overflow-y-hidden"
-      >
-        <div style={{ width: anchoTablero || 1, height: 1 }} />
-      </div>
-      <button
-        type="button"
-        onClick={() => desplazar(1)}
-        disabled={!flechas.der}
-        title="Correr el tablero a la derecha"
-        aria-label="Correr el tablero a la derecha"
-        className="p-2 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-35 shrink-0"
-      >
-        <ChevronRight size={15} aria-hidden="true" />
-      </button>
-    </div>
+        barra. Componente aparte a propósito — ver RielTablero. */}
+    <RielTablero boardRef={boardRef} topBarRef={topBarRef} anchoTablero={anchoTablero} sincronizar={sincronizar} />
     {/* Sin `snap-x` (quitado 1-ago-2026). El imán a la columna peleaba contra el
         arrastre: se corría el riel, el tablero se iba solo al borde de la columna
         más cercana, y ese salto rebotaba al riel de arriba moviéndole el pulgar
@@ -1292,7 +1315,10 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
         una, que no es como se usa. */}
     <div
       ref={boardRef}
-      onScroll={() => { sincronizar(boardRef.current, topBarRef.current); actualizarFlechas(); }}
+      // Solo sincroniza el riel gemelo: escritura DOM directa, cero setState.
+      // Las flechas escuchan este mismo scroll por addEventListener dentro de
+      // RielTablero — así una pasada de scroll jamás re-renderiza el tablero.
+      onScroll={() => sincronizar(boardRef.current, topBarRef.current)}
       onPointerDown={onPanDown}
       onPointerMove={onPanMove}
       onPointerUp={onPanUp}
@@ -1300,7 +1326,7 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
       // rail-scroll también ABAJO: la barra de 6px del global era la mitad del
       // "me cuesta deslizar". cursor-grab solo se ve en el espacio muerto (los
       // controles y tarjetas ponen su propio cursor encima).
-      className="rail-scroll flex gap-3 overflow-x-auto pb-3 -mx-1 px-1 items-start cursor-grab"
+      className="rail-scroll flex gap-3 overflow-x-auto overscroll-x-contain pb-3 -mx-1 px-1 items-start cursor-grab"
     >
       {/* Historia plegada: el botón ocupa el lugar EXACTO donde estarían las
           columnas, para que se lea como "acá hay más" y no como un control
@@ -1332,7 +1358,10 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
             className={cn(
               // Sin `snap-start`: es la otra mitad del imán que trababa el
               // arrastre (ver el comentario del contenedor).
-              'shrink-0 flex flex-col gap-2.5 rounded-2xl border bg-card/40 transition-colors',
+              // seg-col-cv = render diferido (content-visibility): las columnas
+              // fuera de pantalla no se pintan hasta acercarse. Es lo que quitó
+              // el "pesado / como que va cargando" al deslizar (ver index.css).
+              'seg-col-cv shrink-0 flex flex-col gap-2.5 rounded-2xl border bg-card/40 transition-colors',
               // La jerarquía sale del ANCHO y la ELEVACIÓN, no de atenuar.
               // "Devolución", "Dev. en Tránsito" y "Entregado" son terminales
               // pero se LEEN (análisis de devoluciones): bajarles la opacidad

@@ -788,6 +788,32 @@
   .rail-scroll::-webkit-scrollbar { height: 18px; }
 }
 
+/* Render DIFERIDO del tablero de Seguimiento (24-ago-2026).
+   Con columnas por estatus real, el tablero monta 20+ columnas y cientos de
+   tarjetas translúcidas con sombra sobre la aurora: pintar TODO eso en cada
+   pasada de scroll era el "se siente pesado, como que los datos van cargando"
+   que reportó el dueño. content-visibility:auto hace que el navegador SALTE el
+   layout y el pintado de lo que está fuera de pantalla y lo traiga solo al
+   acercarse; contain-intrinsic-size reserva un tamaño estimado para que las
+   barras de scroll no salten (`auto` = una vez pintado, recuerda su tamaño
+   real). El casco de cada columna (borde, fondo) se pinta siempre — lo que se
+   difiere es el contenido. En navegadores sin soporte no cambia nada.
+
+   OJO efecto colateral asumido: la restauración del scroll vertical de una
+   columna que quedó FUERA de pantalla puede perderse (sin layout no hay
+   scrollTop). La columna en la que se está trabajando —la visible— restaura
+   igual que siempre. */
+.seg-col-cv {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 300px auto 60vh;
+}
+/* Las tarjetas del tablero (hijas directas del cuerpo de columna): de 30
+   montadas por columna, solo ~5 caben en el alto visible. */
+.seg-colbody > [role='button'] {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 150px;
+}
+
 /* ─────────────────────────────────────────────────────────────
    COMPATIBILIDAD DE TEMA CLARO — superficies traslúcidas
    ─────────────────────────────────────────────────────────────
