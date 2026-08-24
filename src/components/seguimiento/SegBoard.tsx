@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import {
   Package, Tag, Truck, MapPin, AlertTriangle, CheckCircle, RotateCcw,
   DollarSign, Layers, ExternalLink, RefreshCw, MessageCircle, Phone,
-  ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Maximize2, CheckCircle2, Building2,
+  ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Maximize2, CheckCircle2, Building2, Send,
 } from 'lucide-react';
 import { OrderData, getTrackingUrl, getWhatsAppPhone, calcBusinessDays, parseDate } from '@/lib/orderUtils';
 import { classifySegEstado, estadoDifiereDeFase, normalizaRotulo, type SegStatusKey } from '@/lib/segStatus';
@@ -21,6 +21,8 @@ import { useStore } from '@/contexts/StoreContext';
 import { useWaChat } from '@/contexts/WaChatContext';
 import { useSessionState } from '@/hooks/useSessionState';
 import { TiltCard } from '@/components/ui3d';
+import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDialog';
+import { ventanaWhatsapp, MOTIVO_VENTANA } from '@/lib/ventanaWhatsapp';
 import { cn, formatCOP } from '@/lib/utils';
 
 /**
@@ -314,6 +316,8 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   // guía ✓" en vez de un "listo" que no dice qué se hizo.
   const [gestionada, setGestionada] = useState<string | null>(null);
   const [gestionando, setGestionando] = useState(false);
+  // Cuadro para escribirle al cliente sin salir de Guardian.
+  const [escribiendo, setEscribiendo] = useState(false);
   // Guard SÍNCRONO contra doble-tap: el estado se actualiza en el próximo render,
   // así que dos clicks en el mismo frame verían gestionando=false los dos e
   // insertarían dos touchpoints (touchpoints no tiene constraint anti-dup).
@@ -403,6 +407,9 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   // cliente que escribió y quedó sin respuesta es urgente esté donde esté el
   // paquete. Es la mano levantada que hoy nadie ve.
   const conversacion = estadoConversacion(actividad);
+  // ¿Se le puede escribir AHORA? (ventana de 24 h de WhatsApp). Se calcula acá
+  // para que el botón y el cuadro digan lo mismo que después valida el servidor.
+  const ventanaChat = ventanaWhatsapp(actividad?.entranteAt ?? null, !!actividad);
 
   return (
     <div
@@ -745,6 +752,29 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
               <MessageCircle size={14} aria-hidden="true" />
             </button>
           )}
+          {/* ESCRIBIRLE desde acá (ImporChat). Solo aparece si la conversación
+              está leída: sin ese dato no se sabe si el mensaje llegaría, y un
+              botón que a veces no entrega es peor que no tenerlo. Deshabilitado
+              —con el motivo en el title— cuando la ventana de 24 h venció. */}
+          {actividad && o.externalId && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setEscribiendo(true); }}
+              disabled={ventanaChat.estado !== 'abierta'}
+              title={ventanaChat.estado === 'abierta'
+                ? 'Escribirle por WhatsApp sin salir de Guardian'
+                : MOTIVO_VENTANA[ventanaChat.estado]}
+              aria-label="Escribirle por WhatsApp"
+              className={cn(
+                'p-2 min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg border transition-colors',
+                ventanaChat.estado === 'abierta'
+                  ? 'bg-success/12 border-success/30 text-success hover:bg-success/20 hover:border-success/60'
+                  : 'border-border text-muted-foreground/40 cursor-not-allowed',
+              )}
+            >
+              <Send size={14} aria-hidden="true" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -800,6 +830,22 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
             ))}
           </div>
         )
+      )}
+
+      {/* El cuadro para escribir. Se monta solo cuando se abre (Radix lo lleva
+          a un portal, así que sus clicks no navegan a la ficha del pedido). */}
+      {escribiendo && o.externalId && (
+        <EscribirWhatsappDialog
+          open={escribiendo}
+          onOpenChange={setEscribiendo}
+          externalId={String(o.externalId)}
+          nombre={o.nombre}
+          estado={o.estado}
+          actividad={actividad}
+          // Enviar ES gestionar: la tarjeta queda marcada como trabajada hoy
+          // (la edge function ya insertó el touchpoint del lado del servidor).
+          onEnviado={() => setGestionada('Escribí por WhatsApp')}
+        />
       )}
     </div>
   );

@@ -527,6 +527,9 @@ Deno.serve(async (req) => {
             chat_saliente_at: act.salienteAt ? act.salienteAt.toISOString() : null,
             chat_saliente_tipo: act.salienteTipo,
             chat_entrante_at: act.entranteAt ? act.entranteAt.toISOString() : null,
+            // Sin esto no se le puede RESPONDER al cliente desde Guardian: el
+            // canal de ImporChat pide el id del chat, no el teléfono.
+            importchat_chat_id: p.chatId,
           },
           payloadBase: {
             confirmo_boton_at: s.apretoBotonAt ? s.apretoBotonAt.toISOString() : null,
@@ -556,7 +559,7 @@ Deno.serve(async (req) => {
         let { error: upErr } = await sb.from("orders")
           .update(columnasNuevasOk ? { ...t.payloadBase, ...t.columnasNuevas } : t.payloadBase)
           .eq("store_id", storeId).eq("external_id", t.externalId);
-        if (upErr && columnasNuevasOk && /chat_saliente|chat_entrante/i.test(upErr.message)) {
+        if (upErr && columnasNuevasOk && /chat_saliente|chat_entrante|importchat_chat_id/i.test(upErr.message)) {
           console.warn(`[${SOURCE}] migración 20260824230000 sin aplicar — escribo sin actividad de chat`);
           columnasNuevasOk = false;
           ({ error: upErr } = await sb.from("orders")
