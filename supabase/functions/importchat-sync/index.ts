@@ -296,19 +296,41 @@ Deno.serve(async (req) => {
   // afuera era indistinguible de "nunca se llamó". Ahora se inserta una fila
   // 'running' apenas arranca y se le va escribiendo la FASE alcanzada; si la
   // función muere, esa fila queda como la última señal de vida y dice dónde.
-  let trazaId: number | null = null;
+  let trazaId: string | null = null;
+
+  /**
+   * ⛔ `sync_logs.store_id` y `sync_logs.synced_count` son **NOT NULL** (con
+   * DEFAULT). Mandarles `null` hace que Postgres RECHACE la fila… y como
+   * supabase-js NO lanza excepción, el `try/catch` no se entera: la corrida
+   * queda sin registro y desde afuera es idéntica a "nunca se ejecutó".
+   * Fue exactamente lo que pasó el 24-ago-2026: la función terminó bien
+   * (1.357 pedidos escritos, apagado limpio) y sync_logs quedó vacío.
+   * Por eso: `store_id` se OMITE si no hay tienda en curso (queda el DEFAULT)
+   * y `synced_count` nunca viaja en null.
+   */
+  const filaLog = (status: string, msg: string, n: number | null) => {
+    const fila: Record<string, unknown> = {
+      source: SOURCE, status, error_message: msg || null, synced_count: n ?? 0,
+    };
+    if (storeId) fila.store_id = storeId;
+    return fila;
+  };
+
   const traza = async (fase: string, n: number | null = null) => {
     try {
       if (trazaId == null) {
-        const { data } = await sb.from("sync_logs").insert({
-          source: SOURCE, store_id: storeId || null, status: "running",
-          error_message: fase, synced_count: n,
-        }).select("id").maybeSingle();
-        trazaId = (data as { id?: number } | null)?.id ?? null;
+        const { data, error } = await sb.from("sync_logs")
+          .insert(filaLog("running", fase, n)).select("id").maybeSingle();
+        // El error se MIRA, no se asume: es la única forma de enterarse de un
+        // rechazo del esquema (supabase-js devuelve el error, no lo lanza).
+        if (error) console.error(`[${SOURCE}] sync_logs rechazó la traza: ${error.code} ${error.message}`);
+        trazaId = (data as { id?: string } | null)?.id ?? null;
       } else {
-        await sb.from("sync_logs").update({
-          store_id: storeId || null, error_message: fase, synced_count: n,
+        const { error } = await sb.from("sync_logs").update({
+          error_message: fase, synced_count: n ?? 0,
+          ...(storeId ? { store_id: storeId } : {}),
         }).eq("id", trazaId);
+        if (error) console.error(`[${SOURCE}] no se pudo actualizar la traza: ${error.message}`);
       }
     } catch (e) {
       console.error(`[${SOURCE}] no se pudo escribir la traza:`, e);
@@ -322,18 +344,17 @@ Deno.serve(async (req) => {
       // Cierra la fila 'running' si existe (una corrida = una fila), o inserta
       // una nueva si murió antes de poder abrirla.
       if (trazaId != null) {
-        await sb.from("sync_logs").update({
-          store_id: storeId || null, status, error_message: msg || null, synced_count: n,
+        const { error } = await sb.from("sync_logs").update({
+          status, error_message: msg || null, synced_count: n ?? 0,
+          ...(storeId ? { store_id: storeId } : {}),
         }).eq("id", trazaId);
+        if (error) console.error(`[${SOURCE}] no se pudo cerrar la traza: ${error.message}`);
         return;
       }
-      await sb.from("sync_logs").insert({
-        source: SOURCE,
-        store_id: storeId || null,
-        status,
-        error_message: msg || null,
-        synced_count: n,
-      });
+      const { error } = await sb.from("sync_logs").insert(filaLog(status, msg, n));
+      if (error) {
+        console.error(`[${SOURCE}] sync_logs rechazó la fila: ${error.code} ${error.message}`);
+      }
     } catch (e) {
       console.error(`[${SOURCE}] no se pudo escribir sync_logs:`, e);
     }
