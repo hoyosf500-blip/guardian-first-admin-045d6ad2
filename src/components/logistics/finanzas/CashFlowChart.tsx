@@ -66,6 +66,12 @@ export default function CashFlowChart({ series, isLoading = false }: CashFlowCha
           <div className="hud-label text-subtle mt-1.5">
             neto
           </div>
+          {/* Este neto suma TODOS los movimientos de la serie (retiros y depósitos
+              de tesorería incluidos) — por eso NO cuadra con la Ganancia Neta del
+              hero, que solo mira lo operativo. Se dice en la cara. */}
+          <div className="text-[10px] text-muted-foreground leading-snug mt-1 max-w-[170px]">
+            movimiento total del wallet · incluye retiros y depósitos, no es ganancia
+          </div>
         </div>
       </div>
 

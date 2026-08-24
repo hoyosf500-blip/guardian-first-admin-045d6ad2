@@ -203,14 +203,15 @@ export default function SimuladorUnitEconomics({
           hint="por pedido entregado" />
       </div>
 
-      {/* El puente que faltaba: el dueño comparaba "% Devolución 12.7%" de acá
-          con "Impacto de devoluciones 3.6%" del semáforo y creía que uno mentía
-          (23-ago-2026). Miden cosas distintas y se dice dónde. */}
+      {/* El puente que faltaba: el dueño comparaba el "% Devolución" de acá
+          (que cuenta PEDIDOS) con los % de plata de Finanzas y creía que uno
+          mentía (23-ago-2026). Miden cosas distintas y se dice. */}
       <p className="px-4 pb-1 text-[10px] text-muted-foreground leading-relaxed">
         Estos indicadores cuentan <strong className="text-foreground/80">pedidos</strong> (de cada 100 que
-        concluyeron, cuántos volvieron). El <strong className="text-foreground/80">semáforo de abajo</strong> mide{' '}
-        <strong className="text-foreground/80">plata</strong> (cuánta venta se pierde) — por eso su
-        "impacto de devoluciones" da un % más chico y los dos están bien.
+        concluyeron, cuántos volvieron). Los % de la pestaña{' '}
+        <strong className="text-foreground/80">Finanzas</strong> miden{' '}
+        <strong className="text-foreground/80">plata</strong> sobre ventas — por eso allá la devolución
+        da un % más chico y los dos están bien.
       </p>
 
       {/* Cascada real — ahora con barra proporcional sobre el facturado (la base

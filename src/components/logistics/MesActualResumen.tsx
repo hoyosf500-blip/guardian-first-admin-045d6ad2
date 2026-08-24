@@ -295,7 +295,8 @@ export default function MesActualResumen({ summary, filters }: Props) {
     <section className="relative rounded-3xl border border-border bg-card/40 overflow-hidden shadow-card3d-lg hairline-top">
       {/* Sin corner-brackets: se posicionan a 14px del borde y aquí caerían
           justo encima del ícono y del botón Sincronizar del header. */}
-      <span className="sheen animate-gb-sheen" aria-hidden="true" />
+      {/* Sin sheen: el barrido en loop se retiró en todo el módulo el
+          23-ago-2026 — "dejalo todo quieto" (dueño). */}
       {/* Header */}
       <header className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">

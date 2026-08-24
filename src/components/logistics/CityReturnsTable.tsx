@@ -1,7 +1,6 @@
 import { memo, useMemo, useState } from 'react';
 import { Download, MapPin, AlertTriangle } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { TiltCard } from '@/components/ui3d';
 import { formatCOP } from '@/lib/utils';
 import { rowsToCsv, downloadCsv } from '@/lib/csvExport';
 import { SortableHeader, type SortDir } from './SortableHeader';
@@ -17,11 +16,17 @@ interface Props { rows: CityReturns[]; }
 type CityRow = Omit<CityReturns, 'tasa_entrega' | 'tasa_devolucion'> & {
   tasa_entrega: number | null;
   tasa_devolucion: number | null;
+  /** total − entregados − devueltos: lo que todavía viaja. */
+  en_camino: number;
+  /** valor_perdido ÷ devueltos. null (nunca 0) si no hay devoluciones. */
+  valor_por_devolucion: number | null;
+  /** total_pedidos ÷ Σ total_pedidos de las filas LISTADAS (no del país). */
+  pct_volumen: number | null;
   _prelim: boolean;
   _resueltos: number;
 };
 
-type Key = keyof CityReturns;
+type Key = keyof CityRow;
 
 /** Entrada escalonada de bloques — misma cascada que el Dashboard. */
 // Cascada INTERNA del bloque. Solo opacidad, sin `y`: LogisticaTab ya envuelve
@@ -86,28 +91,48 @@ function ReturnRateBar({ value, prelim }: { value: number; prelim?: boolean }) {
 }
 
 export default memo(function CityReturnsTable({ rows }: Props) {
-  const [sortKey, setSortKey] = useState<Key>('tasa_devolucion');
+  // Volumen primero (pedido del dueño: "1 envío no es data"): abrir ordenado
+  // por tasa ponía PRIMERA a una ciudad con 1 envío devuelto (100% prelim.),
+  // como si fuera la peor plaza. Por Envíos, lo primero que se ve es donde
+  // de verdad hay operación.
+  const [sortKey, setSortKey] = useState<Key>('total_pedidos');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
   // tasa_entrega/tasa_devolucion → maduras (÷ entregados+devueltos). Conteos
   // crudos intactos. Sort/bars/CSV usan la tasa madura automáticamente.
   // `_prelim` marca las tasas de muestra chica / cohorte inmaduro para atenuarlas.
-  const matureRows = useMemo<CityRow[]>(() => rows.map(r => {
-    const m = deriveDeliveryMaturity(r.entregados, r.devueltos, r.total_pedidos, r.rechazados ?? 0);
-    return {
-      ...r,
-      tasa_entrega: m.tasaEntregaMadura,
-      tasa_devolucion: m.tasaDevolucionMadura,
-      _prelim: isRatePreliminary(m),
-      _resueltos: m.resueltos,
-    };
-  }), [rows]);
+  const matureRows = useMemo<CityRow[]>(() => {
+    const totalEnvios = rows.reduce((s, r) => s + (r.total_pedidos ?? 0), 0);
+    return rows.map(r => {
+      const m = deriveDeliveryMaturity(r.entregados, r.devueltos, r.total_pedidos, r.rechazados ?? 0);
+      return {
+        ...r,
+        tasa_entrega: m.tasaEntregaMadura,
+        tasa_devolucion: m.tasaDevolucionMadura,
+        en_camino: r.total_pedidos - r.entregados - r.devueltos,
+        valor_por_devolucion: r.devueltos > 0 ? r.valor_perdido / r.devueltos : null,
+        pct_volumen: totalEnvios > 0 ? (r.total_pedidos / totalEnvios) * 100 : null,
+        _prelim: isRatePreliminary(m),
+        _resueltos: m.resueltos,
+      };
+    });
+  }, [rows]);
 
   const sorted = useMemo(() => {
     const out = [...matureRows];
+    // Al ordenar por TASA, lo preliminar (o sin tasa) va SIEMPRE después de lo
+    // confiable — "1 envío no es data": una ciudad con 1 devuelto (100%
+    // prelim.) no puede salir por encima de una con 40 concluidos. Dentro de
+    // cada grupo sí manda la dirección elegida.
+    const ordenPorTasa = sortKey === 'tasa_entrega' || sortKey === 'tasa_devolucion';
     out.sort((a, b) => {
-      const av = a[sortKey as keyof CityRow];
-      const bv = b[sortKey as keyof CityRow];
+      if (ordenPorTasa) {
+        const aDebil = a._prelim || a[sortKey] == null;
+        const bDebil = b._prelim || b[sortKey] == null;
+        if (aDebil !== bDebil) return aDebil ? 1 : -1;
+      }
+      const av = a[sortKey];
+      const bv = b[sortKey];
       // Lo NO MEDIDO va al final en cualquier dirección: una ciudad sin
       // pedidos concluidos no es "la que más devuelve", no tiene tasa.
       const aNull = av == null;
@@ -123,10 +148,16 @@ export default memo(function CityReturnsTable({ rows }: Props) {
     return out;
   }, [matureRows, sortKey, sortDir]);
 
-  const totalLost = useMemo(
-    () => sorted.reduce((s, r) => s + (r.valor_perdido ?? 0), 0),
-    [sorted],
-  );
+  const totales = useMemo(() => matureRows.reduce(
+    (t, r) => ({
+      envios: t.envios + (r.total_pedidos ?? 0),
+      entregados: t.entregados + (r.entregados ?? 0),
+      enCamino: t.enCamino + r.en_camino,
+      devueltos: t.devueltos + (r.devueltos ?? 0),
+      valorPerdido: t.valorPerdido + (r.valor_perdido ?? 0),
+    }),
+    { envios: 0, entregados: 0, enCamino: 0, devueltos: 0, valorPerdido: 0 },
+  ), [matureRows]);
 
   const onSort = (k: Key) => {
     if (k === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -135,11 +166,18 @@ export default memo(function CityReturnsTable({ rows }: Props) {
 
   const exportCsv = () => {
     // Tipado sobre CityRow (tasas nullable): `escapeCell` emite celda VACÍA
-    // ante null, así el CSV dice lo mismo que la pantalla.
+    // ante null, así el CSV dice lo mismo que la pantalla. Los derivados van
+    // redondeados solo para el archivo (los floats crudos de la división
+    // ensucian el Excel del dueño).
+    const filas = sorted.map(r => ({
+      ...r,
+      valor_por_devolucion: r.valor_por_devolucion == null ? null : Math.round(r.valor_por_devolucion * 100) / 100,
+      pct_volumen: r.pct_volumen == null ? null : Math.round(r.pct_volumen * 10) / 10,
+    }));
     const csv = rowsToCsv<CityRow>(
-      ['ciudad', 'departamento', 'total_pedidos', 'entregados', 'devueltos',
-       'tasa_entrega', 'tasa_devolucion', 'valor_perdido'],
-      sorted,
+      ['ciudad', 'departamento', 'total_pedidos', 'entregados', 'en_camino', 'devueltos',
+       'tasa_entrega', 'tasa_devolucion', 'valor_perdido', 'valor_por_devolucion', 'pct_volumen'],
+      filas,
     );
     downloadCsv(`logistica-ciudades-${new Date().toISOString().split('T')[0]}.csv`, csv);
   };
@@ -151,8 +189,11 @@ export default memo(function CityReturnsTable({ rows }: Props) {
           <MapPin size={17} className="text-muted-foreground" aria-hidden="true" />
         </div>
         <p className="text-sm font-semibold text-foreground mb-1">Sin datos de ciudades</p>
+        {/* La población de esta tabla son los envíos DESPACHADOS con ciudad,
+            no "ciudades con devoluciones": decir lo segundo hacía leer un
+            rango sin despachos como "no se me devolvió nada". */}
         <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-          No hay ciudades con devoluciones en este rango. Probá con un rango más amplio o quitá el filtro de ciudad.
+          No hay envíos despachados con ciudad en este rango. Probá con un rango más amplio o quitá el filtro de ciudad.
         </p>
       </div>
     );
@@ -160,28 +201,27 @@ export default memo(function CityReturnsTable({ rows }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Card hero de la pestaña Ciudades: la plata perdida. Única con
-          sheen + brackets — si dos cards los llevan, ninguna es la
-          protagonista. */}
-      {totalLost > 0 && (
+      {/* Card hero de la pestaña Ciudades: la plata perdida. El rótulo dice
+          EXACTAMENTE qué suma: el server corta este listado por VOLUMEN de
+          devoluciones (no por tasa) y la cifra es solo sobre las filas
+          listadas — llamarlo "mayor tasa" o dejarlo sin universo hacía leer
+          la cifra como el total del rango. */}
+      {totales.valorPerdido > 0 && (
         <motion.div {...fadeUp(0)}>
-          <TiltCard
-            sheen
-            brackets
-            className="bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg flex flex-col"
-          >
-            <div className="flex items-center gap-3 tilt-layer-2">
+          <div className="hairline-top bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg flex flex-col transition-colors duration-200 hover:border-border-strong">
+            <div className="flex items-center gap-3">
               <span className="w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 bg-danger/14 border-danger/30 text-danger glow-danger">
                 <AlertTriangle size={17} aria-hidden="true" strokeWidth={2.25} />
               </span>
-              <span className="hud-label">
-                Valor perdido · {sorted.length} ciudades con mayor tasa de devolución
-              </span>
+              <span className="hud-label">Venta perdida por devoluciones</span>
             </div>
-            <div className="mt-4 font-mono tabular-nums text-[34px] font-bold leading-none text-danger num-glow-danger tilt-layer-3">
-              {formatCOP(totalLost)}
+            <div className="mt-4 font-mono tabular-nums text-[34px] font-bold leading-none text-danger num-glow-danger">
+              {formatCOP(totales.valorPerdido)}
             </div>
-          </TiltCard>
+            <p className="mt-2 text-[11px] text-muted-foreground leading-snug">
+              en las {sorted.length} ciudades listadas (las de más devoluciones del rango) · incluye rechazos del cliente
+            </p>
+          </div>
         </motion.div>
       )}
 
@@ -214,9 +254,13 @@ export default memo(function CityReturnsTable({ rows }: Props) {
                 <th className="px-3 py-2.5 text-left"><SortableHeader<Key> label="Ciudad" sortKey="ciudad" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-left"><SortableHeader<Key> label="Depto" sortKey="departamento" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right"><SortableHeader<Key> label="Envíos" sortKey="total_pedidos" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+                <th className="px-3 py-2.5 text-right"><SortableHeader<Key> label="Entregados" sortKey="entregados" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+                <th className="px-3 py-2.5 text-right"><SortableHeader<Key> label="En camino" sortKey="en_camino" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right"><SortableHeader<Key> label="Devueltos" sortKey="devueltos" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right"><SortableHeader<Key> label="Devol %" sortKey="tasa_devolucion" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right"><SortableHeader<Key> label="Valor perdido" sortKey="valor_perdido" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+                <th className="px-3 py-2.5 text-right"><SortableHeader<Key> label="$ x devol." sortKey="valor_por_devolucion" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+                <th className="px-3 py-2.5 text-right"><SortableHeader<Key> label="% del vol." sortKey="pct_volumen" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
               </tr>
             </thead>
             <tbody>
@@ -233,6 +277,8 @@ export default memo(function CityReturnsTable({ rows }: Props) {
                   <td className="px-3 py-2.5 font-semibold text-foreground">{r.ciudad}</td>
                   <td className="px-3 py-2.5 text-muted-foreground">{r.departamento || '—'}</td>
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums text-foreground">{r.total_pedidos.toLocaleString('es-CO')}</td>
+                  <td className="px-3 py-2.5 text-right font-mono tabular-nums text-success">{r.entregados.toLocaleString('es-CO')}</td>
+                  <td className="px-3 py-2.5 text-right font-mono tabular-nums text-info">{r.en_camino.toLocaleString('es-CO')}</td>
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums font-bold text-danger">{r.devueltos.toLocaleString('es-CO')}</td>
                   {/* Sin desenlaces no hay tasa: "0.0%" hacía ver perfecta a una
                       ciudad donde simplemente no concluyó ningún pedido todavía.
@@ -243,9 +289,35 @@ export default memo(function CityReturnsTable({ rows }: Props) {
                       : <ReturnRateBar value={r.tasa_devolucion} prelim={r._prelim} />}
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums text-danger">{formatCOP(r.valor_perdido)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
+                    {r.valor_por_devolucion == null
+                      ? <span title="Sin devoluciones — no hay qué promediar">—</span>
+                      : formatCOP(r.valor_por_devolucion)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
+                    {r.pct_volumen == null ? '—' : `${r.pct_volumen.toFixed(1)}%`}
+                  </td>
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr className="border-t border-border bg-card/60">
+                <td colSpan={3} className="px-3 py-2.5 hud-label">Totales</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums font-bold text-foreground">{totales.envios.toLocaleString('es-CO')}</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums font-bold text-success">{totales.entregados.toLocaleString('es-CO')}</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums font-bold text-info">{totales.enCamino.toLocaleString('es-CO')}</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums font-bold text-danger">{totales.devueltos.toLocaleString('es-CO')}</td>
+                {/* Las tasas por ciudad no se suman ni se promedian a ojo. */}
+                <td className="px-3 py-2.5 text-right font-mono text-muted-foreground">—</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums font-bold text-danger">{formatCOP(totales.valorPerdido)}</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
+                  {totales.devueltos > 0 ? formatCOP(totales.valorPerdido / totales.devueltos) : '—'}
+                </td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
+                  {totales.envios > 0 ? '100%' : '—'}
+                </td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </motion.section>

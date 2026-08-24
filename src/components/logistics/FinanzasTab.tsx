@@ -4,14 +4,18 @@ import { useOperativoCohorte } from '@/hooks/useOperativoCohorte';
 import { useWalletDailySeries } from '@/hooks/useWalletMovements';
 import { useResumenSync } from '@/hooks/useResumenSync';
 import { useWalletSinClasificar } from '@/hooks/useWalletSinClasificar';
+import { useStoreAdSpendRange, sumAdSpend } from '@/hooks/useStoreAdSpend';
+import { useLogisticaMonthlyCosts } from '@/hooks/useLogisticaMonthlyCosts';
 import { useStore } from '@/contexts/StoreContext';
 import type { LogisticsFilters } from '@/lib/logistics.types';
 import { deriveDeliveryMaturity } from '@/lib/logisticsRates';
+import { isRpcMissing } from '@/lib/rpcError';
 import { formatCOP } from '@/lib/utils';
 import {
-  TrendingUp, TrendingDown, DollarSign, Truck, RotateCcw,
+  TrendingUp, TrendingDown, Truck, RotateCcw,
   Target, Package, CheckCircle2, AlertTriangle, Receipt, Wallet, Info,
   Ban, Sparkles, ArrowDownToLine, ArrowUpFromLine, RefreshCw,
+  Megaphone, PiggyBank, Crosshair,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -24,22 +28,23 @@ import CashFlowChart from './finanzas/CashFlowChart';
 import ComposicionList, { type ComposicionItem } from './finanzas/ComposicionList';
 import ConciliacionDevolucionesCard from './finanzas/ConciliacionDevolucionesCard';
 
-// Fase A — Cash flow operativo Dropi.
+// Finanzas — cash flow operativo Dropi, contado en español llano (el dueño no
+// es técnico: "cohorte", "Fase A" y el SQL de diagnóstico salieron de la UI).
 //
 // Layout (estilo Boostec ++ con identidad propia):
-//   1. Banner Fase A
-//   2. Hero strip (3 mega-KPIs): Ganancia Neta · Ingresos · Margen
-//   3. Visualizaciones: Donut Estado órdenes + Cash Flow diario (grid 2-col)
-//   4. Composición: Ingresos operativos + Gastos operativos (grid 2-col)
-//   5. KPI grid secundario (4 cols × 2 rows)
-//   6. Volumen de operación + Wallet neto
+//   1. Banner "Cómo leer esta pestaña"
+//   2. Hero strip (3 mega-KPIs): Ganancia Neta · Margen · Ingresos
+//   3. Pauta y neto (client-side: bitácora diaria + fallback mensual)
+//   4. Visualizaciones: Donut Estado órdenes + Cash Flow diario (grid 2-col)
+//   5. Composición: Ingresos operativos + Gastos operativos (grid 2-col)
+//   6. KPI grid secundario (7 cards — "Ingresos brutos" solo vive en el hero)
+//   7. Volumen de operación + Wallet neto
 //
 // Tests existentes en FinanzasTab.test.tsx imponen presencia literal de:
-// "Fase A", "Cash flow operativo Dropi", "Ganancia Neta Dropi",
-// "Utilidad bruta contable", "Ingresos brutos", "70.0%", "100",
-// "Wallet neto del período", "Cancelados", "Pérdida por devoluciones",
-// "Ganancia markup" + disclaimer. Cualquier cambio de copy debe respetar
-// esos contracts.
+// "Cómo leer esta pestaña", "Ganancia Neta Dropi", "Utilidad bruta contable",
+// "87%", "100", "Wallet neto del período", "Cancelados", "Pauta y neto",
+// "Pérdida por devoluciones", "Ganancia markup" + disclaimer. Cualquier
+// cambio de copy debe respetar esos contracts.
 
 /** Entrada escalonada del lenguaje del Dashboard: la pantalla se arma de arriba
  *  abajo. Duración fija 0.35s, y=14, y la cascada de delays es la que hace que
@@ -83,6 +88,34 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
   // cards se refrescan sin cambiar de tab. Solo el dueño sincroniza.
   const { isOwnerOfActive } = useStore();
   const resumenSync = useResumenSync();
+
+  // Pauta del período — MISMO patrón que MesActualResumen: manda la bitácora
+  // diaria (store_ad_spend_daily); si el período no tiene registros diarios cae
+  // al valor mensual guardado en logistica_monthly_costs. (Hooks acá arriba:
+  // el early-return de error va después y no puede saltearlos.)
+  const adQuery = useStoreAdSpendRange(fromDate, toDate);
+  const monthlyCosts = useLogisticaMonthlyCosts(yearMonth);
+  const pautaDiariaTotal = sumAdSpend(adQuery.data ?? []).total;
+  const pautaMensualGuardada =
+    (monthlyCosts.data?.pauta_meta ?? 0) + (monthlyCosts.data?.pauta_tiktok ?? 0);
+  const pautaFromDaily = pautaDiariaTotal > 0;
+  const pautaEfectiva = pautaFromDaily ? pautaDiariaTotal : pautaMensualGuardada;
+  // Un error REAL leyendo la bitácora NO es "pauta $0": restar $0 en silencio
+  // infla el neto sin señal. Migration sin aplicar (isRpcMissing) sí degrada al
+  // fallback mensual, como siempre. Mismo principio que en MesActualResumen.
+  const pautaSinDato = adQuery.isError && !isRpcMissing(adQuery.error);
+  // Cobertura de la bitácora: un día sin anotar entra como $0 al neto — si
+  // faltan muchos, el neto sale inflado y hay que decirlo en la cara.
+  const diasConPauta = new Set((adQuery.data ?? []).map((r) => r.spend_date)).size;
+  const diasPeriodo = (() => {
+    const hoy = new Date().toLocaleDateString('en-CA');
+    const hasta = toDate < hoy ? toDate : hoy;
+    const f = new Date(`${fromDate}T12:00:00Z`);
+    const t = new Date(`${hasta}T12:00:00Z`);
+    if (isNaN(f.getTime()) || isNaN(t.getTime()) || t < f) return 0;
+    return Math.round((t.getTime() - f.getTime()) / 86400000) + 1;
+  })();
+  const pautaLoading = adQuery.isLoading || monthlyCosts.isLoading;
 
   if (isError) {
     return (
@@ -144,12 +177,24 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
   // No son la misma cohorte exacta — es un margen indicativo, no contable preciso.
   const margenPct = ingresosBrutos > 0 ? (operativoReal / ingresosBrutos) * 100 : 0;
 
+  // Sección "Pauta y neto": lo que queda después de pagar la publicidad.
+  // Con pautaSinDato NADA se calcula — '—' antes que restar $0 en silencio.
+  const totalEntregadasN = data?.total_entregadas ?? 0;
+  const netoDespuesPauta = operativoReal - pautaEfectiva;
+  // Sin dividir por cero ni redondear acá: formatCOP resuelve la moneda de la
+  // tienda (EC imprime USD con centavos — un Math.round se los comería).
+  const cpaReal =
+    !pautaSinDato && pautaEfectiva > 0 && totalEntregadasN > 0
+      ? pautaEfectiva / totalEntregadasN
+      : null;
+  const pautaIncompleta = pautaFromDaily && diasPeriodo > 0 && diasConPauta < diasPeriodo;
+
   const desglose = gananciaNeta?.desglose;
   const ingresosItems: ComposicionItem[] = [
-    { label: 'Markup dropshipper', value: desglose?.ganancia_dropshipper ?? 0, color: 'hsl(var(--success))' },
-    { label: 'Markup proveedor',   value: desglose?.ganancia_proveedor ?? 0,   color: 'hsl(var(--success))' },
-    { label: 'Reembolso flete',    value: desglose?.reembolso_flete ?? 0,      color: 'hsl(var(--info))' },
-    { label: 'Indemnizaciones',    value: desglose?.indemnizacion ?? 0,        color: 'hsl(var(--accent))' },
+    { label: 'Dropi te paga por entregar (markup)', value: desglose?.ganancia_dropshipper ?? 0, color: 'hsl(var(--success))' },
+    { label: 'Ganancia como proveedor (markup)',    value: desglose?.ganancia_proveedor ?? 0,   color: 'hsl(var(--success))' },
+    { label: 'Reembolso flete',                     value: desglose?.reembolso_flete ?? 0,      color: 'hsl(var(--info))' },
+    { label: 'Indemnizaciones',                     value: desglose?.indemnizacion ?? 0,        color: 'hsl(var(--accent))' },
   ];
 
   // 'Cargo extra Dropi' representa el costo_devolucion del wallet (~$22k típico
@@ -163,12 +208,12 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
     { label: 'Cargo extra Dropi',      value: desglose?.costo_devolucion ?? 0,      color: 'hsl(var(--danger))', sublabel: 'Por entregas fallidas' },
     { label: 'Comisión referidos',     value: desglose?.comision_referidos ?? 0,    color: 'hsl(var(--muted-foreground))' },
     { label: 'Mantenimiento tarjeta',  value: desglose?.mantenimiento_tarjeta ?? 0, color: 'hsl(var(--muted-foreground))' },
-    { label: 'Orden sin recaudo',      value: desglose?.orden_sin_recaudo ?? 0,     color: 'hsl(var(--danger))' },
+    { label: 'Orden sin recaudo',      value: desglose?.orden_sin_recaudo ?? 0,     color: 'hsl(var(--danger))', sublabel: 'cargo cuando el pedido aún no recaudó' },
   ];
 
   return (
     <div className="space-y-5">
-      {/* Banner Fase A — recipe "banner de estado con barra lateral" */}
+      {/* Banner "cómo leer" — recipe "banner de estado con barra lateral" */}
       <motion.div
         {...fadeUp(0)}
         className="relative rounded-2xl border border-info/30 bg-info/10 px-4 pl-5 py-3 shadow-card3d"
@@ -181,7 +226,7 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
           <div className="space-y-1 flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <h3 className="text-sm font-semibold text-foreground">
-                Fase A — Cash flow operativo Dropi
+                Cómo leer esta pestaña
               </h3>
               <div className="flex items-center gap-2">
                 {/* Frescura del wallet (scopeada a la tienda activa): si está vieja,
@@ -201,12 +246,16 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
               </div>
             </div>
             <p className="text-[11px] text-muted-foreground leading-relaxed">
+              {/* La primera frase depende de QUÉ está mostrando el hero: solo en
+                  rangos de un mes calendario completo es "los pedidos que creaste
+                  en el mes"; en cualquier otro rango es la caja del wallet — decir
+                  lo primero siempre sería mentirle al que filtró 3 meses. */}
               {usingCohort ? (
-                <>La <strong className="text-foreground">Ganancia Neta</strong> del hero es el <strong className="text-foreground">operativo por cohorte</strong> (pedidos creados en el mes, por fecha de pedido) — reconcilia con la Utilidad de Dropi y NO se infla por mezcla de meses. La composición y el wallet neto de abajo son la <strong className="text-foreground">caja</strong> del wallet por fecha de pago (mezcla cohortes).</>
+                <>La <strong className="text-foreground">Ganancia Neta</strong> grande es de los pedidos que <strong className="text-foreground">CREASTE</strong> en el mes — cuadra con la Utilidad de Dropi. </>
               ) : (
-                <>La <strong className="text-foreground">Ganancia Neta</strong> del hero es la <strong className="text-foreground">caja</strong> del wallet por fecha de pago (mezcla cohortes de varios meses) — en este rango no hay operativo por cohorte disponible, así que puede estar inflada. Elegí un solo mes calendario para ver el operativo reconciliado con Dropi.</>
+                <>La <strong className="text-foreground">Ganancia Neta</strong> grande acá es la plata que se movió en el wallet en este rango. Elegí un solo mes calendario para verla por pedidos creados en el mes (así cuadra con la Utilidad de Dropi). </>
               )}
-              <strong className="text-foreground"> NO incluye gasto pauta</strong> (Meta / TikTok) — eso entra en Fase B.
+              La composición y el wallet de abajo van por fecha de <strong className="text-foreground">PAGO</strong>, así que mezclan pedidos de meses anteriores. La pauta ahora sí se muestra (tarjeta más abajo).
             </p>
           </div>
         </div>
@@ -247,9 +296,9 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
           </div>
           <span className="text-[11px] leading-relaxed text-foreground flex-1 min-w-0">
             <strong>{sinClasificar!.count} movimiento(s) del wallet sin clasificar</strong> por{' '}
-            <strong>{sinClasificar!.montoParcial ? '≥ ' : ''}{formatCOP(sinClasificar!.monto)}</strong> en este rango —{' '}
-            NO están entrando a la Ganancia Neta. Suele pasar cuando Dropi cambia el texto de un código.
-            Diagnóstico: <code className="text-[10px]">SELECT codigo, COUNT(*) FROM dropi_wallet_movements WHERE categoria='otro' GROUP BY codigo</code> y agregar el patrón a mapCategoria.
+            <strong>{sinClasificar!.montoParcial ? '≥ ' : ''}{formatCOP(sinClasificar!.monto)}</strong> en este rango.
+            Suele pasar cuando Dropi cambia el texto de un código.
+            Avisá para clasificarlos — mientras tanto no entran en la ganancia.
           </span>
         </motion.div>
       )}
@@ -257,19 +306,24 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
       {loading ? (
         <>
           {/* Los skeletons calcan la GEOMETRÍA real de lo que va a llegar
-              (hero 5/4/3, dos charts, grid de 8) para que no haya salto de
-              layout cuando resuelven los hooks. */}
+              (hero 5/4/3, fila de pauta de 3, dos charts, grid de 7) para que
+              no haya salto de layout cuando resuelven los hooks. */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
             <div className="md:col-span-5 rounded-3xl border border-border bg-card/40 shadow-card3d-lg animate-pulse h-[196px]" />
             <div className="md:col-span-4 rounded-2xl border border-border bg-card/40 shadow-card3d animate-pulse h-[196px]" />
             <div className="md:col-span-3 rounded-2xl border border-border bg-card/40 shadow-card3d animate-pulse h-[196px]" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top animate-pulse h-[132px]" />
+            ))}
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top animate-pulse h-[340px]" />
             <div className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top animate-pulse h-[340px]" />
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {Array.from({ length: 8 }).map((_, i) => (
+            {Array.from({ length: 7 }).map((_, i) => (
               <div key={i} className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top animate-pulse h-[132px]" />
             ))}
           </div>
@@ -287,6 +341,62 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
               margenPct={margenPct}
               cohorte={usingCohort}
             />
+          </motion.div>
+
+          {/* 1b. Pauta y neto — client-side puro sobre la bitácora de pauta.
+              La regla de la casa manda: si la lectura falla, las tres tarjetas
+              van en '—' — NUNCA se resta $0 en silencio (cero no sustituye a
+              "no se pudo medir"). */}
+          <motion.div {...fadeUp(0.08)} className="flex items-end justify-between gap-3 pt-1">
+            <h3 className="hud-label">Pauta y neto</h3>
+            {pautaSinDato && (
+              <span className="text-[10px] text-warning">
+                No se pudo leer tu pauta — sin ese dato no restamos nada.
+              </span>
+            )}
+          </motion.div>
+          <motion.div {...fadeUp(0.1)} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {pautaLoading ? (
+              Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top animate-pulse h-[132px]" />
+              ))
+            ) : (
+              <>
+                <KpiCard
+                  label="Pauta del período"
+                  value={pautaSinDato ? '—' : formatCOP(pautaEfectiva)}
+                  icon={Megaphone}
+                  tone={pautaIncompleta ? 'warning' : 'neutral'}
+                  hint={
+                    pautaSinDato ? 'no se pudo leer tu pauta'
+                    : pautaFromDaily ? `${diasConPauta} de ${diasPeriodo} días anotados${pautaIncompleta ? ' — pueden faltar días' : ''}`
+                    : pautaEfectiva > 0 ? 'valor mensual guardado (sin detalle por día)'
+                    : 'sin pauta anotada en este rango'
+                  }
+                />
+                <KpiCard
+                  label="Neto después de pauta"
+                  value={pautaSinDato ? '—' : formatCOP(netoDespuesPauta)}
+                  icon={PiggyBank}
+                  tone={pautaSinDato ? 'neutral' : netoDespuesPauta >= 0 ? 'success' : 'danger'}
+                  hint={
+                    pautaSinDato ? 'no se pudo leer tu pauta'
+                    : pautaEfectiva > 0 ? 'la Ganancia Neta de arriba menos la pauta'
+                    : 'sin pauta anotada — igual a la Ganancia Neta de arriba'
+                  }
+                />
+                <KpiCard
+                  label="CPA real"
+                  value={cpaReal == null ? '—' : formatCOP(cpaReal)}
+                  icon={Crosshair}
+                  tone={cpaReal == null ? 'neutral' : 'info'}
+                  hint={
+                    pautaSinDato ? 'no se pudo leer tu pauta'
+                    : 'pauta ÷ entregas del período'
+                  }
+                />
+              </>
+            )}
           </motion.div>
 
           {/* 2. Donut + Cash flow */}
@@ -334,20 +444,15 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
             </h3>
             <span className="text-[10px] text-muted-foreground">Vista contable + operativa</span>
           </motion.div>
+          {/* "Ingresos brutos" ya NO va acá: duplicaba la tercera card del hero
+              (mismo número dos veces en la misma pantalla = ruido). */}
           <motion.div {...fadeUp(0.2)} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <KpiCard
-              label="Ingresos brutos"
-              value={formatCOP(ingresosBrutos)}
-              icon={DollarSign}
-              tone="info"
-              hint="Solo pedidos entregados"
-            />
             <KpiCard
               label="COGS (costo producto)"
               value={formatCOP(data?.cogs ?? 0)}
               icon={Package}
               tone="warning"
-              hint="Suma de supplier_price"
+              hint="lo que cobra el proveedor por el producto"
             />
             <KpiCard
               label="Flete (entregados + devs.)"
@@ -476,7 +581,7 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
                   <div className="min-w-0">
                     <div className="text-sm font-semibold text-foreground">Wallet neto del período</div>
                     <div className="text-[10px] text-muted-foreground leading-relaxed mt-0.5">
-                      Entradas − salidas operativas de Dropi — igual al neto de la composición de arriba (informativo, no entra en utilidad bruta).
+                      la misma caja del rango, en neto — no es la ganancia del mes. Entradas − salidas operativas de Dropi, igual al neto de la composición de arriba.
                     </div>
                   </div>
                 </div>

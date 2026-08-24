@@ -2,7 +2,7 @@ import { memo, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Lightbulb, Copy, ArrowRightLeft, CheckCircle2, Info } from 'lucide-react';
 import { useCityCarrierMatrix } from '@/hooks/useCityCarrierMatrix';
-import { deriveCarrierRecommendations } from '@/lib/carrierRecommendations';
+import { deriveCarrierRecommendations, MIN_RESUELTOS_RANK } from '@/lib/carrierRecommendations';
 import { copyToClipboard } from '@/lib/clipboard';
 import { StatTile } from '@/components/ui3d';
 import type { LogisticsFilters, CarrierRecommendation } from '@/lib/logistics.types';
@@ -77,6 +77,16 @@ export default memo(function CarrierRecommendations({
     [rows],
   );
 
+  // Ciudades DISTINTAS que sí devolvió el server. Sirven para distinguir POR QUÉ
+  // la tabla quedó vacía: 0 filas crudas = ninguna ciudad pasó la compuerta del
+  // server (≥minOrders despachados); filas crudas sin recomendaciones = las
+  // ciudades llegaron pero murieron en la compuerta client-side de concluidos
+  // (MIN_RESUELTOS_RANK). Sin esta distinción el estado vacío mentía la causa.
+  const nCiudadesCrudas = useMemo(
+    () => new Set((matrix.data ?? []).map(r => `${r.ciudad}|${r.departamento ?? ''}`)).size,
+    [matrix.data],
+  );
+
   if (matrix.isLoading) {
     return (
       <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-5 skeleton-shimmer min-h-[300px]" />
@@ -91,14 +101,44 @@ export default memo(function CarrierRecommendations({
     );
   }
 
+  // Propósito permanente de la pestaña — se ve con datos y sin datos, para que
+  // "Decisiones" no sea un nombre mudo.
+  const proposito = (
+    <motion.header {...fadeUp(0)}>
+      <h2 className="text-base font-semibold text-foreground">Decisiones de transportadora</h2>
+      <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+        Compará qué transportadora entrega mejor en cada ciudad — y cambiá la que te está fallando.
+      </p>
+    </motion.header>
+  );
+
   if (rows.length === 0) {
+    const sinFilasCrudas = (matrix.data ?? []).length === 0;
     return (
-      <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-5 text-center">
-        <Info size={28} className="mx-auto text-muted-foreground mb-2" aria-hidden="true" />
-        <p className="text-sm font-semibold text-foreground">Sin recomendaciones disponibles</p>
-        <p className="text-xs text-muted-foreground mt-1">
-          No hay ciudades con ≥{minOrders} pedidos en este rango.
-        </p>
+      <div className="space-y-5">
+        {proposito}
+        <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-5 text-center">
+          <Info size={28} className="mx-auto text-muted-foreground mb-2" aria-hidden="true" />
+          {sinFilasCrudas ? (
+            <>
+              <p className="text-sm font-semibold text-foreground">Todavía no hay ciudades para comparar</p>
+              <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto leading-relaxed">
+                Esta pestaña compara qué transportadora te entrega mejor en cada ciudad. Todavía no hay
+                ninguna ciudad con {minOrders} envíos despachados en este rango (los cancelados y
+                pendientes no cuentan). Probá un rango más largo (90d).
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-semibold text-foreground">El rango es muy corto para comparar</p>
+              <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto leading-relaxed">
+                Hay {nCiudadesCrudas} {nCiudadesCrudas === 1 ? 'ciudad' : 'ciudades'} con envíos, pero
+                ninguna transportadora junta todavía {MIN_RESUELTOS_RANK} pedidos concluidos en una misma
+                ciudad — el rango es muy corto para comparar. Probá 90d o Histórico.
+              </p>
+            </>
+          )}
+        </div>
       </div>
     );
   }
@@ -110,8 +150,10 @@ export default memo(function CarrierRecommendations({
 
   return (
     <div className="space-y-5">
+      {proposito}
+
       {/* Stats banner — resumen accionable arriba de la tabla */}
-      <motion.div {...fadeUp(0)} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <motion.div {...fadeUp(0.05)} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatsBanner tone="danger"  icon={ArrowRightLeft} label="Cambiar urgente"     value={urgentCount}   hint="Spread ≥ 20 pts entre el mejor y el peor carrier de la ciudad" />
         <StatsBanner tone="warning" icon={ArrowRightLeft} label="Considerar cambio"   value={cambioCount}   hint="Δ entre 10 y 20 puntos" />
         <StatsBanner tone="success" icon={CheckCircle2}   label="Ya están óptimas"    value={mantenerCount} hint="El mejor carrier ya es el más usado" />
@@ -173,6 +215,8 @@ function StatsBanner({ tone, icon: Icon, label, value, hint }: StatsBannerProps)
       value={value}
       tone={tone}
       title={hint}
+      // duration 0: el dueño pidió números quietos — sin count-up al entrar.
+      duration={0}
       extra={<span className="text-[10px] text-muted-foreground block truncate">{hint}</span>}
     />
   );

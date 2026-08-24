@@ -21,20 +21,21 @@
  * umbral; si alguien los sube más, hay que re-verificar contraste sobre tarjeta,
  * no sobre el fondo pelado.
  *
- * La animación la corta `prefers-reduced-motion` en index.css (regla .aurora-blob).
+ * QUIETOS desde el 23-ago-2026: los blobs ya no llevan animate-gb-float —
+ * el dueño pidió "dejalo todo quieto". Queda la luz de color, sin deriva.
  */
 export default function AuroraBackdrop() {
   return (
     <div aria-hidden="true" className="absolute inset-0 overflow-hidden pointer-events-none">
       <div
-        className="aurora-blob animate-gb-float"
+        className="aurora-blob"
         style={{
           left: '-10%', top: '-12%', width: 520, height: 520,
           background: 'radial-gradient(circle, hsl(var(--accent) / .38), transparent 70%)',
         }}
       />
       <div
-        className="aurora-blob animate-gb-float"
+        className="aurora-blob"
         style={{
           right: '-8%', top: '14%', width: 460, height: 460,
           background: 'radial-gradient(circle, hsl(var(--accent2) / .32), transparent 70%)',
@@ -47,7 +48,7 @@ export default function AuroraBackdrop() {
           general va de índigo a violeta a cian en vez de ser un solo tono lavado.
           Alfa más bajo que los otros dos: acá abajo suelen caer tablas densas. */}
       <div
-        className="aurora-blob animate-gb-float"
+        className="aurora-blob"
         style={{
           left: '18%', bottom: '-16%', width: 420, height: 420,
           background: 'radial-gradient(circle, hsl(var(--cyan) / .18), transparent 70%)',

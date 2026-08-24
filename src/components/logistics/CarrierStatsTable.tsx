@@ -4,24 +4,39 @@ import { Download, Truck, Trophy, Layers } from 'lucide-react';
 import { formatCOP } from '@/lib/utils';
 import { rowsToCsv, downloadCsv } from '@/lib/csvExport';
 import { SortableHeader, type SortDir } from './SortableHeader';
-import { TiltCard } from '@/components/ui3d';
 import { deriveDeliveryMaturity, isRatePreliminary, MIN_RESUELTOS_CONFIABLE } from '@/lib/logisticsRates';
 import type { CarrierStats } from '@/lib/logistics.types';
+import type { FleteCarrierAgg } from '@/lib/fleteByCarrier';
 
-interface Props { rows: CarrierStats[]; }
+interface Props {
+  rows: CarrierStats[];
+  /** Flete promedio por carrier (client-side, opcional) — sin él la columna va en '—'. */
+  fletePorCarrier?: Map<string, FleteCarrierAgg>;
+}
 
 // Fila enriquecida con la madurez de la tasa (para atenuar/marcar prelim.).
 // Tasas nullable a propósito (mismo criterio que CityReturnsTable y
 // ProductFailuresTable): sin desenlaces NO hay tasa. Aplastarlas a 0 dejaba la
 // celda diciendo "— sin concluidos" mientras el ORDEN y el CSV valían 0.
+// Los _derivados (ticket, pérdida por devolución, % del volumen) salen de
+// campos que el RPC YA trae — pedido del dueño 23-ago-2026: "en transportadora
+// deben estar los datos más desglosados de toda la operación".
 type CarrierRow = Omit<CarrierStats, 'tasa_entrega' | 'tasa_devolucion'> & {
   tasa_entrega: number | null;
   tasa_devolucion: number | null;
   _prelim: boolean;
   _resueltos: number;
+  /** valor_entregado ÷ entregados — null sin entregados (no un $0 falso). */
+  _ticketProm: number | null;
+  /** valor_perdido ÷ devueltos — null sin devueltos. */
+  _perdidaPorDevol: number | null;
+  /** % del volumen total del período que va con esta transportadora. */
+  _sharePct: number;
+  /** Flete promedio por pedido ENTREGADO (orders.flete, client-side) — null sin muestra. */
+  _fleteProm: number | null;
 };
 
-type Key = keyof CarrierStats;
+type Key = keyof CarrierRow;
 
 // Benchmark COD Colombia — usado como target line en el bullet
 // del leaderboard. 70% de tasa de entrega es el promedio sano.
@@ -202,7 +217,7 @@ function DeliveryBullet({ rate, prelim }: { rate: number; prelim?: boolean }) {
 // Main component
 // ──────────────────────────────────────────────────────────────
 
-export default memo(function CarrierStatsTable({ rows }: Props) {
+export default memo(function CarrierStatsTable({ rows, fletePorCarrier }: Props) {
   const [sortKey, setSortKey] = useState<Key>('entregados');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
@@ -210,16 +225,23 @@ export default memo(function CarrierStatsTable({ rows }: Props) {
   // devueltos). Así el sort, los bullets, los DataBar y el CSV usan la tasa
   // madura sin tocar nada más. Los conteos crudos (entregados/devueltos/total)
   // quedan intactos → la CompositionBar sigue mostrando composición real.
-  const matureRows = useMemo<CarrierRow[]>(() => rows.map(r => {
-    const m = deriveDeliveryMaturity(r.entregados, r.devueltos, r.total_pedidos, r.rechazados ?? 0);
-    return {
-      ...r,
-      tasa_entrega: m.tasaEntregaMadura,
-      tasa_devolucion: m.tasaDevolucionMadura,
-      _prelim: isRatePreliminary(m),
-      _resueltos: m.resueltos,
-    };
-  }), [rows]);
+  const matureRows = useMemo<CarrierRow[]>(() => {
+    const volumenTotal = rows.reduce((a, r) => a + (r.total_pedidos ?? 0), 0);
+    return rows.map(r => {
+      const m = deriveDeliveryMaturity(r.entregados, r.devueltos, r.total_pedidos, r.rechazados ?? 0);
+      return {
+        ...r,
+        tasa_entrega: m.tasaEntregaMadura,
+        tasa_devolucion: m.tasaDevolucionMadura,
+        _prelim: isRatePreliminary(m),
+        _resueltos: m.resueltos,
+        _ticketProm: r.entregados > 0 ? r.valor_entregado / r.entregados : null,
+        _perdidaPorDevol: r.devueltos > 0 ? r.valor_perdido / r.devueltos : null,
+        _sharePct: volumenTotal > 0 ? (r.total_pedidos / volumenTotal) * 100 : 0,
+        _fleteProm: fletePorCarrier?.get(r.transportadora)?.fleteProm ?? null,
+      };
+    });
+  }, [rows, fletePorCarrier]);
 
   const sorted = useMemo(() => {
     const out = [...matureRows];
@@ -261,12 +283,38 @@ export default memo(function CarrierStatsTable({ rows }: Props) {
     // Tipado sobre CarrierRow (tasas nullable): `escapeCell` emite celda VACÍA
     // ante null, así el CSV dice lo mismo que la pantalla.
     const csv = rowsToCsv<CarrierRow>(
-      ['transportadora', 'total_pedidos', 'entregados', 'devueltos',
-       'tasa_entrega', 'tasa_devolucion', 'valor_entregado', 'valor_perdido', 'avg_dias_entrega'],
+      ['transportadora', 'total_pedidos', 'entregados', 'devueltos', 'en_transito', 'novedades',
+       'tasa_entrega', 'tasa_devolucion', 'valor_entregado', 'valor_perdido',
+       '_ticketProm', '_fleteProm', '_perdidaPorDevol', 'avg_dias_entrega'],
       sorted,
     );
     downloadCsv(`logistica-transportadoras-${new Date().toISOString().split('T')[0]}.csv`, csv);
   };
+
+  // Totales del período — para que la tabla cierre sola sin sumar a mano.
+  const tot = useMemo(() => {
+    const s = { envios: 0, entregados: 0, devueltos: 0, transito: 0, novedades: 0, vEntregado: 0, vPerdido: 0 };
+    for (const r of matureRows) {
+      s.envios += r.total_pedidos ?? 0;
+      s.entregados += r.entregados ?? 0;
+      s.devueltos += r.devueltos ?? 0;
+      s.transito += r.en_transito ?? 0;
+      s.novedades += r.novedades ?? 0;
+      s.vEntregado += r.valor_entregado ?? 0;
+      s.vPerdido += r.valor_perdido ?? 0;
+    }
+    return s;
+  }, [matureRows]);
+
+  // Flete promedio GLOBAL ponderado por muestra (no promedio de promedios).
+  const fleteTotalProm = useMemo(() => {
+    if (!fletePorCarrier) return null;
+    let suma = 0, n = 0;
+    for (const agg of fletePorCarrier.values()) {
+      if (agg.fleteProm != null) { suma += agg.fleteProm * agg.muestra; n += agg.muestra; }
+    }
+    return n > 0 ? suma / n : null;
+  }, [fletePorCarrier]);
 
   if (rows.length === 0) {
     return (
@@ -294,12 +342,11 @@ export default memo(function CarrierStatsTable({ rows }: Props) {
           TASA — y además clampea a 0% un carrier sin desenlaces, que es
           exactamente el veredicto inventado que este bloque evita. ── */}
       <motion.div {...fadeUp(0)}>
-        <TiltCard
-          sheen
-          brackets
-          className="bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg"
-        >
-          <div className="flex items-start justify-between gap-3 flex-wrap mb-4 tilt-layer-2">
+        {/* Card ESTÁTICA (era TiltCard con sheen+brackets): el dueño pidió
+            "quitá la animación cuando paso el mouse, dejalo todo quieto"
+            (23-ago-2026). Nada en este módulo se mueve con el puntero. */}
+        <div className="bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg hairline-top">
+          <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
             <div className="flex items-center gap-2 min-w-0">
               <span className="w-9 h-9 rounded-xl border bg-accent/14 border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0">
                 <Trophy size={17} aria-hidden="true" />
@@ -316,7 +363,7 @@ export default memo(function CarrierStatsTable({ rows }: Props) {
             <Legend />
           </div>
 
-          <div className="space-y-2.5 tilt-layer-1">
+          <div className="space-y-2.5">
             {topByVolume.map((row, idx) => (
               <div
                 key={row.transportadora}
@@ -363,7 +410,7 @@ export default memo(function CarrierStatsTable({ rows }: Props) {
               </div>
             ))}
           </div>
-        </TiltCard>
+        </div>
       </motion.div>
 
       {/* ── Tabla detalle: todas las transportadoras con sort y CSV.
@@ -393,12 +440,19 @@ export default memo(function CarrierStatsTable({ rows }: Props) {
                 <th className="px-5 py-2.5 text-left hud-label font-normal w-10">#</th>
                 <th className="px-3 py-2.5 text-left hud-label font-normal"><SortableHeader<Key> label="Transportadora" sortKey="transportadora" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal"><SortableHeader<Key> label="Envíos" sortKey="total_pedidos" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+                <th className="px-3 py-2.5 text-right hud-label font-normal" title="Qué parte de todos tus envíos del período va con esta transportadora"><SortableHeader<Key> label="% del total" sortKey="_sharePct" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal"><SortableHeader<Key> label="Entregados" sortKey="entregados" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal"><SortableHeader<Key> label="Devueltos" sortKey="devueltos" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+                <th className="px-3 py-2.5 text-right hud-label font-normal"><SortableHeader<Key> label="En tránsito" sortKey="en_transito" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+                <th className="px-3 py-2.5 text-right hud-label font-normal"><SortableHeader<Key> label="Novedades" sortKey="novedades" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal"><SortableHeader<Key> label="Entrega %" sortKey="tasa_entrega" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal"><SortableHeader<Key> label="Devol %" sortKey="tasa_devolucion" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal" title="Antigüedad promedio desde el último cambio de estado de los entregados — NO es el tiempo de tránsito despacho→entrega"><SortableHeader<Key> label="Antigüedad prom." sortKey="avg_dias_entrega" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+                <th className="px-3 py-2.5 text-right hud-label font-normal" title="Valor promedio de cada pedido entregado ($ entregado ÷ entregados)"><SortableHeader<Key> label="Ticket prom." sortKey="_ticketProm" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+                <th className="px-3 py-2.5 text-right hud-label font-normal" title="Costo de envío promedio que te cobra esta transportadora (flete de los entregados)"><SortableHeader<Key> label="Flete prom." sortKey="_fleteProm" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal"><SortableHeader<Key> label="Valor entregado" sortKey="valor_entregado" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+                <th className="px-3 py-2.5 text-right hud-label font-normal" title="Venta perdida en devoluciones"><SortableHeader<Key> label="$ Perdido" sortKey="valor_perdido" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+                <th className="px-3 py-2.5 text-right hud-label font-normal" title="Venta perdida promedio por cada pedido devuelto"><SortableHeader<Key> label="$ x devol." sortKey="_perdidaPorDevol" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
               </tr>
             </thead>
             <tbody>
@@ -409,10 +463,13 @@ export default memo(function CarrierStatsTable({ rows }: Props) {
                       {String(idx + 1).padStart(2, '0')}
                     </span>
                   </td>
-                  <td className="px-3 py-2.5 font-semibold text-foreground">{r.transportadora}</td>
+                  <td className="px-3 py-2.5 font-semibold text-foreground whitespace-nowrap">{r.transportadora}</td>
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums">{r.total_pedidos.toLocaleString('es-CO')}</td>
+                  <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted-foreground">{r._sharePct.toFixed(1)}%</td>
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums font-bold text-success">{r.entregados.toLocaleString('es-CO')}</td>
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums font-bold text-danger">{r.devueltos.toLocaleString('es-CO')}</td>
+                  <td className="px-3 py-2.5 text-right font-mono tabular-nums text-info">{(r.en_transito ?? 0).toLocaleString('es-CO')}</td>
+                  <td className="px-3 py-2.5 text-right font-mono tabular-nums text-warning">{(r.novedades ?? 0).toLocaleString('es-CO')}</td>
                   {/* Sin desenlaces (0 entregados+devueltos) la tasa NO es 0% — no hay dato.
                       Mostrar 0.0% en rojo hacía ver "pésima" a una transportadora recién usada. */}
                   {r.tasa_entrega == null || r.tasa_devolucion == null ? (
@@ -427,10 +484,38 @@ export default memo(function CarrierStatsTable({ rows }: Props) {
                     </>
                   )}
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted-foreground">{r.avg_dias_entrega != null ? `${r.avg_dias_entrega}d` : '—'}</td>
+                  <td className="px-3 py-2.5 text-right font-mono tabular-nums text-foreground">{r._ticketProm != null ? formatCOP(r._ticketProm) : '—'}</td>
+                  <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted-foreground">{r._fleteProm != null ? formatCOP(r._fleteProm) : '—'}</td>
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums text-xs text-foreground">{formatCOP(r.valor_entregado)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono tabular-nums text-xs text-danger">{formatCOP(r.valor_perdido ?? 0)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted-foreground">{r._perdidaPorDevol != null ? formatCOP(r._perdidaPorDevol) : '—'}</td>
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr className="border-t border-border font-semibold text-foreground">
+                <td className="px-5 py-2.5" colSpan={2}>Total</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums">{tot.envios.toLocaleString('es-CO')}</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted-foreground">100%</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-success">{tot.entregados.toLocaleString('es-CO')}</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-danger">{tot.devueltos.toLocaleString('es-CO')}</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-info">{tot.transito.toLocaleString('es-CO')}</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-warning">{tot.novedades.toLocaleString('es-CO')}</td>
+                <td className="px-3 py-2.5" colSpan={2} />
+                <td className="px-3 py-2.5" />
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums">
+                  {tot.entregados > 0 ? formatCOP(tot.vEntregado / tot.entregados) : '—'}
+                </td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
+                  {fleteTotalProm != null ? formatCOP(fleteTotalProm) : '—'}
+                </td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-xs">{formatCOP(tot.vEntregado)}</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-xs text-danger">{formatCOP(tot.vPerdido)}</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
+                  {tot.devueltos > 0 ? formatCOP(tot.vPerdido / tot.devueltos) : '—'}
+                </td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </motion.section>

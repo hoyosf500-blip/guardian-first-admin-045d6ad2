@@ -1,12 +1,11 @@
 import { memo, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
 import { useLogisticsTimeline } from '@/hooks/useLogisticsTimeline';
 import { formatCOP } from '@/lib/utils';
 import {
-  Search, ChevronLeft, ChevronRight, ListChecks, Truck, MapPin, X,
-  PackageCheck, PackageX, Inbox, AlertTriangle,
+  Search, ChevronLeft, ChevronRight, ListChecks, MapPin, X, AlertTriangle,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import type {
   LogisticsSummary,
   LogisticsFilters,
@@ -27,7 +26,8 @@ const fadeUp = (delay = 0) => ({
 
 function stateTone(estado: string): 'success' | 'info' | 'warning' | 'danger' | 'neutral' {
   const e = (estado || '').toUpperCase();
-  if (e === 'ENTREGADO') return 'success';
+  // EC cierra la entrega como 'ENTREGADO A DESTINO' — mismo veredicto que 'ENTREGADO'.
+  if (e === 'ENTREGADO' || e === 'ENTREGADO A DESTINO') return 'success';
   if (e === 'CANCELADO') return 'neutral';
   if (e.includes('DEVOLUCION') || e === 'RECHAZADO') return 'danger';
   if (e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA' || e === 'NOVEDAD SOLUCIONADA') return 'warning';
@@ -37,7 +37,7 @@ function stateTone(estado: string): 'success' | 'info' | 'warning' | 'danger' | 
 
 const STATE_PRESETS: { label: string; estados: string[] | null; tone: ReturnType<typeof stateTone> }[] = [
   { label: 'Todos',         estados: null, tone: 'neutral' },
-  { label: 'Entregado',     estados: ['ENTREGADO'], tone: 'success' },
+  { label: 'Entregado',     estados: ['ENTREGADO', 'ENTREGADO A DESTINO'], tone: 'success' },
   { label: 'En tránsito',   estados: [
     'EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL',
     'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO',
@@ -47,7 +47,7 @@ const STATE_PRESETS: { label: string; estados: string[] | null; tone: ReturnType
     'EN BODEGA DROPI', 'RECOGIDO POR DROPI',
   ], tone: 'info' },
   { label: 'Novedades',     estados: ['NOVEDAD', 'INTENTO DE ENTREGA', 'NOVEDAD SOLUCIONADA'], tone: 'warning' },
-  { label: 'Devolución',    estados: ['DEVOLUCION', 'DEVOLUCION EN TRANSITO', 'RECHAZADO'], tone: 'danger' },
+  { label: 'Devolución',    estados: ['DEVOLUCION', 'DEVOLUCION EN TRANSITO', 'DEVOLUCION A ORIGEN', 'EN PROCESO DE DEVOLUCION', 'RECHAZADO'], tone: 'danger' },
   { label: 'Pendiente',     estados: ['PENDIENTE', 'PENDIENTE CONFIRMACION'], tone: 'warning' },
   { label: 'Cancelado',     estados: ['CANCELADO'], tone: 'neutral' },
 ];
@@ -95,6 +95,10 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
     summary.novedades === undefined;
 
   // ── Buckets ──────────────────────────────────────────────────
+  // El hero de KPIs, la tabla de despachadas y los aros de tasas se PODARON el
+  // 2026-08-23: duplicaban la pestaña Resumen (con riesgo documentado de dar
+  // números distintos para la misma pregunta). Los buckets de despacho quedan
+  // solo porque `enPreparacion` sale por resta.
   const entregados   = summary.entregados ?? 0;
   const enTransito   = summary.en_transito ?? 0;
   const devueltos    = summary.devueltos ?? 0;
@@ -122,35 +126,8 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
   // culpaba a una migration inexistente — auditoría 2026-07-03.)
   const enPreparacion = Math.max(0, totalActivos - despachadasReales - totalPendientes);
 
-  // ── Valores ─────────────────────────────────────────────────
-  const valorEntregado    = summary.valor_entregado    ?? 0;
-  const valorEnTransito   = summary.valor_en_transito  ?? 0;
-  const valorPerdido      = summary.valor_perdido      ?? 0;
-  const valorNovedades    = summary.valor_novedades    ?? 0;
-  const valorDespachadas  = valorEntregado + valorEnTransito + valorPerdido + valorNovedades;
-  const valorPendientes   = summary.valor_pendientes   ?? 0;
-  const valorCancelado    = summary.valor_cancelado    ?? 0;
-  const valorTotal        = valorDespachadas + valorPendientes + valorCancelado;
+  const valorPendientes = summary.valor_pendientes ?? 0;
 
-  // ── Tasas ───────────────────────────────────────────────────
-  // Tasa de despacho = despachadas ÷ GENERADOS SIN CANCELAR — la MISMA fórmula
-  // que "Tasa de despachos" del Simulador (unitEconomics.tasaDespachos). Antes
-  // esta dividía por total+cancelados y las dos tabs mostraban hasta 11 puntos
-  // de diferencia para la misma pregunta (auditoría 2026-07-07).
-  // `null` = denominador 0, o sea NO hay con qué calcular la tasa. Antes caían a
-  // 0 y la RateCard pintaba "0.0%" en verde (despacho) y "0.0%" en rojo
-  // (cancelación) para un rango SIN pedidos: un veredicto con color sobre un
-  // dato que no existe. Un 0 medido (hay pedidos y ninguno despachó) sigue
-  // siendo 0 y sigue pintándose con su tono (auditoría 2026-07-18).
-  const tasaDespacho = totalActivos > 0
-    ? (despachadasReales / totalActivos) * 100
-    : null;
-  const tasaCancelacion = totalEntrados > 0
-    ? (cancelados / totalEntrados) * 100
-    : null;
-
-  // % por fila (sobre total despachadas)
-  const pct = (n: number) => despachadasReales > 0 ? (n / despachadasReales) * 100 : 0;
   // % por fila de pendientes: sobre el TOTAL ENTRADO — el header de la columna
   // dice "% sobre total" y la fila Total ya dividía por totalEntrados; las filas
   // dividían por totalPendientes → tres denominadores en una columna que no
@@ -167,6 +144,16 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
 
   return (
     <div className="space-y-5">
+
+      {/* Propósito de la pestaña — acá se busca UNA guía; el resumen del
+          período vive en Resumen (los KPIs duplicados se podaron a propósito). */}
+      <motion.header {...fadeUp(0)}>
+        <h2 className="text-base font-semibold text-foreground">Buscar una guía</h2>
+        <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+          Escribí el número de guía o del pedido y mirá en qué estado está, guía por guía.
+          El resumen del período vive en la pestaña Resumen.
+        </p>
+      </motion.header>
 
       {migrationStale && (
         // Banner del lenguaje: barra lateral w-1 + chip de 36px con glow +
@@ -191,179 +178,10 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
         </motion.div>
       )}
 
-      {/* HERO — los 3 números que pidió el user, grandes y claros */}
-      <motion.div {...fadeUp(0.05)} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* logistics_summary no devuelve el valor de los pedidos en
-            PREPARACION (guia generada / alistamiento): el conteo del hero los
-            incluye y la plata no. Se DICE en el subline en vez de dejar que el
-            numero grande y el dinero hablen de poblaciones distintas. Sumarlos
-            de verdad requiere una columna nueva en la RPC (pedir
-            pg_get_functiondef primero — REGLA #1). */}
-        <HeroKpi
-          label="Total entrados"
-          value={totalEntrados.toLocaleString('es-CO')}
-          subline={enPreparacion > 0
-            ? `${formatCOP(valorTotal)} · sin la plata de ${enPreparacion} en preparación`
-            : formatCOP(valorTotal)}
-          tone="info"
-          icon={Inbox}
-        />
-        <HeroKpi
-          label="Despachados reales"
-          value={despachadasReales.toLocaleString('es-CO')}
-          subline={tasaDespacho === null
-            ? 'Sin pedidos generados en el rango'
-            : `${tasaDespacho.toFixed(1)}% de generados sin cancelar`}
-          tone="success"
-          icon={PackageCheck}
-        />
-        <HeroKpi
-          label="Cancelados"
-          value={cancelados.toLocaleString('es-CO')}
-          subline={tasaCancelacion === null
-            ? 'Sin pedidos en el rango'
-            : `${tasaCancelacion.toFixed(1)}% del total · ${formatCOP(valorCancelado)}`}
-          tone="danger"
-          icon={PackageX}
-        />
-      </motion.div>
-
-      {/* SECCIÓN 1: Estado de guías despachadas */}
+      {/* Timeline de guías — el buscador es la razón de ser de la pestaña,
+          por eso va primero, pegado a su encabezado. */}
       <motion.section
         {...fadeUp(0.12)}
-        className="rounded-2xl border border-border bg-card/40 overflow-hidden shadow-card3d hairline-top transition-colors duration-200 hover:border-border-strong"
-      >
-        <div className="px-5 py-3.5 border-b border-border/60">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <Truck size={14} className="text-info" aria-hidden="true" />
-              Estado de guías despachadas
-            </h2>
-            <span className="text-[10px] text-muted-foreground font-mono tabular-nums">
-              · {despachadasReales.toLocaleString('es-CO')} guías en ruta
-            </span>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left px-5 py-2.5 hud-label font-normal">Estado</th>
-                <th className="text-right px-3 py-2.5 hud-label font-normal">Ventas</th>
-                <th className="text-right px-3 py-2.5 hud-label font-normal">Guías</th>
-                <th className="text-right px-5 py-2.5 hud-label font-normal">%</th>
-              </tr>
-            </thead>
-            <tbody>
-              <Row tone="success" label="Entregado"     ventas={valorEntregado}  guias={entregados} pct={pct(entregados)} />
-              <Row tone="info"    label="En Tránsito"   ventas={valorEnTransito} guias={enTransito} pct={pct(enTransito)} />
-              <Row tone="warning" label="Novedades"     ventas={valorNovedades}  guias={novedades}  pct={pct(novedades)} />
-              <Row tone="danger"  label="Devoluciones"  ventas={valorPerdido}    guias={devueltos}  pct={pct(devueltos)} />
-              <tr className="border-t border-border bg-muted/20">
-                <td className="px-5 py-2.5 text-foreground font-bold">Total despachadas</td>
-                <td className="px-3 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">{formatCOP(valorDespachadas)}</td>
-                <td className="px-3 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">{despachadasReales.toLocaleString('es-CO')}</td>
-                <td className="px-5 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">
-                  {/* Un "100.0%" fijo sobre CERO despachadas era un porcentaje
-                      sin denominador — mismo patron que la fila de pendientes. */}
-                  {despachadasReales > 0
-                    ? '100.0%'
-                    : <span className="text-muted-foreground/60" title="No hay guías despachadas en el rango: no hay sobre qué calcular el porcentaje">—</span>}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </motion.section>
-
-      {/* SECCIÓN 2: Tasa Despacho + Cancelación (cards grandes) */}
-      <motion.div {...fadeUp(0.14)} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <RateCard
-          label="Tasa de Despacho"
-          pct={tasaDespacho}
-          subline={`${despachadasReales.toLocaleString('es-CO')} de ${totalActivos.toLocaleString('es-CO')} generados sin cancelar`}
-          tone="success"
-        />
-        <RateCard
-          label="Tasa de Cancelación"
-          pct={tasaCancelacion}
-          subline={`${cancelados.toLocaleString('es-CO')} de ${totalEntrados.toLocaleString('es-CO')} pedidos`}
-          tone="danger"
-        />
-      </motion.div>
-
-      {/* SECCIÓN 3: Pedidos pendientes */}
-      <motion.section
-        {...fadeUp(0.15)}
-        className="rounded-2xl border border-border bg-card/40 overflow-hidden shadow-card3d hairline-top transition-colors duration-200 hover:border-border-strong"
-      >
-        <div className="px-5 py-3.5 border-b border-border/60">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <ListChecks size={14} className="text-warning" aria-hidden="true" />
-              Pedidos pendientes
-            </h2>
-            <span className="text-[10px] text-muted-foreground font-mono tabular-nums">
-              · {totalPendientes.toLocaleString('es-CO')} sin salir todavía
-            </span>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left px-5 py-2.5 hud-label font-normal">Tipo</th>
-                <th className="text-right px-3 py-2.5 hud-label font-normal">Ventas</th>
-                <th className="text-right px-3 py-2.5 hud-label font-normal">Pedidos</th>
-                <th className="text-right px-5 py-2.5 hud-label font-normal">% sobre total</th>
-              </tr>
-            </thead>
-            <tbody>
-              <Row
-                tone="warning"
-                label="Pendientes (sin despachar)"
-                ventas={null}
-                guias={pendSinDespachar}
-                pct={pctPend(pendSinDespachar)}
-              />
-              <Row
-                tone="info"
-                label="Pendientes por confirmar"
-                ventas={null}
-                guias={pendPorConfirmar}
-                pct={pctPend(pendPorConfirmar)}
-              />
-              <tr className="border-t border-border bg-muted/20">
-                <td className="px-5 py-2.5 text-foreground font-bold">Total pendientes</td>
-                <td className="px-3 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">{formatCOP(valorPendientes)}</td>
-                <td className="px-3 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">{totalPendientes.toLocaleString('es-CO')}</td>
-                <td className="px-5 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">
-                  {totalEntrados > 0
-                    ? `${((totalPendientes / totalEntrados) * 100).toFixed(1)}%`
-                    : <span className="text-muted-foreground/60" title="No hay pedidos en el rango: no hay sobre qué calcular el porcentaje">—</span>}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p className="px-5 py-2.5 border-t border-border/60 text-[10px] text-muted-foreground leading-relaxed">
-          El valor pendiente llega como un solo total: no hay desglose medido por tipo, por eso esas celdas van en “—”.
-          {migrationStale
-            ? ' La fila Total tampoco es confiable mientras falte aplicar la migration (ver aviso arriba).'
-            : ' La plata de la fila Total sí es real.'}
-        </p>
-      </motion.section>
-
-      {enPreparacion > 0 && (
-        <div className="rounded-2xl border border-border/60 bg-muted/10 px-4 py-2.5 shadow-card3d text-[11px] text-muted-foreground leading-relaxed">
-          <span className="font-mono tabular-nums text-foreground">{enPreparacion.toLocaleString('es-CO')}</span>
-          {' '}pedidos en preparación (confirmados con guía generada / en alistamiento, todavía no salieron al transportador). Es inventario normal previo al despacho.
-        </div>
-      )}
-
-      {/* SECCIÓN 4: Timeline de guías */}
-      <motion.section
-        {...fadeUp(0.18)}
         className="rounded-2xl border border-border bg-card/40 overflow-hidden shadow-card3d hairline-top transition-colors duration-200 hover:border-border-strong"
       >
         <div className="px-5 py-3.5 border-b border-border/60 space-y-3">
@@ -479,6 +297,7 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
                   <th className="text-left px-5 py-2.5 hud-label font-normal">Fecha</th>
                   <th className="text-left px-3 py-2.5 hud-label font-normal">Guía</th>
                   <th className="text-left px-3 py-2.5 hud-label font-normal">Estado</th>
+                  <th className="text-left px-3 py-2.5 hud-label font-normal">Producto</th>
                   <th className="text-left px-3 py-2.5 hud-label font-normal">Transportadora</th>
                   <th className="text-left px-3 py-2.5 hud-label font-normal hidden md:table-cell">Ciudad</th>
                   <th className="text-right px-5 py-2.5 hud-label font-normal">Valor</th>
@@ -490,8 +309,24 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
                     <td className="px-5 py-2.5 font-mono tabular-nums text-muted-foreground whitespace-nowrap">
                       {e.fecha}
                     </td>
-                    <td className="px-3 py-2.5 font-mono tabular-nums text-foreground">
-                      {e.guia || <span className="text-muted-foreground/60">—</span>}
+                    <td className="px-3 py-2.5 font-mono tabular-nums">
+                      {/* Solo la guía es link (no la fila entera): así la
+                          selección de texto del resto de la fila sigue viva. */}
+                      {e.guia ? (
+                        e.external_id ? (
+                          <Link
+                            to={`/pedido/${e.external_id}`}
+                            className="text-accent hover:underline"
+                            title={`Ver el detalle del pedido ${e.external_id}`}
+                          >
+                            {e.guia}
+                          </Link>
+                        ) : (
+                          <span className="text-foreground">{e.guia}</span>
+                        )
+                      ) : (
+                        <span className="text-muted-foreground/60">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-2.5">
                       {/* OJO: `e.estado` es dato de Dropi — nunca .hud-label acá
@@ -499,6 +334,9 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
                       <span className={`pill pill-${stateTone(e.estado)} text-[10px]`}>
                         {e.estado || '—'}
                       </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-foreground truncate max-w-[180px]" title={e.producto}>
+                      {e.producto || <span className="text-muted-foreground/60">—</span>}
                     </td>
                     <td className="px-3 py-2.5 text-foreground truncate max-w-[160px]" title={e.transportadora}>
                       {e.transportadora || <span className="text-muted-foreground/60">—</span>}
@@ -551,48 +389,78 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
           </div>
         )}
       </motion.section>
+
+      {/* Pedidos pendientes — desglose que NO existe en otra pestaña */}
+      <motion.section
+        {...fadeUp(0.18)}
+        className="rounded-2xl border border-border bg-card/40 overflow-hidden shadow-card3d hairline-top transition-colors duration-200 hover:border-border-strong"
+      >
+        <div className="px-5 py-3.5 border-b border-border/60">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <ListChecks size={14} className="text-warning" aria-hidden="true" />
+              Pedidos pendientes
+            </h2>
+            <span className="text-[10px] text-muted-foreground font-mono tabular-nums">
+              · {totalPendientes.toLocaleString('es-CO')} sin salir todavía
+            </span>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="text-left px-5 py-2.5 hud-label font-normal">Tipo</th>
+                <th className="text-right px-3 py-2.5 hud-label font-normal">Ventas</th>
+                <th className="text-right px-3 py-2.5 hud-label font-normal">Pedidos</th>
+                <th className="text-right px-5 py-2.5 hud-label font-normal">% sobre total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <Row
+                tone="warning"
+                label="Pendientes (sin despachar)"
+                ventas={null}
+                guias={pendSinDespachar}
+                pct={pctPend(pendSinDespachar)}
+              />
+              <Row
+                tone="info"
+                label="Pendientes por confirmar"
+                ventas={null}
+                guias={pendPorConfirmar}
+                pct={pctPend(pendPorConfirmar)}
+              />
+              <tr className="border-t border-border bg-muted/20">
+                <td className="px-5 py-2.5 text-foreground font-bold">Total pendientes</td>
+                <td className="px-3 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">{formatCOP(valorPendientes)}</td>
+                <td className="px-3 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">{totalPendientes.toLocaleString('es-CO')}</td>
+                <td className="px-5 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">
+                  {totalEntrados > 0
+                    ? `${((totalPendientes / totalEntrados) * 100).toFixed(1)}%`
+                    : <span className="text-muted-foreground/60" title="No hay pedidos en el rango: no hay sobre qué calcular el porcentaje">—</span>}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="px-5 py-2.5 border-t border-border/60 text-[10px] text-muted-foreground leading-relaxed">
+          El valor pendiente llega como un solo total: no hay desglose medido por tipo, por eso esas celdas van en “—”.
+          {migrationStale
+            ? ' La fila Total tampoco es confiable mientras falte aplicar la migration (ver aviso arriba).'
+            : ' La plata de la fila Total sí es real.'}
+        </p>
+      </motion.section>
+
+      {enPreparacion > 0 && (
+        <div className="rounded-2xl border border-border/60 bg-muted/10 px-4 py-2.5 shadow-card3d text-[11px] text-muted-foreground leading-relaxed">
+          <span className="font-mono tabular-nums text-foreground">{enPreparacion.toLocaleString('es-CO')}</span>
+          {' '}pedidos en preparación (confirmados con guía generada / en alistamiento, todavía no salieron al transportador). Es inventario normal previo al despacho.
+        </div>
+      )}
     </div>
   );
 });
-
-interface HeroKpiProps {
-  label: string;
-  value: string;
-  subline: string;
-  tone: 'info' | 'success' | 'danger';
-  icon: LucideIcon;
-}
-/**
- * KPI con la anatomía canónica del Dashboard: chip de ícono de 36px con glow
- * arriba, cifra grande debajo y el rótulo en .hud-label BAJO la cifra.
- *
- * No usa <StatTile> porque su <CountUp> imprime `value.toFixed(0)` — sin
- * separador de miles. Acá la cifra ya viene formateada en es-CO ("1.234") y
- * cambiarla por "1234" sería empeorar la lectura de un número real.
- */
-function HeroKpi({ label, value, subline, tone, icon: Icon }: HeroKpiProps) {
-  const styles = {
-    info:    { chip: 'bg-info/14 border-info/30 text-info glow-info',          text: 'text-info' },
-    success: { chip: 'bg-success/14 border-success/30 text-success glow-success', text: 'text-success' },
-    danger:  { chip: 'bg-danger/14 border-danger/30 text-danger glow-danger',  text: 'text-danger' },
-  }[tone];
-  return (
-    <article className="rounded-2xl border border-border bg-card/40 p-4 shadow-card3d hairline-top h-full flex flex-col transition-colors duration-200 hover:border-border-strong">
-      <span className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 ${styles.chip}`}>
-        <Icon size={17} aria-hidden="true" />
-      </span>
-      <div className={`text-[34px] font-mono tabular-nums font-bold leading-none mt-3 ${styles.text}`}>
-        {value}
-      </div>
-      <div className="hud-label mt-2">{label}</div>
-      {/* tabular-nums + truncate: este subline lleva cifras ("1.234 de 5.678
-          pedidos") y sin tabular los dígitos no alinean entre las 3 tarjetas. */}
-      <div className="text-[11px] text-muted-foreground mt-2 leading-snug tabular-nums truncate">
-        {subline}
-      </div>
-    </article>
-  );
-}
 
 interface RowProps {
   tone: 'success' | 'info' | 'warning' | 'danger';
@@ -641,108 +509,5 @@ function Row({ tone, label, ventas, guias, pct }: RowProps) {
       <td className="px-3 py-2.5 text-right font-mono tabular-nums text-foreground align-middle">{guias.toLocaleString('es-CO')}</td>
       <td className="px-5 py-2.5 text-right font-mono tabular-nums text-muted-foreground align-middle">{pct.toFixed(1)}%</td>
     </tr>
-  );
-}
-
-interface RateCardProps {
-  label: string;
-  /** `null` = denominador 0: no hay con qué calcular. Se muestra "—" en tono
-   *  neutro, nunca "0.0%" con color de veredicto. Un 0 medido es `0`, no `null`. */
-  pct: number | null;
-  subline: string;
-  tone: 'success' | 'danger';
-}
-/**
- * Tasa dibujada como aro (conic-gradient + máscara donut, la receta cruda del
- * lenguaje) en vez de una cifra suelta.
- *
- * NO usa <GaugeRing/> por dos razones concretas:
- *  1. GaugeRing imprime `Math.round(shown)` — perdería el decimal que esta
- *     pantalla muestra hoy ("62.4%" pasaría a "62%"): cambiar la precisión de
- *     un número medido no es un cambio visual, es otro dato.
- *  2. Su rampa es siempre accent→accent2→cyan; acá el color ES el veredicto
- *     (verde despacho / rojo cancelación) y perderlo borraría información.
- *
- * Sin medición (`pct === null`) NO se dibuja aro: va el círculo dashed con "—",
- * el mismo patrón que el hero del Dashboard cuando no hay resueltos. Pasarle 0
- * al aro pintaría un veredicto que nadie midió.
- */
-function RateCard({ label, pct, subline, tone }: RateCardProps) {
-  const noData = pct === null;
-  const SIZE = 148;
-  const THICKNESS = 16;
-  const token = tone === 'success' ? '--success' : '--danger';
-  const textColor = noData
-    ? 'text-muted-foreground'
-    : tone === 'success' ? 'text-success' : 'text-danger';
-  const deg = noData ? 0 : Math.max(0, Math.min(100, pct)) * 3.6;
-  const donutMask = `radial-gradient(farthest-side, transparent calc(100% - ${THICKNESS}px), #000 calc(100% - ${THICKNESS - 1}px))`;
-  const tickMask = 'radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 5px))';
-
-  return (
-    <article className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top h-full flex flex-col items-center text-center transition-colors duration-200 hover:border-border-strong">
-      <div className="hud-label self-start">{label}</div>
-
-      <div className="py-4">
-        {noData ? (
-          <div
-            className="flex flex-col items-center justify-center rounded-full border border-dashed border-border bg-muted/20 text-center px-6"
-            style={{ width: SIZE, height: SIZE }}
-            role="img"
-            aria-label="Tasa sin datos todavía"
-            title="No hay pedidos en el rango: no hay con qué calcular esta tasa"
-          >
-            <span className="text-5xl font-bold text-muted-foreground leading-none">—</span>
-          </div>
-        ) : (
-          <div
-            role="progressbar"
-            aria-valuenow={Math.round(pct)}
-            // El decimal importa (por eso este aro NO usa GaugeRing, que
-            // redondea). `aria-valuenow` sólo acepta número, así que el texto
-            // exacto viaja en `aria-valuetext`: quien usa lector de pantalla
-            // escucha lo mismo que se ve, 62.4% y no 62%.
-            aria-valuetext={`${pct.toFixed(1)}%`}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label={label}
-            className="relative"
-            style={{ width: SIZE, height: SIZE }}
-          >
-            {/* Marcas de tick del borde */}
-            <div
-              aria-hidden="true"
-              className="absolute rounded-full opacity-50"
-              style={{
-                inset: -3,
-                background: 'repeating-conic-gradient(from -90deg, hsl(var(--foreground) / .30) 0deg .7deg, transparent .7deg 15deg)',
-                WebkitMask: tickMask,
-                mask: tickMask,
-              }}
-            />
-            {/* Pista + arco de progreso, teñido con el token del veredicto */}
-            <div
-              aria-hidden="true"
-              className="absolute inset-0 rounded-full"
-              style={{
-                background: `conic-gradient(from 200deg, hsl(var(${token})) 0deg, hsl(var(${token})) ${deg}deg, hsl(var(--foreground) / .06) ${deg}deg)`,
-                WebkitMask: donutMask,
-                mask: donutMask,
-                boxShadow: `0 0 40px -8px hsl(var(${token}) / .55)`,
-              }}
-            />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className={`font-mono tabular-nums font-bold leading-none text-2xl ${textColor}`}>
-                {pct.toFixed(1)}%
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="text-[11px] text-muted-foreground font-mono tabular-nums leading-snug">
-        {subline}
-      </div>
-    </article>
   );
 }

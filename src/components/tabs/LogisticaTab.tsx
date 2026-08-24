@@ -11,6 +11,7 @@ import {
 import { motion } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 import { useLogisticsStats } from '@/hooks/useLogisticsStats';
+import { useFleteByCarrier } from '@/hooks/useFleteByCarrier';
 import DateRangeFilter from '@/components/logistics/DateRangeFilter';
 import LogisticsHeroChart from '@/components/logistics/LogisticsHeroChart';
 import GeoDistribution from '@/components/logistics/GeoDistribution';
@@ -32,7 +33,6 @@ import BalanceTab from '@/components/logistics/BalanceTab';
 import CancelacionesTab from '@/components/logistics/CancelacionesTab';
 import MesActualResumen from '@/components/logistics/MesActualResumen';
 import StoreAdSpendPanel from '@/components/logistics/StoreAdSpendPanel';
-import SemaforoSalud from '@/components/logistics/SemaforoSalud';
 import {
   CHART_TOOLTIP_STYLE,
   CHART_GRID_PROPS,
@@ -128,21 +128,21 @@ const fadeUp = (delay = 0) => ({
 });
 
 /**
- * Degradado vertical para una barra (pleno arriba → apagado en la base).
- * Los ids de <defs> son GLOBALES al documento: si dos charts de esta pantalla
- * usan el mismo id, el segundo pisa al primero y las barras se pintan con el
- * degradado equivocado. De ahí el `prefix` obligatorio.
+ * ⛔ NO envolver los <defs> de un chart en un componente propio.
+ * Recharts SOLO renderiza hijos de tipos que conoce: un function component
+ * como hijo de <BarChart> se DESCARTA en silencio, el gradiente nunca llega
+ * al DOM y cada barra queda con fill="url(#inexistente)" → invisible. Así
+ * estuvieron MESES muertos "Estados por día de creación" y "Desempeño por
+ * transportadora" (medido en producción el 23-ago-2026: barras con geometría
+ * real y getElementById del gradiente en null). Los <defs> van INLINE dentro
+ * del chart, como ya hacían los charts que sí se veían (CarrierTimeline).
  */
-function BarGradientDefs({ prefix, entries }: { prefix: string; entries: { key: string; color: string }[] }) {
+function barGradientStops(color: string) {
   return (
-    <defs>
-      {entries.map(e => (
-        <linearGradient key={e.key} id={`${prefix}-${e.key}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stopColor={e.color} stopOpacity={0.95} />
-          <stop offset="100%" stopColor={e.color} stopOpacity={0.5} />
-        </linearGradient>
-      ))}
-    </defs>
+    <>
+      <stop offset="0%" stopColor={color} stopOpacity={0.95} />
+      <stop offset="100%" stopColor={color} stopOpacity={0.5} />
+    </>
   );
 }
 
@@ -348,6 +348,9 @@ export default function LogisticaTab() {
   const { summary, carriers, cities, products, isLoading, isError } = useLogisticsStats(filters);
   const activeStoreId = useActiveStoreId();
   const queryClient = useQueryClient();
+  // Flete promedio por transportadora — client-side sobre orders.flete (ningún
+  // RPC lo trae). Pedido del dueño 23-ago-2026. Si falla, la columna va en '—'.
+  const fleteCarrier = useFleteByCarrier(filters.fromDate, filters.toDate);
 
   // Query extra para los 4 gráficos nuevos (RPC `logistics_dashboard`).
   // Si el RPC no existe en DB, cae a EmptyChart y el resto sigue funcionando.
@@ -578,10 +581,10 @@ export default function LogisticaTab() {
               <MesActualResumen summary={summary.data ?? null} filters={filters} />
             </motion.div>
 
-            {/* Semáforo de salud financiera (estándares de mercado, estilo Wintrack). */}
-            <motion.div {...fadeUp(0.15)}>
-              <SemaforoSalud from={filters.fromDate} to={filters.toDate} />
-            </motion.div>
+            {/* El "Semáforo de salud financiera" se RETIRÓ el 23-ago-2026 a pedido
+                del dueño ("está demás, no me dice datos valiosos"): eran juicios
+                (sano/vigilar) sobre umbrales colombianos que en EC/GT ni aplicaban.
+                Los datos crudos que traía viven en Finanzas (margen, composición). */}
 
             {/* Pauta diaria por tienda — se resta de la Ganancia Neta de arriba. */}
             <motion.div {...fadeUp(0.18)}>
@@ -596,7 +599,10 @@ export default function LogisticaTab() {
 
           <TabsContent value="carriers" className="mt-4 space-y-5">
             <motion.div {...fadeUp(0.05)}>
-              <CarrierStatsTable rows={carriers.data ?? []} />
+              <CarrierStatsTable
+                rows={carriers.data ?? []}
+                fletePorCarrier={fleteCarrier.data?.porCarrier}
+              />
             </motion.div>
 
             {/* Antes un error del RPC (retry:false) hacía DESAPARECER los charts
@@ -637,11 +643,12 @@ export default function LogisticaTab() {
             </motion.div>
           </TabsContent>
 
-          {/* TAB: Decisiones — heatmap matriz + tabla recomendador.
-              Las dos secciones leen de RPCs nuevas (logistics_by_city_carrier
-              y logistics_recommendations). NO se filtran por ciudad porque
-              es un análisis comparativo entre ciudades — el filtro ciudad
-              no aplica acá. */}
+          {/* TAB: Decisiones — heatmap matriz + tabla recomendador. Las DOS
+              secciones leen del MISMO RPC logistics_by_city_carrier y la
+              recomendación se calcula client-side (carrierRecommendations.ts).
+              La vieja RPC logistics_recommendations ya NO se usa acá. NO se
+              filtran por ciudad porque es un análisis comparativo entre
+              ciudades — el filtro ciudad no aplica acá. */}
           <TabsContent value="decisiones" className="mt-4 space-y-5">
             <motion.div {...fadeUp(0.05)}>
               <CarrierRecommendations filters={filters} />
@@ -1037,10 +1044,14 @@ function EstadoDonutAndDailyStack({
           <div className="h-[280px]">
             <ResponsiveContainer>
               <BarChart data={stackRows} margin={{ top: 8, right: 10, bottom: 5, left: -10 }}>
-                <BarGradientDefs
-                  prefix="estadoDia"
-                  entries={stackKeys.map((k) => ({ key: k, color: STACK_COLORS[k] }))}
-                />
+                {/* <defs> inline: ver el aviso en barGradientStops. */}
+                <defs>
+                  {stackKeys.map((k) => (
+                    <linearGradient key={k} id={`estadoDia-${k}`} x1="0" y1="0" x2="0" y2="1">
+                      {barGradientStops(STACK_COLORS[k])}
+                    </linearGradient>
+                  ))}
+                </defs>
                 <CartesianGrid {...CHART_GRID_PROPS} />
                 <XAxis dataKey="fecha" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} />
                 <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} width={36} />
@@ -1101,6 +1112,7 @@ function EstadoDonutAndDailyStack({
 function CarrierHorizontalStack({ data }: { data: DashboardData['by_transportadora_and_estado'] }) {
   const rows = data.map((d) => {
     const t = d.total || 1;
+    const clasificados = d.entregada + d.transito + d.novedad + d.devolucion + d.rechazada;
     return {
       transportadora: d.transportadora,
       Entregada:     +(d.entregada * 100 / t).toFixed(2),
@@ -1108,6 +1120,11 @@ function CarrierHorizontalStack({ data }: { data: DashboardData['by_transportado
       Novedad:       +(d.novedad * 100 / t).toFixed(2),
       'Devolución':  +(d.devolucion * 100 / t).toFixed(2),
       Rechazada:     +(d.rechazada * 100 / t).toFixed(2),
+      // Sin este segmento la pila no llega al 100% y el hueco parece un bug:
+      // son los pedidos en otros estados (pendiente/preparación/etc.) que las
+      // 5 series de arriba no cubren. Mostrarlo gris es más honesto que
+      // inflar el resto (lo que hacía el stackOffset="expand" que se quitó).
+      Otros:         +(Math.max(0, d.total - clasificados) * 100 / t).toFixed(2),
       total: d.total,
     };
   });
@@ -1120,6 +1137,7 @@ function CarrierHorizontalStack({ data }: { data: DashboardData['by_transportado
     { key: 'Novedad',     slug: 'novedad',    color: 'hsl(var(--warning))' },
     { key: 'Devolución',  slug: 'devolucion', color: 'hsl(var(--danger))' },
     { key: 'Rechazada',   slug: 'rechazada',  color: 'hsl(var(--danger) / 0.6)' },
+    { key: 'Otros',       slug: 'otros',      color: 'hsl(var(--muted-foreground) / 0.35)' },
   ];
 
   return (
@@ -1132,8 +1150,18 @@ function CarrierHorizontalStack({ data }: { data: DashboardData['by_transportado
       {rows.length === 0 ? <EmptyChart /> : (
         <div style={{ height: Math.max(220, rows.length * 56) }}>
           <ResponsiveContainer>
-            <BarChart data={rows} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 20 }} stackOffset="expand" barCategoryGap="28%">
-              <BarGradientDefs prefix="carrierPct" entries={PCT_SERIES.map(s => ({ key: s.slug, color: s.color }))} />
+            {/* Sin stackOffset="expand": los valores YA vienen en % (0-100) y con
+                expand recharts los re-normalizaba a 0-1 sobre un eje forzado a
+                0-100 → barras al 1% del ancho, invisibles. Segunda causa de que
+                este chart se viera vacío junto con el gradiente descartado. */}
+            <BarChart data={rows} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 20 }} barCategoryGap="28%">
+              <defs>
+                {PCT_SERIES.map((s) => (
+                  <linearGradient key={s.slug} id={`carrierPct-${s.slug}`} x1="0" y1="0" x2="0" y2="1">
+                    {barGradientStops(s.color)}
+                  </linearGradient>
+                ))}
+              </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" horizontal={false} />
               <XAxis
                 type="number"

@@ -101,6 +101,35 @@ vi.mock('@/hooks/useWalletSinClasificar', () => ({
   useWalletSinClasificar: () => ({ data: null }),
 }));
 
+// Sección "Pauta y neto": bitácora diaria + costos mensuales. Mockeados para no
+// necesitar QueryClient ni red. Default: bitácora leída OK y vacía (pauta $0
+// legítima), sin valor mensual guardado.
+interface MockAdSpendRow { spend_date: string; amount: number; platform: string }
+interface MockAdSpendReturn {
+  data?: MockAdSpendRow[];
+  isLoading: boolean;
+  isError: boolean;
+  error?: unknown;
+}
+const adSpendHookMock = vi.fn((): MockAdSpendReturn => ({ data: [], isLoading: false, isError: false }));
+vi.mock('@/hooks/useStoreAdSpend', () => ({
+  useStoreAdSpendRange: () => adSpendHookMock(),
+  // Reimplementación mínima (pura) de la suma: NO usamos importActual porque el
+  // módulo real importa el client de Supabase, que revienta sin .env (CI).
+  sumAdSpend: (rows: MockAdSpendRow[]) => ({
+    meta: 0, tiktok: 0, other: 0,
+    total: rows.reduce((acc, r) => acc + r.amount, 0),
+  }),
+}));
+
+const monthlyCostsHookMock = vi.fn(() => ({
+  data: { pauta_meta: 0, pauta_tiktok: 0, costos_admin: 0 },
+  isLoading: false,
+}));
+vi.mock('@/hooks/useLogisticaMonthlyCosts', () => ({
+  useLogisticaMonthlyCosts: () => monthlyCostsHookMock(),
+}));
+
 const storeMock = vi.fn((): { isOwnerOfActive: boolean } => ({ isOwnerOfActive: true }));
 vi.mock('@/contexts/StoreContext', () => ({
   useStore: () => storeMock(),
@@ -164,23 +193,32 @@ describe('FinanzasTab', () => {
     resumenSyncMock.mutate.mockReset();
     resumenSyncMock.isPending = false;
     storeMock.mockReturnValue({ isOwnerOfActive: true });
+    adSpendHookMock.mockReturnValue({ data: [], isLoading: false, isError: false });
+    monthlyCostsHookMock.mockReturnValue({
+      data: { pauta_meta: 0, pauta_tiktok: 0, costos_admin: 0 },
+      isLoading: false,
+    });
   });
 
   it('renderiza la card hero "Ganancia Neta Dropi" con el valor del hook nuevo', () => {
     hookMock.mockReturnValue({ data: SAMPLE, isLoading: false, isError: false });
     render(<FinanzasTab filters={FILTERS} />);
-    // Banner Fase A — ahora describe cash flow operativo
-    expect(screen.getByText(/Fase A/i)).toBeInTheDocument();
-    expect(screen.getByText(/Cash flow operativo Dropi/i)).toBeInTheDocument();
+    // Banner "cómo leer" — en español llano (antes decía "Fase A — Cash flow
+    // operativo Dropi", jerga que el dueño no entendía)
+    expect(screen.getByText(/Cómo leer esta pestaña/i)).toBeInTheDocument();
+    expect(screen.getByText(/mezclan pedidos de meses anteriores/i)).toBeInTheDocument();
+    expect(screen.getByText(/La pauta ahora sí se muestra/i)).toBeInTheDocument();
     // Card hero con el label nuevo
     expect(screen.getByText(/Ganancia Neta Dropi/i)).toBeInTheDocument();
-    // Valor formateado de 18.432.571 — sin cohorte el hero usa la caja (gn) y la
-    // card "Wallet neto" también muestra gn → aparece 2 veces (hero + card).
+    // Valor formateado de 18.432.571 — sin cohorte el hero usa la caja (gn), la
+    // card "Wallet neto" también muestra gn, y "Neto después de pauta" (pauta $0)
+    // da el mismo número → aparece varias veces.
     expect(screen.getAllByText(/\$\s?18\.432\.571/).length).toBeGreaterThanOrEqual(1);
     // Hint con desglose entradas vs salidas
     expect(screen.getByText(/entró.*23\.728\.183.*te debitó.*5\.295\.612/i)).toBeInTheDocument();
-    // Sin cohorte disponible (default null) el hero usa la CAJA del wallet.
-    expect(screen.getByText(/caja · fecha de pago/i)).toBeInTheDocument();
+    // Sin cohorte disponible (default null) el hero usa la CAJA del wallet —
+    // rotulada en llano como "plata movida en el rango".
+    expect(screen.getByText(/plata movida en el rango/i)).toBeInTheDocument();
   });
 
   it('usa el OPERATIVO POR COHORTE en el hero cuando está disponible (no la caja inflada)', () => {
@@ -190,14 +228,15 @@ describe('FinanzasTab', () => {
       isLoading: false,
     });
     render(<FinanzasTab filters={FILTERS} />);
-    // El hero muestra el cohorte ($4.800.000). La caja del wallet ($18.432.571)
-    // ya NO infla el hero, pero SÍ aparece (una sola vez) en la card "Wallet neto
-    // del período" abajo — son dos perspectivas distintas y deliberadas.
-    expect(screen.getByText(/\$\s?4\.800\.000/)).toBeInTheDocument();
+    // El hero muestra el cohorte ($4.800.000; con pauta $0 el "Neto después de
+    // pauta" repite el número). La caja del wallet ($18.432.571) ya NO infla el
+    // hero, pero SÍ aparece (una sola vez) en la card "Wallet neto del período"
+    // abajo — son dos perspectivas distintas y deliberadas.
+    expect(screen.getAllByText(/\$\s?4\.800\.000/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/\$\s?18\.432\.571/).length).toBe(1);
-    // El subtítulo del hero indica que es cohorte, no caja.
-    expect(screen.getByText(/cohorte del mes/i)).toBeInTheDocument();
-    expect(screen.queryByText(/caja · fecha de pago/i)).not.toBeInTheDocument();
+    // El subtítulo del hero indica que va por pedidos creados, no por caja.
+    expect(screen.getByText(/pedidos creados en el mes/i)).toBeInTheDocument();
+    expect(screen.queryByText(/plata movida en el rango/i)).not.toBeInTheDocument();
   });
 
   it('renderiza la card hero en rojo cuando la ganancia neta es negativa', () => {
@@ -242,9 +281,11 @@ describe('FinanzasTab', () => {
   it('muestra los KPIs de ingresos, COGS y tasa de entrega', () => {
     hookMock.mockReturnValue({ data: SAMPLE, isLoading: false, isError: false });
     render(<FinanzasTab filters={FILTERS} />);
-    // "Ingresos brutos" aparece en el hero (mega-KPI) Y en el grid secundario
-    // — duplicación intencional para jerarquía visual del rediseño.
+    // "Ingresos brutos" vive SOLO en el hero: la card duplicada del grid
+    // secundario se quitó (mismo número dos veces = ruido). Su hint viejo
+    // ("Solo pedidos entregados") es el pin de que la card del grid no volvió.
     expect(screen.getAllByText(/Ingresos brutos/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/Solo pedidos entregados/i)).not.toBeInTheDocument();
     // "COGS" aparece en el label del KPI y en el banner — ambos deben estar
     expect(screen.getAllByText(/COGS/i).length).toBeGreaterThan(0);
     // "87%" = tasa de entrega MADURA (70 entregadas ÷ 80 resueltas = 87.5 →
@@ -346,6 +387,52 @@ describe('FinanzasTab', () => {
     expect(
       screen.getByText(/aparece como referencia/i),
     ).toBeInTheDocument();
+  });
+
+  it('Pauta y neto: con bitácora diaria muestra pauta, neto después de pauta y CPA real', () => {
+    hookMock.mockReturnValue({ data: SAMPLE, isLoading: false, isError: false });
+    adSpendHookMock.mockReturnValue({
+      data: [
+        { spend_date: '2026-04-03', amount: 100_000, platform: 'meta' },
+        { spend_date: '2026-04-04', amount: 40_000, platform: 'tiktok' },
+      ],
+      isLoading: false,
+      isError: false,
+    });
+    render(<FinanzasTab filters={FILTERS} />);
+    expect(screen.getByText(/Pauta y neto/i)).toBeInTheDocument();
+    // Pauta del período = suma de la bitácora (140.000)
+    expect(screen.getByText(/^Pauta del período$/i)).toBeInTheDocument();
+    expect(screen.getByText(/\$\s?140\.000/)).toBeInTheDocument();
+    // Cobertura en la cara: abril (pasado) tiene 30 días y solo 2 anotados.
+    expect(screen.getByText(/2 de 30 días anotados/i)).toBeInTheDocument();
+    // Neto después de pauta = caja del hero (18.432.571) − pauta (140.000)
+    expect(screen.getByText(/Neto después de pauta/i)).toBeInTheDocument();
+    expect(screen.getByText(/\$\s?18\.292\.571/)).toBeInTheDocument();
+    // CPA real = 140.000 ÷ 70 entregadas = 2.000
+    expect(screen.getByText(/CPA real/i)).toBeInTheDocument();
+    expect(screen.getByText(/\$\s?2\.000$/)).toBeInTheDocument();
+    expect(screen.getByText(/pauta ÷ entregas del período/i)).toBeInTheDocument();
+  });
+
+  it('Pauta y neto: si la lectura de pauta FALLA, las tres tarjetas van en "—" (nunca resta $0 en silencio)', () => {
+    hookMock.mockReturnValue({ data: SAMPLE, isLoading: false, isError: false });
+    // Error REAL (no "migration sin aplicar"): isRpcMissing devuelve false.
+    adSpendHookMock.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('permission denied'),
+    });
+    render(<FinanzasTab filters={FILTERS} />);
+    // Las tres tarjetas en '—' + el aviso — un "Neto después de pauta" calculado
+    // restando $0 sería un dato inventado.
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3);
+    expect(screen.getAllByText(/no se pudo leer tu pauta/i).length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByText(/sin ese dato no restamos nada/i)).toBeInTheDocument();
+    // El neto NO se muestra como si la pauta fuera $0 (18.432.571 seguiría
+    // apareciendo, pero solo como hero + wallet neto, no como "neto después de pauta").
+    expect(screen.getAllByText(/\$\s?18\.432\.571/).length).toBe(2);
   });
 
   it('muestra skeletons mientras isLoading', () => {

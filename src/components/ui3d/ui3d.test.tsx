@@ -240,12 +240,15 @@ describe('TiltCard', () => {
     expect(container.querySelector('.mi-clase')).toBeTruthy();
   });
 
-  it('muestra el sheen solo cuando se pide', () => {
+  it('NUNCA renderiza el sheen — retirado el 23-ago-2026 ("dejalo todo quieto")', () => {
+    // La prop se conserva para no tocar 50+ call-sites, pero es inerte:
+    // reintroducir el barrido en loop revierte un pedido explícito del dueño.
     const { container: sin } = render(<TiltCard>x</TiltCard>);
     expect(sin.querySelector('.sheen')).toBeNull();
     const { container: con } = render(<TiltCard sheen>x</TiltCard>);
-    expect(con.querySelector('.sheen')).toBeTruthy();
+    expect(con.querySelector('.sheen')).toBeNull();
   });
+
 
   it('muestra los dos brackets cuando se piden', () => {
     const { container } = render(<TiltCard brackets>x</TiltCard>);

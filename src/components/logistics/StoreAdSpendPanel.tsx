@@ -114,7 +114,7 @@ export default function StoreAdSpendPanel({ filters }: Props) {
             </div>
             {coberturaIncompleta && (
               <p className="mt-2.5 text-[11px] text-warning leading-relaxed">
-                Los días sin registro cuentan como $0 en el Neto Real y en el semáforo — anotá
+                Los días sin registro cuentan como $0 en el Neto Real — anotá
                 aunque sea el total del día para que la ganancia no salga inflada.
               </p>
             )}

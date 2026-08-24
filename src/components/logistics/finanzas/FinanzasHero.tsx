@@ -139,17 +139,6 @@ function MargenRing({ pct, tone, size = 154, thickness = 16 }: {
           }}
         />
       )}
-      {/* Sheen que gira encima. */}
-      <div
-        aria-hidden="true"
-        className="absolute inset-0 rounded-full opacity-40 animate-gb-spin"
-        style={{
-          background: 'conic-gradient(from 0deg, transparent, hsl(var(--foreground) / .35), transparent 40%)',
-          WebkitMask: donutMask,
-          mask: donutMask,
-          animationDuration: '6s',
-        }}
-      />
       {/* Cifra central — un SOLO nodo de texto con el mismo toFixed(1) de antes. */}
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <div className={`font-mono tabular-nums font-bold leading-none text-[28px] ${TONE_TEXT[tone]}`}>
@@ -196,10 +185,9 @@ export default function FinanzasHero({
   return (
     <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
       {/* ── Hero principal — Ganancia Neta REAL.
-          Única card de la pantalla con sheen + brackets: si dos llevaran
-          brackets, ninguna sería la protagonista. */}
+          Única card de la pantalla con brackets: si dos los llevaran,
+          ninguna sería la protagonista. Sin sheen: menos ruido visual. */}
       <TiltCard
-        sheen
         brackets
         wrapperClassName="md:col-span-5"
         className="bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg h-full flex flex-col"
@@ -221,7 +209,7 @@ export default function FinanzasHero({
         </div>
 
         <div className="hud-label text-subtle mt-2.5 tilt-layer-1">
-          Ganancia Neta Dropi {cohorte ? '(cohorte del mes)' : '(caja · fecha de pago)'}
+          Ganancia Neta Dropi {cohorte ? '(pedidos creados en el mes)' : '(plata movida en el rango)'}
         </div>
 
         {/* Desglose in/out: swatches cuadrados de 10px (nunca círculos) y las
@@ -230,19 +218,21 @@ export default function FinanzasHero({
           <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg border bg-success/10 border-success/25 text-[11px]">
             <span className="w-2.5 h-2.5 rounded-[3px] bg-success" aria-hidden="true" />
             <span className="font-mono tabular-nums font-semibold text-success">{formatCOP(totalEntradas)}</span>
-            <span className="text-muted-foreground">in</span>
+            <span className="text-muted-foreground">entró</span>
           </span>
           <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg border bg-danger/10 border-danger/25 text-[11px]">
             <span className="w-2.5 h-2.5 rounded-[3px] bg-danger" aria-hidden="true" />
             <span className="font-mono tabular-nums font-semibold text-danger">{formatCOP(totalSalidas)}</span>
-            <span className="text-muted-foreground">out</span>
+            <span className="text-muted-foreground">salió</span>
           </span>
         </div>
 
         <p className="mt-3 text-[11px] text-muted-foreground leading-relaxed tilt-layer-1">
+          {/* OJO: no repetir acá "pedidos creados en el mes" — el label de arriba ya
+              lo dice y un getByText del test se rompería con dos matches. */}
           {cohorte
-            ? 'Operativo por cohorte (pedidos creados en el mes): '
-            : 'Caja del wallet por fecha de pago (mezcla meses): '}
+            ? 'Ganancia del mes — cuadra con la Utilidad de Dropi: '
+            : 'Plata que se movió en el wallet en este rango (mezcla meses): '}
           entró {formatCOP(totalEntradas)} − te debitó {formatCOP(totalSalidas)}.
         </p>
       </TiltCard>
@@ -293,7 +283,7 @@ export default function FinanzasHero({
               <span
                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-semibold mb-2 ${TONE_VEREDICTO.neutral}`}
               >
-                Sano: ≥30%
+                Sano: ≥30% de margen
               </span>
               <span className="block">Ganancia neta sobre ingresos brutos.</span>
               {/* El calificador que ya llevan las otras dos cards. El numerador y el

@@ -280,7 +280,7 @@ y `src/lib/walletCategoria.test.ts` → `_shared/walletCategoria`.
 | `/novedades` | NovedadesPage | NovedadesTab | Resolve carrier incidences |
 | `/admin` | AdminPage | AdminTab | Config por tienda. Gated `managerOnly` (owner/supervisor de la tienda activa). |
 | `/dashboard` | DashboardPage | DashboardTab | KPI metrics |
-| `/logistica` | LogisticsPage | LogisticaTab | Análisis: 9 sub-tabs (Resumen / Transportadoras / Ciudades / Productos / Decisiones / Trazabilidad / **Cancelaciones** / Finanzas / Balance). Gated `managerOnly`. Tab activa persiste en `useSessionState('logistica:tab')`. Filtros globales (fecha, ciudad) se aplican a todas **menos Finanzas y Balance** (avisado con banner naranja). |
+| `/logistica` | LogisticsPage | LogisticaTab | Análisis: 9 sub-tabs (Resumen / Transportadoras / Ciudades / Productos / Decisiones / Trazabilidad / **Cancelaciones** / Finanzas / Balance). Gated `managerOnly`. Tab activa persiste en `useSessionState('logistica:tab')`. **Filtro de FECHA aplica a TODAS las tabs** (verificado 23-ago-2026: FinanzasTab recibe `filters` y usa fromDate/toDate — la versión anterior de esta fila decía lo contrario y confundió una auditoría). El filtro de **CIUDAD** es el que NO aplica a la plata (Finanzas/Balance/wallet — avisado con banner). El "Semáforo de salud financiera" se **eliminó** el 23-ago-2026 a pedido del dueño. |
 | `/cfo` | CfoPage | CfoTab | Vista "Cómo voy" del dueño. **Triple gate:** ruta solo se registra si `VITE_ENABLE_CFO==='true'`, nav item es `adminOnly` (global `isAdmin`, no rol de tienda), y se oculta si `activeStore.country_code !== 'CO'`. RLS admin-only en la DB es el backstop. Reusa `financial_summary` + `logistics_summary` + `wallet_summary` + `product_profitability` y combina con inputs manuales mensuales (costos fijos, deuda TC, gasto pauta) vía hooks `useCfoMonthlyInputs` + `useTcDebtSnapshots` + `useMonthlyAdSpend` para calcular UTILIDAD NETA REAL. |
 | `/plataforma` | PlataformaPage | — | Panel multi-inquilino del operador de la plataforma (listado de tiendas, suscripción, activar/desactivar). **La ruta se registra SIEMPRE**; el gate real está en la DB: las RPC `platform_stores_overview` / `platform_set_subscription` / `platform_set_store_status` tiran 42501 si el que llama no es admin global, y la página rebota a `/dashboard`. No confiar en el nav para esconderla. |
 | `/como-se-trabaja` | ComoSeTrabajaPage | — | El protocolo del turno: la escalera de prioridad, qué se hace en cada escalón, qué significa cada lista y **qué NO es trabajo**. Nav para TODOS. **No tiene texto propio**: sale de `ESCALERA` (`siguienteAccion.ts`, la misma fuente de la barra "Lo que sigue") y del `queEs`/`queHacer` de cada lista en `segLists.ts`. Guardián `comoSeTrabaja.test.ts` impide agregar un escalón o una lista sin explicarlos. |
@@ -333,7 +333,7 @@ Each store has a `stores.country_code`. **Son TRES países en el código, no dos
 ### Supabase Edge Functions
 
 All functions are Deno (TypeScript). They live in `supabase/functions/`:
-- `dropi-sync` — bulk-fetches orders from Dropi API, chunked in ≤89-day ranges, upserts to DB. Maps `o.shipping_amount` → `costo_logistico_dropi` (lo que paga el dropshipper, NO lo cobrado al cliente). Uses Bearer API key.
+- `dropi-sync` — bulk-fetches orders from Dropi API, chunked in ≤89-day ranges, upserts to DB. Maps `o.shipping_amount` → **`orders.flete`** (lo que paga el dropshipper, NO lo cobrado al cliente; una versión anterior de esta línea decía `costo_logistico_dropi`, columna que NUNCA existió y mandó a una auditoría a cazarla). Uses Bearer API key.
 - `dropi-update-order` — updates a single order's Dropi status (bearer token from DB settings)
 - `dropi-update-order-full` — variant that also pushes back enriched address/notes payload to Dropi
 - `dropi-refresh-order` — refresca UN pedido en vivo desde la API Dropi (`GET /integrations/orders/{external_id}`) y lo upsertea en `orders` por `external_id`. Disparado por el botón "Refrescar desde Dropi" en `CrmCallView`/`OrderCard` de Seguimiento (hook `useRefreshOrder`) para dar parity inmediata sin esperar al cron de 5 min (que en EC puede ir throttleado). Auth = JWT del miembro (valida `isStoreMember`). El UPDATE viaja a todos los clientes vía el realtime existente sobre `orders`. Devuelve `{ok, estado, guia, transportadora, rateLimited?}`. Comparte el mapper `mapDropiOrderToRow` (`_shared/dropiOrderMapper.ts`) con `dropi-sync` y `dropi-nightly-reconcile`.
@@ -701,6 +701,22 @@ Tailwind + shadcn/ui components (`src/components/ui/`). Custom CSS variables for
 `src/components/ui3d/` (`TiltCard`, `CountUp`, `GaugeRing`, `Sparkline`, `StatTile`, `RankRow`,
 `StackedDayBars`, `AuroraBackdrop`, `IconRail`, `HudTopbar` + hooks `useTilt`/`useCountUp`, con
 barrel `index.ts`). `ProtectedLayout` ya monta `IconRail`, `HudTopbar` y `AuroraBackdrop`.
+
+**⛔ TODO QUIETO (23-ago-2026, pedido del dueño):** `TiltCard` ya NO se inclina con el mouse
+ni renderiza el sheen (se apagó en la RAÍZ del componente, no card por card — la prop `sheen`
+quedó inerte para no tocar 50+ call-sites) y los blobs de `AuroraBackdrop` no flotan. No
+reintroducir tilt/sheen/loops sin pedido explícito. Los hover de SOLO color y los fadeUp de
+entrada sí se conservan.
+
+**⛔ RECHARTS NO RENDERIZA COMPONENTES PROPIOS COMO HIJOS DE UN CHART.** Un
+`<BarGradientDefs/>` (function component que devuelve `<defs>`) como hijo de `<BarChart>` se
+DESCARTA en silencio: el gradiente nunca llega al DOM y cada barra queda con
+`fill="url(#inexistente)"` → **invisible**. Así estuvieron MESES muertos "Estados por día de
+creación" y "Desempeño por transportadora" en /logistica (medido en producción 23-ago-2026:
+barras con geometría real y `getElementById` del gradiente en null). Los `<defs>` van INLINE
+dentro del chart. OJO: ProductivityDashboard, DailyReportsView, CustomerHistoryCard y los
+charts del CFO usan el mismo patrón `BarGradientDefs` — candidatos al mismo bug, verificar
+en pantalla antes de asumir que se ven.
 
 Contrato duro — respetarlo al agregar pantallas:
 - **Solo reciben `number` / `string` / `ReactNode`.** Nunca hooks de datos, queries ni el cliente

@@ -1,7 +1,6 @@
 import { memo, useMemo } from 'react';
 import { MapPin } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { TiltCard } from '@/components/ui3d';
 import { deriveDeliveryMaturity, isRatePreliminary, MIN_RESUELTOS_CONFIABLE } from '@/lib/logisticsRates';
 import type { CityReturns } from '@/lib/logistics.types';
 
@@ -111,8 +110,8 @@ export default memo(function GeoDistribution({ rows }: Props) {
 
   return (
     <motion.div {...fadeUp(0)}>
-      <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d h-full flex flex-col">
-        <header className="mb-4 tilt-layer-1">
+      <div className="hairline-top bg-card/40 border border-border rounded-2xl p-5 shadow-card3d h-full flex flex-col transition-colors duration-200 hover:border-border-strong">
+        <header className="mb-4">
           <div className="flex items-center gap-2">
             <span className="w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 bg-info/14 border-info/30 text-info glow-info">
               <MapPin size={17} aria-hidden="true" strokeWidth={2.25} />
@@ -135,7 +134,7 @@ export default memo(function GeoDistribution({ rows }: Props) {
         {/* Cada ciudad es una fila-tarjeta del ranking (mismo molde que
             RankRow del Dashboard): posición mono · swatch · nombre · % en
             grande · barra proporcional · detalle al pie. */}
-        <div className="space-y-2.5 flex-1 tilt-layer-1">
+        <div className="space-y-2.5 flex-1">
           {top.map((c, idx) => (
             <div
               key={`${c.ciudad}|${c.departamento}`}
@@ -243,7 +242,7 @@ export default memo(function GeoDistribution({ rows }: Props) {
             </div>
           )}
         </div>
-      </TiltCard>
+      </div>
     </motion.div>
   );
 });
