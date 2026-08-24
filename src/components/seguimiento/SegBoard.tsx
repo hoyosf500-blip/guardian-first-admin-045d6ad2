@@ -9,7 +9,7 @@ import {
 import { OrderData, getTrackingUrl, getWhatsAppPhone, calcBusinessDays, parseDate } from '@/lib/orderUtils';
 import { classifySegEstado, estadoDifiereDeFase, normalizaRotulo, type SegStatusKey } from '@/lib/segStatus';
 import { estadoAvisoAgencia, diasDesdeAviso } from '@/lib/avisoAgencia';
-import { veredictoAviso, haceCuantoMs, type ActividadChatOrden } from '@/lib/actividadChat';
+import { veredictoAviso, haceCuantoMs, estadoConversacion, type ActividadChatOrden } from '@/lib/actividadChat';
 import { metodosRapidosParaEstado, esContactoEfectivo, faseConGestion } from '@/lib/segMetodosEstado';
 import { haceCuanto, type GestionDelPedido } from '@/lib/gestionPorPedido';
 import { FASES_VIVAS, HORAS_DETENIDO, horasSinMovimiento } from '@/lib/segPulso';
@@ -399,6 +399,10 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   // asesora; este sale de lo que ImporChat registró de verdad. `sin_dato` no
   // dibuja nada: la conversación no se leyó y no se afirma.
   const chatVeredicto = esOficina ? veredictoAviso(actividad, llegadaOficinaMs) : null;
+  // El estado de la CONVERSACIÓN va en TODAS las fases, no solo en oficina: un
+  // cliente que escribió y quedó sin respuesta es urgente esté donde esté el
+  // paquete. Es la mano levantada que hoy nadie ve.
+  const conversacion = estadoConversacion(actividad);
 
   return (
     <div
@@ -525,6 +529,37 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           <span className="truncate">
             {avisoDias === null || avisoDias === 0 ? 'Avisado hoy' : avisoDias === 1 ? 'Avisado ayer' : `Avisado hace ${avisoDias} días`}
           </span>
+        </div>
+      )}
+
+      {/* ⬆ LA MANO LEVANTADA: el cliente escribió y nadie le contestó. Va
+          PRIMERO y en rojo porque es la única señal de esta tarjeta donde hay
+          una persona esperando del otro lado ahora mismo. */}
+      {conversacion === 'espera_respuesta' && actividad?.entranteAt != null && (
+        <div
+          className="mt-2 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border bg-danger/15 text-danger border-danger/35"
+          title={`El cliente escribió ${haceCuantoMs(actividad.entranteAt)} y es el ÚLTIMO mensaje del chat: nadie le respondió.`}
+        >
+          <MessageCircle size={10} aria-hidden="true" className="shrink-0" />
+          <span className="truncate">Te escribió y nadie contestó · {haceCuantoMs(actividad.entranteAt)}</span>
+        </div>
+      )}
+      {conversacion === 'conversado' && actividad?.entranteAt != null && (
+        <div
+          className="mt-2 inline-flex max-w-full items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-lg border bg-success/12 text-success border-success/30"
+          title={`El cliente respondió por WhatsApp (último mensaje suyo: ${haceCuantoMs(actividad.entranteAt)}).`}
+        >
+          <MessageCircle size={10} aria-hidden="true" className="shrink-0" />
+          <span className="truncate">Cliente respondió · {haceCuantoMs(actividad.entranteAt)}</span>
+        </div>
+      )}
+      {conversacion === 'sin_respuesta' && (
+        <div
+          className="mt-2 inline-flex max-w-full items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-lg border border-muted-foreground/25 text-muted-foreground"
+          title="Le escribimos por WhatsApp y el cliente no contestó nunca. Con esta persona el chat no funciona: teléfono."
+        >
+          <MessageCircle size={10} aria-hidden="true" className="shrink-0" />
+          <span className="truncate">No contesta el chat</span>
         </div>
       )}
 

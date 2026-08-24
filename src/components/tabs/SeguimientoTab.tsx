@@ -13,6 +13,7 @@ import TurnoDelEquipoPanel from '@/components/seguimiento/TurnoDelEquipoPanel';
 import CierreSeguimientoDialog from '@/components/seguimiento/CierreSeguimientoDialog';
 import { useSegTouchIndex } from '@/hooks/useSegTouchIndex';
 import { useRiesgoChat } from '@/hooks/useRiesgoChat';
+import { estadoConversacion } from '@/lib/actividadChat';
 import { useRefreshVisibleOrders } from '@/hooks/useRefreshVisibleOrders';
 import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List, Search, User as UserIcon, Users, Moon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -433,6 +434,26 @@ export default function SeguimientoTab() {
     [boardData],
   );
   const { actividad: chatActividad } = useRiesgoChat(storeIdChat, boardIds);
+
+  // Clientes con la MANO LEVANTADA: escribieron por WhatsApp y el último
+  // mensaje del chat sigue siendo suyo — nadie les respondió. Es la señal más
+  // accionable que trajo ImporChat y no vivía en ninguna pantalla.
+  const esperandoRespuesta = useMemo(() => {
+    const s = new Set<string>();
+    for (const o of boardData) {
+      if (!o.dbId) continue;
+      if (estadoConversacion(chatActividad.get(String(o.dbId))) === 'espera_respuesta') s.add(String(o.dbId));
+    }
+    return s;
+  }, [boardData, chatActividad]);
+  const [soloEsperando, setSoloEsperando] = useSessionState<boolean>('seg:soloEsperando', false);
+  // El filtro se aplica al DIBUJO, no a `boardData`: los ids que alimentan la
+  // consulta de actividad salen de la lista completa, así que encender el
+  // filtro no puede vaciar su propia fuente de datos.
+  const boardDataMostrado = useMemo(
+    () => (soloEsperando ? boardData.filter((o) => o.dbId && esperandoRespuesta.has(String(o.dbId))) : boardData),
+    [boardData, soloEsperando, esperandoRespuesta],
+  );
 
   const stats = useMemo(() => {
     const s = {
@@ -1496,11 +1517,38 @@ export default function SeguimientoTab() {
           filtro — igual que el aro de confirmación del Dashboard. Misma fuente
           (chipsBase en Lista / dedupedByDate en Tablero), misma fórmula. */}
 
+      {/* Clientes esperando respuesta. Es un BOTÓN, no un cartel: toca y el
+          tablero muestra solo esos pedidos. Solo aparece cuando hay alguien
+          esperando de verdad — un cero no se anuncia. */}
+      {viewMode === 'board' && esperandoRespuesta.size > 0 && (
+        <button
+          type="button"
+          onClick={() => setSoloEsperando((v) => !v)}
+          aria-pressed={soloEsperando}
+          title="El cliente escribió por WhatsApp y su mensaje es el último del chat: nadie le respondió."
+          className={cn(
+            'mb-3 w-full flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-left transition-colors',
+            soloEsperando
+              ? 'bg-danger/15 border-danger/50 text-danger'
+              : 'bg-card/40 border-danger/30 text-foreground hover:border-danger/50',
+          )}
+        >
+          <span className="w-2 h-2 rounded-full bg-danger glow-danger shrink-0" aria-hidden="true" />
+          <span className="font-mono tabular-nums text-[15px] font-bold text-danger">{esperandoRespuesta.size}</span>
+          <span className="text-sm min-w-0 flex-1 truncate">
+            {esperandoRespuesta.size === 1 ? 'cliente te escribió' : 'clientes te escribieron'} y nadie les contestó
+          </span>
+          <span className="text-[11px] font-semibold shrink-0 opacity-80">
+            {soloEsperando ? 'Ver todo' : 'Ver solo estos'}
+          </span>
+        </button>
+      )}
+
       {viewMode === 'board' ? (
         <SegBoard
             avisosAgencia={avisosAgencia}
           actividadChat={chatActividad}
-          data={boardData}
+          data={boardDataMostrado}
           countryCode={activeStore?.country_code}
           statusFilter={statusFilter}
           // Para que "Gestioné hoy" sepa si el pedido YA se gestionó hoy: al

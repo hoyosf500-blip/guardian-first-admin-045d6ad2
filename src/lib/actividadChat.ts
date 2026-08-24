@@ -55,6 +55,33 @@ export function veredictoAviso(
   return act.salienteAt >= llegadaMs ? 'escrito_despues' : 'escrito_antes';
 }
 
+/**
+ * El estado de la CONVERSACIÓN, que es distinto de "¿le avisamos?".
+ *
+ * Pedido del dueño (24-ago-2026): *"también ver si el cliente respondió o si
+ * hizo una pregunta y no respondió; necesito saber y medir todo"*. La señal
+ * accionable sale de una sola comparación: **si el último mensaje del chat es
+ * del CLIENTE, quedó esperando** — le escribió al negocio y nadie le contestó.
+ * Ese pedido tiene un cliente con la mano levantada y nadie lo está viendo.
+ */
+export type EstadoConversacion =
+  /** El cliente habló ÚLTIMO: preguntó y nadie le respondió. */
+  | 'espera_respuesta'
+  /** Hubo ida y vuelta y la última palabra es nuestra. */
+  | 'conversado'
+  /** Le escribimos y el cliente nunca contestó nada. */
+  | 'sin_respuesta'
+  /** La conversación no se leyó: no se afirma nada. */
+  | 'sin_dato';
+
+export function estadoConversacion(act: ActividadChatOrden | null | undefined): EstadoConversacion {
+  if (!act) return 'sin_dato';
+  if (act.entranteAt == null) return act.salienteAt == null ? 'sin_dato' : 'sin_respuesta';
+  // El cliente escribió y de este lado nunca salió nada: también está esperando.
+  if (act.salienteAt == null) return 'espera_respuesta';
+  return act.entranteAt > act.salienteAt ? 'espera_respuesta' : 'conversado';
+}
+
 /** "hace 2 h" / "hace 3 días" — para el chip. Sin palabra inventada si el
  *  delta es negativo (reloj corrido): devuelve "recién". */
 export function haceCuantoMs(ms: number, ahoraMs: number = Date.now()): string {

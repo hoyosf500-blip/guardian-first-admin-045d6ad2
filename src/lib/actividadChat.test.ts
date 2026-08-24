@@ -3,7 +3,7 @@ import {
   derivarActividadChat,
   type MensajeChat,
 } from '../../supabase/functions/_shared/senalConfirmacion';
-import { veredictoAviso, haceCuantoMs, type ActividadChatOrden } from './actividadChat';
+import { veredictoAviso, haceCuantoMs, estadoConversacion, type ActividadChatOrden } from './actividadChat';
 
 /**
  * "Hay 75 pedidos en oficina, me dicen que ya les escribieron — ¿cómo
@@ -87,6 +87,40 @@ describe('veredictoAviso — comparar contra la llegada a la agencia', () => {
   it('sin actividad leída no se afirma NADA', () => {
     expect(veredictoAviso(null, 40 * H)).toBe('sin_dato');
     expect(veredictoAviso(undefined, 40 * H)).toBe('sin_dato');
+  });
+});
+
+describe('estadoConversacion — ¿quedó alguien esperando respuesta?', () => {
+  const act = (salienteAt: number | null, entranteAt: number | null): ActividadChatOrden => ({
+    salienteAt, salienteTipo: salienteAt == null ? null : 'directo', entranteAt, leidoAt: 100 * H,
+  });
+
+  it('el cliente habló ÚLTIMO → preguntó y nadie le contestó', () => {
+    expect(estadoConversacion(act(10 * H, 12 * H))).toBe('espera_respuesta');
+  });
+
+  it('el cliente escribió y de este lado nunca salió nada → también espera', () => {
+    expect(estadoConversacion(act(null, 12 * H))).toBe('espera_respuesta');
+  });
+
+  it('la última palabra es nuestra → conversado', () => {
+    expect(estadoConversacion(act(14 * H, 12 * H))).toBe('conversado');
+  });
+
+  it('le escribimos y el cliente nunca contestó', () => {
+    expect(estadoConversacion(act(14 * H, null))).toBe('sin_respuesta');
+  });
+
+  // Cero mensajes de los dos lados con el chat leído es un chat vacío, no un
+  // cliente esperando: afirmar "te preguntó" ahí sería inventar un reclamo.
+  it('sin mensajes de ningún lado no se afirma nada', () => {
+    expect(estadoConversacion(act(null, null))).toBe('sin_dato');
+    expect(estadoConversacion(null)).toBe('sin_dato');
+    expect(estadoConversacion(undefined)).toBe('sin_dato');
+  });
+
+  it('empate exacto (mismo ms) NO cuenta como esperando: la duda no acusa a nadie', () => {
+    expect(estadoConversacion(act(12 * H, 12 * H))).toBe('conversado');
   });
 });
 
