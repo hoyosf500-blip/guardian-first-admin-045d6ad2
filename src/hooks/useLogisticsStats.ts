@@ -160,6 +160,11 @@ export function useLogisticsStats(
             // la tabla de Rentabilidad quedaba stale hasta 5min mientras el resto
             // de /logística se refrescaba solo con cada sync del cron.
             queryClient.invalidateQueries({ queryKey: ['product-profitability'] });
+            // El embudo de MesActualResumen (useEstadoBreakdown) tampoco comparte
+            // el prefijo 'logistics': sin esta línea el realtime refrescaba el
+            // FALLBACK (logistics_summary) pero el embudo real quedaba stale
+            // hasta 30 min (su poll) — auditoría embudo vs export Dropi 2026-08-24.
+            queryClient.invalidateQueries({ queryKey: ['orders-estado-breakdown'] });
             debounceRef.current = null;
           }, 5000);
         },
