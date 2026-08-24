@@ -15,6 +15,16 @@ import { useStore } from '@/contexts/StoreContext';
  */
 export interface ResultadoEnvio { ok: boolean; error?: string }
 
+/**
+ * Lovable NO redespliega edge functions solo con hacer push: el código llega a
+ * GitHub y la función puede seguir sin existir en el servidor. El gateway
+ * contesta `NOT_FOUND` y supabase-js lo traduce a "Edge Function returned a
+ * non-2xx status code" — un texto que no le dice NADA a la asesora, que se
+ * queda sin saber si el cliente recibió el mensaje o no.
+ */
+export const FALTA_DESPLEGAR =
+  'El envío desde Guardian todavía no está activado en el servidor. Escribile desde ImporChat y avisá para que lo activen.';
+
 export function useEnviarWhatsapp() {
   const { activeStoreId } = useStore();
   const [enviando, setEnviando] = useState(false);
@@ -33,9 +43,10 @@ export function useEnviarWhatsapp() {
         // leído, credencial vencida). Sin esto la asesora solo vería "falló".
         let detalle = '';
         try {
-          const ctx = (error as { context?: { json?: () => Promise<{ error?: string }> } }).context;
+          const ctx = (error as { context?: { json?: () => Promise<{ error?: string; code?: string }> } }).context;
           const cuerpo = ctx?.json ? await ctx.json() : null;
           detalle = cuerpo?.error ?? '';
+          if (!detalle && cuerpo?.code === 'NOT_FOUND') detalle = FALTA_DESPLEGAR;
         } catch { /* el cuerpo no era JSON */ }
         return { ok: false, error: detalle || error.message || 'No se pudo enviar' };
       }
