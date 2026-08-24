@@ -229,6 +229,9 @@ Deno.serve(async (req) => {
 
     const resumen: unknown[] = [];
     let totalTocados = 0;
+    // Tiendas que quedaron a medias por presupuesto: el log final sale en
+    // 'warn' con el detalle, para que un "success" no tape una corrida parcial.
+    const parciales: string[] = [];
 
     for (const cfg of configs) {
       storeId = String(cfg.store_id);
@@ -261,9 +264,29 @@ Deno.serve(async (req) => {
 
       const base = String(cfg.api_base || "https://chat.imporfactory.app/api/v1/");
       const pedidos = await traerPedidos(base, token, Number(cfg.id_configuracion), fmt(desde), fmt(hasta));
+      console.log(`[${SOURCE}] ${storeId}: ${pedidos.length} pedidos traídos a los ${Date.now() - t0} ms`);
+      if (Date.now() - t0 > BUDGET_MS) {
+        await log("warn", `Presupuesto agotado tras traer pedidos (${pedidos.length}); no se alcanzó a leer mensajes`, 0);
+        resumen.push({ store_id: storeId, ok: false, error: "presupuesto agotado en pedidos" });
+        continue;
+      }
       const chats = await traerMensajes(base, token, Number(cfg.id_configuracion));
+      console.log(`[${SOURCE}] ${storeId}: historial de ${chats.size} chats parseado a los ${Date.now() - t0} ms`);
+      if (Date.now() - t0 > BUDGET_MS) {
+        await log("warn", `Presupuesto agotado tras parsear mensajes (${chats.size} chats); no se alcanzó a escribir`, 0);
+        resumen.push({ store_id: storeId, ok: false, error: "presupuesto agotado en mensajes" });
+        continue;
+      }
 
-      let tocados = 0, conBoton = 0, mudos = 0, sinSaliente = 0;
+      let tocados = 0, conBoton = 0, mudos = 0, sinSaliente = 0, saltados = 0;
+
+      // FASE 1 — derivar la señal de todos (puro CPU, barato).
+      interface Tarea {
+        externalId: string;
+        payloadBase: Record<string, unknown>;
+        columnasNuevas: Record<string, unknown>;
+      }
+      const tareas: Tarea[] = [];
       for (const p of pedidos) {
         const historial = chats.get(p.chatId) ?? null;
         const desdeMs = p.creadoLocal.getTime() - VENTANA_ANTES_MS;
@@ -285,55 +308,80 @@ Deno.serve(async (req) => {
         if (historial && !act.salienteAt) sinSaliente++;
         if (dryRun) continue;
 
-        // Columnas de 20260824230000. Van en un objeto aparte para poder
-        // REINTENTAR sin ellas si esa migración todavía no corrió (Lovable no
-        // auto-aplica): sin este fallback, una columna faltante tumbaba
-        // también la señal del botón, que ya funcionaba.
-        const columnasNuevas = {
-          chat_saliente_at: act.salienteAt ? aUTC(act.salienteAt, cc).toISOString() : null,
-          chat_saliente_tipo: act.salienteTipo,
-          chat_entrante_at: act.entranteAt ? aUTC(act.entranteAt, cc).toISOString() : null,
-        };
-        const payloadBase = {
-          confirmo_boton_at: s.apretoBotonAt ? aUTC(s.apretoBotonAt, cc).toISOString() : null,
-          chat_cliente_escribio_at: s.clienteEscribioAt
-            ? aUTC(s.clienteEscribioAt, cc).toISOString() : null,
-          chat_mudo: s.mudo,
-          chat_riesgo: s.riesgo,
-          chat_leido_at: new Date().toISOString(),
-          pedido_creado_at: aUTC(p.creadoLocal, cc).toISOString(),
-        };
+        tareas.push({
+          externalId: p.externalId,
+          // Columnas de 20260824230000. Van aparte para poder REINTENTAR sin
+          // ellas si esa migración no corrió (Lovable no auto-aplica).
+          columnasNuevas: {
+            chat_saliente_at: act.salienteAt ? aUTC(act.salienteAt, cc).toISOString() : null,
+            chat_saliente_tipo: act.salienteTipo,
+            chat_entrante_at: act.entranteAt ? aUTC(act.entranteAt, cc).toISOString() : null,
+          },
+          payloadBase: {
+            confirmo_boton_at: s.apretoBotonAt ? aUTC(s.apretoBotonAt, cc).toISOString() : null,
+            chat_cliente_escribio_at: s.clienteEscribioAt
+              ? aUTC(s.clienteEscribioAt, cc).toISOString() : null,
+            chat_mudo: s.mudo,
+            chat_riesgo: s.riesgo,
+            chat_leido_at: new Date().toISOString(),
+            pedido_creado_at: aUTC(p.creadoLocal, cc).toISOString(),
+          },
+        });
+      }
 
+      // FASE 2 — escribir EN PARALELO de a 15. La v1 escribía en SERIE: con
+      // dias=60 son hasta 3.000 UPDATEs (~50 ms c/u ≈ 150 s solo de escritura)
+      // y la plataforma mataba la función ANTES del log final — 4 disparos
+      // medidos el 24-ago, 4 timeouts, CERO filas en sync_logs: una corrida
+      // muerta sin rastro, que es exactamente lo que sync_logs existe para
+      // evitar. Entre tanda y tanda se mira el presupuesto: si se acaba, se
+      // deja constancia PARCIAL en vez de morir en silencio.
+      let columnasNuevasOk = true;
+      const escribir = async (t: Tarea): Promise<boolean> => {
         // UPDATE dirigido por (store_id, external_id). El par es único desde la
         // migración 20260820140000: el número de pedido solo NO identifica una
         // tienda y filtrar sin store_id podría escribirle a otro país.
         let { error: upErr } = await sb.from("orders")
-          .update({ ...payloadBase, ...columnasNuevas })
-          .eq("store_id", storeId).eq("external_id", p.externalId);
-        if (upErr && /chat_saliente|chat_entrante/i.test(upErr.message)) {
+          .update(columnasNuevasOk ? { ...t.payloadBase, ...t.columnasNuevas } : t.payloadBase)
+          .eq("store_id", storeId).eq("external_id", t.externalId);
+        if (upErr && columnasNuevasOk && /chat_saliente|chat_entrante/i.test(upErr.message)) {
           console.warn(`[${SOURCE}] migración 20260824230000 sin aplicar — escribo sin actividad de chat`);
+          columnasNuevasOk = false;
           ({ error: upErr } = await sb.from("orders")
-            .update(payloadBase)
-            .eq("store_id", storeId).eq("external_id", p.externalId));
+            .update(t.payloadBase)
+            .eq("store_id", storeId).eq("external_id", t.externalId));
         }
         if (upErr) {
-          console.error(`[${SOURCE}] update ${p.externalId}: ${upErr.message}`);
-          continue;
+          console.error(`[${SOURCE}] update ${t.externalId}: ${upErr.message}`);
+          return false;
         }
-        tocados++;
+        return true;
+      };
+      const PARALELO = 15;
+      for (let i = 0; i < tareas.length; i += PARALELO) {
+        if (Date.now() - t0 > BUDGET_MS) {
+          saltados = tareas.length - i;
+          parciales.push(`tienda ${storeId}: escribí ${tocados} de ${tareas.length}, quedaron ${saltados} (correr de nuevo para completar)`);
+          break;
+        }
+        const ok = await Promise.all(tareas.slice(i, i + PARALELO).map(escribir));
+        tocados += ok.filter(Boolean).length;
       }
+      console.log(`[${SOURCE}] ${storeId}: ${tocados}/${tareas.length} escritos a los ${Date.now() - t0} ms`);
 
       totalTocados += tocados;
       resumen.push({
         store_id: storeId, ok: true, pedidos: pedidos.length,
         actualizados: tocados, con_boton: conBoton, mudos,
-        sin_saliente: sinSaliente, dry_run: dryRun,
+        sin_saliente: sinSaliente, saltados, dry_run: dryRun,
       });
     }
 
     storeId = "";
-    await log("success", "", totalTocados);
-    return json({ ok: true, actualizados: totalTocados, tiendas: resumen });
+    // Un "success" no puede tapar una corrida parcial: si alguna tienda quedó
+    // a medias por presupuesto, el log final sale en 'warn' con el detalle.
+    await log(parciales.length ? "warn" : "success", parciales.join(" | "), totalTocados);
+    return json({ ok: true, actualizados: totalTocados, parcial: parciales.length > 0, tiendas: resumen });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`[${SOURCE}]`, msg);
