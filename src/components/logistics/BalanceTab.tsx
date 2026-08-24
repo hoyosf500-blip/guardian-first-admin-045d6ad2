@@ -260,7 +260,12 @@ export default function BalanceTab({ fromDate, toDate }: Props) {
         </header>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border">
-          <Cifra label="Salió de la billetera" valor={cruce.totalRetirado} tono="neutral" />
+          {/* "Retirado (declarado)" y no "Salió de la billetera": esta cifra es
+              el monto_retirado que se TIPEA al cargar cada rendición, no los
+              retiros del wallet de Dropi. El rótulo viejo afirmaba una fuente
+              que no era — y un retiro real SIN rendición cargada no aparece acá
+              ni en "Sin explicar" (auditoría 24-ago-2026). */}
+          <Cifra label="Retirado (declarado)" valor={cruce.totalRetirado} tono="neutral" />
           <Cifra label="Rendido con comprobante" valor={cruce.totalRendido} tono="neutral" />
           <Cifra
             label="Sin explicar"
@@ -384,10 +389,12 @@ export default function BalanceTab({ fromDate, toDate }: Props) {
         <div className="px-5 py-3 border-t border-border flex items-start gap-2 text-[11px] text-muted-foreground">
           <Info size={13} className="text-info shrink-0 mt-0.5" />
           <p>
-            <strong className="text-foreground">Salió de la billetera</strong> lo trae solo el sync de Dropi
-            (movimientos de tipo retiro). <strong className="text-foreground">Rendido</strong> es lo que cargaste
-            acá con comprobante. La diferencia es plata que salió y todavía nadie justificó — no
-            necesariamente falta, pero hay que poder explicarla.
+            <strong className="text-foreground">Retirado (declarado)</strong> es el monto que se anota al
+            cargar cada rendición — sale de lo que tipeás, no del sync de Dropi.{' '}
+            <strong className="text-foreground">Rendido</strong> es lo que cargaste con comprobante. La
+            diferencia es plata declarada que todavía nadie justificó. OJO: un retiro real del wallet
+            del que nadie cargó rendición <strong className="text-foreground">no aparece acá</strong> —
+            compará contra los retiros del wallet en la pestaña Finanzas.
           </p>
         </div>
       </section>

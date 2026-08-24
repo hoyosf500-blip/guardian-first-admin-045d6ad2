@@ -19,7 +19,6 @@ import CarrierStatsTable from '@/components/logistics/CarrierStatsTable';
 import CityReturnsTable from '@/components/logistics/CityReturnsTable';
 import ProductFailuresTable from '@/components/logistics/ProductFailuresTable';
 import ProductProfitabilityTable from '@/components/logistics/ProductProfitabilityTable';
-import TrazabilidadView from '@/components/logistics/TrazabilidadView';
 import CityFilter from '@/components/logistics/CityFilter';
 import CarrierCityMatrix from '@/components/logistics/CarrierCityMatrix';
 import CarrierRecommendations from '@/components/logistics/CarrierRecommendations';
@@ -40,7 +39,7 @@ import {
   CHART_LINE_CURSOR,
 } from '@/components/logistics/charts/chartTokens';
 import { AuroraBackdrop } from '@/components/ui3d';
-import { Truck, MapPin, Package, RefreshCw, Activity, Info, Lightbulb, GitCompare, LayoutDashboard, DollarSign, Wallet, Coins, PieChart as PieChartIcon, LineChart as LineChartIcon, BarChart3, Layers, Scale, XCircle } from 'lucide-react';
+import { Truck, MapPin, Package, RefreshCw, Info, Lightbulb, GitCompare, LayoutDashboard, DollarSign, Wallet, Coins, PieChart as PieChartIcon, LineChart as LineChartIcon, BarChart3, Scale, XCircle } from 'lucide-react';
 
 // ── Tipos del RPC `logistics_dashboard` (extra de Kimi) ────────────
 interface DashboardData {
@@ -53,42 +52,6 @@ interface DashboardData {
 }
 
 // ── Paletas — tokens semánticos DS (dark/light mode automático) ────
-// `Rechazada` va con el MISMO token que devolución pero al 60% — es el alpha que
-// ya usa TONE_BAR.rechazado en MesActualResumen para este mismo estado. Antes
-// ambas series se pintaban con el danger pleno: en la pila de 5 series quedaban
-// indistinguibles y la barra mentía sobre su composición.
-const ESTADO_COLORS: Record<string, string> = {
-  'Entregada a destino': 'hsl(var(--success))',
-  'Devolucion a origen': 'hsl(var(--danger))',
-  'En transito':         'hsl(var(--info))',
-  'Novedad':             'hsl(var(--warning))',
-  'Rechazada':           'hsl(var(--danger) / 0.6)',
-  'En preparacion':      'hsl(var(--ai))',
-  // 'Pendiente' es una tajada NUEVA (migración 20260806000000): antes la RPC la
-  // fundía con 'En preparacion', mezclando "nunca salió" con "tiene guía y está
-  // por salir". Mismos tonos que el embudo de MesActualResumen (TONE_BAR), para
-  // que el mismo estado no cambie de color entre las dos vistas del Resumen.
-  'Pendiente':           'hsl(var(--muted-foreground))',
-  'Cancelada':           'hsl(var(--muted-foreground) / 0.6)',
-  'Otro':                'hsl(var(--muted-foreground) / 0.4)',
-};
-
-const STACK_COLORS: Record<string, string> = {
-  entregada:  'hsl(var(--success))',
-  transito:   'hsl(var(--info))',
-  novedad:    'hsl(var(--warning))',
-  devolucion: 'hsl(var(--danger))',
-  rechazada:  'hsl(var(--danger) / 0.6)',
-};
-
-const STACK_LABELS: Record<string, string> = {
-  entregada:  'Entregada',
-  transito:   'En tránsito',
-  novedad:    'Novedad',
-  devolucion: 'Devolución',
-  rechazada:  'Rechazada',
-};
-
 const CARRIER_PALETTE = [
   'hsl(var(--info))',
   'hsl(var(--success))',
@@ -337,7 +300,12 @@ export default function LogisticaTab() {
   // Tab activa — persiste en sessionStorage para que F5 / cambio de tab del
   // navegador no resetee al usuario al "Resumen". Default: 'resumen' (KPIs +
   // gráfico de volumen, lo que el usuario ve al entrar por primera vez).
-  const [activeTab, setActiveTab] = useSessionState<string>('logistica:tab', 'resumen');
+  const [rawTab, setActiveTab] = useSessionState<string>('logistica:tab', 'resumen');
+  // Si la sesión guardó una tab que ya no existe (ej. 'trazabilidad',
+  // eliminada 24-ago-2026), Radix deja el body VACÍO sin error. Se normaliza
+  // al Resumen en vez de mostrar una pantalla en blanco.
+  const TABS_VALIDAS = ['resumen', 'carriers', 'cities', 'products', 'decisiones', 'cancelaciones', 'finanzas', 'balance'];
+  const activeTab = TABS_VALIDAS.includes(rawTab) ? rawTab : 'resumen';
 
   // Modo comparación A vs B. Cuando está activo se reemplaza el body por la
   // vista lado-a-lado. Period A = filters principales, Period B se inicializa
@@ -350,7 +318,9 @@ export default function LogisticaTab() {
   const queryClient = useQueryClient();
   // Flete promedio por transportadora — client-side sobre orders.flete (ningún
   // RPC lo trae). Pedido del dueño 23-ago-2026. Si falla, la columna va en '—'.
-  const fleteCarrier = useFleteByCarrier(filters.fromDate, filters.toDate);
+  // Con la MISMA ciudad que las filas de la tabla (si no, la columna mezclaba
+  // poblaciones) y apagado en modo comparación (nadie la dibuja ahí).
+  const fleteCarrier = useFleteByCarrier(filters.fromDate, filters.toDate, filters.ciudad, !compareMode);
 
   // Query extra para los 4 gráficos nuevos (RPC `logistics_dashboard`).
   // Si el RPC no existe en DB, cae a EmptyChart y el resto sigue funcionando.
@@ -384,7 +354,10 @@ export default function LogisticaTab() {
     },
     staleTime: 60_000,
     retry: false,
-    enabled: Boolean(activeStoreId),
+    // !compareMode: en comparación el body entero se reemplaza por
+    // ComparisonView y estos 4 charts no se dibujan — antes la query se pagaba
+    // igual (auditoría 24-ago-2026).
+    enabled: Boolean(activeStoreId) && !compareMode,
   });
 
   const errorMsg = useMemo(() => {
@@ -457,8 +430,8 @@ export default function LogisticaTab() {
             </span>
           )}
           {/* Filtro por ciudad — Combobox con búsqueda. Aplica a las RPCs
-              operativas (resumen/embudo, transportadoras, ciudades, productos,
-              trazabilidad) vía p_ciudad. NO aplica a la plata de Finanzas
+              operativas (resumen/embudo, transportadoras, ciudades, productos)
+              vía p_ciudad. NO aplica a la plata de Finanzas
               (financial_summary/wallet/rentabilidad no reciben ciudad — esa tab
               lo avisa con un banner) ni a Decisiones (comparativo entre
               ciudades, ver comentario de esa tab). */}
@@ -560,7 +533,6 @@ export default function LogisticaTab() {
               <TabsTrigger value="cities" className={TAB_PILL}><MapPin size={13} className="mr-1.5" /> Ciudades</TabsTrigger>
               <TabsTrigger value="products" className={TAB_PILL}><Package size={13} className="mr-1.5" /> Productos</TabsTrigger>
               <TabsTrigger value="decisiones" className={TAB_PILL}><Lightbulb size={13} className="mr-1.5" /> Decisiones</TabsTrigger>
-              <TabsTrigger value="trazabilidad" className={TAB_PILL}><Activity size={13} className="mr-1.5" /> Trazabilidad</TabsTrigger>
               <TabsTrigger value="cancelaciones" className={TAB_PILL}><XCircle size={13} className="mr-1.5" /> Cancelaciones</TabsTrigger>
               <TabsTrigger value="finanzas" className={TAB_PILL}><DollarSign size={13} className="mr-1.5" /> Finanzas</TabsTrigger>
               <TabsTrigger value="balance" className={TAB_PILL}><Scale size={13} className="mr-1.5" /> Balance</TabsTrigger>
@@ -602,6 +574,7 @@ export default function LogisticaTab() {
               <CarrierStatsTable
                 rows={carriers.data ?? []}
                 fletePorCarrier={fleteCarrier.data?.porCarrier}
+                fleteParcial={fleteCarrier.data?.parcial ?? false}
               />
             </motion.div>
 
@@ -626,11 +599,15 @@ export default function LogisticaTab() {
           </TabsContent>
 
           <TabsContent value="cities" className="mt-4 space-y-5">
+            {/* ciudadFiltrada: con filtro de ciudad la query de ciudades se
+                DESHABILITA (useLogisticsStats) — sin la prop, el vacío decía
+                "No hay ciudades con suficientes pedidos" sobre una query que
+                nunca corrió. */}
             <motion.div {...fadeUp(0.05)}>
-              <GeoDistribution rows={cities.data ?? []} />
+              <GeoDistribution rows={cities.data ?? []} ciudadFiltrada={filters.ciudad} />
             </motion.div>
             <motion.div {...fadeUp(0.14)}>
-              <CityReturnsTable rows={cities.data ?? []} />
+              <CityReturnsTable rows={cities.data ?? []} ciudadFiltrada={filters.ciudad} />
             </motion.div>
           </TabsContent>
 
@@ -650,6 +627,21 @@ export default function LogisticaTab() {
               filtran por ciudad porque es un análisis comparativo entre
               ciudades — el filtro ciudad no aplica acá. */}
           <TabsContent value="decisiones" className="mt-4 space-y-5">
+            {/* Mismo aviso que Finanzas: acá el filtro de ciudad se ignora a
+                PROPÓSITO (comparativo entre ciudades), pero antes se ignoraba
+                en silencio — el dueño filtraba "Quito" y veía 50 ciudades. */}
+            {filters.ciudad && (
+              <div className="relative flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning/10 px-4 pl-5 py-3 shadow-card3d">
+                <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
+                <div className="w-9 h-9 rounded-xl bg-warning/20 glow-warning flex items-center justify-center flex-shrink-0 text-warning">
+                  <Info size={17} aria-hidden="true" />
+                </div>
+                <p className="flex-1 min-w-0 text-xs font-semibold text-warning">
+                  El filtro de ciudad ({filters.ciudad}) no aplica a Decisiones: esta
+                  pestaña compara transportadoras ENTRE ciudades.
+                </p>
+              </div>
+            )}
             <motion.div {...fadeUp(0.05)}>
               <CarrierRecommendations filters={filters} />
             </motion.div>
@@ -658,26 +650,11 @@ export default function LogisticaTab() {
             </motion.div>
           </TabsContent>
 
-          <TabsContent value="trazabilidad" className="mt-4 space-y-5">
-            {dashboardQuery.isError && (
-              <ChartsErrorBanner text="No se pudieron cargar los gráficos de estados — usá el botón Refrescar." />
-            )}
-            {dashboardQuery.data && (
-              <motion.div {...fadeUp(0.05)}>
-                <EstadoDonutAndDailyStack
-                  donut={dashboardQuery.data.by_estado}
-                  stack={dashboardQuery.data.by_date_and_estado}
-                />
-              </motion.div>
-            )}
-            <motion.div {...fadeUp(0.14)}>
-              <TrazabilidadView
-                summary={summary.data ?? null}
-                range={filters}
-                carriers={carriers.data ?? []}
-              />
-            </motion.div>
-          </TabsContent>
+          {/* La tab "Trazabilidad" se ELIMINÓ el 24-ago-2026 a pedido del dueño
+              ("yo no la miro, no me dice nada"): duplicaba el embudo del Resumen
+              y la búsqueda de una guía puntual vive en /seguimiento y en
+              /pedido/:externalId. Con ella murieron TrazabilidadView,
+              useLogisticsTimeline y la dona "Estado global". */}
 
           {/* TAB: Finanzas — vista unificada de TODA la plata operativa de
               la logística en una sola pantalla. Apila 3 secciones que antes
@@ -772,12 +749,24 @@ function CarrierDonut({
   data: DashboardData['by_transportadora'];
   colorMap: Map<string, string>;
 }) {
-  const total = data.reduce((s, x) => s + x.total, 0);
-  const top = data[0];
+  // Orden defensivo client-side: el centro de la dona y el ranking asumían que
+  // data[0] era el líder — eso dependía del ORDER BY de la RPC desplegada, que
+  // nadie puede leer (REGLA #1). Una línea elimina la dependencia.
+  const sorted = useMemo(() => [...data].sort((a, b) => b.total - a.total), [data]);
+  const total = sorted.reduce((s, x) => s + x.total, 0);
+  const top = sorted[0];
 
   return (
     <ChartCard title="Distribución por transportadora" icon={PieChartIcon} iconClass="text-info">
-      {data.length === 0 ? <EmptyChart /> : (
+      {sorted.length === 0 ? <EmptyChart /> : (
+        <>
+        {/* Nota de alcance: estos charts (RPC logistics_dashboard) cuentan TODAS
+            las guías; la tabla de arriba excluye cancelados/pendientes de sus
+            tasas maduras. Sin la nota, "mismo carrier, números distintos" se
+            leía como bug (auditoría 24-ago-2026). */}
+        <p className="text-[10px] text-muted-foreground mb-2">
+          Todas las guías del rango · solo transportadoras con 5+ guías.
+        </p>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-center">
           <div className="relative h-[260px]">
             <ResponsiveContainer>
@@ -786,10 +775,10 @@ function CarrierDonut({
                     color de cada slice: el mismo tratamiento de "el dato brilla"
                     del Dashboard. stroke del color de la card = separación limpia
                     entre slices sin dibujar una línea ajena a la paleta. */}
-                <Pie data={data} dataKey="total" nameKey="transportadora"
+                <Pie data={sorted} dataKey="total" nameKey="transportadora"
                      innerRadius={62} outerRadius={102} paddingAngle={2} cornerRadius={6}
                      stroke="hsl(var(--card))" strokeWidth={2}>
-                  {data.map((d) => {
+                  {sorted.map((d) => {
                     const color = colorMap.get(d.transportadora) ?? 'hsl(var(--muted-foreground))';
                     return <Cell key={d.transportadora} fill={color} style={barGlow(color)} />;
                   })}
@@ -817,7 +806,7 @@ function CarrierDonut({
               su slice. El dot suelto sólo decía "existe"; la barra deja comparar
               volúmenes sin volver a la dona. */}
           <ul className="space-y-1.5">
-            {data.map((d, i) => {
+            {sorted.map((d, i) => {
               const color = colorMap.get(d.transportadora) ?? 'hsl(var(--muted-foreground))';
               // total===0 (todos los carriers en cero) ⇒ barra vacía, igual que el
               // '0%' que devuelve pct(). No se inventa un ancho.
@@ -853,6 +842,7 @@ function CarrierDonut({
             })}
           </ul>
         </div>
+        </>
       )}
     </ChartCard>
   );
@@ -969,146 +959,6 @@ function CarrierTimeline({
   );
 }
 
-function EstadoDonutAndDailyStack({
-  donut,
-  stack,
-}: {
-  donut: DashboardData['by_estado'];
-  stack: DashboardData['by_date_and_estado'];
-}) {
-  const total = donut.reduce((s, x) => s + x.total, 0);
-  const top = donut[0];
-  // `esHoy` sale de la fecha CRUDA (antes de formatearla a DD/MM) comparada con
-  // hoy en horario local — el mismo criterio que el resto del archivo, que no usa
-  // toISOString() justo para no correrse un día en Bogotá.
-  const hoyISO = localISODate(new Date());
-  const stackRows = stack.map((s) => ({ ...s, esHoy: s.fecha === hoyISO, fecha: fmtDate(s.fecha) }));
-  const stackKeys = ['entregada', 'transito', 'novedad', 'devolucion', 'rechazada'];
-  const legend = useInteractiveLegend();
-  const visibleKeys = stackKeys.filter((k) => legend.isVisible(k));
-
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <ChartCard title="Estado global" icon={PieChartIcon} iconClass="text-success">
-        {donut.length === 0 ? <EmptyChart /> : (
-          <>
-            <div className="relative h-[240px]">
-              <ResponsiveContainer>
-                <PieChart>
-                  {/* Mismo tratamiento que la dona de transportadoras: extremos
-                      redondeados + glow del color del propio estado. El fallback
-                      gris (estado nuevo de Dropi sin mapear) se conserva: se ve,
-                      no se pierde ni se re-etiquetea. */}
-                  <Pie data={donut} dataKey="total" nameKey="estado_agrupado"
-                       innerRadius={58} outerRadius={96} paddingAngle={2} cornerRadius={6}
-                       stroke="hsl(var(--card))" strokeWidth={2}>
-                    {donut.map((d) => {
-                      const color = ESTADO_COLORS[d.estado_agrupado] ?? 'hsl(var(--muted-foreground))';
-                      return <Cell key={d.estado_agrupado} fill={color} style={barGlow(color)} />;
-                    })}
-                  </Pie>
-                  <RTooltip
-                    contentStyle={TOOLTIP_STYLE}
-                    formatter={(v: number, n) => [`${v} (${pct(v, total)})`, n]}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-              {top && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <div className="text-[38px] font-bold text-foreground font-mono tabular-nums leading-none num-glow-accent">
-                    {pct(top.total, total)}
-                  </div>
-                  {/* El nombre del estado viene de Dropi: se muestra tal cual. */}
-                  <div className="text-[11px] text-muted-foreground font-medium mt-2 max-w-[150px] text-center truncate">
-                    {top.estado_agrupado}
-                  </div>
-                </div>
-              )}
-            </div>
-            {/* Leyenda propia (antes la <Legend> de recharts): swatches cuadrados
-                de 10px, que es como rotula el Dashboard, y sin comerle alto al
-                gráfico. */}
-            <SwatchLegend
-              className="mt-3 justify-center"
-              items={donut.map((d) => ({
-                color: ESTADO_COLORS[d.estado_agrupado] ?? 'hsl(var(--muted-foreground))',
-                label: d.estado_agrupado,
-              }))}
-            />
-          </>
-        )}
-      </ChartCard>
-
-      <ChartCard title="Estados por día de creación" icon={Layers} iconClass="text-warning">
-        {stackRows.length === 0 ? <EmptyChart /> : (
-          <div className="h-[280px]">
-            <ResponsiveContainer>
-              <BarChart data={stackRows} margin={{ top: 8, right: 10, bottom: 5, left: -10 }}>
-                {/* <defs> inline: ver el aviso en barGradientStops. */}
-                <defs>
-                  {stackKeys.map((k) => (
-                    <linearGradient key={k} id={`estadoDia-${k}`} x1="0" y1="0" x2="0" y2="1">
-                      {barGradientStops(STACK_COLORS[k])}
-                    </linearGradient>
-                  ))}
-                </defs>
-                <CartesianGrid {...CHART_GRID_PROPS} />
-                <XAxis dataKey="fecha" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} />
-                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} width={36} />
-                <RTooltip contentStyle={TOOLTIP_STYLE} cursor={CHART_BAR_CURSOR} />
-                <Legend
-                  wrapperStyle={{ fontSize: 11, cursor: 'pointer', paddingTop: 8 }}
-                  iconType="circle"
-                  iconSize={8}
-                  onClick={(e: { value: string }) => {
-                    const key = Object.entries(STACK_LABELS).find(([, v]) => v === e.value)?.[0];
-                    if (key) legend.toggle(key);
-                  }}
-                  formatter={(value: string) => {
-                    const key = Object.entries(STACK_LABELS).find(([, v]) => v === value)?.[0] ?? value;
-                    return (
-                      <span style={{ opacity: legend.isVisible(key) ? 1 : 0.4, color: 'hsl(var(--muted-foreground))' }}>
-                        {value}
-                      </span>
-                    );
-                  }}
-                />
-                {stackKeys.map((key) =>
-                  legend.isVisible(key) ? (
-                    <Bar
-                      key={key}
-                      dataKey={key}
-                      stackId="a"
-                      fill={`url(#estadoDia-${key})`}
-                      name={STACK_LABELS[key]}
-                      // Solo el segmento MÁS ALTO de la pila lleva radio; si se lo
-                      // ponés a los de abajo aparecen muescas entre segmentos. Y
-                      // "más alto" es el último VISIBLE, no el último del array:
-                      // con series ocultas el tope cambia.
-                      radius={key === visibleKeys[visibleKeys.length - 1] ? [6, 6, 0, 0] : [0, 0, 0, 0]}
-                      style={key === 'entregada' ? barGlow(STACK_COLORS.entregada) : undefined}
-                    >
-                      {/* La columna de hoy se marca con contorno cian, nunca
-                          cambiándole el relleno: el color es el estado. */}
-                      {stackRows.map((d, idx) => (
-                        <Cell
-                          key={`${key}-${idx}`}
-                          stroke={d.esHoy ? CHART_CYAN : 'transparent'}
-                          strokeWidth={d.esHoy ? 1.5 : 0}
-                        />
-                      ))}
-                    </Bar>
-                  ) : null,
-                )}
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </ChartCard>
-    </div>
-  );
-}
-
 function CarrierHorizontalStack({ data }: { data: DashboardData['by_transportadora_and_estado'] }) {
   const rows = data.map((d) => {
     const t = d.total || 1;
@@ -1121,8 +971,8 @@ function CarrierHorizontalStack({ data }: { data: DashboardData['by_transportado
       'Devolución':  +(d.devolucion * 100 / t).toFixed(2),
       Rechazada:     +(d.rechazada * 100 / t).toFixed(2),
       // Sin este segmento la pila no llega al 100% y el hueco parece un bug:
-      // son los pedidos en otros estados (pendiente/preparación/etc.) que las
-      // 5 series de arriba no cubren. Mostrarlo gris es más honesto que
+      // son los pedidos en otros estados (pendiente/preparación/CANCELADOS/etc.)
+      // que las 5 series de arriba no cubren. Mostrarlo gris es más honesto que
       // inflar el resto (lo que hacía el stackOffset="expand" que se quitó).
       Otros:         +(Math.max(0, d.total - clasificados) * 100 / t).toFixed(2),
       total: d.total,
@@ -1148,6 +998,11 @@ function CarrierHorizontalStack({ data }: { data: DashboardData['by_transportado
       right={<SwatchLegend items={PCT_SERIES.map(s => ({ color: s.color, label: s.key }))} />}
     >
       {rows.length === 0 ? <EmptyChart /> : (
+        <>
+        {/* Misma nota de alcance que la dona: población ≠ tabla de arriba. */}
+        <p className="text-[10px] text-muted-foreground mb-2">
+          Todas las guías del rango — canceladas y pendientes caen en "Otros" · solo transportadoras con 5+ guías.
+        </p>
         <div style={{ height: Math.max(220, rows.length * 56) }}>
           <ResponsiveContainer>
             {/* Sin stackOffset="expand": los valores YA vienen en % (0-100) y con
@@ -1207,6 +1062,7 @@ function CarrierHorizontalStack({ data }: { data: DashboardData['by_transportado
             </BarChart>
           </ResponsiveContainer>
         </div>
+        </>
       )}
     </ChartCard>
   );

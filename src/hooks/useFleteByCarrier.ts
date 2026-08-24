@@ -22,21 +22,34 @@ const PAGE = 1000;
 // rango histórico lo supera, se marca `parcial` en vez de colgar la pestaña.
 const MAX_PAGES = 10;
 
-export function useFleteByCarrier(fromDate: string, toDate: string) {
+// `ciudad`: las filas de CarrierStatsTable vienen de logistics_by_carrier CON
+// p_ciudad — si este hook no filtrara igual, con ciudad activa la columna
+// "Flete prom." mezclaba conteos de la ciudad con flete de TODA la tienda en
+// la misma fila (auditoría 24-ago-2026). Match .eq exacto, igual que la RPC.
+// `enabled`: en modo comparación nadie dibuja esta columna — no se paga la query.
+export function useFleteByCarrier(
+  fromDate: string,
+  toDate: string,
+  ciudad?: string,
+  enabled: boolean = true,
+) {
   const storeId = useActiveStoreId();
+  const ciudadKey = ciudad?.trim() || null;
   return useQuery<FletePorCarrierData>({
-    queryKey: ['flete-por-carrier', storeId, fromDate, toDate],
+    queryKey: ['flete-por-carrier', storeId, fromDate, toDate, ciudadKey],
     queryFn: async () => {
       const filas: FleteOrderRow[] = [];
       let parcial = false;
       for (let page = 0; ; page++) {
         if (page >= MAX_PAGES) { parcial = true; break; }
-        const { data, error } = await supabase
+        let q = supabase
           .from('orders')
           .select('transportadora, flete, estado')
           .eq('store_id', storeId as string)
           .gte('fecha', fromDate)
-          .lte('fecha', toDate)
+          .lte('fecha', toDate);
+        if (ciudadKey) q = q.eq('ciudad', ciudadKey);
+        const { data, error } = await q
           .order('id', { ascending: true })
           .range(page * PAGE, page * PAGE + PAGE - 1);
         if (error) throw error;
@@ -47,6 +60,6 @@ export function useFleteByCarrier(fromDate: string, toDate: string) {
     },
     staleTime: 5 * 60_000,
     retry: false,
-    enabled: Boolean(storeId && fromDate && toDate),
+    enabled: Boolean(enabled && storeId && fromDate && toDate),
   });
 }

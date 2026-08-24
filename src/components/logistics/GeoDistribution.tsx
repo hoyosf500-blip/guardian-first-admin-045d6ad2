@@ -6,6 +6,10 @@ import type { CityReturns } from '@/lib/logistics.types';
 
 interface Props {
   rows: CityReturns[];
+  /** Ciudad del filtro global, si hay. Con filtro activo la query de ciudades
+   *  se DESHABILITA (useLogisticsStats) — el vacío debe decir esa causa, no
+   *  afirmar "no hay ciudades" sobre una query que nunca corrió. */
+  ciudadFiltrada?: string;
 }
 
 /** Paleta cíclica para identificar ciudades visualmente. Guarda el NOMBRE
@@ -38,7 +42,7 @@ const fadeUp = (delay = 0) => ({
  *  bar proporcional al % del total, y % numérico. Agrega "Otros" si
  *  hay más de 6 ciudades. Patrón inspirado en dashboards logísticos
  *  profesionales (referencia: panel "Geo Distribution" con bars). */
-export default memo(function GeoDistribution({ rows }: Props) {
+export default memo(function GeoDistribution({ rows, ciudadFiltrada }: Props) {
   const total = useMemo(
     () => rows.reduce((s, r) => s + (r.total_pedidos ?? 0), 0),
     [rows],
@@ -61,6 +65,11 @@ export default memo(function GeoDistribution({ rows }: Props) {
         return {
           ...r,
           pct: total > 0 ? ((r.total_pedidos ?? 0) / total) * 100 : 0,
+          // La tasa MADURA (÷ concluidos, sin rechazos) — la MISMA que muestra
+          // CityReturnsTable dos scrolls abajo. Antes acá iba la cruda del
+          // server (÷ despachados, rechazos adentro) con los mismos umbrales:
+          // la misma ciudad decía 10% arriba y 20% abajo (auditoría 24-ago-2026).
+          tasaMadura: m.tasaDevolucionMadura,
           resueltos: m.resueltos,
           prelim: isRatePreliminary(m),
           // `isRatePreliminary` dispara por DOS motivos distintos (muestra
@@ -100,10 +109,22 @@ export default memo(function GeoDistribution({ rows }: Props) {
         <div className="mx-auto mb-3 flex h-9 w-9 items-center justify-center rounded-xl border bg-muted/60 border-border">
           <MapPin size={17} className="text-muted-foreground" aria-hidden="true" />
         </div>
-        <p className="text-sm font-semibold text-foreground mb-1">Sin datos geográficos</p>
-        <p className="text-xs text-muted-foreground max-w-xs">
-          No hay ciudades con suficientes pedidos en este rango.
-        </p>
+        {ciudadFiltrada ? (
+          <>
+            <p className="text-sm font-semibold text-foreground mb-1">Filtro de ciudad activo</p>
+            <p className="text-xs text-muted-foreground max-w-xs">
+              El reparto por ciudades no aplica con un filtro de ciudad ({ciudadFiltrada}) —
+              quitá el filtro para ver todas.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-semibold text-foreground mb-1">Sin datos geográficos</p>
+            <p className="text-xs text-muted-foreground max-w-xs">
+              No hay ciudades con suficientes pedidos en este rango.
+            </p>
+          </>
+        )}
       </div>
     );
   }
@@ -189,23 +210,16 @@ export default memo(function GeoDistribution({ rows }: Props) {
                     impecable a una ciudad donde simplemente no concluyó ningún
                     pedido todavía. Con muestra chica se marca prelim. en gris en
                     vez de gritar rojo/verde sobre 1-4 concluidos. */}
-                {c.resueltos === 0 ? (
+                {c.tasaMadura == null ? (
                   <span className="text-muted-foreground" title="Sin pedidos concluidos aún — todavía no hay tasa de devolución">
-                    — devol.
-                  </span>
-                ) : !Number.isFinite(c.tasa_devolucion) ? (
-                  /* La consulta no trajo la tasa (drift del RPC). Antes el
-                     `?? 0` la imprimía como "0.0%" y el semáforo la pintaba
-                     VERDE: un veredicto inventado sobre un dato que no llegó. */
-                  <span className="text-muted-foreground" title="La consulta no devolvió la tasa de devolución de esta ciudad">
                     — devol.
                   </span>
                 ) : (
                   <span
                     className={
                       c.prelim ? 'text-muted-foreground' :
-                      c.tasa_devolucion >= 30 ? 'text-danger font-bold' :
-                      c.tasa_devolucion >= 15 ? 'text-warning font-semibold' :
+                      c.tasaMadura >= 30 ? 'text-danger font-bold' :
+                      c.tasaMadura >= 15 ? 'text-warning font-semibold' :
                       'text-success font-medium'
                     }
                     title={
@@ -215,7 +229,7 @@ export default memo(function GeoDistribution({ rows }: Props) {
                           : `Preliminar: solo el ${c.pctConcluido}% de los pedidos concluyó — la tasa todavía puede moverse`
                     }
                   >
-                    {c.tasa_devolucion.toFixed(1)}% devol.{c.prelim ? ' ·prelim.' : ''}
+                    {c.tasaMadura}% devol.{c.prelim ? ' ·prelim.' : ''}
                   </span>
                 )}
               </div>

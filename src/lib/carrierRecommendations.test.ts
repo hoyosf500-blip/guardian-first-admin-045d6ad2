@@ -87,6 +87,52 @@ describe('deriveCarrierRecommendations', () => {
   });
 });
 
+describe('auditoría 24-ago-2026: veredictos honestos', () => {
+  it('con UNA sola transportadora rankeable el veredicto es neutro, nunca "Cambiar"', () => {
+    // El top por volumen no rankea (todo en tránsito) y solo 'Real' tiene datos:
+    // antes salía "Cambiar a Real" — abandonar un carrier de desempeño
+    // DESCONOCIDO hacia el único medido, sin comparación real.
+    const rows = [
+      row({ ciudad: 'Bogota', transportadora: 'EnTransito', total_pedidos: 80, entregados: 0, devueltos: 0 }),
+      row({ ciudad: 'Bogota', transportadora: 'Real', total_pedidos: 60, entregados: 40, devueltos: 20 }),
+    ];
+    const recs = deriveCarrierRecommendations(rows, 20);
+    expect(recs[0].recomendacion).toBe('Sin alternativa medida');
+    expect(recs[0].delta_puntos).toBe(0);
+  });
+
+  it('ciudades homónimas de departamentos distintos NO heredan el volumen combinado', () => {
+    // El server calcula ciudad_total por NOMBRE (sin departamento): las dos
+    // La Unión llegaban con 30 combinado y ambas pasaban minOrders=20 sin
+    // llegar solas. El total ahora se deriva sumando las filas del grupo.
+    const rows = [
+      row({ ciudad: 'La Union', departamento: 'Antioquia', transportadora: 'A', total_pedidos: 15, entregados: 10, devueltos: 5, ciudad_total: 30 }),
+      row({ ciudad: 'La Union', departamento: 'Narino', transportadora: 'B', total_pedidos: 15, entregados: 5, devueltos: 10, ciudad_total: 30 }),
+    ];
+    expect(deriveCarrierRecommendations(rows, 20)).toHaveLength(0);
+  });
+
+  it('la tasa va con floor: 1999 entregados + 1 devuelto NO imprime 100.0%', () => {
+    const rows = [
+      row({ ciudad: 'Quito', transportadora: 'A', total_pedidos: 2000, entregados: 1999, devueltos: 1 }),
+      row({ ciudad: 'Quito', transportadora: 'B', total_pedidos: 100, entregados: 50, devueltos: 50 }),
+    ];
+    const recs = deriveCarrierRecommendations(rows, 20);
+    expect(recs[0].mejor_tasa_entrega).toBe(99.9);
+  });
+
+  it('marca mejor_prelim cuando el cohorte del ganador aún está inmaduro', () => {
+    // 6 concluidos de 40 (15% concluido): rankea (≥5 resueltos) pero prelim.
+    const rows = [
+      row({ ciudad: 'Cali', transportadora: 'Joven', total_pedidos: 40, entregados: 5, devueltos: 1 }),
+      row({ ciudad: 'Cali', transportadora: 'Maduro', total_pedidos: 30, entregados: 20, devueltos: 10 }),
+    ];
+    const recs = deriveCarrierRecommendations(rows, 20);
+    expect(recs[0].mejor_transportadora).toBe('Joven'); // 83.3% > 66.6%
+    expect(recs[0].mejor_prelim).toBe(true);
+  });
+});
+
 describe('mínimo de resueltos para rankear (auditoría 2026-07-02)', () => {
   it('un carrier con 1 solo resuelto (100%) NO le gana al establecido con muestra real', () => {
     // Carrier NUEVO: 5 pedidos, 1 entregado, 0 devueltos → 100% sobre n=1 (ruido).

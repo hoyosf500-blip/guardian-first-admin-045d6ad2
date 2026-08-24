@@ -12,7 +12,7 @@ describe('agregarFletePorCarrier', () => {
       fila('LAARCOURIER', 9.9, 'EN TRANSITO'),        // viajando: fuera
       fila('LAARCOURIER', 0,   'PENDIENTE'),           // sin guía: fuera
     ]);
-    expect(m.get('LAARCOURIER')).toEqual({ fleteProm: 7, muestra: 2 });
+    expect(m.get('LAARCOURIER')).toEqual({ fleteProm: 7, muestra: 2, fleteDevol: 0, nDevol: 0 });
   });
 
   it('cuenta el ENTREGADO de Colombia y el ENTREGADO A DESTINO de Ecuador', () => {
@@ -44,8 +44,26 @@ describe('agregarFletePorCarrier', () => {
     expect(m.size).toBe(0);
   });
 
-  it('sin entregados con flete no inventa un promedio', () => {
+  it('sin entregados con flete no inventa un promedio (pero sí cuenta la devolución)', () => {
     const m = agregarFletePorCarrier([fila('VELOCES', 8, 'DEVOLUCION A ORIGEN')]);
-    expect(m.get('VELOCES')).toBeUndefined();
+    expect(m.get('VELOCES')).toEqual({ fleteProm: null, muestra: 0, fleteDevol: 8, nDevol: 1 });
+  });
+
+  it('acumula el flete quemado en devoluciones aparte del promedio de entregados', () => {
+    const m = agregarFletePorCarrier([
+      fila('LAARCOURIER', 6, 'ENTREGADO A DESTINO'),
+      fila('LAARCOURIER', 7, 'DEVOLUCION'),
+      fila('LAARCOURIER', 8, 'DEVOLUCION EN TRANSITO'),
+      fila('LAARCOURIER', 9, 'EN PROCESO DE DEVOLUCION'), // variante EC
+    ]);
+    expect(m.get('LAARCOURIER')).toEqual({ fleteProm: 6, muestra: 1, fleteDevol: 24, nDevol: 3 });
+  });
+
+  it('una devolución con flete 0/null no suma ni cuenta', () => {
+    const m = agregarFletePorCarrier([
+      fila('VELOCES', 0, 'DEVOLUCION'),
+      fila('VELOCES', null, 'DEVOLUCION'),
+    ]);
+    expect(m.size).toBe(0);
   });
 });

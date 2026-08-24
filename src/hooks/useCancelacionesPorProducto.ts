@@ -49,7 +49,10 @@ export function useCancelacionesPorProducto(
   filtros: { fromDate: string; toDate: string },
 ): PorProductoData {
   const { activeStoreId } = useStore();
-  const [loading, setLoading] = useState(false);
+  // true INICIAL — mismo motivo que useCancelacionesAnalisis: la carga corre
+  // en un useEffect (post-paint) y con false el primer frame afirmaba "Sin
+  // pedidos en el período" sobre una query que no se disparó.
+  const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<PorProductoStatus>('ok');
   const [resumen, setResumen] = useState<ResumenPorProducto>(EMPTY_POR_PRODUCTO);
   const seqRef = useRef(0);
@@ -60,7 +63,7 @@ export function useCancelacionesPorProducto(
     // Sin tienda activa (primer render) no se consulta: null significa
     // "todavía no sé cuál", no "todas".
     if (!activeStoreId || !fromDate || !toDate) {
-      setResumen(EMPTY_POR_PRODUCTO); setStatus('ok');
+      setResumen(EMPTY_POR_PRODUCTO); setStatus('ok'); setLoading(false);
       return;
     }
     const seq = ++seqRef.current;

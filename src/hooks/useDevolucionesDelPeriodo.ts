@@ -36,7 +36,7 @@ export function useDevolucionesDelPeriodo(from: string, to: string) {
   return useQuery<DevolucionesDelPeriodo | null>({
     queryKey: ['devoluciones-del-periodo', storeId, from, to],
     queryFn: async () => {
-      // Cast inline (mismo patrón que useCarrierRecommendations): la RPC es más
+      // Cast inline (patrón estándar del repo para RPCs nuevas): la RPC es más
       // nueva que los tipos generados. Inline, no detach — un `const rpc =`
       // suelto pierde el `this` del cliente (memoria rpc_supabase_binding_pattern).
       const { data, error } = await (supabase.rpc as unknown as (

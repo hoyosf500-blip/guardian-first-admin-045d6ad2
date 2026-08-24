@@ -12,6 +12,10 @@ interface Props {
   rows: CarrierStats[];
   /** Flete promedio por carrier (client-side, opcional) — sin él la columna va en '—'. */
   fletePorCarrier?: Map<string, FleteCarrierAgg>;
+  /** true si la muestra de flete se cortó en el tope de páginas (rangos 365d/
+   *  Histórico con +10.000 pedidos): el promedio va rotulado "· parcial" en vez
+   *  de presentarse como completo. */
+  fleteParcial?: boolean;
 }
 
 // Fila enriquecida con la madurez de la tasa (para atenuar/marcar prelim.).
@@ -34,13 +38,17 @@ type CarrierRow = Omit<CarrierStats, 'tasa_entrega' | 'tasa_devolucion'> & {
   _sharePct: number;
   /** Flete promedio por pedido ENTREGADO (orders.flete, client-side) — null sin muestra. */
   _fleteProm: number | null;
+  /** Flete QUEMADO en devoluciones (suma) — null sin devoluciones con flete. */
+  _fleteDevol: number | null;
 };
 
 type Key = keyof CarrierRow;
 
-// Benchmark COD Colombia — usado como target line en el bullet
-// del leaderboard. 70% de tasa de entrega es el promedio sano.
-const DELIVERY_TARGET = 70;
+// Sin umbral-juicio: acá vivía DELIVERY_TARGET=70 ("benchmark COD Colombia")
+// que pintaba verde/amarillo/rojo a TODA tienda — incluida la de Ecuador.
+// Es la misma clase de juicio con umbral colombiano por la que el dueño
+// eliminó el Semáforo de salud financiera (23-ago-2026). La barra muestra el
+// número; el juicio lo pone el dueño.
 
 // Entrada escalonada — misma cascada de delays que el Dashboard.
 // Cascada INTERNA del bloque. Solo opacidad, sin `y`: LogisticaTab ya envuelve
@@ -84,7 +92,7 @@ function DataBar({ value, tone, prelim }: { value: number; tone: 'success' | 'da
     <div
       className="flex items-center justify-end gap-2 min-w-[112px]"
       style={prelim ? { opacity: 0.55 } : undefined}
-      title={prelim ? `Preliminar: menos de ${MIN_RESUELTOS_CONFIABLE} pedidos concluidos — la tasa aún no es confiable` : undefined}
+      title={prelim ? `Preliminar: menos de ${MIN_RESUELTOS_CONFIABLE} pedidos concluidos o cohorte aún inmaduro — la tasa aún no es confiable` : undefined}
     >
       {/* Sin overflow-hidden a propósito: el relleno YA es rounded-full, así que
           no hace falta recortarlo — y recortarlo mataba el glow (una sombra
@@ -178,19 +186,16 @@ function CompositionBar({ row, maxVolume }: { row: CarrierRow; maxVolume: number
   );
 }
 
-/** Bullet horizontal mini con target line — tasa de entrega vs
- *  meta 70%. Patrón Stephen Few (no hay equivalente radial con meta en ui3d).
- *  El relleno lleva degradado + glow del tono; el marcador de meta queda
- *  encima. Prelim → gris (no verde/rojo sobre muestra chica). */
+/** Barra de tasa de entrega del leaderboard. UN solo tono (info) sin línea de
+ *  meta ni colores por umbral — ver el comentario donde vivía DELIVERY_TARGET.
+ *  Prelim → gris atenuado + doble motivo en el tooltip. */
 function DeliveryBullet({ rate, prelim }: { rate: number; prelim?: boolean }) {
   const fill = Math.max(0, Math.min(100, rate));
-  const meets = rate >= DELIVERY_TARGET;
-  const toneVar = prelim ? TONE_VAR.neutral
-    : meets ? TONE_VAR.success : rate >= 50 ? TONE_VAR.warning : TONE_VAR.danger;
+  const toneVar = prelim ? TONE_VAR.neutral : TONE_VAR.info;
 
   return (
-    <div className="flex items-center gap-2 min-w-[140px]" title={prelim ? `Preliminar: menos de ${MIN_RESUELTOS_CONFIABLE} pedidos concluidos` : undefined}>
-      <div className="bullet flex-1" role="img" aria-label={`${rate}% vs meta ${DELIVERY_TARGET}%${prelim ? ' (preliminar)' : ''}`}>
+    <div className="flex items-center gap-2 min-w-[140px]" title={prelim ? `Preliminar: menos de ${MIN_RESUELTOS_CONFIABLE} pedidos concluidos o cohorte aún inmaduro` : undefined}>
+      <div className="bullet flex-1" role="img" aria-label={`${rate}% de entrega${prelim ? ' (preliminar)' : ''}`}>
         <div
           className="bullet-fill"
           style={{
@@ -201,7 +206,6 @@ function DeliveryBullet({ rate, prelim }: { rate: number; prelim?: boolean }) {
           }}
           aria-hidden="true"
         />
-        <div className="bullet-target" style={{ left: `${DELIVERY_TARGET}%` }} aria-hidden="true" />
       </div>
       <span
         className="font-mono text-xs font-bold tabular-nums w-16 text-right"
@@ -217,7 +221,7 @@ function DeliveryBullet({ rate, prelim }: { rate: number; prelim?: boolean }) {
 // Main component
 // ──────────────────────────────────────────────────────────────
 
-export default memo(function CarrierStatsTable({ rows, fletePorCarrier }: Props) {
+export default memo(function CarrierStatsTable({ rows, fletePorCarrier, fleteParcial }: Props) {
   const [sortKey, setSortKey] = useState<Key>('entregados');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
@@ -239,6 +243,10 @@ export default memo(function CarrierStatsTable({ rows, fletePorCarrier }: Props)
         _perdidaPorDevol: r.devueltos > 0 ? r.valor_perdido / r.devueltos : null,
         _sharePct: volumenTotal > 0 ? (r.total_pedidos / volumenTotal) * 100 : 0,
         _fleteProm: fletePorCarrier?.get(r.transportadora)?.fleteProm ?? null,
+        _fleteDevol: (() => {
+          const agg = fletePorCarrier?.get(r.transportadora);
+          return agg && agg.nDevol > 0 ? agg.fleteDevol : null;
+        })(),
       };
     });
   }, [rows, fletePorCarrier]);
@@ -280,20 +288,36 @@ export default memo(function CarrierStatsTable({ rows, fletePorCarrier }: Props)
   };
 
   const exportCsv = () => {
-    // Tipado sobre CarrierRow (tasas nullable): `escapeCell` emite celda VACÍA
-    // ante null, así el CSV dice lo mismo que la pantalla.
-    const csv = rowsToCsv<CarrierRow>(
-      ['transportadora', 'total_pedidos', 'entregados', 'devueltos', 'en_transito', 'novedades',
-       'tasa_entrega', 'tasa_devolucion', 'valor_entregado', 'valor_perdido',
-       '_ticketProm', '_fleteProm', '_perdidaPorDevol', 'avg_dias_entrega'],
-      sorted,
-    );
-    downloadCsv(`logistica-transportadoras-${new Date().toISOString().split('T')[0]}.csv`, csv);
+    // Headers legibles (el dueño abre esto en Excel — "_ticketProm" con
+    // 21833.333333333332 no le dice nada) y plata redondeada a 2 decimales.
+    // null → celda vacía (escapeCell), así el CSV dice lo mismo que la pantalla.
+    const r2 = (n: number | null) => (n == null ? null : Math.round(n * 100) / 100);
+    const filas = sorted.map((r) => ({
+      'Transportadora': r.transportadora,
+      'Envios': r.total_pedidos,
+      'Entregados': r.entregados,
+      'Devueltos': r.devueltos,
+      'En transito': r.en_transito,
+      'Novedades': r.novedades,
+      'Entrega %': r.tasa_entrega,
+      'Devol %': r.tasa_devolucion,
+      'Valor entregado': r2(r.valor_entregado),
+      '$ Perdido': r2(r.valor_perdido),
+      'Ticket prom.': r2(r._ticketProm),
+      'Flete prom.': r2(r._fleteProm),
+      'Flete devol.': r2(r._fleteDevol),
+      '$ x devol.': r2(r._perdidaPorDevol),
+      'Antiguedad prom. (dias)': r.avg_dias_entrega,
+    }));
+    // Fecha LOCAL para el nombre: toISOString es UTC y después de las 19:00
+    // en Bogotá etiquetaba el archivo con la fecha de mañana.
+    const hoy = new Date().toLocaleDateString('en-CA');
+    downloadCsv(`logistica-transportadoras-${hoy}.csv`, rowsToCsv(Object.keys(filas[0] ?? {}) as never[], filas as never[]));
   };
 
   // Totales del período — para que la tabla cierre sola sin sumar a mano.
   const tot = useMemo(() => {
-    const s = { envios: 0, entregados: 0, devueltos: 0, transito: 0, novedades: 0, vEntregado: 0, vPerdido: 0 };
+    const s = { envios: 0, entregados: 0, devueltos: 0, transito: 0, novedades: 0, vEntregado: 0, vPerdido: 0, fleteDevol: 0, hayFleteDevol: false };
     for (const r of matureRows) {
       s.envios += r.total_pedidos ?? 0;
       s.entregados += r.entregados ?? 0;
@@ -302,6 +326,7 @@ export default memo(function CarrierStatsTable({ rows, fletePorCarrier }: Props)
       s.novedades += r.novedades ?? 0;
       s.vEntregado += r.valor_entregado ?? 0;
       s.vPerdido += r.valor_perdido ?? 0;
+      if (r._fleteDevol != null) { s.fleteDevol += r._fleteDevol; s.hayFleteDevol = true; }
     }
     return s;
   }, [matureRows]);
@@ -336,7 +361,7 @@ export default memo(function CarrierStatsTable({ rows, fletePorCarrier }: Props)
           fila-tarjeta con la anatomía de RankRow (posición, avatar con inicial,
           nombre, detalle a la derecha) pero con DOS barras en vez de la
           monocolor: la de composición (ancho = volumen relativo al líder,
-          segmentos = estado) y el bullet de entrega vs meta 70%. RankRow no se
+          segmentos = estado) y la barra de tasa de entrega. RankRow no se
           usa tal cual a propósito: su único `pct` sirve para el número Y el
           ancho, y acá el ancho significa VOLUMEN mientras el número significa
           TASA — y además clampea a 0% un carrier sin desenlaces, que es
@@ -449,7 +474,8 @@ export default memo(function CarrierStatsTable({ rows, fletePorCarrier }: Props)
                 <th className="px-3 py-2.5 text-right hud-label font-normal"><SortableHeader<Key> label="Devol %" sortKey="tasa_devolucion" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal" title="Antigüedad promedio desde el último cambio de estado de los entregados — NO es el tiempo de tránsito despacho→entrega"><SortableHeader<Key> label="Antigüedad prom." sortKey="avg_dias_entrega" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal" title="Valor promedio de cada pedido entregado ($ entregado ÷ entregados)"><SortableHeader<Key> label="Ticket prom." sortKey="_ticketProm" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
-                <th className="px-3 py-2.5 text-right hud-label font-normal" title="Costo de envío promedio que te cobra esta transportadora (flete de los entregados)"><SortableHeader<Key> label="Flete prom." sortKey="_fleteProm" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+                <th className="px-3 py-2.5 text-right hud-label font-normal" title={`Costo de envío promedio que te cobra esta transportadora (flete de los entregados)${fleteParcial ? ' — MUESTRA PARCIAL: el rango supera los 10.000 pedidos y el promedio sale de los primeros 10.000' : ''}`}><SortableHeader<Key> label={fleteParcial ? 'Flete prom. ·parcial' : 'Flete prom.'} sortKey="_fleteProm" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+                <th className="px-3 py-2.5 text-right hud-label font-normal" title="Flete que pagaste en pedidos que VOLVIERON — plata quemada en envíos que no vendieron nada"><SortableHeader<Key> label="Flete devol." sortKey="_fleteDevol" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal"><SortableHeader<Key> label="Valor entregado" sortKey="valor_entregado" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal" title="Venta perdida en devoluciones"><SortableHeader<Key> label="$ Perdido" sortKey="valor_perdido" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal" title="Venta perdida promedio por cada pedido devuelto"><SortableHeader<Key> label="$ x devol." sortKey="_perdidaPorDevol" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
@@ -486,6 +512,7 @@ export default memo(function CarrierStatsTable({ rows, fletePorCarrier }: Props)
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted-foreground">{r.avg_dias_entrega != null ? `${r.avg_dias_entrega}d` : '—'}</td>
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums text-foreground">{r._ticketProm != null ? formatCOP(r._ticketProm) : '—'}</td>
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted-foreground">{r._fleteProm != null ? formatCOP(r._fleteProm) : '—'}</td>
+                  <td className="px-3 py-2.5 text-right font-mono tabular-nums text-danger">{r._fleteDevol != null ? formatCOP(r._fleteDevol) : '—'}</td>
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums text-xs text-foreground">{formatCOP(r.valor_entregado)}</td>
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums text-xs text-danger">{formatCOP(r.valor_perdido ?? 0)}</td>
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted-foreground">{r._perdidaPorDevol != null ? formatCOP(r._perdidaPorDevol) : '—'}</td>
@@ -506,8 +533,11 @@ export default memo(function CarrierStatsTable({ rows, fletePorCarrier }: Props)
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums">
                   {tot.entregados > 0 ? formatCOP(tot.vEntregado / tot.entregados) : '—'}
                 </td>
-                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
-                  {fleteTotalProm != null ? formatCOP(fleteTotalProm) : '—'}
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted-foreground" title={fleteParcial ? 'Promedio sobre muestra PARCIAL (primeros 10.000 pedidos del rango)' : undefined}>
+                  {fleteTotalProm != null ? `${formatCOP(fleteTotalProm)}${fleteParcial ? ' ·parcial' : ''}` : '—'}
+                </td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-danger">
+                  {tot.hayFleteDevol ? formatCOP(tot.fleteDevol) : '—'}
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums text-xs">{formatCOP(tot.vEntregado)}</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums text-xs text-danger">{formatCOP(tot.vPerdido)}</td>

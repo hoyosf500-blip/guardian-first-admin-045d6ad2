@@ -31,8 +31,15 @@ function archivos(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-/** `= supabase.rpc` (asignación) que NO venga seguido de `.bind(`. */
-const ASIGNACION_SIN_BIND = /=\s*supabase\.rpc(?!\s*\.bind\b)/;
+/** `= supabase.rpc` o `= supabase.from` (asignación) que NO venga seguido de
+ *  `.bind(`. `.from` entró el 24-ago-2026: useLogisticaMonthlyCosts guardaba
+ *  `supabase.from as LooseFrom` sin bind y TODAS las lecturas de costos
+ *  mensuales explotaban antes del fetch — el `?? 0` de los consumidores lo
+ *  escondió durante meses (cero requests a la tabla, medido en vivo). */
+// (?!\s*(\.bind\b|\()): ni bindeada ni INVOCADA en el acto — `let q =
+// supabase.from('tabla')` llama el método sobre supabase y conserva el `this`;
+// lo peligroso es guardar la referencia sin llamarla.
+const ASIGNACION_SIN_BIND = /=\s*supabase\.(rpc|from)(?!\s*(\.bind\b|\())/;
 
 /** Quita comentarios de línea y de bloque. Sin esto, los comentarios que
  *  EXPLICAN el patrón peligroso (`// si solo hacés const rpc = supabase.rpc`)
@@ -68,10 +75,14 @@ describe('supabase.rpc: la referencia guardada SIEMPRE va bindeada', () => {
   it('el regex distingue la forma segura de la peligrosa', () => {
     // Peligrosa: se guarda la referencia.
     expect(ASIGNACION_SIN_BIND.test('const rpc = supabase.rpc as unknown as Fn;')).toBe(true);
+    expect(ASIGNACION_SIN_BIND.test('const from = supabase.from as unknown as LooseFrom;')).toBe(true);
     // Segura: bindeada.
     expect(ASIGNACION_SIN_BIND.test('const rpc = supabase.rpc.bind(supabase) as unknown as Fn;')).toBe(false);
+    expect(ASIGNACION_SIN_BIND.test('const from = supabase.from.bind(supabase) as unknown as LooseFrom;')).toBe(false);
     // Segura: invocación directa (no hay asignación del método).
     expect(ASIGNACION_SIN_BIND.test("await (supabase.rpc as unknown as Fn)('foo', args);")).toBe(false);
+    // Segura: se asigna el RESULTADO de llamar el método, no el método.
+    expect(ASIGNACION_SIN_BIND.test("let q = supabase.from('notes').select('*');")).toBe(false);
     // Un COMENTARIO que menciona el patrón malo no es una infracción.
     expect(ASIGNACION_SIN_BIND.test(codigo('  // si solo hacés `const rpc = supabase.rpc` se pierde el this'))).toBe(false);
     // …y tampoco con final de línea Windows (el `\r` rompía el limpiador).

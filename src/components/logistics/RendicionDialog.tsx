@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { formatCOP } from '@/lib/utils';
+import { parseValorInput } from '@/lib/orderAlerts';
 import { useGuardarRendicion } from '@/hooks/useBalanceRendiciones';
 import type { Rendicion } from '@/lib/balanceRendiciones';
 
@@ -73,10 +74,12 @@ export default function RendicionDialog({ open, onOpenChange, editando }: Props)
     }
   }, [open, editando]);
 
-  const nItem = (s: string) => {
-    const n = Number(String(s).replace(',', '.'));
-    return isFinite(n) ? n : 0;
-  };
+  // parseValorInput y no Number a secas: "59.900" (miles CO) con Number da
+  // 59,9 y "1,500" da 1,5 — el monto CORRUPTO se guardaba vía upsert_rendicion
+  // y contaminaba "Sin explicar" y el cruce de duplicados del Balance. Es la
+  // CUARTA aparición del mismo bug de parseo de plata (pauta dialog, simulador,
+  // costos admin, acá) — siempre parseValorInput.
+  const nItem = (s: string) => parseValorInput(String(s)) ?? 0;
   const totalItems = items.reduce((a, i) => a + nItem(i.monto), 0);
   const retirado = nItem(montoRetirado);
   const diferencia = retirado - totalItems;

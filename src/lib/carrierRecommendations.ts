@@ -23,8 +23,17 @@ interface CarrierAgg {
   pedidos: number;
   resueltos: number;        // entregados + devueltos
   tasaMadura: number | null; // entregados ÷ resueltos * 100 (null si resueltos=0)
+  /** Cohorte inmaduro (< umbral de concluidos ÷ total): la tasa puede moverse.
+   *  Mismo criterio que isRatePreliminary — el heatmap de la misma pestaña ya
+   *  pinta gris estas celdas; el ranking lo dice en vez de gritar en rojo. */
+  inmaduro: boolean;
 }
 
+// floor para las TASAS (favorables) — misma convención que logisticsRates:
+// round imprimía "100.0%" con una devolución existente (99.95 → 100.0).
+const floor1 = (n: number): number => Math.floor(n * 10) / 10;
+// round para el DELTA: no es una afirmación favorable, y floor sobre la resta
+// de dos floats introduce -0.1 de error (83.3−50 = 33.2999…).
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
 /** Mínimo de pedidos RESUELTOS (entregados+devueltos) para que una transportadora
@@ -42,19 +51,33 @@ export function deriveCarrierRecommendations(
     const key = `${r.ciudad}|${r.departamento ?? ''}`;
     let city = byCity.get(key);
     if (!city) {
-      city = { ciudad: r.ciudad, departamento: r.departamento ?? '', ciudadTotal: r.ciudad_total ?? 0, carriers: [] };
+      // ciudadTotal se DERIVA sumando las filas del grupo, NO de r.ciudad_total:
+      // el server calcula ese total por nombre de ciudad SIN departamento, así
+      // que dos homónimas (La Unión, Rionegro…) heredaban el volumen COMBINADO
+      // y las dos mitades pasaban el umbral minOrders sin llegar solas
+      // (auditoría 24-ago-2026). La suma solo cuenta carriers listados (≥5
+      // guías en la ciudad) — puede subcontar la cola chica, nunca mezclar.
+      city = { ciudad: r.ciudad, departamento: r.departamento ?? '', ciudadTotal: 0, carriers: [] };
       byCity.set(key, city);
     }
+    city.ciudadTotal += r.total_pedidos || 0;
     const entregados = Math.max(0, r.entregados || 0);
     // Los rechazos vienen dentro de `devueltos` — la tasa madura los excluye
     // (decisión dueño 2026-06-24; RPC vieja sin la columna → 0, sin cambio).
-    const devueltos = Math.max(0, (r.devueltos || 0) - Math.max(0, r.rechazados ?? 0));
+    const devueltosRaw = Math.max(0, r.devueltos || 0);
+    const devueltos = Math.max(0, devueltosRaw - Math.max(0, r.rechazados ?? 0));
     const resueltos = entregados + devueltos;
+    // Madurez del cohorte: concluidos (rechazos incluidos — ya terminaron su
+    // ciclo) ÷ total, floor. Espejo de deriveDeliveryMaturity.
+    const total = r.total_pedidos || 0;
+    const concluidos = entregados + devueltosRaw;
+    const pctConcluido = total > 0 ? Math.floor((concluidos / total) * 100) : 0;
     city.carriers.push({
       transportadora: r.transportadora,
-      pedidos: r.total_pedidos || 0,
+      pedidos: total,
       resueltos,
       tasaMadura: resueltos > 0 ? (entregados / resueltos) * 100 : null,
+      inmaduro: pctConcluido < 70,
     });
   }
 
@@ -81,9 +104,14 @@ export function deriveCarrierRecommendations(
       (a, b) => (a.tasaMadura! - b.tasaMadura!) || (b.pedidos - a.pedidos),
     )[0];
 
-    const mejorTasa = round1(best.tasaMadura!);
-    const peorTasa = round1(worst.tasaMadura!);
+    const mejorTasa = floor1(best.tasaMadura!);
+    const peorTasa = floor1(worst.tasaMadura!);
     const esMantener = best.transportadora === currentTop.transportadora;
+    // Con UNA sola transportadora rankeable no hay comparación: mejor==peor y
+    // Δ=0. Antes igual salía "Cambiar a X" (mandaba a abandonar un carrier de
+    // desempeño DESCONOCIDO hacia el único con datos) o inflaba "Ya están
+    // óptimas" en ciudades donde no compitió nadie. Veredicto neutro.
+    const sinAlternativa = rankeable.length < 2;
 
     out.push({
       ciudad: city.ciudad,
@@ -93,15 +121,18 @@ export function deriveCarrierRecommendations(
       mejor_tasa_entrega: mejorTasa,
       mejor_pedidos: best.pedidos,
       mejor_resueltos: best.resueltos,
+      mejor_prelim: best.inmaduro,
       peor_transportadora: worst.transportadora,
       peor_tasa_entrega: peorTasa,
       peor_pedidos: worst.pedidos,
       peor_resueltos: worst.resueltos,
       delta_puntos: round1(mejorTasa - peorTasa),
       carrier_actual_top: currentTop.transportadora,
-      recomendacion: esMantener
-        ? `Mantener ${best.transportadora}`
-        : `Cambiar a ${best.transportadora}`,
+      recomendacion: sinAlternativa
+        ? 'Sin alternativa medida'
+        : esMantener
+          ? `Mantener ${best.transportadora}`
+          : `Cambiar a ${best.transportadora}`,
     });
   }
 

@@ -51,12 +51,18 @@ const fadeUp = (delay = 0) => ({
 // Con la tasa madura, un producto con todo en tránsito daría 0% de entrega sin
 // estar realmente fallando — este guard evita falsos críticos por inmadurez.
 const CRITICO_MIN_RESUELTOS = 5;
-function esCritico(r: Pick<ProductFailure, 'total_pedidos' | 'entregados' | 'devueltos'> & { tasa_entrega: number | null }): boolean {
+function esCritico(r: Pick<ProductFailure, 'total_pedidos' | 'entregados' | 'devueltos'> & { tasa_entrega: number | null; _prelim?: boolean }): boolean {
   // Sin tasa medida no se puede declarar crítico. En la práctica no cambia
   // ningún veredicto (el guard de CRITICO_MIN_RESUELTOS ya exigía 5
   // concluidos, y con 5 concluidos la tasa nunca es null), pero deja el
   // contrato explícito ahora que la tasa puede venir vacía.
   if (r.tasa_entrega == null) return false;
+  // Tampoco sobre una tasa PRELIMINAR: la celda de al lado la pinta gris
+  // "·prelim." (no afirma nada) — la misma fila no puede llevar a la vez la
+  // pill roja "Crítico" y sumar al card "considerar discontinuar". El guard de
+  // resueltos solo cubría la muestra chica, no el cohorte inmaduro (ej. 6
+  // concluidos de 40 enviados = 15% concluido).
+  if (r._prelim) return false;
   return r.total_pedidos >= 10
     && (r.entregados + r.devueltos) >= CRITICO_MIN_RESUELTOS
     && r.tasa_entrega < 30;
@@ -110,8 +116,8 @@ function DeliveryRateBar({ value, prelim }: { value: number; prelim?: boolean })
 }
 
 /** Severity badge — productos crónicamente fallidos (entrega <30%
- *  + ≥10 envíos) → invita a discontinuar del catálogo. */
-function SeverityBadge({ row }: { row: ProductFailure }) {
+ *  + ≥10 envíos, con tasa NO preliminar) → invita a discontinuar del catálogo. */
+function SeverityBadge({ row }: { row: Parameters<typeof esCritico>[0] }) {
   if (esCritico(row)) {
     return (
       <span className="pill pill-danger">
@@ -220,7 +226,9 @@ export default memo(function ProductFailuresTable({ rows }: Props) {
        'valor_entregado', 'valor_perdido'],
       sorted,
     );
-    downloadCsv(`logistica-productos-${new Date().toISOString().split('T')[0]}.csv`, csv);
+    // Fecha LOCAL: toISOString es UTC — exportar de noche en Bogotá nombraba
+    // el archivo con la fecha de mañana.
+    downloadCsv(`logistica-productos-${new Date().toLocaleDateString('en-CA')}.csv`, csv);
   };
 
   if (rows.length === 0) {
@@ -374,7 +382,9 @@ export default memo(function ProductFailuresTable({ rows }: Props) {
                     <td className="px-3 py-2.5 text-right font-mono text-muted-foreground" title="Sin pedidos concluidos aún">—</td>
                   ) : (
                     <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
-                      {r.tasa_devolucion.toFixed(1)}%{r._prelim ? ' ·prelim.' : ''}
+                      {/* Entero: la tasa madura es ceil — ".0" aparentaba décimas
+                          que no existen (Entrega% ya se corrigió igual). */}
+                      {Math.round(r.tasa_devolucion)}%{r._prelim ? ' ·prelim.' : ''}
                     </td>
                   )}
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums text-foreground" title="Valor entregado ÷ entregados">

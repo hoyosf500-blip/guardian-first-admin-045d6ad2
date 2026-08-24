@@ -31,28 +31,9 @@ export interface LogisticsSummary {
   valor_rechazado?: number;
 }
 
-/** Una fila del timeline de guías (RPC `logistics_timeline`). */
-export interface TimelineEntry {
-  id: string;
-  fecha: string;            // YYYY-MM-DD
-  guia: string;
-  external_id: string;
-  estado: string;
-  transportadora: string;
-  ciudad: string;
-  producto: string;
-  valor: number;
-  total_count: number;      // total de filas que matchean los filtros (para paginación)
-}
-
-/** Filtros para `logistics_timeline`. */
-export interface TimelineFilters {
-  estados?: string[];        // ej: ['ENTREGADO', 'EN TRANSPORTE']
-  transportadora?: string;
-  search?: string;           // matchea guia o external_id (ILIKE)
-  page?: number;             // 0-based
-  pageSize?: number;
-}
+// Los tipos TimelineEntry/TimelineFilters (RPC `logistics_timeline`) se
+// borraron el 24-ago-2026 junto con la tab Trazabilidad y useLogisticsTimeline.
+// La RPC sigue desplegada en la base sin consumidores — borrarla es opcional.
 
 export interface CarrierStats {
   transportadora: string;
@@ -125,13 +106,16 @@ export interface CarrierRecommendation {
   mejor_pedidos: number;
   /** Pedidos RESUELTOS (entregados+devueltos) del mejor — el n real detrás de la tasa. */
   mejor_resueltos: number;
+  /** El cohorte del mejor aún es inmaduro (<70% concluido): su tasa puede
+   *  moverse — la UI lo marca "·prelim." y nunca grita "urgente" sobre él. */
+  mejor_prelim: boolean;
   peor_transportadora: string;
   peor_tasa_entrega: number;
   peor_pedidos: number;
   peor_resueltos: number;
   delta_puntos: number;
   carrier_actual_top: string;
-  recomendacion: string;       // "Mantener X" | "Cambiar a X"
+  recomendacion: string;       // "Mantener X" | "Cambiar a X" | "Sin alternativa medida"
 }
 
 /** Una ciudad disponible para el dropdown de filtro. */

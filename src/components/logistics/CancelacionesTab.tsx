@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   RefreshCw, Lock, Wrench, ServerCrash, XCircle, PhoneOff, DollarSign,
-  ShieldCheck, Users, MapPin, Package, Download, Clock, Gauge,
+  ShieldCheck, Users, MapPin, Package, Download, Clock, Gauge, HelpCircle,
 } from 'lucide-react';
 import { useCancelacionesAnalisis } from '@/hooks/useCancelacionesAnalisis';
 import { useCancelacionesPorProducto } from '@/hooks/useCancelacionesPorProducto';
@@ -58,13 +58,13 @@ interface CancelCsvRow {
   reagendas: number;
 }
 
-const pct = (n: number | null): string => (n == null ? '—' : `${Math.round(n * 100)}%`);
-const horas = (h: number | null): string => {
-  if (h == null) return '—';
-  if (h < 1) return `${Math.round(h * 60)} min`;
-  if (h < 48) return `${h.toFixed(1)} h`;
-  return `${Math.round(h / 24)} días`;
-};
+// Convención de la casa (confirmationRate.ts / logisticsRates.ts — auditoría
+// eae0e21): NUNCA Math.round en tasas. Con round, 199/200 con motivo imprimía
+// "(100%)" al lado de "199 de 200", y 2/500 cancelados imprimía "0%".
+// - pctPiso (floor) para lo BUENO (cobertura): 100% solo con cero faltantes.
+// - pctTecho (ceil) para las PÉRDIDAS: 0% solo con cero casos.
+const pctPiso = (n: number | null): string => (n == null ? '—' : `${Math.floor(n * 100)}%`);
+const pctTecho = (n: number | null): string => (n == null ? '—' : `${Math.ceil(n * 100)}%`);
 
 function StatusCard({
   icon, title, body, tone,
@@ -129,21 +129,27 @@ function DimensionCard({
  * que convierte un porcentaje en algo que alguien puede hacer mañana.
  */
 function LadoDelProblema({
-  porCulpa, totalCancelados, valorCancelado,
-}: { porCulpa: CulpaBucket[]; totalCancelados: number; valorCancelado: number }) {
+  porCulpa, totalCancelados, valorCancelado, recreados,
+}: { porCulpa: CulpaBucket[]; totalCancelados: number; valorCancelado: number; recreados: number }) {
   const ordenadas = useMemo(
     () => [...porCulpa].sort((a, b) => b.cancelados - a.cancelados),
     [porCulpa],
   );
   if (!ordenadas.length) return null;
   const mayor = ordenadas[0].cancelados || 1;
+  // La nota declara el universo de las BARRAS: los rehechos (cambio de
+  // transportadora/edición) no entran — sin decirlo, los % no cerraban contra
+  // el "N cancelados" del encabezado (auditoría 24-ago-2026).
+  const reales = Math.max(0, totalCancelados - recreados);
 
   return (
     <NovCard
       title="¿De qué lado está el problema?"
       icon={Gauge}
       iconClass="text-warning"
-      note={`${totalCancelados} cancelados · ${formatCOP(valorCancelado)}`}
+      note={recreados > 0
+        ? `${reales} cancelados reales (${recreados} rehechos aparte) · ${formatCOP(valorCancelado)}`
+        : `${totalCancelados} cancelados · ${formatCOP(valorCancelado)}`}
     >
       <ul className="space-y-3">
         {ordenadas.map(c => {
@@ -153,7 +159,7 @@ function LadoDelProblema({
               <div className="flex items-baseline gap-2 flex-wrap">
                 <span className="text-sm font-semibold text-foreground">{info.label}</span>
                 <span className="text-xs tabular-nums text-muted-foreground">
-                  {c.cancelados} · {pct(c.pctSobreTotal)} · {formatCOP(c.valor)}
+                  {c.cancelados} · {pctTecho(c.pctSobreTotal)} · {formatCOP(c.valor)}
                 </span>
               </div>
               <div className="h-2 rounded-full bg-muted overflow-hidden my-1.5">
@@ -230,7 +236,13 @@ function TasaPorProductoCard({ data }: { data: ReturnType<typeof useCancelacione
     <NovCard
       title="Tasa por producto"
       icon={Package}
-      note={pp.promedioTienda == null ? 'sin promedio' : `la tienda va en ${pp.promedioTienda}%`}
+      // "÷ resueltos" en la cara: este promedio divide por (generados −
+      // pendientes) y SIEMPRE da mayor que la tasa del Stat de arriba (que
+      // divide por TODOS los generados). Sin la aclaración, "25% arriba y 31%
+      // acá" se leía como contradicción (auditoría 24-ago-2026).
+      note={pp.promedioTienda == null
+        ? 'sin promedio'
+        : `la tienda va en ${pp.promedioTienda}% (÷ resueltos — mayor que la tasa de arriba, que divide por todos los generados)`}
     >
       {pp.ranking.length === 0 ? (
         <EmptyCard msg="Ningún producto tiene todavía suficientes pedidos resueltos para una tasa." />
@@ -470,7 +482,7 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
                 <Gauge size={18} className="text-foreground mt-0.5 shrink-0" aria-hidden="true" />
                 <div className="min-w-0">
                   <h3 className="text-sm font-bold text-foreground">
-                    {r.cobertura.conMotivo} de {r.cobertura.total} cancelaciones tienen motivo anotado ({pct(r.cobertura.pctConMotivo)})
+                    {r.cobertura.conMotivo} de {r.cobertura.total} cancelaciones tienen motivo anotado ({pctPiso(r.cobertura.pctConMotivo)})
                   </h3>
                   <p className="text-xs text-muted-foreground mt-1">
                     Los bloques de <span className="text-foreground font-medium">motivo</span> y{' '}
@@ -488,7 +500,7 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
                   <div className="flex gap-2 mt-2 flex-wrap">
                     {r.cobertura.porOrigen.map(o => (
                       <span key={o.origen} className="text-[11px] font-mono tabular-nums px-2 py-1 rounded-lg bg-card/60 border border-border text-muted-foreground">
-                        {o.origen === 'guardian' ? 'Cancelado en el CRM' : 'Cancelado en Dropi'}: {o.cancelados} · {pct(o.pctConMotivo)} con motivo
+                        {o.origen === 'guardian' ? 'Cancelado en el CRM' : 'Cancelado en Dropi'}: {o.cancelados} · {pctPiso(o.pctConMotivo)} con motivo
                       </span>
                     ))}
                   </div>
@@ -509,11 +521,17 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
               porCulpa={r.porCulpa}
               totalCancelados={r.totalCancelados}
               valorCancelado={r.valorCancelado}
+              recreados={r.recreados}
             />
           </motion.div>
 
-          {/* 2 · LA PLATA */}
-          <motion.div {...fadeUp(0.08)} className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+          {/* 2 · LA PLATA — 5 tarjetas en el orden de CANCEL_TIPO_ORDER:
+              "Sin clasificar" va SEGUNDA y como tarjeta héroe, no nota al pie.
+              Con cobertura baja (agosto-EC: ~79% sin motivo) era el balde MÁS
+              GRANDE y quedaba en letra de 11px mientras las 3 tarjetas grandes
+              repartían la minoría — cancelTaxonomy.ts lo dice textual: "un
+              bucket grande de sin clasificar es en sí mismo el problema". */}
+          <motion.div {...fadeUp(0.08)} className="grid gap-3 grid-cols-2 lg:grid-cols-5">
             {/* La tasa que se muestra es la REAL: sin los pedidos que se
                 recrearon con otro id (cambio de transportadora, edición). Esos
                 no se perdieron — contarlos cuenta la misma venta dos veces. La
@@ -521,10 +539,10 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
                 Dropi, que sí los cuenta. */}
             <Stat icon={<XCircle size={16} />} label="Cancelados" value={r.totalCancelados} tone="danger"
               hint={r.tasaCancelacionReal != null
-                ? `${pct(r.tasaCancelacionReal)} de ${r.generados} generados`
+                ? `${pctTecho(r.tasaCancelacionReal)} de ${r.generados} generados`
                 : r.tasaCancelacion == null
                   ? (r.universoInconsistente ? 'tasa no confiable' : 'sin base comparable')
-                  : `${pct(r.tasaCancelacion)} de ${r.generados} generados`} />
+                  : `${pctTecho(r.tasaCancelacion)} de ${r.generados} generados`} />
             {/* Las etiquetas salen de CANCEL_TIPO_LABEL y ya no van a mano: la
                 constante existía y no la importaba nadie, así que 'Ahorro
                 (estuvo bien cancelar)' de acá y 'Ahorro (cancelar estuvo bien)'
@@ -532,6 +550,9 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
             <Stat icon={<DollarSign size={16} />} label={CANCEL_TIPO_LABEL.perdida_evitable}
               value={formatCOP(r.plata.evitable.valor)} tone="warning"
               hint={`${r.plata.evitable.cancelados} pedidos`} />
+            <Stat icon={<HelpCircle size={16} />} label={CANCEL_TIPO_LABEL.desconocido}
+              value={formatCOP(r.plata.sinClasificar.valor)}
+              hint={`${r.plata.sinClasificar.cancelados} sin motivo que clasificar`} />
             <Stat icon={<DollarSign size={16} />} label={CANCEL_TIPO_LABEL.perdida_inevitable}
               value={formatCOP(r.plata.inevitable.valor)}
               hint={`${r.plata.inevitable.cancelados} pedidos`} />
@@ -542,7 +563,6 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
 
           <motion.div {...fadeUp(0.1)} className="text-xs text-muted-foreground">
             Perdido bruto del período: <span className="font-mono tabular-nums text-foreground font-bold text-sm">{formatCOP(r.plata.perdidoBruto)}</span>
-            {' '}· sin clasificar: {formatCOP(r.plata.sinClasificar.valor)} ({r.plata.sinClasificar.cancelados})
             {/* Los recreados van APARTE de los tres baldes de plata: no son
                 pérdida ni ahorro, el pedido volvió a entrar con otro número.
                 Estaban sumados en "Ahorro", cuya línea nombra duplicados y mal
@@ -562,7 +582,7 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
                 {' '}de esos cancelados no se perdieron: se recrearon con otro número de pedido
                 (cambio de transportadora o edición).
                 {r.tasaCancelacionReal != null
-                  ? ` La tasa de arriba ya los descuenta — con ellos sería ${pct(r.tasaCancelacion)}, que es lo que muestra Dropi.`
+                  ? ` La tasa de arriba ya los descuenta — con ellos sería ${pctTecho(r.tasaCancelacion)}, que es lo que muestra Dropi.`
                   : ' No entran en la tasa de arriba.'}
               </span>
             )}
@@ -577,7 +597,7 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
                   {r.gestion.sinGestion} cancelados sin una sola llamada = {formatCOP(r.gestion.sinGestionValor)}
                 </p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  {pct(r.gestion.pctSinGestion)} del total. Acá el motivo anotado no se verificó con nadie.
+                  {pctTecho(r.gestion.pctSinGestion)} del total. Acá el motivo anotado no se verificó con nadie.
                 </p>
               </div>
               <ul className="space-y-1">
@@ -593,14 +613,18 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
               </ul>
             </NovCard>
 
-            <NovCard title="Cuánto tardamos en llamarlo" icon={Clock} iconClass="text-warning"
-              note={`sobre ${r.gestion.ttfcMedidos} medidos`}>
-              <div className="grid grid-cols-2 gap-3">
-                <Stat label="Mediana" value={horas(r.gestion.ttfcMedianaHoras)} tone="warning" />
-                <Stat label="El 10% más lento" value={horas(r.gestion.ttfcP90Horas)} />
+            {/* Por DÍAS, no en horas: Guardian no tiene la hora real del pedido
+                (orders.fecha es solo fecha), así que una "mediana en horas"
+                medía el reloj del equipo, no la velocidad — ver diasAPrimerToque. */}
+            <NovCard title="Cuándo llegó el primer toque" icon={Clock} iconClass="text-warning"
+              note={`sobre ${r.gestion.ttfcMedidos} tocados`}>
+              <div className="grid grid-cols-3 gap-3">
+                <Stat label="El mismo día" value={r.gestion.toqueMismoDia} tone="success" />
+                <Stat label="Al día siguiente" value={r.gestion.toqueDiaSiguiente} tone="warning" />
+                <Stat label="2+ días después" value={r.gestion.toqueDosOMasDias} tone="danger" />
               </div>
               <p className="text-[11px] text-muted-foreground mt-3">
-                {r.gestion.ttfcNunca} nunca se tocaron (no entran en la mediana).
+                {r.gestion.ttfcNunca} nunca se tocaron (no entran acá).
                 {r.gestion.reagendasQuemadas > 0 && (
                   <> · {r.gestion.reagendasQuemadas} se habían reagendado y aun así se cancelaron.</>
                 )}
@@ -636,7 +660,7 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
                       pct={(m.cancelados / maxMotivo) * 100}
                       right={
                         <span className="text-muted-foreground">
-                          {m.cancelados} · {pct(m.pctSobreConMotivo)} · {formatCOP(m.valor)}
+                          {m.cancelados} · {pctTecho(m.pctSobreConMotivo)} · {formatCOP(m.valor)}
                         </span>
                       }
                     />
@@ -681,7 +705,7 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
                       dotTitle={o.muestraSuficiente ? undefined : 'Pocos datos para juzgar'}
                       right={
                         <span className="text-muted-foreground">
-                          {o.cancelados} canc · {o.sinGestion} sin llamar · {pct(o.pctConMotivo)} con motivo
+                          {o.cancelados} canc · {o.sinGestion} sin llamar · {pctPiso(o.pctConMotivo)} con motivo
                         </span>
                       }
                     />
@@ -771,6 +795,8 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
             borrados/fantasma excluidos — la misma que usa Finanzas. Logística → Resumen usa una base
             <em> sin</em> cancelados, por eso sus porcentajes no coinciden con estos y no es un error.
             El top de motivos se calcula sobre las cancelaciones que tienen motivo anotado, no sobre el total.
+            La “Tasa por producto” divide por pedidos <em>resueltos</em> (sin los que siguen en curso), por eso
+            siempre da más alta que la tasa general de arriba — tampoco es un error.
             “Pérdida evitable” incluye toda cancelación sin ninguna gestión registrada, aunque el motivo culpe
             al cliente: nadie verificó ese motivo. El valor es venta bruta no realizada, no utilidad.
           </motion.div>

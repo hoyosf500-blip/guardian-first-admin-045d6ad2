@@ -120,7 +120,11 @@ function mapRow(d: Record<string, unknown>): CancelacionRow {
 
 export function useCancelacionesAnalisis(filtros: CancelacionesFiltros): CancelacionesData {
   const { activeStoreId } = useStore();
-  const [loading, setLoading] = useState(false);
+  // true INICIAL: la carga vive en un useEffect (corre DESPUÉS del paint) — con
+  // false, el primer frame tenía loading=false + 0 cancelados y la pantalla
+  // alcanzaba a afirmar "No hubo cancelaciones. Es un buen resultado" sobre
+  // datos que nadie pidió todavía (versión residual del bug del 23-ago).
+  const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<CancelacionesStatus>('ok');
   const [resumen, setResumen] = useState<CancelacionesResumen>(EMPTY_RESUMEN);
   const [rows, setRows] = useState<CancelacionRow[]>([]);
@@ -139,7 +143,9 @@ export function useCancelacionesAnalisis(filtros: CancelacionesFiltros): Cancela
     // Sin tienda activa (primer render) no se consulta: null significa
     // "todavía no sé cuál", no "todas".
     if (!activeStoreId || !fromDate || !toDate) {
-      setResumen(EMPTY_RESUMEN); setRows([]); setStatus('ok');
+      // setLoading(false): con el inicial en true, sin este release un usuario
+      // sin tienda quedaría en "cargando" eterno.
+      setResumen(EMPTY_RESUMEN); setRows([]); setStatus('ok'); setLoading(false);
       return;
     }
     const seq = ++seqRef.current;

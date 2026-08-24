@@ -17,13 +17,6 @@ export const CHART_TOOLTIP_STYLE = {
   boxShadow: 'var(--shadow-md)',
 };
 
-/** Item style del tooltip (texto dentro de cada línea). */
-export const CHART_TOOLTIP_ITEM_STYLE = {
-  color: 'hsl(var(--foreground))',
-  fontSize: 12,
-  padding: '2px 0',
-};
-
 /** Cursor style (rect que se pinta al hacer hover sobre una barra). */
 export const CHART_BAR_CURSOR = { fill: 'hsl(var(--muted) / 0.4)' } as const;
 
@@ -41,29 +34,11 @@ export const CHART_GRID_PROPS = {
   vertical: false,
 } as const;
 
-/** Props compartidos para `<XAxis>` — sin axis line gruesa, ticks pequeños. */
-export const CHART_X_AXIS_PROPS = {
-  stroke: 'hsl(var(--muted-foreground))',
-  fontSize: 10,
-  tickLine: false,
-  axisLine: { stroke: 'hsl(var(--border))' },
-} as const;
-
-/** Props compartidos para `<YAxis>` — sin axis line, sin ticks. */
-export const CHART_Y_AXIS_PROPS = {
-  stroke: 'hsl(var(--muted-foreground))',
-  fontSize: 10,
-  tickLine: false,
-  axisLine: false,
-  width: 50,
-} as const;
-
-/** Props compartidos para `<Legend>` — typo pequeño, padding consistente. */
-export const CHART_LEGEND_PROPS = {
-  wrapperStyle: { fontSize: 11, paddingTop: 8, color: 'hsl(var(--muted-foreground))' },
-  iconType: 'circle' as const,
-  iconSize: 8,
-};
+// Poda 24-ago-2026: se borraron CHART_TOOLTIP_ITEM_STYLE, CHART_X_AXIS_PROPS,
+// CHART_Y_AXIS_PROPS, CHART_LEGEND_PROPS, fmtDayShort, SERIES_PALETTE y
+// paletteAt — cero consumidores (auditoría KPIs). Los axis-props "compartidos"
+// además mentían: cada chart define sus ejes inline con otros valores. Si
+// algún día se unifican los ejes, recrearlos desde los valores reales en uso.
 
 /** Format compacto de números (1.2M, 850K). */
 export function fmtCompact(v: number): string {
@@ -80,14 +55,6 @@ export function fmtDay(s: string): string {
   return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', timeZone: 'UTC' });
 }
 
-/** Format de fecha YYYY-MM-DD a "DD/MM" (compacto para ejes con muchos ticks). */
-export function fmtDayShort(s: string): string {
-  // Mismo bug de zona que fmtDay: new Date('YYYY-MM-DD') es medianoche UTC y los
-  // getters locales restaban un día en Bogotá. Parsear y leer TODO en UTC.
-  const d = new Date(s + 'T00:00:00Z');
-  return `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-}
-
 /** Tone semantic → token CSS color. Útil para `<Bar fill={...}>`. */
 export const SEMANTIC_COLORS = {
   success: 'hsl(var(--success))',
@@ -99,18 +66,3 @@ export const SEMANTIC_COLORS = {
   muted:   'hsl(var(--muted-foreground))',
 } as const;
 
-/** Paleta cíclica de 6 colores semánticos para series múltiples
- *  (carriers, ciudades, etc). Pensada para que cada índice quede
- *  distinguible incluso en dark mode. */
-export const SERIES_PALETTE = [
-  SEMANTIC_COLORS.info,
-  SEMANTIC_COLORS.success,
-  SEMANTIC_COLORS.warning,
-  SEMANTIC_COLORS.ai,
-  SEMANTIC_COLORS.accent,
-  SEMANTIC_COLORS.danger,
-];
-
-export function paletteAt(index: number): string {
-  return SERIES_PALETTE[index % SERIES_PALETTE.length];
-}

@@ -8,7 +8,7 @@ import {
   percentil,
   tuvoGestion,
   diasHastaCancelar,
-  horasAPrimerToque,
+  diasAPrimerToque,
   EMPTY_RESUMEN,
   MIN_MUESTRA_OPERADORA,
   type CancelacionRow,
@@ -257,20 +257,25 @@ describe('gestión — la sección incómoda', () => {
     expect(r.gestion.pctSinGestion).toBeCloseTo(2 / 3);
   });
 
-  it('el tiempo al primer toque expone su `n`: nunca una mediana suelta', () => {
+  it('el primer toque se distribuye por DÍAS y expone su `n`', () => {
+    // Sin hora real del pedido (orders.fecha es solo fecha), medir en horas
+    // era medir el reloj del equipo — la métrica ahora es por días.
     const r = summarizeCancelaciones([
-      row({ primerToqueAt: '2026-08-10T02:00:00-05:00' }),   // 2 h
-      row({ primerToqueAt: '2026-08-10T06:00:00-05:00' }),   // 6 h
-      row({ primerToqueAt: null }),
+      row({ fecha: '2026-08-10', primerToqueAt: '2026-08-10T15:00:00-05:00' }), // mismo día
+      row({ fecha: '2026-08-10', primerToqueAt: '2026-08-11T09:00:00-05:00' }), // +1 día
+      row({ fecha: '2026-08-10', primerToqueAt: '2026-08-14T09:00:00-05:00' }), // 2+ días
+      row({ primerToqueAt: null }),                                             // nunca
     ]);
-    expect(r.gestion.ttfcMedianaHoras).toBe(4);
-    expect(r.gestion.ttfcMedidos).toBe(2);
+    expect(r.gestion.toqueMismoDia).toBe(1);
+    expect(r.gestion.toqueDiaSiguiente).toBe(1);
+    expect(r.gestion.toqueDosOMasDias).toBe(1);
+    expect(r.gestion.ttfcMedidos).toBe(3);
     expect(r.gestion.ttfcNunca).toBe(1);
   });
 
   it('un primer toque anterior al pedido se clampa a 0 en vez de descartarse', () => {
-    // El pedido SÍ se tocó; tirar la fila movería la mediana.
-    expect(horasAPrimerToque(row({ fecha: '2026-08-10', primerToqueAt: '2026-08-09T10:00:00-05:00' }))).toBe(0);
+    // El pedido SÍ se tocó; tirar la fila movería la distribución.
+    expect(diasAPrimerToque(row({ fecha: '2026-08-10', primerToqueAt: '2026-08-09T10:00:00-05:00' }))).toBe(0);
   });
 
   it('cuenta las reagendas quemadas', () => {
@@ -419,7 +424,7 @@ describe('pureza y contrato', () => {
   it('EMPTY_RESUMEN tiene tasas en null, no en cero', () => {
     expect(EMPTY_RESUMEN.tasaCancelacion).toBeNull();
     expect(EMPTY_RESUMEN.cobertura.pctConMotivo).toBeNull();
-    expect(EMPTY_RESUMEN.gestion.ttfcMedianaHoras).toBeNull();
+    expect(EMPTY_RESUMEN.gestion.ttfcMedidos).toBe(0);
   });
 });
 

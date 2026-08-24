@@ -20,10 +20,11 @@
  *    dice 60% — la verdad sobre lo que sabemos — y no 3%, que es una mentira
  *    construida con datos ausentes.
  *
- * 3. LOS CUATRO TIPOS DE PÉRDIDA PARTICIONAN EL CONJUNTO. evitable + inevitable
- *    + ahorro + sinClasificar === total, en unidades Y en pesos. Está testeado.
- *    Sin ese invariante la pantalla puede perder plata en el camino sin que
- *    nadie lo note.
+ * 3. LOS CINCO TIPOS DE PÉRDIDA PARTICIONAN EL CONJUNTO. evitable + inevitable
+ *    + ahorro + sinClasificar + recreado === total, en unidades Y en pesos.
+ *    Está testeado. Sin ese invariante la pantalla puede perder plata en el
+ *    camino sin que nadie lo note. (Eran cuatro hasta que `recreado` se separó
+ *    para no contar dos veces los pedidos rehechos.)
  */
 
 import {
@@ -199,15 +200,28 @@ export function diasHastaCancelar(r: CancelacionRow): number | null {
   return Math.max(0, Math.floor((fin - ini) / 86_400_000));
 }
 
-/** Horas entre la creación del pedido y el PRIMER toque. null si nunca lo tocaron. */
-export function horasAPrimerToque(r: CancelacionRow): number | null {
+/** DÍAS entre la creación del pedido y el PRIMER toque (0 = mismo día).
+ *  null si nunca lo tocaron.
+ *
+ *  ⛔ En HORAS esta métrica no se puede medir: orders.fecha es SOLO fecha (sin
+ *  hora — created_at es la hora del SYNC en UTC, no la del pedido), así que la
+ *  única línea base disponible es la medianoche. A granularidad de horas, el
+ *  "TTFC" de todo toque del mismo día era literalmente LA HORA DEL RELOJ del
+ *  toque: pedido de las 14:50 llamado a las 15:00 contaba "15 h de demora". La
+ *  mediana/p90 que se imprimía quedaba dominada por el horario del equipo
+ *  (~11-14 h siempre), no por la velocidad de respuesta (auditoría 24-ago-2026;
+ *  el análisis por hora ya produjo una conclusión falsa retractada — memoria
+ *  cancelaciones_agosto). A granularidad de DÍA la línea base de medianoche sí
+ *  es válida — mismo criterio que diasHastaCancelar.
+ */
+export function diasAPrimerToque(r: CancelacionRow): number | null {
   if (!r.fecha || !r.primerToqueAt) return null;
   const ini = Date.parse(`${r.fecha}T00:00:00`);
   const fin = Date.parse(r.primerToqueAt);
   if (!Number.isFinite(ini) || !Number.isFinite(fin)) return null;
   // Negativo (relojes desfasados / backfill) se clampa a 0 en vez de descartarse:
-  // el pedido SÍ se tocó, y tirar la fila movería la mediana.
-  return Math.max(0, (fin - ini) / 3_600_000);
+  // el pedido SÍ se tocó, y tirar la fila movería la distribución.
+  return Math.max(0, Math.floor((fin - ini) / 86_400_000));
 }
 
 export interface CoberturaMotivo {
@@ -281,9 +295,12 @@ export interface GestionCancelacion {
   sinGestion: number;
   sinGestionValor: number;
   pctSinGestion: number | null;
-  ttfcMedianaHoras: number | null;
-  ttfcP90Horas: number | null;
-  /** Denominador de la mediana. Se imprime al lado: una mediana sin su n decora. */
+  /** Distribución del primer toque por DÍAS (lo único que el dato permite —
+   *  ver diasAPrimerToque). Suman ttfcMedidos. */
+  toqueMismoDia: number;
+  toqueDiaSiguiente: number;
+  toqueDosOMasDias: number;
+  /** Denominador de la distribución. Se imprime al lado: un % sin su n decora. */
   ttfcMedidos: number;
   ttfcNunca: number;
   reagendasQuemadas: number;
@@ -399,7 +416,7 @@ export const EMPTY_RESUMEN: CancelacionesResumen = {
   topMotivos: [], motivosCrudos: [], porCulpa: [],
   gestion: {
     distribucionIntentos: [], sinGestion: 0, sinGestionValor: 0, pctSinGestion: null,
-    ttfcMedianaHoras: null, ttfcP90Horas: null, ttfcMedidos: 0, ttfcNunca: 0,
+    toqueMismoDia: 0, toqueDiaSiguiente: 0, toqueDosOMasDias: 0, ttfcMedidos: 0, ttfcNunca: 0,
     reagendasQuemadas: 0,
   },
   porOperadora: [], porProducto: [], porCiudad: [],
@@ -625,11 +642,16 @@ export function summarizeCancelaciones(
     b.valor += val(list[i].valor);
     culpaMap.set(c.culpa, b);
   });
+  // Denominador SIN recreados: las barras ya los excluyen (filtro de arriba) —
+  // dividir contra el total CON ellos dejaba masa que ninguna barra
+  // representaba y los % no sumaban 100 (auditoría 24-ago-2026).
+  const nRecreadosCulpa = clases.filter(c => c.cuentaEnTasa === false).length;
+  const totalCulpa = Math.max(0, total - nRecreadosCulpa);
   const porCulpa: CulpaBucket[] = CANCEL_CULPA_ORDER
     .filter(c => culpaMap.has(c))
     .map(culpa => {
       const b = culpaMap.get(culpa)!;
-      return { culpa, cancelados: b.cancelados, valor: b.valor, pctSobreTotal: pct(b.cancelados, total) };
+      return { culpa, cancelados: b.cancelados, valor: b.valor, pctSobreTotal: pct(b.cancelados, totalCulpa) };
     });
 
   // ── (e) Gestión: intentos y tiempo hasta el primer toque ──────────────────
@@ -643,14 +665,17 @@ export function summarizeCancelaciones(
     };
   });
   const sinGestionRows = list.filter(r => !tuvoGestion(r));
-  const ttfc = list.map(horasAPrimerToque).filter((h): h is number => h !== null);
+  // Distribución por DÍAS, no mediana en horas: ver diasAPrimerToque — sin
+  // hora real del pedido, una mediana en horas medía el horario del equipo.
+  const ttfc = list.map(diasAPrimerToque).filter((d): d is number => d !== null);
   const gestion: GestionCancelacion = {
     distribucionIntentos,
     sinGestion: sinGestionRows.length,
     sinGestionValor: sinGestionRows.reduce((s, r) => s + val(r.valor), 0),
     pctSinGestion: pct(sinGestionRows.length, total),
-    ttfcMedianaHoras: mediana(ttfc),
-    ttfcP90Horas: percentil(ttfc, 90),
+    toqueMismoDia: ttfc.filter(d => d === 0).length,
+    toqueDiaSiguiente: ttfc.filter(d => d === 1).length,
+    toqueDosOMasDias: ttfc.filter(d => d >= 2).length,
     ttfcMedidos: ttfc.length,
     ttfcNunca: total - ttfc.length,
     reagendasQuemadas: list.filter(r => val(r.reagendas) > 0).length,

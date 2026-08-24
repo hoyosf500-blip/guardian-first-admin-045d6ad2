@@ -174,8 +174,13 @@ export default function FinanzasHero({
     margenPct == null || !Number.isFinite(margenPct) || ingresosBrutos <= 0
       ? null
       : margenPct;
+  // En modo COHORTE el margen cruza ventanas: numerador por fecha de PEDIDO
+  // (operativo del mes) y denominador por entregados del período. El número se
+  // muestra igual (indicativo, declarado en la UI), pero el VEREDICTO de color
+  // no se emite sobre un ratio de ventanas mezcladas — en bordes de mes el
+  // color cambiaba sin que cambiara el negocio (auditoría 24-ago-2026).
   const margenTone: Tone =
-    margenValue == null ? 'neutral' :
+    margenValue == null || cohorte ? 'neutral' :
     margenValue >= 30 ? 'success' :
     margenValue >= 15 ? 'warning' :
     'danger';

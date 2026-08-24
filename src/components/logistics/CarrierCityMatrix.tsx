@@ -69,7 +69,12 @@ export default memo(function CarrierCityMatrix({
 
     for (const r of data) {
       carrierSet.add(r.transportadora);
-      const key = r.ciudad;
+      // Clave compuesta ciudad|departamento — la misma convención que
+      // deriveCarrierRecommendations. Con `r.ciudad` a secas, dos ciudades
+      // homónimas de departamentos distintos (La Unión, Rionegro… reales en
+      // CO) se fusionaban y la celda del mismo carrier de la segunda PISABA
+      // la de la primera (auditoría 24-ago-2026).
+      const key = `${r.ciudad}|${r.departamento ?? ''}`;
       // Celdas con la tasa MADURA (÷ entregados+devueltos, sin rechazos ni
       // tránsito) — la misma que usa la tabla de recomendaciones de arriba.
       // Antes acá iba r.tasa_entrega cruda del RPC (÷ COUNT con tránsito) y el
@@ -92,11 +97,15 @@ export default memo(function CarrierCityMatrix({
       const existing = cityMap.get(key);
       if (existing) {
         existing.byCarrier[r.transportadora] = cell;
+        existing.total += r.total_pedidos;
       } else {
         cityMap.set(key, {
           ciudad: r.ciudad,
           departamento: r.departamento,
-          total: r.ciudad_total,
+          // Derivado sumando las filas del grupo, NO r.ciudad_total: el server
+          // lo calcula por nombre SIN departamento y las homónimas heredaban
+          // el volumen combinado (mismo fix que deriveCarrierRecommendations).
+          total: r.total_pedidos,
           byCarrier: { [r.transportadora]: cell },
         });
       }
@@ -189,7 +198,7 @@ export default memo(function CarrierCityMatrix({
           </thead>
           <tbody>
             {rows.map(row => (
-              <tr key={row.ciudad} className="border-b border-border/50 last:border-0 hover:bg-card/60 transition-colors duration-200">
+              <tr key={`${row.ciudad}|${row.departamento}`} className="border-b border-border/50 last:border-0 hover:bg-card/60 transition-colors duration-200">
                 <td className="px-5 py-2 sticky left-0 bg-card z-10">
                   <div className="font-semibold text-foreground truncate max-w-[150px]" title={row.ciudad}>
                     {row.ciudad}

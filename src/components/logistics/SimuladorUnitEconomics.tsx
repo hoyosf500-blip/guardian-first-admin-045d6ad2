@@ -37,11 +37,17 @@ interface Props {
   costBasis: LogisticsCostBasis | null;
   costBasisLoading: boolean;
   // Costos mensuales ya cargados (NetoRealCard los persiste)
-  pautaTotal: number;         // pauta_meta + pauta_tiktok
+  pautaTotal: number;         // pautaEfectiva del padre: bitácora diaria O fallback mensual
   adminTotal: number;         // costos_admin
+  /** true si pautaTotal viene de la bitácora DIARIA (ya acotada al rango) —
+   *  en ese caso NO se prorratea. Mismo flag que usa NetoRealCard. */
+  pautaFromDaily: boolean;
   // Rango activo — para prorratear pauta/admin (MENSUALES) a la ventana visible.
   fromDate: string;           // 'YYYY-MM-DD'
   toDate: string;             // 'YYYY-MM-DD'
+  /** Filtro de ciudad activo — se reenvía a useCostosUnitarios para que el
+   *  cargo por devolución cubra la misma población que el resto de los números. */
+  ciudad?: string;
 }
 
 /** Fracción del mes que cubre el rango [from,to] (0-1). pauta/admin son costos
@@ -86,14 +92,24 @@ export default function SimuladorUnitEconomics({
   generadosSinCancel, totalVendido, despachadosCount, despachadoValor,
   entregadosCount, valorEntregado, devueltosCount, valorPerdido,
   rechazadosCount, valorRechazos,
-  costBasis, costBasisLoading, pautaTotal, adminTotal,
-  fromDate, toDate,
+  costBasis, costBasisLoading, pautaTotal, adminTotal, pautaFromDaily,
+  fromDate, toDate, ciudad,
 }: Props) {
-  // pauta/admin son mensuales; prorrateamos al rango para que numerador (costo) y
-  // denominador (ingresos del rango) cubran la misma ventana.
+  // El admin es mensual; se prorratea al rango para que numerador (costo) y
+  // denominador (ingresos del rango) cubran la misma ventana. La PAUTA solo se
+  // prorratea cuando viene del fallback MENSUAL: desde e6b3234 (jul-2026)
+  // `pautaTotal` suele ser la suma de la bitácora DIARIA, que YA cubre exacto
+  // [fromDate,toDate] — prorratearla de nuevo la encogía dos veces (al día 23
+  // del mes la publicidad entraba ×23/31) y la ganancia proyectada salía
+  // inflada, contradiciendo a NetoRealCard en la misma pantalla (auditoría
+  // 24-ago-2026).
   const fracMes = useMemo(() => fraccionMesCubierta(fromDate, toDate), [fromDate, toDate]);
-  const pautaProrateada = pautaTotal * fracMes;
+  const pautaProrateada = pautaFromDaily ? pautaTotal : pautaTotal * fracMes;
   const adminProrateado = adminTotal * fracMes;
+  // El admin (y la pauta de fallback) salen de UN solo mes (el de fromDate):
+  // en rangos multi-mes se resta 1 mes de costo contra N meses de ingresos.
+  // Hasta que se sumen los meses cubiertos, se dice en la cara.
+  const rangoMultiMes = fromDate.slice(0, 7) !== toDate.slice(0, 7);
   const kpis = useMemo(
     () => computeRealKpis({
       generadosSinCancel,
@@ -119,7 +135,7 @@ export default function SimuladorUnitEconomics({
   // billetera. Solo se usa si la muestra cubre la mayoría de las devoluciones
   // del período — ver el comentario en el seed de abajo. Con la migración sin
   // aplicar o la billetera coja queda en 0 y el simulador avisa.
-  const costosQ = useCostosUnitarios(fromDate, toDate);
+  const costosQ = useCostosUnitarios(fromDate, toDate, ciudad);
   const costosUnit = useMemo(() => calcularCostosUnitarios(costosQ.data), [costosQ.data]);
   const cargoDevolucionUnit =
     costosUnit?.cargoDevolucionConfiable && costosUnit.cargoPorDevolucion != null
@@ -294,6 +310,15 @@ export default function SimuladorUnitEconomics({
           <CopField label="Costo x devolución" value={sim.costoDevolucionUnit} onChange={(n) => set({ costoDevolucionUnit: n })} />
         </div>
 
+        {rangoMultiMes && (
+          <p className="text-[10px] text-warning/90 leading-relaxed">
+            El rango cruza varios meses: <strong>Admin</strong>
+            {pautaFromDaily ? '' : ' y Publicidad'} solo traen lo guardado para{' '}
+            <span className="font-mono">{fromDate.slice(0, 7)}</span> — con 3 meses de
+            ingresos, ese costo queda subcontado y la ganancia proyectada sale optimista.
+          </p>
+        )}
+
         {/* Proyección */}
         <div className="rounded-2xl border border-border bg-muted/10 divide-y divide-border shadow-card3d mt-1">
           <SimRow label="Ingresos (entregados)" value={result.ingresos} tone="base"
@@ -463,13 +488,24 @@ function NumField({ label, value, onChange }: { label: string; value: number; on
   );
 }
 
+// CopField/PctField llevan TEXTO local (mismo patrón que CostInput de
+// NetoRealCard): si el input mostrara String(value) directo, al tipear "45."
+// el parse devuelve 45, el padre re-renderiza y el punto desaparece antes de
+// poder escribir los centavos — en EC/GT (decimales) "32.48" era intipeable.
+// Solo se resiembra cuando el valor cambia desde AFUERA (re-seed del mes o
+// "Restaurar reales"), nunca como eco del propio tipeo.
 function CopField({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
+  const [text, setText] = useState(value === 0 ? '' : String(value));
+  useEffect(() => {
+    if (parseCop(text) !== value) setText(value === 0 ? '' : String(value));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
   return (
     <FieldShell label={label}>
       <input
-        type="text" inputMode="numeric"
-        value={value === 0 ? '' : String(value)} placeholder="$0"
-        onChange={(e) => onChange(parseCop(e.target.value))}
+        type="text" inputMode="decimal"
+        value={text} placeholder="$0"
+        onChange={(e) => { setText(e.target.value); onChange(parseCop(e.target.value)); }}
         className={inputCls}
       />
     </FieldShell>
@@ -477,14 +513,19 @@ function CopField({ label, value, onChange }: { label: string; value: number; on
 }
 
 function PctField({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
-  // value es 0-1; mostramos el % con hasta 1 decimal, sin ceros colgando.
-  const display = value === 0 ? '' : String(Math.round(value * 1000) / 10);
+  // value es 0-1; el texto muestra el % con hasta 1 decimal, sin ceros colgando.
+  const fromValue = (v: number) => (v === 0 ? '' : String(Math.round(v * 1000) / 10));
+  const [text, setText] = useState(fromValue(value));
+  useEffect(() => {
+    if (parsePct(text) !== value) setText(fromValue(value));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
   return (
     <FieldShell label={`${label} %`}>
       <input
         type="text" inputMode="decimal"
-        value={display} placeholder="0"
-        onChange={(e) => onChange(parsePct(e.target.value))}
+        value={text} placeholder="0"
+        onChange={(e) => { setText(e.target.value); onChange(parsePct(e.target.value)); }}
         className={inputCls}
       />
     </FieldShell>

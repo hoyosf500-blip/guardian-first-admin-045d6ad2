@@ -50,7 +50,12 @@ export function useLogisticaMonthlyCosts(yearMonth: string) {
     enabled: Boolean(storeId && yearMonth),
     staleTime: 60_000,
     queryFn: async () => {
-      const from = supabase.from as unknown as LooseFrom;
+      // .bind(supabase) preserva el `this` — SIN el bind, `from('...')` explotaba
+      // ANTES del fetch ("Cannot read properties of undefined") en TODAS las
+      // lecturas: los costos guardados nunca se leían y el `?? 0` de los
+      // consumidores lo escondía (medido en vivo 24-ago-2026: cero requests a
+      // logistica_monthly_costs en la pestaña). Ver [[rpc_supabase_binding_pattern]].
+      const from = supabase.from.bind(supabase) as unknown as LooseFrom;
       const { data, error } = await from('logistica_monthly_costs')
         .select('pauta_meta, pauta_tiktok, costos_admin')
         .eq('store_id', storeId as string)

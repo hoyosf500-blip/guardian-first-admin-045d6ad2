@@ -141,7 +141,9 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
   const cargoExtra = data?.costo_devoluciones ?? 0;
   const perdidaTotalDevs = fleteDevs + cargoExtra;
   const totalDevs = data?.total_devueltas ?? 0;
-  const promedioDev = totalDevs > 0 ? Math.round(perdidaTotalDevs / totalDevs) : 0;
+  // Sin Math.round: en EC estos promedios son USD de un dígito y el redondeo
+  // se comía los centavos (formatCOP ya resuelve los decimales por país).
+  const promedioDev = totalDevs > 0 ? perdidaTotalDevs / totalDevs : 0;
   const utilidad = data?.utilidad_bruta ?? 0;
 
   // Tasa de entrega MADURA: ÷ (entregadas + devueltas), no ÷ total_ordenes (que
@@ -188,6 +190,10 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
       ? pautaEfectiva / totalEntregadasN
       : null;
   const pautaIncompleta = pautaFromDaily && diasPeriodo > 0 && diasConPauta < diasPeriodo;
+  // El fallback mensual (logistica_monthly_costs) trae solo el mes de fromDate:
+  // en rangos multi-mes cubre una fracción del período.
+  const pautaFallbackParcial =
+    !pautaFromDaily && pautaMensualGuardada > 0 && yearMonth !== toDate.slice(0, 7);
 
   const desglose = gananciaNeta?.desglose;
   const ingresosItems: ComposicionItem[] = [
@@ -366,10 +372,14 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
                   label="Pauta del período"
                   value={pautaSinDato ? '—' : formatCOP(pautaEfectiva)}
                   icon={Megaphone}
-                  tone={pautaIncompleta ? 'warning' : 'neutral'}
+                  tone={pautaIncompleta || pautaFallbackParcial ? 'warning' : 'neutral'}
                   hint={
                     pautaSinDato ? 'no se pudo leer tu pauta'
                     : pautaFromDaily ? `${diasConPauta} de ${diasPeriodo} días anotados${pautaIncompleta ? ' — pueden faltar días' : ''}`
+                    // El fallback mensual trae UN solo mes (el de la fecha
+                    // inicial): en un rango de 90 días eso subresta pauta y el
+                    // neto/CPA salen optimistas — se dice en la cara.
+                    : pautaFallbackParcial ? `solo la pauta guardada de ${yearMonth} — el rango cruza varios meses`
                     : pautaEfectiva > 0 ? 'valor mensual guardado (sin detalle por día)'
                     : 'sin pauta anotada en este rango'
                   }
@@ -389,9 +399,14 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
                   label="CPA real"
                   value={cpaReal == null ? '—' : formatCOP(cpaReal)}
                   icon={Crosshair}
-                  tone={cpaReal == null ? 'neutral' : 'info'}
+                  tone={cpaReal == null || entregaMaturity.inmaduro ? 'neutral' : 'info'}
                   hint={
                     pautaSinDato ? 'no se pudo leer tu pauta'
+                    // Cohorte inmaduro: la pauta ya se gastó completa pero la
+                    // mayoría de los pedidos sigue viajando → el denominador
+                    // está incompleto y el CPA sale ALTO; baja solo al madurar.
+                    // Mismo criterio que el "(prelim.)" de la tasa de entrega.
+                    : entregaMaturity.inmaduro ? 'pauta ÷ entregas del período · prelim. — aún hay pedidos en camino, va a bajar'
                     : 'pauta ÷ entregas del período'
                   }
                 />

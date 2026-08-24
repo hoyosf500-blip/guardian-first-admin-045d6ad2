@@ -139,6 +139,12 @@ export default function MesActualResumen({ summary, filters }: Props) {
   // (isRpcMissing) sí degrada a 0 como siempre — ahí el fallback mensual
   // guardado sigue siendo la fuente válida. Mismo principio que operativoSinDato.
   const pautaSinDato = adQuery.isError && !isRpcMissing(adQuery.error);
+  // Caso espejo para los costos MENSUALES (admin + pauta de fallback): el hook
+  // ya traga isRpcMissing (devuelve ceros, válido) y solo re-lanza errores
+  // REALES — pero nadie los miraba: agotados los reintentos, el `?? 0` de abajo
+  // convertía el fallo en "admin $0" medido y el Neto Real/simulador salían
+  // inflados en silencio (auditoría 24-ago-2026). Mismo trato que pautaSinDato.
+  const adminSinDato = monthlyCosts.isError;
   // Cobertura de la bitácora: cuántos días del período tienen pauta anotada.
   // Un día sin registro entra como $0 al Neto Real — si faltan muchos, el neto
   // sale inflado y hay que decirlo en la cara (medido 23-ago-2026 EC: 1 día
@@ -654,7 +660,12 @@ export default function MesActualResumen({ summary, filters }: Props) {
                −$pauta −admin", una PÉRDIDA en pesos que nadie midió, y el bloque
                de error de abajo podría dispararse aunque el cohorte esté por
                llegar bien. Skeleton primero — mismo patrón que "Wallet REAL". */
-            operativoLoading ? (
+            /* adQuery.isLoading también: mientras la bitácora diaria carga,
+               pautaDiariaTotal es 0 → pautaFromDaily=false → la card saldría un
+               instante con la pauta mensual (normalmente $0 en meses corrientes)
+               y "Sin pauta anotada" — un neto inflado que después "se corrige"
+               solo. Estado intermedio medido, no supuesto (REGLA #2). */
+            operativoLoading || adQuery.isLoading ? (
               <div className="h-24 animate-pulse bg-muted/30 rounded-2xl" />
             ) : operativoSinDato ? (
               /* Sin operativo medido, el Neto Real (operativo − pauta − admin)
@@ -668,17 +679,17 @@ export default function MesActualResumen({ summary, filters }: Props) {
                   que no se pudo medir daría una pérdida inventada. Recargá o tocá Sincronizar.
                 </p>
               </div>
-            ) : pautaSinDato ? (
-              /* Caso espejo: el operativo SÍ se midió pero la pauta diaria no se
-                 pudo LEER. Mostrar el Neto Real restando $0 de pauta sería una
-                 ganancia inflada indistinguible de una medición — preferimos no
-                 mostrar la cifra y decir por qué (no es "pauta en cero"). */
+            ) : pautaSinDato || adminSinDato ? (
+              /* Caso espejo: el operativo SÍ se midió pero la pauta diaria o los
+                 costos mensuales (admin) no se pudieron LEER. Mostrar el Neto Real
+                 restando $0 sería una ganancia inflada indistinguible de una
+                 medición — preferimos no mostrar la cifra y decir por qué. */
               <div className="rounded-2xl border border-warning/30 bg-warning/8 p-3.5 shadow-card3d flex items-start gap-2">
                 <AlertTriangle size={13} className="text-warning shrink-0 mt-0.5" />
                 <p className="text-[11px] text-warning leading-relaxed">
-                  No se pudo leer tu <strong>Pauta diaria</strong> (error temporal), así que el{' '}
-                  <strong>Neto Real</strong> no se muestra: restarle $0 de pauta al operativo
-                  daría una ganancia inflada. Tus registros están guardados — recargá la página.
+                  No se pudo leer {pautaSinDato ? <>tu <strong>Pauta diaria</strong></> : <>tus <strong>costos del mes</strong> (admin)</>}{' '}
+                  (error temporal), así que el <strong>Neto Real</strong> no se muestra: restarle $0
+                  al operativo daría una ganancia inflada. Tus registros están guardados — recargá la página.
                 </p>
               </div>
             ) : (
@@ -786,19 +797,19 @@ export default function MesActualResumen({ summary, filters }: Props) {
 
       {/* Indicadores & Simulador de unit-economics (KPIs reales + what-if) */}
       <div className="border-t border-border px-5 py-5">
-        {pautaSinDato ? (
+        {pautaSinDato || adminSinDato ? (
           /* Mismo guard que el Neto Real de arriba: TODAS las utilidades del
-             simulador (por pedido, margen, what-if) restan pauta prorrateada, así
-             que con la lectura de pauta caída saldrían infladas en millones — y
+             simulador (por pedido, margen, what-if) restan pauta y admin, así
+             que con cualquiera de las dos lecturas caída saldrían infladas — y
              encima contradiciendo al banner de la misma tarjeta. No se muestra
-             media verdad: o se lee la pauta o no hay simulador. */
+             media verdad: o se leen los costos o no hay simulador. */
           <div className="rounded-2xl border border-warning/30 bg-warning/8 p-3.5 shadow-card3d flex items-start gap-2">
             <AlertTriangle size={13} className="text-warning shrink-0 mt-0.5" />
             <p className="text-[11px] text-warning leading-relaxed">
-              No se pudo leer tu <strong>Pauta diaria</strong> (error temporal), así que el{' '}
-              <strong>Simulador de unit-economics</strong> no se muestra: calcular la utilidad por
-              pedido con $0 de pauta daría un número inflado con el que no se puede decidir precio
-              ni producto. Tus registros están guardados — recargá la página.
+              No se pudo leer {pautaSinDato ? <>tu <strong>Pauta diaria</strong></> : <>tus <strong>costos del mes</strong> (admin)</>}{' '}
+              (error temporal), así que el <strong>Simulador de unit-economics</strong> no se muestra:
+              calcular la utilidad por pedido con $0 de ese costo daría un número inflado con el que
+              no se puede decidir precio ni producto. Tus registros están guardados — recargá la página.
             </p>
           </div>
         ) : (
@@ -817,8 +828,10 @@ export default function MesActualResumen({ summary, filters }: Props) {
           costBasisLoading={costBasis.isLoading}
           pautaTotal={pautaEfectiva}
           adminTotal={monthlyCosts.data?.costos_admin ?? 0}
+          pautaFromDaily={pautaFromDaily}
           fromDate={filters.fromDate}
           toDate={filters.toDate}
+          ciudad={filters.ciudad}
         />
         )}
       </div>

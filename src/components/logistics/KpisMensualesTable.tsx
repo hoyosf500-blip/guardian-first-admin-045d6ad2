@@ -26,7 +26,11 @@ const mesLabel = (ym: string) => {
 };
 
 const VACIO = '—';
-const money = (v: number | null | undefined) => (v == null ? VACIO : formatCOP(Math.round(v)));
+// Sin Math.round: en EC (USD) los per-entrega son de un dígito y el redondeo
+// borraba los centavos — un "Deja" de −$0,49 se mostraba "$0,00" y perdía
+// hasta el signo. formatCOP ya resuelve los decimales por país (CO sin
+// decimales, EC/GT con centavos). Auditoría 24-ago-2026.
+const money = (v: number | null | undefined) => (v == null ? VACIO : formatCOP(v));
 const pctTxt = (v: number | null | undefined, dec = 0) => (v == null ? VACIO : `${v.toFixed(dec)}%`);
 const dec1 = (v: number | null | undefined) => (v == null ? VACIO : v.toFixed(1));
 const entero = (v: number | null | undefined) => (v == null ? VACIO : Math.round(v).toLocaleString('es-CO'));

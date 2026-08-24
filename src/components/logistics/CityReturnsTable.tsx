@@ -7,7 +7,12 @@ import { SortableHeader, type SortDir } from './SortableHeader';
 import { deriveDeliveryMaturity, isRatePreliminary, MIN_RESUELTOS_CONFIABLE } from '@/lib/logisticsRates';
 import type { CityReturns } from '@/lib/logistics.types';
 
-interface Props { rows: CityReturns[]; }
+interface Props {
+  rows: CityReturns[];
+  /** Ciudad del filtro global: con filtro activo la query de ciudades se
+   *  deshabilita — el vacío debe decir esa causa (ver GeoDistribution). */
+  ciudadFiltrada?: string;
+}
 
 // Fila enriquecida con la madurez para que el render decida atenuar/marcar prelim.
 // Tasas nullable a propósito (mismo criterio que ProductFailuresTable): sin
@@ -24,6 +29,8 @@ type CityRow = Omit<CityReturns, 'tasa_entrega' | 'tasa_devolucion'> & {
   pct_volumen: number | null;
   _prelim: boolean;
   _resueltos: number;
+  /** prelim POR muestra chica (vs. por cohorte inmaduro) — decide el tooltip. */
+  _muestraChica: boolean;
 };
 
 type Key = keyof CityRow;
@@ -56,17 +63,25 @@ const BAR_TONE = {
  *  El tono escala según severidad: <15% neutral, 15-30% warning, ≥30%
  *  danger. Si la tasa es PRELIMINAR (muestra chica / cohorte inmaduro) se
  *  pinta gris + sufijo, para no gritar rojo sobre 1-4 pedidos concluidos. */
-function ReturnRateBar({ value, prelim }: { value: number; prelim?: boolean }) {
+function ReturnRateBar({ value, prelim, muestraChica }: { value: number; prelim?: boolean; muestraChica?: boolean }) {
   const pct = Math.max(0, Math.min(100, value));
   const tone = prelim ? 'neutral' : pct >= 30 ? 'danger' : pct >= 15 ? 'warning' : 'neutral';
   const t = BAR_TONE[tone];
+  // El tooltip dice el motivo REAL del prelim (mismo criterio que
+  // GeoDistribution): antes afirmaba "menos de 5 concluidos" también cuando la
+  // causa era el cohorte inmaduro — el caso MAYORITARIO en rangos recientes.
+  const motivoPrelim = muestraChica
+    ? `Preliminar: menos de ${MIN_RESUELTOS_CONFIABLE} pedidos concluidos — la tasa aún no es confiable`
+    : 'Preliminar: la mayoría de los pedidos aún no concluye — la tasa todavía puede moverse';
   return (
     <div
       className="inline-flex w-full min-w-[5.5rem] max-w-[7.5rem] flex-col items-end gap-1.5 align-middle"
-      title={prelim ? `Preliminar: menos de ${MIN_RESUELTOS_CONFIABLE} pedidos concluidos — la tasa aún no es confiable` : undefined}
+      title={prelim ? motivoPrelim : undefined}
     >
       <span className={`font-mono tabular-nums text-xs font-bold leading-none ${prelim ? 'text-muted-foreground' : t.text}`}>
-        {value.toFixed(1)}%{prelim ? ' ·prelim.' : ''}
+        {/* La tasa madura ya es un entero (ceil): imprimirla .toFixed(1)
+            aparentaba décimas que el número no tiene. */}
+        {value}%{prelim ? ' ·prelim.' : ''}
       </span>
       <div
         className="h-1.5 w-full rounded-full bg-foreground/10"
@@ -90,7 +105,7 @@ function ReturnRateBar({ value, prelim }: { value: number; prelim?: boolean }) {
   );
 }
 
-export default memo(function CityReturnsTable({ rows }: Props) {
+export default memo(function CityReturnsTable({ rows, ciudadFiltrada }: Props) {
   // Volumen primero (pedido del dueño: "1 envío no es data"): abrir ordenado
   // por tasa ponía PRIMERA a una ciudad con 1 envío devuelto (100% prelim.),
   // como si fuera la peor plaza. Por Envíos, lo primero que se ve es donde
@@ -109,11 +124,15 @@ export default memo(function CityReturnsTable({ rows }: Props) {
         ...r,
         tasa_entrega: m.tasaEntregaMadura,
         tasa_devolucion: m.tasaDevolucionMadura,
-        en_camino: r.total_pedidos - r.entregados - r.devueltos,
+        // Math.max: si la RPC desplegada difiere del repo y entregados+devueltos
+        // supera el total, un "en camino" negativo se imprimía y se SUMABA al
+        // tfoot (ProductFailuresTable ya tenía este guard).
+        en_camino: Math.max(0, r.total_pedidos - r.entregados - r.devueltos),
         valor_por_devolucion: r.devueltos > 0 ? r.valor_perdido / r.devueltos : null,
         pct_volumen: totalEnvios > 0 ? (r.total_pedidos / totalEnvios) * 100 : null,
         _prelim: isRatePreliminary(m),
         _resueltos: m.resueltos,
+        _muestraChica: m.resueltos < MIN_RESUELTOS_CONFIABLE,
       };
     });
   }, [rows]);
@@ -179,7 +198,9 @@ export default memo(function CityReturnsTable({ rows }: Props) {
        'tasa_entrega', 'tasa_devolucion', 'valor_perdido', 'valor_por_devolucion', 'pct_volumen'],
       filas,
     );
-    downloadCsv(`logistica-ciudades-${new Date().toISOString().split('T')[0]}.csv`, csv);
+    // Fecha LOCAL: toISOString es UTC — exportar de noche en Bogotá nombraba
+    // el archivo con la fecha de mañana.
+    downloadCsv(`logistica-ciudades-${new Date().toLocaleDateString('en-CA')}.csv`, csv);
   };
 
   if (rows.length === 0) {
@@ -188,13 +209,25 @@ export default memo(function CityReturnsTable({ rows }: Props) {
         <div className="mx-auto mb-3 flex h-9 w-9 items-center justify-center rounded-xl border bg-muted/60 border-border">
           <MapPin size={17} className="text-muted-foreground" aria-hidden="true" />
         </div>
-        <p className="text-sm font-semibold text-foreground mb-1">Sin datos de ciudades</p>
-        {/* La población de esta tabla son los envíos DESPACHADOS con ciudad,
-            no "ciudades con devoluciones": decir lo segundo hacía leer un
-            rango sin despachos como "no se me devolvió nada". */}
-        <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-          No hay envíos despachados con ciudad en este rango. Probá con un rango más amplio o quitá el filtro de ciudad.
-        </p>
+        {ciudadFiltrada ? (
+          <>
+            <p className="text-sm font-semibold text-foreground mb-1">Filtro de ciudad activo</p>
+            <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+              La comparación entre ciudades no aplica con un filtro de ciudad ({ciudadFiltrada}) —
+              quitá el filtro para ver todas.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-semibold text-foreground mb-1">Sin datos de ciudades</p>
+            {/* La población de esta tabla son los envíos DESPACHADOS con ciudad,
+                no "ciudades con devoluciones": decir lo segundo hacía leer un
+                rango sin despachos como "no se me devolvió nada". */}
+            <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+              No hay envíos despachados con ciudad en este rango. Probá con un rango más amplio.
+            </p>
+          </>
+        )}
       </div>
     );
   }
@@ -279,14 +312,25 @@ export default memo(function CityReturnsTable({ rows }: Props) {
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums text-foreground">{r.total_pedidos.toLocaleString('es-CO')}</td>
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums text-success">{r.entregados.toLocaleString('es-CO')}</td>
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums text-info">{r.en_camino.toLocaleString('es-CO')}</td>
-                  <td className="px-3 py-2.5 text-right font-mono tabular-nums font-bold text-danger">{r.devueltos.toLocaleString('es-CO')}</td>
+                  {/* Devueltos INCLUYE rechazos del cliente, que la tasa madura
+                      EXCLUYE — sin la marca "(NR)" un devueltos alto junto a una
+                      Devol% baja parecía un bug (patrón de ProductFailuresTable). */}
+                  <td
+                    className="px-3 py-2.5 text-right font-mono tabular-nums font-bold text-danger"
+                    title={(r.rechazados ?? 0) > 0 ? `Incluye ${r.rechazados} rechazo(s) del cliente — la Devol% no los cuenta` : undefined}
+                  >
+                    {r.devueltos.toLocaleString('es-CO')}
+                    {(r.rechazados ?? 0) > 0 && (
+                      <span className="text-muted-foreground font-normal"> ({r.rechazados}R)</span>
+                    )}
+                  </td>
                   {/* Sin desenlaces no hay tasa: "0.0%" hacía ver perfecta a una
                       ciudad donde simplemente no concluyó ningún pedido todavía.
                       Con muestra chica se marca prelim. (gris) en vez de rojo. */}
                   <td className="px-3 py-2.5 text-right">
                     {r.tasa_devolucion == null
                       ? <span className="font-mono text-muted-foreground" title="Sin pedidos concluidos aún">—</span>
-                      : <ReturnRateBar value={r.tasa_devolucion} prelim={r._prelim} />}
+                      : <ReturnRateBar value={r.tasa_devolucion} prelim={r._prelim} muestraChica={r._muestraChica} />}
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums text-danger">{formatCOP(r.valor_perdido)}</td>
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted-foreground">

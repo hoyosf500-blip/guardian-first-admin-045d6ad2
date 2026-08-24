@@ -143,20 +143,36 @@ export default memo(function CarrierRecommendations({
     );
   }
 
-  // Counts para el stats banner: cuántas ciudades en cada bucket de acción.
-  const urgentCount = rows.filter(r => (r.delta_puntos ?? 0) >= 20 && r.mejor_transportadora !== r.carrier_actual_top).length;
-  const cambioCount = rows.filter(r => (r.delta_puntos ?? 0) >= 10 && (r.delta_puntos ?? 0) < 20 && r.mejor_transportadora !== r.carrier_actual_top).length;
-  const mantenerCount = rows.filter(r => r.mejor_transportadora === r.carrier_actual_top).length;
+  // Counts para el stats banner: los 4 buckets CUBREN todas las filas de la
+  // tabla (invariante: suman rows.length). Antes las "Cambiar" con Δ<10 no
+  // entraban en ningún tile ("0+0+8" sobre 12 filas) y las ciudades con una
+  // sola transportadora medida inflaban "Ya están óptimas".
+  const sinAltCount = rows.filter(r => r.recomendacion === 'Sin alternativa medida').length;
+  const urgentCount = rows.filter(r =>
+    r.recomendacion !== 'Sin alternativa medida'
+    && r.mejor_transportadora !== r.carrier_actual_top
+    && (r.delta_puntos ?? 0) >= 20
+    && !r.mejor_prelim, // un mejor prelim nunca es "urgente" — su tasa puede moverse
+  ).length;
+  const cambioCount = rows.filter(r =>
+    r.recomendacion !== 'Sin alternativa medida'
+    && r.mejor_transportadora !== r.carrier_actual_top,
+  ).length - urgentCount;
+  const mantenerCount = rows.filter(r =>
+    r.recomendacion !== 'Sin alternativa medida'
+    && r.mejor_transportadora === r.carrier_actual_top,
+  ).length;
 
   return (
     <div className="space-y-5">
       {proposito}
 
       {/* Stats banner — resumen accionable arriba de la tabla */}
-      <motion.div {...fadeUp(0.05)} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <motion.div {...fadeUp(0.05)} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatsBanner tone="danger"  icon={ArrowRightLeft} label="Cambiar urgente"     value={urgentCount}   hint="Spread ≥ 20 pts entre el mejor y el peor carrier de la ciudad" />
-        <StatsBanner tone="warning" icon={ArrowRightLeft} label="Considerar cambio"   value={cambioCount}   hint="Δ entre 10 y 20 puntos" />
+        <StatsBanner tone="warning" icon={ArrowRightLeft} label="Considerar cambio"   value={cambioCount}   hint="El mejor no es el más usado (Δ < 20 pts o tasa preliminar)" />
         <StatsBanner tone="success" icon={CheckCircle2}   label="Ya están óptimas"    value={mantenerCount} hint="El mejor carrier ya es el más usado" />
+        <StatsBanner tone="neutral" icon={CheckCircle2}   label="Sin alternativa"     value={sinAltCount}   hint="Una sola transportadora con datos — no hay con qué comparar" />
       </motion.div>
 
       <motion.div {...fadeUp(0.14)} className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top overflow-hidden">
@@ -201,7 +217,7 @@ export default memo(function CarrierRecommendations({
 });
 
 interface StatsBannerProps {
-  tone: 'success' | 'warning' | 'danger';
+  tone: 'success' | 'warning' | 'danger' | 'neutral';
   icon: typeof CheckCircle2;
   label: string;
   value: number;
@@ -223,15 +239,17 @@ function StatsBanner({ tone, icon: Icon, label, value, hint }: StatsBannerProps)
 }
 
 // Tono semántico de la fila → barra lateral y badge de veredicto.
-const ROW_BAR: Record<'success' | 'warning' | 'danger', string> = {
+const ROW_BAR: Record<'success' | 'warning' | 'danger' | 'neutral', string> = {
   success: 'bg-success',
   warning: 'bg-warning',
   danger:  'bg-danger',
+  neutral: 'bg-muted-foreground/50',
 };
-const ROW_BADGE: Record<'success' | 'warning' | 'danger', string> = {
+const ROW_BADGE: Record<'success' | 'warning' | 'danger' | 'neutral', string> = {
   success: 'bg-success/14 border-success/30 text-success',
   warning: 'bg-warning/14 border-warning/30 text-warning',
   danger:  'bg-danger/14 border-danger/30 text-danger',
+  neutral: 'bg-muted/40 border-border text-muted-foreground',
 };
 
 interface RowProps {
@@ -241,17 +259,31 @@ interface RowProps {
   maxDelta: number;
 }
 function RecommendationRow({ row, filters, maxDelta }: RowProps) {
-  const isMantener = row.mejor_transportadora === row.carrier_actual_top;
+  const sinAlternativa = row.recomendacion === 'Sin alternativa medida';
+  const isMantener = !sinAlternativa && row.mejor_transportadora === row.carrier_actual_top;
   const delta = row.delta_puntos ?? 0;
 
-  let badgeTone: 'success' | 'warning' | 'danger';
+  let badgeTone: 'success' | 'warning' | 'danger' | 'neutral';
   let badgeLabel: string;
-  if (isMantener) {
+  let badgeTitle: string | undefined;
+  if (sinAlternativa) {
+    // Una sola transportadora medida: mejor==peor, Δ=0. Antes salía "Cambiar"
+    // (abandonar un carrier de desempeño desconocido hacia el único con datos).
+    badgeTone = 'neutral';
+    badgeLabel = 'Sin alternativa medida';
+    badgeTitle = 'Solo una transportadora tiene pedidos concluidos en esta ciudad — no hay con qué compararla';
+  } else if (isMantener) {
     badgeTone = 'success';
     badgeLabel = 'Mantener';
-  } else if (delta >= 20) {
+  } else if (delta >= 20 && !row.mejor_prelim) {
     badgeTone = 'danger';
     badgeLabel = 'Cambiar urgente';
+  } else if (delta >= 20 && row.mejor_prelim) {
+    // El heatmap de esta misma pestaña pinta gris "prelim." la celda del mejor
+    // (cohorte inmaduro): un veredicto ROJO sobre esa misma tasa lo contradecía.
+    badgeTone = 'warning';
+    badgeLabel = 'Considerar cambio';
+    badgeTitle = 'El mejor carrier todavía tiene la mayoría de sus pedidos en curso (tasa preliminar) — verificar antes de mover volumen';
   } else if (delta >= 10) {
     badgeTone = 'warning';
     badgeLabel = 'Considerar cambio';
@@ -293,8 +325,11 @@ function RecommendationRow({ row, filters, maxDelta }: RowProps) {
         <div className="font-semibold text-foreground text-xs truncate max-w-[140px]" title={row.mejor_transportadora}>
           {row.mejor_transportadora}
         </div>
-        <div className="font-mono tabular-nums text-success text-[11px]" title={`${row.mejor_resueltos} pedidos concluidos de ${row.mejor_pedidos} totales`}>
-          {row.mejor_tasa_entrega.toFixed(1)}% · {row.mejor_resueltos}r/{row.mejor_pedidos}p
+        <div
+          className={`font-mono tabular-nums text-[11px] ${row.mejor_prelim ? 'text-muted-foreground' : 'text-success'}`}
+          title={`${row.mejor_resueltos} pedidos concluidos de ${row.mejor_pedidos} totales${row.mejor_prelim ? ' — cohorte inmaduro: la tasa todavía puede moverse' : ''}`}
+        >
+          {row.mejor_tasa_entrega.toFixed(1)}%{row.mejor_prelim ? ' ·prelim.' : ''} · {row.mejor_resueltos}r/{row.mejor_pedidos}p
         </div>
         <MiniMeter value={row.mejor_tasa_entrega} varName="--success" />
       </td>
@@ -326,14 +361,14 @@ function RecommendationRow({ row, filters, maxDelta }: RowProps) {
         </div>
       </td>
       <td className="px-3 py-2.5">
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border ${ROW_BADGE[badgeTone]}`}>
-          {isMantener ? (
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border ${ROW_BADGE[badgeTone]}`} title={badgeTitle}>
+          {isMantener || sinAlternativa ? (
             <CheckCircle2 size={11} aria-hidden="true" />
           ) : (
             <ArrowRightLeft size={11} aria-hidden="true" />
           )}
           {badgeLabel}
-          {!isMantener && (
+          {!isMantener && !sinAlternativa && (
             <span className="ml-1 font-normal opacity-90">
               → {row.mejor_transportadora}
             </span>

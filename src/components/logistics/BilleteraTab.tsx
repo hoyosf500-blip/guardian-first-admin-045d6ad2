@@ -1,10 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ExternalLink, Wallet, ArrowDown, ArrowUp, TrendingUp, ListOrdered, AlertTriangle } from 'lucide-react';
-import {
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip as RTooltip, Legend,
-} from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -18,17 +14,12 @@ import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { formatCOP } from '@/lib/utils';
-import { useWalletMovements, useWalletDailySeries, useWalletSaldoHoy } from '@/hooks/useWalletMovements';
-import WalletSyncBadge from '@/components/wallet/WalletSyncBadge';
+import { useWalletMovements, useWalletSaldoHoy } from '@/hooks/useWalletMovements';
 import WalletSyncButton from '@/components/wallet/WalletSyncButton';
 import type { LogisticsFilters } from '@/lib/logistics.types';
 import { motion } from 'framer-motion';
 import { TiltCard } from '@/components/ui3d';
 import KpiCard from './finanzas/KpiCard';
-import {
-  CHART_TOOLTIP_STYLE, CHART_GRID_PROPS, CHART_BAR_CURSOR,
-  fmtCompact, fmtDay,
-} from './charts/chartTokens';
 
 const PAGE_SIZE = 20;
 
@@ -43,8 +34,8 @@ function fmtFecha(s: string): string {
   return `${date} ${time}`;
 }
 
-// fmtDay y TOOLTIP_STYLE consolidados en chartTokens.ts (importados arriba).
-// Mantenemos solo fmtFecha para timestamps con hora (lo usa la tabla).
+// Solo fmtFecha para timestamps con hora (lo usa la tabla); el chart diario y
+// sus helpers se podaron el 24-ago-2026 (CashFlowChart ya dibuja esa serie).
 
 // El <Kpi> local que vivía acá (la QUINTA variante de tarjeta KPI del módulo)
 // se borró: era duplicación pura del KpiCard de finanzas/ — mismo layout, otro
@@ -65,15 +56,12 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
   const { fromDate, toDate } = filters;
 
   const movQ = useWalletMovements({ fromDate, toDate, tipo, categoria, page, pageSize: PAGE_SIZE });
-  const seriesQ = useWalletDailySeries(fromDate, toDate);
   // Saldo real de HOY (último movimiento, sin filtro de rango) — el ultimoSaldo
   // de movQ hereda el rango de la vista y mostraba el saldo al cierre del período.
   const saldoHoyQ = useWalletSaldoHoy();
 
   const totalPages = Math.max(1, Math.ceil((movQ.data?.total ?? 0) / PAGE_SIZE));
   const neto = (movQ.data?.totalEntradas ?? 0) - (movQ.data?.totalSalidas ?? 0);
-
-  const series = useMemo(() => seriesQ.data ?? [], [seriesQ.data]);
 
   return (
     <div className="space-y-5">
@@ -94,7 +82,9 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
                   {saldoHoyQ.isLoading ? '…' : COP(saldoHoyQ.data)}
                 </span>
               </p>
-              <WalletSyncBadge size="md" showLabel />
+              {/* El WalletSyncBadge se PODÓ de acá (24-ago-2026): Billetera es
+                  una sección dentro de la tab Finanzas y el mismo badge ya
+                  está en el header de la sección 1 — dos en el mismo scroll. */}
             </div>
           </div>
 
@@ -146,83 +136,22 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
           <>
             <KpiCard label="Total Entradas" value={COP(movQ.data?.totalEntradas ?? 0)} icon={ArrowDown} tone="success" />
             <KpiCard label="Total Salidas"  value={COP(movQ.data?.totalSalidas ?? 0)}  icon={ArrowUp}   tone="danger" />
-            <KpiCard label="Neto"           value={COP(neto)}                          icon={TrendingUp} tone={neto >= 0 ? 'success' : 'danger'} />
+            {/* Hint obligatorio: arriba en la misma pantalla hay OTRO "neto"
+                (Wallet neto del período, SOLO operativo) con otra definición.
+                Este suma TODO — retiros y depósitos incluidos. Sin la
+                aclaración, dos "neto" distintos del mismo rango parecían
+                contradecirse (auditoría 24-ago-2026). */}
+            <KpiCard label="Movimiento neto" value={COP(neto)} icon={TrendingUp} tone={neto >= 0 ? 'success' : 'danger'}
+              hint="entradas − salidas de TODO el wallet · incluye retiros y depósitos — no es ganancia" />
             <KpiCard label="Movimientos"    value={String(movQ.data?.countTotal ?? 0)} icon={ListOrdered} tone="neutral" />
           </>
         )}
       </motion.div>
 
-      {/* Gráfica diaria */}
-      <motion.div {...fadeUp(0.12)}>
-        <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d transition-colors duration-200 hover:border-border-strong">
-          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-4 tilt-layer-1">
-            <TrendingUp size={14} className="text-success" aria-hidden="true" /> Movimientos por día
-          </h3>
-          {seriesQ.isLoading ? (
-            <Skeleton className="h-[280px] w-full" />
-          ) : seriesQ.isError ? (
-            /* Error ≠ vacío: "Sin movimientos" sobre una query caída sería un
-               cero falso (misma regla que los KPIs de arriba). */
-            <div className="flex items-center justify-center gap-2 h-[280px] text-danger text-sm">
-              <AlertTriangle size={15} aria-hidden="true" />
-              No se pudo leer la serie diaria — no es que no haya movimientos.
-            </div>
-          ) : series.length === 0 ? (
-            <div className="flex items-center justify-center h-[280px] text-muted-foreground text-sm">
-              Sin movimientos en este rango
-            </div>
-          ) : (
-            <div className="h-[280px] tilt-layer-2">
-              <ResponsiveContainer>
-                <BarChart data={series} margin={{ top: 5, right: 10, bottom: 0, left: -15 }}>
-                  <defs>
-                    {/* Ids propios de este chart: los de <linearGradient> son
-                        globales al documento y CashFlowChart dibuja la MISMA
-                        serie con los suyos (finCash*). */}
-                    <linearGradient id="walletInGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="hsl(var(--success))" stopOpacity={0.95} />
-                      <stop offset="100%" stopColor="hsl(var(--success))" stopOpacity={0.35} />
-                    </linearGradient>
-                    <linearGradient id="walletOutGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="hsl(var(--danger))" stopOpacity={0.95} />
-                      <stop offset="100%" stopColor="hsl(var(--danger))" stopOpacity={0.35} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid {...CHART_GRID_PROPS} />
-                  <XAxis
-                    dataKey="fecha" tickFormatter={fmtDay}
-                    tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
-                    tickLine={false} axisLine={false}
-                  />
-                  <YAxis
-                    tickFormatter={fmtCompact}
-                    tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
-                    tickLine={false} axisLine={false} width={48}
-                  />
-                  <RTooltip
-                    contentStyle={CHART_TOOLTIP_STYLE}
-                    cursor={CHART_BAR_CURSOR}
-                    formatter={(v: number) => COP(v)}
-                    labelFormatter={(l) => fmtDay(String(l))}
-                  />
-                  <Legend wrapperStyle={{ fontSize: 10, paddingTop: 6 }} iconType="circle" iconSize={8} />
-                  {/* Solo el segmento de ARRIBA lleva radio, si no quedan muescas
-                      entre segmentos de la pila. */}
-                  <Bar
-                    dataKey="ENTRADA" stackId="a" name="Entrada"
-                    fill="url(#walletInGrad)" radius={[0, 0, 0, 0]}
-                    style={{ filter: 'drop-shadow(0 0 6px hsl(var(--success)))' }}
-                  />
-                  <Bar
-                    dataKey="SALIDA" stackId="a" name="Salida"
-                    fill="url(#walletOutGrad)" radius={[6, 6, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </TiltCard>
-      </motion.div>
+      {/* El chart "Movimientos por día" se PODÓ (24-ago-2026): Billetera vive
+          DENTRO de la tab Finanzas y CashFlowChart ya dibuja la MISMA serie
+          (useWalletDailySeries) dos scrolls arriba — el mismo dato dos veces,
+          la lección de "En tránsito 72" del chip y la columna. */}
 
       {/* Filtros + tabla */}
       <motion.div

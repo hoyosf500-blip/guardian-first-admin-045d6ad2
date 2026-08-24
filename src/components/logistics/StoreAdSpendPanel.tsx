@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Megaphone, Plus, Pencil, AlertCircle } from 'lucide-react';
+import { Megaphone, Plus, Pencil, AlertCircle, RefreshCw } from 'lucide-react';
 import type { LogisticsFilters } from '@/lib/logistics.types';
 import { useStore } from '@/contexts/StoreContext';
 import { formatCOP } from '@/lib/utils';
+import { isRpcMissing } from '@/lib/rpcError';
 import { Button } from '@/components/ui/button';
 import {
   useStoreAdSpendRange, sumAdSpend, PLATFORM_LABEL,
@@ -25,7 +26,7 @@ function fmtDay(d: string): string {
 
 export default function StoreAdSpendPanel({ filters }: Props) {
   const { isManagerOfActive } = useStore();
-  const { data, isLoading, isError } = useStoreAdSpendRange(filters.fromDate, filters.toDate);
+  const { data, isLoading, isError, error, refetch } = useStoreAdSpendRange(filters.fromDate, filters.toDate);
   const [dialog, setDialog] = useState<{ open: boolean; row: StoreAdSpendRow | null }>({ open: false, row: null });
 
   if (!isManagerOfActive) return null;
@@ -60,17 +61,42 @@ export default function StoreAdSpendPanel({ filters }: Props) {
       </header>
 
       {isError ? (
-        // "La feature todavía no existe" NO es un error genérico: banner ámbar,
-        // no rojo, con el mismo molde de barra lateral + chip del resto.
-        <div className="m-4 relative flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning/10 px-4 pl-5 py-3 shadow-card3d">
-          <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-warning/20 glow-warning">
-            <AlertCircle size={17} className="text-warning" aria-hidden="true" />
+        // Dos errores DISTINTOS que antes compartían un solo rótulo: un 500/red
+        // transitorio le decía al dueño —que lleva semanas cargando pauta— que
+        // "falta aplicar la migración" (auditoría 24-ago-2026). Solo isRpcMissing
+        // es "la feature no existe"; el resto es transitorio y se reintenta.
+        isRpcMissing(error) ? (
+          <div className="m-4 relative flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning/10 px-4 pl-5 py-3 shadow-card3d">
+            <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-warning/20 glow-warning">
+              <AlertCircle size={17} className="text-warning" aria-hidden="true" />
+            </div>
+            <span className="text-[11px] text-muted-foreground leading-relaxed flex-1 min-w-0">
+              El control de pauta aún no está activo (falta aplicar la migración en la base).
+              Cuando se aplique, acá vas a poder registrar tu gasto diario.
+            </span>
           </div>
-          <span className="text-[11px] text-muted-foreground leading-relaxed flex-1 min-w-0">
-            El control de pauta aún no está activo (falta aplicar la migración en la base).
-            Cuando se aplique, acá vas a poder registrar tu gasto diario.
-          </span>
+        ) : (
+          <div className="m-4 relative flex items-start gap-3 rounded-2xl border border-danger/30 bg-danger/10 px-4 pl-5 py-3 shadow-card3d">
+            <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-danger/20 glow-danger">
+              <AlertCircle size={17} className="text-danger" aria-hidden="true" />
+            </div>
+            <span className="text-[11px] text-muted-foreground leading-relaxed flex-1 min-w-0">
+              No se pudo leer tu pauta (error temporal). Tus registros están guardados.
+              <Button size="sm" variant="outline" className="h-7 rounded-lg ml-2" onClick={() => refetch()}>
+                <RefreshCw size={11} className="mr-1" aria-hidden="true" /> Reintentar
+              </Button>
+            </span>
+          </div>
+        )
+      ) : isLoading ? (
+        // Los totales y el chip de cobertura NO se dibujan hasta tener datos:
+        // "Meta $0 · 0 de 23 días" mientras carga era un cero afirmado sobre
+        // datos que no llegaron (regla: cero ≠ "no se pudo medir").
+        <div className="p-5 space-y-3">
+          <div className="h-20 animate-pulse bg-muted/30 rounded-2xl" />
+          <div className="h-16 animate-pulse bg-muted/30 rounded-2xl" />
         </div>
       ) : (
         <>
@@ -121,9 +147,7 @@ export default function StoreAdSpendPanel({ filters }: Props) {
           </div>
 
           {/* Tabla de últimos días */}
-          {isLoading ? (
-            <div className="p-5"><div className="h-16 animate-pulse bg-muted/30 rounded" /></div>
-          ) : rows.length === 0 ? (
+          {rows.length === 0 ? (
             <div className="px-5 py-6 text-center text-sm text-muted-foreground">
               Sin pauta cargada en este período. Tocá <strong>Registrar pauta</strong> para anotar
               lo del día.
