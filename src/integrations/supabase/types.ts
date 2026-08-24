@@ -1028,12 +1028,21 @@ export type Database = {
       orders: {
         Row: {
           address_kind: string | null
+          address_kind_al_despachar: string | null
           address_parsed: Json | null
           assigned_to: string | null
           barrio: string | null
           cantidad: number | null
+          chat_cliente_escribio_at: string | null
+          chat_entrante_at: string | null
+          chat_leido_at: string | null
+          chat_mudo: boolean | null
+          chat_riesgo: string | null
+          chat_saliente_at: string | null
+          chat_saliente_tipo: string | null
           ciudad: string | null
           complemento: string | null
+          confirmo_boton_at: string | null
           costo_dev: number | null
           costo_prod: number | null
           created_at: string
@@ -1064,6 +1073,7 @@ export type Database = {
           nombre: string
           novedad: string | null
           novedad_sol: boolean | null
+          pedido_creado_at: string | null
           phone: string
           product_ids: string | null
           producto: string | null
@@ -1076,17 +1086,28 @@ export type Database = {
           transportadora: string | null
           upload_date: string
           uploaded_by: string
+          validacion_al_despachar: string | null
+          validacion_sellada_at: string | null
           validation_decision: string | null
           valor: number | null
         }
         Insert: {
           address_kind?: string | null
+          address_kind_al_despachar?: string | null
           address_parsed?: Json | null
           assigned_to?: string | null
           barrio?: string | null
           cantidad?: number | null
+          chat_cliente_escribio_at?: string | null
+          chat_entrante_at?: string | null
+          chat_leido_at?: string | null
+          chat_mudo?: boolean | null
+          chat_riesgo?: string | null
+          chat_saliente_at?: string | null
+          chat_saliente_tipo?: string | null
           ciudad?: string | null
           complemento?: string | null
+          confirmo_boton_at?: string | null
           costo_dev?: number | null
           costo_prod?: number | null
           created_at?: string
@@ -1117,6 +1138,7 @@ export type Database = {
           nombre: string
           novedad?: string | null
           novedad_sol?: boolean | null
+          pedido_creado_at?: string | null
           phone: string
           product_ids?: string | null
           producto?: string | null
@@ -1129,17 +1151,28 @@ export type Database = {
           transportadora?: string | null
           upload_date?: string
           uploaded_by: string
+          validacion_al_despachar?: string | null
+          validacion_sellada_at?: string | null
           validation_decision?: string | null
           valor?: number | null
         }
         Update: {
           address_kind?: string | null
+          address_kind_al_despachar?: string | null
           address_parsed?: Json | null
           assigned_to?: string | null
           barrio?: string | null
           cantidad?: number | null
+          chat_cliente_escribio_at?: string | null
+          chat_entrante_at?: string | null
+          chat_leido_at?: string | null
+          chat_mudo?: boolean | null
+          chat_riesgo?: string | null
+          chat_saliente_at?: string | null
+          chat_saliente_tipo?: string | null
           ciudad?: string | null
           complemento?: string | null
+          confirmo_boton_at?: string | null
           costo_dev?: number | null
           costo_prod?: number | null
           created_at?: string
@@ -1170,6 +1203,7 @@ export type Database = {
           nombre?: string
           novedad?: string | null
           novedad_sol?: boolean | null
+          pedido_creado_at?: string | null
           phone?: string
           product_ids?: string | null
           producto?: string | null
@@ -1182,6 +1216,8 @@ export type Database = {
           transportadora?: string | null
           upload_date?: string
           uploaded_by?: string
+          validacion_al_despachar?: string | null
+          validacion_sellada_at?: string | null
           validation_decision?: string | null
           valor?: number | null
         }
@@ -1663,6 +1699,47 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "store_dropi_config_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: true
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      store_importchat_config: {
+        Row: {
+          api_base: string
+          created_at: string
+          habilitado: boolean
+          id_configuracion: number
+          session_token: string | null
+          store_id: string
+          token_expira_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          api_base?: string
+          created_at?: string
+          habilitado?: boolean
+          id_configuracion: number
+          session_token?: string | null
+          store_id: string
+          token_expira_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          api_base?: string
+          created_at?: string
+          habilitado?: boolean
+          id_configuracion?: number
+          session_token?: string | null
+          store_id?: string
+          token_expira_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_importchat_config_store_id_fkey"
             columns: ["store_id"]
             isOneToOne: true
             referencedRelation: "stores"
@@ -2276,6 +2353,48 @@ export type Database = {
           valor: number
         }[]
       }
+      cancelaciones_por_producto: {
+        Args: {
+          p_desde: string
+          p_hasta: string
+          p_limite?: number
+          p_store_id: string
+        }
+        Returns: {
+          cancelados: number
+          devueltos: number
+          en_curso: number
+          entregados: number
+          generados: number
+          pendientes: number
+          producto: string
+          valor_cancelado: number
+          valor_generado: number
+        }[]
+      }
+      cancelaciones_recreadas: {
+        Args: {
+          p_desde: string
+          p_hasta: string
+          p_limite?: number
+          p_store_id: string
+        }
+        Returns: {
+          external_id: string
+          horas_hasta_sucesor: number
+          order_id: string
+          sucesor_estado: string
+          sucesor_external_id: string
+          valor: number
+        }[]
+      }
+      cancelaciones_universo: {
+        Args: { p_desde: string; p_hasta: string; p_store_id: string }
+        Returns: {
+          cancelados: number
+          generados: number
+        }[]
+      }
       categorize_personal_movement: {
         Args: { p_descripcion: string; p_moneda?: string }
         Returns: {
@@ -2300,12 +2419,21 @@ export type Database = {
         Args: { p_order_id: string }
         Returns: {
           address_kind: string | null
+          address_kind_al_despachar: string | null
           address_parsed: Json | null
           assigned_to: string | null
           barrio: string | null
           cantidad: number | null
+          chat_cliente_escribio_at: string | null
+          chat_entrante_at: string | null
+          chat_leido_at: string | null
+          chat_mudo: boolean | null
+          chat_riesgo: string | null
+          chat_saliente_at: string | null
+          chat_saliente_tipo: string | null
           ciudad: string | null
           complemento: string | null
+          confirmo_boton_at: string | null
           costo_dev: number | null
           costo_prod: number | null
           created_at: string
@@ -2336,6 +2464,7 @@ export type Database = {
           nombre: string
           novedad: string | null
           novedad_sol: boolean | null
+          pedido_creado_at: string | null
           phone: string
           product_ids: string | null
           producto: string | null
@@ -2348,6 +2477,8 @@ export type Database = {
           transportadora: string | null
           upload_date: string
           uploaded_by: string
+          validacion_al_despachar: string | null
+          validacion_sellada_at: string | null
           validation_decision: string | null
           valor: number | null
         }[]
@@ -3029,6 +3160,10 @@ export type Database = {
         }[]
       }
       purge_old_logs: { Args: never; Returns: Json }
+      reasignar_seguimiento: {
+        Args: { p_operator_id: string; p_order_id: string; p_store_id: string }
+        Returns: boolean
+      }
       recategorize_personal_movements: { Args: never; Returns: Json }
       record_inactivity_warning: {
         Args: { p_lost_seconds: number; p_store_id: string }
@@ -3053,6 +3188,13 @@ export type Database = {
       rendiciones_range: {
         Args: { p_from: string; p_store_id: string; p_to: string }
         Returns: Json
+      }
+      repartir_seguimiento: {
+        Args: { p_asignaciones: Json; p_origen?: string; p_store_id: string }
+        Returns: {
+          asignados: number
+          ignorados: number
+        }[]
       }
       report_app_version: {
         Args: { p_store_id?: string; p_version: string }
