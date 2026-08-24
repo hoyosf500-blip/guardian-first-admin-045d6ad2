@@ -15,12 +15,18 @@
 //      **la hora real de creación** (Guardian no la tenía: `created_at` es la
 //      hora del sync). Paginado de a 200.
 //   2. `configuraciones/exportar_mensajes_xlsx` → el historial COMPLETO de
-//      mensajes en un XLSX (~8 MB). Se parsea con el MISMO SheetJS vendorizado
-//      que usa dropi-wallet-sync.
+//      mensajes en un XLSX (~9 MB, 48.000 filas).
 //      ⚠️ Ese endpoint IGNORA el rango de fechas que se le pase: siempre baja
 //      todo. No es un bug a corregir — hace falta el historial entero para
 //      poder afirmar "este cliente nunca escribió, jamás", que es un grupo de
 //      127 pedidos (17%) que cancela 76%.
+//      ⛔ NO se abre con SheetJS (24-ago-2026). `XLSX.read` + `sheet_to_json`
+//      materializa 48.000 objetos de 18 campos: la función se quedaba sin
+//      memoria/CPU y la PLATAFORMA LA MATABA — sin catch, sin fila en
+//      sync_logs. Medido: 7 disparos, 7 muertes mudas, cero rastro. Ahora se
+//      descomprimen SOLO las dos entradas que importan del zip (fflate) y se
+//      recorren las filas con regex, guardando por chat lo mínimo: memoria
+//      acotada en vez de proporcional al archivo.
 //   3. Deriva la señal y hace un UPDATE DIRIGIDO por (store_id, external_id).
 //      No inserta pedidos ni toca estado/valor/guía: ImporChat no manda sobre
 //      eso. Y no pasa por `upsert_orders_from_dropi` — ⛔ REGLA #1.
@@ -38,7 +44,7 @@
 // "corrió y no había nada" de "no corrió".
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import * as XLSX from "../_shared/vendor/xlsx-0.20.3.mjs";
+import { unzipSync } from "https://esm.sh/fflate@0.8.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import {
   derivarActividadChat,
@@ -57,10 +63,28 @@ const VENTANA_DESPUES_MS = 7 * 24 * 60 * 60 * 1000;
 /** Presupuesto de pared por debajo del límite del edge, para que SIEMPRE
  *  alcance a escribir la fila de sync_logs. Mismo criterio que dropi-cron. */
 const BUDGET_MS = 110_000;
+/** Los textos del export se recortan al guardarlos: lo único largo que se lee
+ *  es el botón ("CONFIRMAR PEDIDO"), y 48.000 mensajes completos en memoria son
+ *  justamente lo que mataba a la función. */
+const MAX_TEXTO = 64;
+/** Un pedido leído hace menos de esto no se vuelve a escribir. Hace que el
+ *  backfill sea REANUDABLE: si una corrida no alcanza a terminar, la siguiente
+ *  arranca donde quedó en vez de repetir todo y morir en el mismo lugar. */
+const FRESCURA_MS = 6 * 60 * 60 * 1000;
 
-/** Las horas del export de ImporChat y de `order_created_at` vienen en hora
- *  LOCAL del país, sin zona. Se comparan entre sí en local (por eso el cálculo
- *  de la ventana no necesita offset) y solo se convierte a UTC al guardar. */
+/** ⚠️ DOS relojes distintos, verificado en vivo el 24-ago-2026:
+ *
+ *  · `order_created_at` de `orders/cache/list` viene en hora LOCAL del país
+ *    ("2026-08-24 16:47:01" con reloj local 16:59). Se convierte con `aUTC`.
+ *  · Las fechas del XLSX son SERIALES DE EXCEL EN UTC (46258,8687 = 20:50 UTC
+ *    = 15:50 local, contrastado contra el `created_at` del mismo mensaje).
+ *
+ *  La versión anterior les pasaba el serial numérico a un parser de texto:
+ *  devolvía null para TODAS las filas, así que el historial quedaba vacío y
+ *  cada pedido salía "sin_dato" sin un solo error visible. Y de haberlo
+ *  parseado como local, la ventana del pedido habría quedado corrida 5 horas.
+ *  Internamente ahora TODO viaja en UTC real; el offset se aplica una sola vez,
+ *  al leer el pedido. */
 const OFFSET_HORAS: Record<string, number> = { EC: -5, CO: -5, GT: -6 };
 
 function aUTC(local: Date, cc: string): Date {
@@ -68,24 +92,39 @@ function aUTC(local: Date, cc: string): Date {
   return new Date(local.getTime() - off * 3600_000);
 }
 
-/** "2026-08-21 20:18:23" → Date en hora local (sin que el runtime le meta zona). */
+/** "2026-08-21 20:18:23" → Date con esos componentes anclados en UTC (o sea:
+ *  hora local del país, sin que el runtime le invente zona). */
 function parseLocal(s: string): Date | null {
   const m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
   if (!m) return null;
   return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
 }
 
+/** Serial de Excel (días desde 1899-12-30) → Date UTC real. 25569 = días entre
+ *  esa época y 1970-01-01. */
+function serialAFecha(v: string): Date | null {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 20000 || n > 90000) return null;
+  return new Date(Math.round((n - 25569) * 86400000));
+}
+
 interface PedidoIC {
   externalId: string;
   chatId: string;
-  creadoLocal: Date;
+  /** Hora real de creación, ya en UTC. */
+  creadoUTC: Date;
 }
 
 async function traerPedidos(
   base: string, token: string, idConf: number, desde: string, hasta: string,
-): Promise<PedidoIC[]> {
+  cc: string, vencimiento: number,
+): Promise<{ pedidos: PedidoIC[]; parcial: boolean }> {
   const out: PedidoIC[] = [];
   for (let page = 1; page <= MAX_PAGES; page++) {
+    // La paginación es lo primero que puede comerse el reloj (31 páginas con
+    // page_size 200 en la tienda EC). Se corta a tiempo y se avisa: media
+    // cola medida vale más que una función muerta.
+    if (Date.now() > vencimiento) return { pedidos: out, parcial: true };
     const r = await fetch(`${base}dropi_integrations/orders/cache/list`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -105,12 +144,13 @@ async function traerPedidos(
       out.push({
         externalId: String(row.id),
         chatId: String(row.chat_id_cliente),
-        creadoLocal: creado,
+        creadoUTC: aUTC(creado, cc),
       });
     }
-    if (page >= (d?.total_pages ?? 1)) break;
+    if (page >= (d?.total_pages ?? 1)) return { pedidos: out, parcial: false };
   }
-  return out;
+  // Se agotaron las páginas permitidas: hay más historia sin traer.
+  return { pedidos: out, parcial: true };
 }
 
 async function traerMensajes(
@@ -125,28 +165,112 @@ async function traerMensajes(
     throw new Error(`exportar_mensajes_xlsx HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
   }
   const buf = new Uint8Array(await r.arrayBuffer());
-  const wb = XLSX.read(buf, { type: "array" });
-  const hoja = wb.Sheets[wb.SheetNames[0]];
-  if (!hoja) throw new Error("El XLSX de mensajes no trae ninguna hoja");
-  const filas = XLSX.utils.sheet_to_json(hoja, { defval: null }) as Record<string, unknown>[];
+
+  // Del zip se sacan SOLO la hoja y la tabla de textos; estilos/temas ni se
+  // descomprimen. (SheetJS descomprimía y modelaba todo: eso mataba la función.)
+  const zip = unzipSync(buf, {
+    filter: (f) => f.name === "xl/worksheets/sheet1.xml" || f.name === "xl/sharedStrings.xml",
+  });
+  const dec = new TextDecoder();
+  const desescapar = (s: string) => s
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&amp;/g, "&");
+
+  // Tabla de textos compartidos. Se recorta cada entrada a MAX_TEXTO: lo único
+  // largo del archivo son los mensajes, y de ellos solo se lee si un botón dice
+  // "CONFIRMAR" (17 caracteres). Guardar los textos enteros son ~20 MB al pedo.
+  const shared: string[] = [];
+  const ssRaw = zip["xl/sharedStrings.xml"];
+  if (ssRaw) {
+    const ss = dec.decode(ssRaw);
+    for (const si of ss.matchAll(/<si>([\s\S]*?)<\/si>|<si\/>/g)) {
+      if (si[1] === undefined) { shared.push(""); continue; }
+      let s = "";
+      for (const t of si[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)) s += t[1];
+      shared.push(desescapar(s).slice(0, MAX_TEXTO));
+    }
+  }
+
+  const hojaRaw = zip["xl/worksheets/sheet1.xml"];
+  if (!hojaRaw) throw new Error("El XLSX de mensajes no trae la hoja sheet1");
+
+  // Valor de una celda: `t="s"` indexa la tabla compartida, `t="inlineStr"` trae
+  // el texto adentro, y el resto es el valor crudo (las fechas son seriales).
+  const valorCelda = (celda: string): string => {
+    const t = /\bt="([^"]+)"/.exec(celda)?.[1];
+    if (t === "inlineStr") {
+      let s = "";
+      for (const x of celda.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)) s += x[1];
+      return desescapar(s).slice(0, MAX_TEXTO);
+    }
+    const v = /<v[^>]*>([\s\S]*?)<\/v>/.exec(celda)?.[1];
+    if (v == null) return "";
+    if (t === "s") return shared[Number(v)] ?? "";
+    return desescapar(v).slice(0, MAX_TEXTO);
+  };
+  const letra = (ref: string) => /^([A-Z]+)/.exec(ref)?.[1] ?? "";
 
   const porChat = new Map<string, MensajeChat[]>();
-  for (const f of filas) {
+  let cols: Record<string, string> | null = null; // nombre de columna → letra
+  let filas = 0;
+
+  const procesarFila = (interior: string) => {
+    const celdas: Record<string, string> = {};
+    for (const c of interior.matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>|<c\b([^>]*)\/>/g)) {
+      const attrs = c[1] ?? c[3] ?? "";
+      const ref = /\br="([A-Z]+\d+)"/.exec(attrs)?.[1];
+      if (!ref) continue;
+      celdas[letra(ref)] = c[1] === undefined ? "" : valorCelda(`<c ${attrs}>${c[2]}</c>`);
+    }
+    if (!cols) {
+      // Fila 1 = encabezados. Se mapean por NOMBRE y no por posición: el día que
+      // ImporChat agregue una columna al medio, esto sigue funcionando.
+      cols = {};
+      for (const [L, nombre] of Object.entries(celdas)) cols[nombre.trim()] = L;
+      return;
+    }
+    filas++;
     // El cliente es SIEMPRE el Receptor, incluso en las filas que escribió él.
-    const chat = String(f["ID Receptor"] ?? "").trim();
-    const fecha = parseLocal(String(f["Fecha Mensaje"] ?? ""));
-    if (!chat || !fecha) continue;
+    const chat = (celdas[cols["ID Receptor"] ?? ""] ?? "").trim();
+    const fecha = serialAFecha(celdas[cols["Fecha Mensaje"] ?? ""] ?? "");
+    if (!chat || !fecha) return;
+    const tipo = celdas[cols["Tipo Mensaje"] ?? ""] ?? "";
     const arr = porChat.get(chat) ?? [];
     arr.push({
-      rol: String(f["Rol"] ?? ""),
-      tipo: String(f["Tipo Mensaje"] ?? ""),
-      texto: String(f["Texto Mensaje"] ?? ""),
-      plantilla: f["Template"] == null ? null : String(f["Template"]),
+      rol: celdas[cols["Rol"] ?? ""] ?? "",
+      tipo,
+      // Solo los botones necesitan texto (para leer "CONFIRMAR"). El resto va
+      // vacío a propósito: es la diferencia entre caber en memoria y no caber.
+      texto: tipo === "button" ? (celdas[cols["Texto Mensaje"] ?? ""] ?? "") : "",
+      plantilla: celdas[cols["Template"] ?? ""] || null,
       fecha,
     });
     porChat.set(chat, arr);
+  };
+
+  // ⛔ La hoja descomprimida son 55 MB (medido sobre el archivo real) y este
+  // export NO usa tabla de textos compartidos: cada mensaje viaja dentro de su
+  // celda. Decodificarla entera son ~110 MB de string UTF-16 de una sola vez —
+  // el camino directo al OOM. Se recorre de a 1 MB: se decodifica el trozo, se
+  // procesan las filas COMPLETAS que contiene y solo la cola parcial pasa al
+  // siguiente. La memoria queda acotada por el buffer, no por el archivo.
+  const CHUNK = 1 << 20;
+  let resto = "";
+  for (let off = 0; off < hojaRaw.length; off += CHUNK) {
+    const buf = resto + dec.decode(hojaRaw.subarray(off, Math.min(off + CHUNK, hojaRaw.length)), { stream: true });
+    const corte = buf.lastIndexOf("</row>");
+    if (corte < 0) { resto = buf; continue; }
+    // Un solo matchAll por trozo: recortar fila por fila del buffer copiaría
+    // ~1 MB por cada una de las 48.000 filas.
+    for (const m of buf.slice(0, corte + 6).matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)) procesarFila(m[1]);
+    resto = buf.slice(corte + 6);
   }
+  for (const m of resto.matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)) procesarFila(m[1]);
+
   for (const arr of porChat.values()) arr.sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
+  console.log(`[${SOURCE}] XLSX: ${filas} filas → ${porChat.size} chats`);
   return porChat;
 }
 
@@ -166,11 +290,43 @@ Deno.serve(async (req) => {
     });
 
   let storeId = "";
+  // ── Rastro que sobrevive a una muerte ──────────────────────────────────
+  // La plataforma puede matar la función sin darle ni un `catch` (memoria o
+  // reloj). Pasó 7 veces seguidas el 24-ago-2026 y NO dejó una sola fila: desde
+  // afuera era indistinguible de "nunca se llamó". Ahora se inserta una fila
+  // 'running' apenas arranca y se le va escribiendo la FASE alcanzada; si la
+  // función muere, esa fila queda como la última señal de vida y dice dónde.
+  let trazaId: number | null = null;
+  const traza = async (fase: string, n: number | null = null) => {
+    try {
+      if (trazaId == null) {
+        const { data } = await sb.from("sync_logs").insert({
+          source: SOURCE, store_id: storeId || null, status: "running",
+          error_message: fase, synced_count: n,
+        }).select("id").maybeSingle();
+        trazaId = (data as { id?: number } | null)?.id ?? null;
+      } else {
+        await sb.from("sync_logs").update({
+          store_id: storeId || null, error_message: fase, synced_count: n,
+        }).eq("id", trazaId);
+      }
+    } catch (e) {
+      console.error(`[${SOURCE}] no se pudo escribir la traza:`, e);
+    }
+  };
   const log = async (status: string, msg: string, n: number | null) => {
     // Se escribe SIEMPRE, incluso con 0 cambios. Un badge que solo mira la hora
     // no distingue "corrió bien y no había nada" de "no corrió" — esa confusión
     // ya tuvo la billetera muerta semanas en verde (ver CLAUDE.md).
     try {
+      // Cierra la fila 'running' si existe (una corrida = una fila), o inserta
+      // una nueva si murió antes de poder abrirla.
+      if (trazaId != null) {
+        await sb.from("sync_logs").update({
+          store_id: storeId || null, status, error_message: msg || null, synced_count: n,
+        }).eq("id", trazaId);
+        return;
+      }
       await sb.from("sync_logs").insert({
         source: SOURCE,
         store_id: storeId || null,
@@ -214,6 +370,8 @@ Deno.serve(async (req) => {
       }
       autorizado = true;
     }
+
+    await traza("arrancó");
 
     // ── Tiendas a procesar ─────────────────────────────────────────────────
     let q = sb.from("store_importchat_config")
@@ -263,22 +421,44 @@ Deno.serve(async (req) => {
       const fmt = (d: Date) => d.toISOString().slice(0, 10);
 
       const base = String(cfg.api_base || "https://chat.imporfactory.app/api/v1/");
-      const pedidos = await traerPedidos(base, token, Number(cfg.id_configuracion), fmt(desde), fmt(hasta));
-      console.log(`[${SOURCE}] ${storeId}: ${pedidos.length} pedidos traídos a los ${Date.now() - t0} ms`);
-      if (Date.now() - t0 > BUDGET_MS) {
-        await log("warn", `Presupuesto agotado tras traer pedidos (${pedidos.length}); no se alcanzó a leer mensajes`, 0);
-        resumen.push({ store_id: storeId, ok: false, error: "presupuesto agotado en pedidos" });
-        continue;
-      }
-      const chats = await traerMensajes(base, token, Number(cfg.id_configuracion));
-      console.log(`[${SOURCE}] ${storeId}: historial de ${chats.size} chats parseado a los ${Date.now() - t0} ms`);
-      if (Date.now() - t0 > BUDGET_MS) {
-        await log("warn", `Presupuesto agotado tras parsear mensajes (${chats.size} chats); no se alcanzó a escribir`, 0);
-        resumen.push({ store_id: storeId, ok: false, error: "presupuesto agotado en mensajes" });
-        continue;
+      const vencimiento = t0 + BUDGET_MS;
+
+      await traza(`fase 1: pidiendo pedidos (${dias} días)`);
+      const { pedidos, parcial: pedidosParciales } =
+        await traerPedidos(base, token, Number(cfg.id_configuracion), fmt(desde), fmt(hasta), cc, vencimiento);
+      console.log(`[${SOURCE}] ${storeId}: ${pedidos.length} pedidos a los ${Date.now() - t0} ms`);
+      if (pedidosParciales) parciales.push(`pedidos incompletos (se cortó la paginación)`);
+      await traza(`fase 2: bajando y leyendo el XLSX (${pedidos.length} pedidos)`);
+      if (Date.now() > vencimiento) {
+        await log("warn", `Se acabó el tiempo trayendo pedidos (${pedidos.length}); no se alcanzó a leer los mensajes. Volvé a correrlo.`, 0);
+        return json({ ok: true, parcial: true, actualizados: 0 });
       }
 
-      let tocados = 0, conBoton = 0, mudos = 0, sinSaliente = 0, saltados = 0;
+      const chats = await traerMensajes(base, token, Number(cfg.id_configuracion));
+      console.log(`[${SOURCE}] ${storeId}: ${chats.size} chats a los ${Date.now() - t0} ms`);
+      await traza(`fase 3: derivando señales (${chats.size} chats)`);
+      if (Date.now() > vencimiento) {
+        await log("warn", `Se acabó el tiempo leyendo el XLSX (${chats.size} chats); no se alcanzó a escribir. Volvé a correrlo.`, 0);
+        return json({ ok: true, parcial: true, actualizados: 0 });
+      }
+
+      let tocados = 0, conBoton = 0, mudos = 0, sinSaliente = 0, saltados = 0, frescos = 0;
+
+      // Lo ya leído hace poco NO se reescribe: así el backfill es REANUDABLE.
+      // Sin esto, cada corrida repite los mismos 3.000 pedidos desde el
+      // principio y muere siempre en el mismo lugar; con esto, cada corrida
+      // avanza y el cron termina el trabajo solo.
+      const leidoPrevio = new Map<string, number>();
+      const ids = pedidos.map((p) => p.externalId);
+      for (let i = 0; i < ids.length; i += 200) {
+        const { data: prev } = await sb.from("orders")
+          .select("external_id, chat_leido_at")
+          .eq("store_id", storeId)
+          .in("external_id", ids.slice(i, i + 200));
+        for (const row of (prev ?? []) as { external_id: string; chat_leido_at: string | null }[]) {
+          if (row.chat_leido_at) leidoPrevio.set(String(row.external_id), Date.parse(row.chat_leido_at));
+        }
+      }
 
       // FASE 1 — derivar la señal de todos (puro CPU, barato).
       interface Tarea {
@@ -287,10 +467,11 @@ Deno.serve(async (req) => {
         columnasNuevas: Record<string, unknown>;
       }
       const tareas: Tarea[] = [];
+      const ahoraMs = Date.now();
       for (const p of pedidos) {
         const historial = chats.get(p.chatId) ?? null;
-        const desdeMs = p.creadoLocal.getTime() - VENTANA_ANTES_MS;
-        const hastaMs = p.creadoLocal.getTime() + VENTANA_DESPUES_MS;
+        const desdeMs = p.creadoUTC.getTime() - VENTANA_ANTES_MS;
+        const hastaMs = p.creadoUTC.getTime() + VENTANA_DESPUES_MS;
         const ventana = historial
           ? historial.filter((m) => {
               const t = m.fecha.getTime();
@@ -308,26 +489,36 @@ Deno.serve(async (req) => {
         if (historial && !act.salienteAt) sinSaliente++;
         if (dryRun) continue;
 
+        // Fresco = leído hace poco Y sin nada nuevo en el chat desde entonces.
+        // La segunda condición importa: un pedido que recibió un mensaje hace
+        // diez minutos se vuelve a escribir aunque se haya leído hace una hora.
+        const leido = leidoPrevio.get(p.externalId);
+        const ultimoMs = historial?.length ? historial[historial.length - 1].fecha.getTime() : 0;
+        if (leido && ahoraMs - leido < FRESCURA_MS && ultimoMs <= leido) { frescos++; continue; }
+
         tareas.push({
           externalId: p.externalId,
           // Columnas de 20260824230000. Van aparte para poder REINTENTAR sin
           // ellas si esa migración no corrió (Lovable no auto-aplica).
+          // Las fechas de mensajes YA son UTC (seriales de Excel): meterles el
+          // offset otra vez las correría 5 horas.
           columnasNuevas: {
-            chat_saliente_at: act.salienteAt ? aUTC(act.salienteAt, cc).toISOString() : null,
+            chat_saliente_at: act.salienteAt ? act.salienteAt.toISOString() : null,
             chat_saliente_tipo: act.salienteTipo,
-            chat_entrante_at: act.entranteAt ? aUTC(act.entranteAt, cc).toISOString() : null,
+            chat_entrante_at: act.entranteAt ? act.entranteAt.toISOString() : null,
           },
           payloadBase: {
-            confirmo_boton_at: s.apretoBotonAt ? aUTC(s.apretoBotonAt, cc).toISOString() : null,
+            confirmo_boton_at: s.apretoBotonAt ? s.apretoBotonAt.toISOString() : null,
             chat_cliente_escribio_at: s.clienteEscribioAt
-              ? aUTC(s.clienteEscribioAt, cc).toISOString() : null,
+              ? s.clienteEscribioAt.toISOString() : null,
             chat_mudo: s.mudo,
             chat_riesgo: s.riesgo,
             chat_leido_at: new Date().toISOString(),
-            pedido_creado_at: aUTC(p.creadoLocal, cc).toISOString(),
+            pedido_creado_at: p.creadoUTC.toISOString(),
           },
         });
       }
+      await traza(`fase 4: escribiendo ${tareas.length} pedidos (${frescos} ya frescos)`);
 
       // FASE 2 — escribir EN PARALELO de a 15. La v1 escribía en SERIE: con
       // dias=60 son hasta 3.000 UPDATEs (~50 ms c/u ≈ 150 s solo de escritura)
@@ -359,9 +550,9 @@ Deno.serve(async (req) => {
       };
       const PARALELO = 15;
       for (let i = 0; i < tareas.length; i += PARALELO) {
-        if (Date.now() - t0 > BUDGET_MS) {
+        if (Date.now() > vencimiento) {
           saltados = tareas.length - i;
-          parciales.push(`tienda ${storeId}: escribí ${tocados} de ${tareas.length}, quedaron ${saltados} (correr de nuevo para completar)`);
+          parciales.push(`escribí ${tocados} de ${tareas.length}, quedaron ${saltados} (corré de nuevo para completar)`);
           break;
         }
         const ok = await Promise.all(tareas.slice(i, i + PARALELO).map(escribir));
@@ -373,7 +564,7 @@ Deno.serve(async (req) => {
       resumen.push({
         store_id: storeId, ok: true, pedidos: pedidos.length,
         actualizados: tocados, con_boton: conBoton, mudos,
-        sin_saliente: sinSaliente, saltados, dry_run: dryRun,
+        sin_saliente: sinSaliente, saltados, frescos, chats: chats.size, dry_run: dryRun,
       });
     }
 
