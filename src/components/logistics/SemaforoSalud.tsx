@@ -236,7 +236,9 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
         display: pct(v),
         color,
         ref: 'Ref: ≤3%',
-        hint: 'Plata perdida en devoluciones.',
+        // No confundir con el "% Devolución" de Indicadores (que cuenta
+        // pedidos): acá es plata perdida ÷ ventas — por eso da más chico.
+        hint: 'Plata perdida ÷ ventas. No es el % de pedidos devueltos (ese está en Indicadores).',
         icon: Undo2,
         raw: isFinite(v) ? v : null,
         refValue: 3,
@@ -338,8 +340,13 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
           Semáforo de salud financiera
         </h3>
       </header>
+      {/* El dueño preguntó "¿qué función cumple esto?" (23-ago-2026): se dice
+          la función, no solo el método. Todos los % son PLATA sobre ventas. */}
       <p className="text-xs text-muted-foreground mb-4">
-        Qué tan sano está el negocio en este período, contra los estándares del mercado.
+        Seis chequeos contra los estándares del mercado COD: te dicen{' '}
+        <strong className="text-foreground">dónde mirar primero</strong> — verde sigue igual,
+        amarillo vigilalo, rojo atendelo ya. Acá todo se mide en{' '}
+        <strong className="text-foreground">plata sobre ventas</strong>, no en cantidad de pedidos.
       </p>
 
       {finQuery.isLoading ? (

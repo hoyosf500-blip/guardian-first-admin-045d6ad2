@@ -2,6 +2,7 @@ import { memo, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from 'recharts';
 import { Truck } from 'lucide-react';
 import { deriveDeliveryMaturity } from '@/lib/logisticsRates';
+import { formatCOP } from '@/lib/utils';
 import type { CarrierStats } from '@/lib/logistics.types';
 import {
   CHART_GRID_PROPS, CHART_BAR_CURSOR, SEMANTIC_COLORS,
@@ -122,7 +123,12 @@ export default memo(function LogisticsHeroChart({ rows }: Props) {
         </div>
       </header>
 
-      <div className="flex-1 min-h-[240px]">
+      {/* Altura FIJA en px, no flex-1 + min-h: ResponsiveContainer usa
+          height:100%, y un porcentaje se resuelve contra el `height` del padre
+          — que con solo min-height queda en auto → 0. Medido en producción el
+          23-ago-2026: el chart llevaba tiempo dibujándose con altura CERO (el
+          dueño veía el título y la leyenda sobre un vacío). */}
+      <div className="h-[260px]">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={top}
@@ -162,6 +168,52 @@ export default memo(function LogisticsHeroChart({ rows }: Props) {
             <Bar dataKey="devueltos"   stackId="vol" name="Devueltos"   fill="url(#heroVolDanger)"  maxBarSize={54} radius={[6, 6, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
+      </div>
+
+      {/* KPIs por transportadora — pedido del dueño (23-ago-2026): el gráfico
+          solo no le contesta "¿cuál me devuelve más?". Tasas MADURAS (÷resueltos,
+          sin rechazos), las mismas de la tab Transportadoras — sin resueltos la
+          celda va en "—", nunca en 0%. */}
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full text-xs tabular-nums">
+          <thead>
+            <tr className="hud-label border-b border-border">
+              <th className="text-left font-semibold py-1.5">Transportadora</th>
+              <th className="text-right font-semibold py-1.5">Envíos</th>
+              <th className="text-right font-semibold py-1.5">% Entrega</th>
+              <th className="text-right font-semibold py-1.5">% Devol.</th>
+              <th className="text-right font-semibold py-1.5">Días prom.</th>
+              <th className="text-right font-semibold py-1.5">$ Entregado</th>
+              <th className="text-right font-semibold py-1.5">$ Perdido</th>
+            </tr>
+          </thead>
+          <tbody>
+            {top.map((r) => {
+              const m = deriveDeliveryMaturity(r.entregados, r.devueltos, r.total_pedidos, r.rechazados ?? 0);
+              return (
+                <tr key={r.transportadora} className="border-b border-border/40 hover:bg-foreground/[0.03] transition-colors">
+                  <td className="text-left py-1.5 text-foreground/90 whitespace-nowrap">{r.transportadora}</td>
+                  <td className="text-right py-1.5 font-mono font-semibold text-foreground">{r.total_pedidos.toLocaleString('es-CO')}</td>
+                  <td className={`text-right py-1.5 font-mono ${m.tasaEntregaMadura == null ? 'text-muted-foreground' : 'text-success'}`}>
+                    {m.tasaEntregaMadura == null ? '—' : `${m.tasaEntregaMadura}%`}
+                  </td>
+                  <td className={`text-right py-1.5 font-mono ${m.tasaDevolucionMadura == null ? 'text-muted-foreground' : 'text-danger'}`}>
+                    {m.tasaDevolucionMadura == null ? '—' : `${m.tasaDevolucionMadura}%`}
+                  </td>
+                  <td className="text-right py-1.5 font-mono text-muted-foreground">
+                    {r.avg_dias_entrega != null ? r.avg_dias_entrega.toFixed(1) : '—'}
+                  </td>
+                  <td className="text-right py-1.5 font-mono text-muted-foreground">{formatCOP(r.valor_entregado ?? 0)}</td>
+                  <td className="text-right py-1.5 font-mono text-muted-foreground">{formatCOP(r.valor_perdido ?? 0)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <p className="mt-2 text-[10px] text-muted-foreground leading-relaxed">
+          % de entrega y devolución sobre lo YA resuelto (entregado + devuelto), sin contar lo que
+          sigue viajando. «—» = todavía no concluyó ninguno.
+        </p>
       </div>
     </div>
   );

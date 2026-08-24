@@ -139,6 +139,19 @@ export default function MesActualResumen({ summary, filters }: Props) {
   // (isRpcMissing) sí degrada a 0 como siempre — ahí el fallback mensual
   // guardado sigue siendo la fuente válida. Mismo principio que operativoSinDato.
   const pautaSinDato = adQuery.isError && !isRpcMissing(adQuery.error);
+  // Cobertura de la bitácora: cuántos días del período tienen pauta anotada.
+  // Un día sin registro entra como $0 al Neto Real — si faltan muchos, el neto
+  // sale inflado y hay que decirlo en la cara (medido 23-ago-2026 EC: 1 día
+  // anotado de 23 → "Neto real $4.796" descontando $30 de pauta de TODO el mes).
+  const diasConPauta = new Set((adQuery.data ?? []).map((r) => r.spend_date)).size;
+  const diasPeriodo = (() => {
+    const hoy = new Date().toLocaleDateString('en-CA');
+    const hasta = filters.toDate < hoy ? filters.toDate : hoy;
+    const f = new Date(`${filters.fromDate}T12:00:00Z`);
+    const t = new Date(`${hasta}T12:00:00Z`);
+    if (isNaN(f.getTime()) || isNaN(t.getTime()) || t < f) return 0;
+    return Math.round((t.getTime() - f.getTime()) / 86400000) + 1;
+  })();
 
   const title = rangeTitle(filters);
 
@@ -181,6 +194,12 @@ export default function MesActualResumen({ summary, filters }: Props) {
   const movimientosSinLink = usingCohorte ? (cohorte.data?.movimientos_sin_link ?? 0) : 0;
   const valorPreparacion = full?.valorPreparacion ?? 0;
   const valorOtros = full?.valorOtros ?? 0;
+  // Plata "en juego" = todo lo que aún no terminó su ciclo (preparación +
+  // tránsito + novedad + pendientes + estados sin clasificar). Junto con
+  // cobrado + perdido + cancelado suma exactamente el valor generado.
+  const valorEnJuego =
+    valorPreparacion + resumen.valorEnTransito + resumen.valorNovedades
+    + resumen.valorPendientes + valorOtros;
 
   // Plata de pedidos que EXISTEN pero todavía no salieron a la calle. "Total
   // vendido" los resta y el panel de Dropi NO: es EXACTAMENTE la brecha entre
@@ -222,7 +241,15 @@ export default function MesActualResumen({ summary, filters }: Props) {
   const despachadoValor = DISPATCHED_KEYS.reduce(
     (a, k) => a + (resumen.buckets.find((b) => b.key === k)?.valor ?? 0), 0,
   );
-  const facturadoValor = totalVendido ?? Math.max(0, resumen.valorGenerado - resumen.valorCancelado);
+  // Facturado = TODO lo no cancelado (pendientes y preparación incluidos), en
+  // conteo Y en valor. Antes el valor era `totalVendido` (que excluye rechazos y
+  // lo sin despachar) mientras el conteo era generadosSinCancel completo — y como
+  // "Despachado" SÍ suma los rechazos, la cascada del simulador imprimía
+  // Despachado $17.123 > Facturado $17.091 (medido 23-ago-2026 EC: la diferencia
+  // era exactamente el rechazo de $31,98). El tile "Total vendido" de arriba
+  // conserva su definición Dropi-parity; esta cascada tiene que ser coherente
+  // consigo misma: cada escalón es un subconjunto del anterior.
+  const facturadoValor = Math.max(0, resumen.valorGenerado - resumen.valorCancelado);
 
   // TASA DE ENTREGA MADURA — entregados ÷ (entregados + devueltos), medida SOLO
   // sobre lo que ya salió a la calle (`despachadosCount`).
@@ -458,27 +485,40 @@ export default function MesActualResumen({ summary, filters }: Props) {
         {/* ── Bloque B — Conciliación de plata ──────────────────────── */}
         <div className="p-5 space-y-4">
           <h4 className="hud-label">
-            Conciliación · de lo generado a lo real
+            Conciliación · dónde está la plata de este período
           </h4>
 
-          {/* Cascada: valor generado − fugas = realizado */}
+          {/* Resumen en una línea ANTES del detalle: el dueño pidió (23-ago-2026)
+              entender la conciliación sin descifrar la resta fila por fila. Toda
+              la plata generada cae en UNA de estas 4 canastas — suman el total. */}
+          <div className="grid grid-cols-2 gap-2">
+            <ResumenChip tone="success" label="Ya cobrado" valor={resumen.valorEntregado} detalle={`${entregadoCount.toLocaleString('es-CO')} entregados`} />
+            <ResumenChip tone="info" label="Todavía en juego" valor={valorEnJuego} detalle={`${enLaCalleCount.toLocaleString('es-CO')} sin cerrar`} />
+            <ResumenChip tone="danger" label="Perdido" valor={resumen.valorPerdido + valorRechazos} detalle={`${(devueltoCount + rechazadoCount).toLocaleString('es-CO')} devueltos/rechazados`} />
+            <ResumenChip tone="muted" label="Cancelado" valor={resumen.valorCancelado} detalle={`${canceladoCount.toLocaleString('es-CO')} cancelados`} />
+          </div>
+
+          {/* Cascada: el detalle de las 4 canastas, agrupado con nombre */}
           <div className="rounded-2xl border border-border bg-card/40 shadow-card3d divide-y divide-border text-sm overflow-hidden">
-            <WaterfallRow label="Valor generado (con cancelados)" value={resumen.valorGenerado} tone="base" />
+            <WaterfallRow label="Pediste este período (cancelados incluidos)" value={resumen.valorGenerado} tone="base" />
+            <WaterfallGroupLabel texto="En juego — puede volver como plata o como devolución" />
             {valorPreparacion > 0 && (
-              <WaterfallRow label="En preparación" value={-valorPreparacion} tone="muted" />
+              <WaterfallRow label="En preparación (con guía, sin salir)" value={-valorPreparacion} tone="muted" />
             )}
-            <WaterfallRow label="En tránsito (sin cobrar aún)" value={-resumen.valorEnTransito} tone="muted" />
-            <WaterfallRow label="En novedad (en riesgo)" value={-resumen.valorNovedades} tone="muted" />
-            <WaterfallRow label="Pendientes" value={-resumen.valorPendientes} tone="muted" />
+            <WaterfallRow label="En tránsito (viajando, sin cobrar aún)" value={-resumen.valorEnTransito} tone="muted" />
+            <WaterfallRow label="En novedad (trabado — hay que gestionarlo)" value={-resumen.valorNovedades} tone="muted" />
+            <WaterfallRow label="Pendientes (sin confirmar / sin despachar)" value={-resumen.valorPendientes} tone="muted" />
             {valorOtros > 0 && (
               <WaterfallRow label="Otros estados" value={-valorOtros} tone="muted" />
             )}
-            <WaterfallRow label="Devueltos (perdido)" value={-resumen.valorPerdido} tone="danger" />
+            <WaterfallGroupLabel texto="Perdido — ya no se cobra" />
+            <WaterfallRow label="Devueltos (de los pedidos creados en este período)" value={-resumen.valorPerdido} tone="danger" />
             {valorRechazos > 0 && (
-              <WaterfallRow label="Rechazados (cliente rechazó)" value={-valorRechazos} tone="danger" />
+              <WaterfallRow label="Rechazados (el cliente no lo recibió)" value={-valorRechazos} tone="danger" />
             )}
+            <WaterfallGroupLabel texto="No se concretó" />
             <WaterfallRow label="Cancelados" value={-resumen.valorCancelado} tone="muted" />
-            <WaterfallRow label="Valor entregado (realizado)" value={resumen.valorEntregado} tone="success" emphasis />
+            <WaterfallRow label="Ya cobrado (entregado)" value={resumen.valorEntregado} tone="success" emphasis />
           </div>
 
           {/* ── Devoluciones LLEGADAS en el período (por devuelto_at) ──
@@ -495,26 +535,42 @@ export default function MesActualResumen({ summary, filters }: Props) {
             <div className="rounded-2xl border border-border bg-card/40 p-4 shadow-card3d space-y-2">
               <div className="flex items-center gap-2">
                 <RotateCcw size={13} className={devLlegadas.data.devoluciones > 0 ? 'text-danger' : 'text-success'} />
-                <span className="hud-label">Devoluciones llegadas en el período</span>
+                <span className="hud-label">Devoluciones que te llegaron en el período</span>
               </div>
               <div className="flex items-baseline justify-between gap-2">
                 <span className={`text-base font-bold font-mono tabular-nums ${devLlegadas.data.devoluciones > 0 ? 'text-danger' : 'text-success'}`}>
                   {devLlegadas.data.devoluciones.toLocaleString('es-CO')}
                   <span className="text-xs font-sans font-medium text-muted-foreground ml-1.5">
-                    {devLlegadas.data.devoluciones === 1 ? 'pedido devuelto' : 'pedidos devueltos'}
+                    {devLlegadas.data.devoluciones === 1 ? 'paquete devuelto' : 'paquetes devueltos'}
                   </span>
                 </span>
                 <span className="text-xs font-mono tabular-nums text-muted-foreground shrink-0">
                   {formatCOP(devLlegadas.data.valor)} en venta perdida
                 </span>
               </div>
-              <p className="text-[10px] text-muted-foreground leading-relaxed">
-                Por fecha REAL de devolución — la fila «Devueltos» de arriba, en cambio, cuenta
-                los pedidos <strong className="text-foreground/80">creados</strong> en el período que terminaron devueltos.
-                {devLlegadas.data.deMesesPrevios > 0 && (
-                  <> {devLlegadas.data.deMesesPrevios} venía{devLlegadas.data.deMesesPrevios === 1 ? '' : 'n'} de pedidos de meses anteriores.</>
-                )}
-              </p>
+              {/* La cuenta EXPLÍCITA: el dueño comparaba este total contra los
+                  "Devueltos" de la cascada (39 vs 180) y creía que un número
+                  mentía (23-ago-2026). Son dos relojes: la cascada mira cuándo
+                  se CREÓ el pedido; esta tarjeta, cuándo VOLVIÓ el paquete. */}
+              {devLlegadas.data.deMesesPrevios > 0 ? (
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  <span className="font-mono tabular-nums text-foreground">
+                    {(devLlegadas.data.devoluciones - devLlegadas.data.deMesesPrevios).toLocaleString('es-CO')}
+                  </span>{' '}
+                  son de pedidos de este período (los «Devueltos» de arriba){' '}
+                  <span className="font-mono tabular-nums text-foreground">
+                    + {devLlegadas.data.deMesesPrevios.toLocaleString('es-CO')}
+                  </span>{' '}
+                  son de pedidos de meses anteriores que recién ahora volvieron.
+                  El cobro de todos te golpea la billetera <strong className="text-foreground/80">ahora</strong>,
+                  por eso este número es más grande que el de la cascada.
+                </p>
+              ) : (
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                  Todas son de pedidos creados en este mismo período — por eso coincide con los
+                  «Devueltos» de la cascada.
+                </p>
+              )}
             </div>
           )}
 
@@ -541,23 +597,48 @@ export default function MesActualResumen({ summary, filters }: Props) {
               </div>
             ) : (
               <div className={walletStale ? 'opacity-60' : ''}>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs text-muted-foreground">
-                    Caja bruta del wallet · NO es ganancia
-                    <span className="block text-[10px] text-muted-foreground/70">
-                      Entró {formatCOP(totalEntradas)} · salió {formatCOP(totalSalidas)} · por fecha de pago (mezcla meses)
+                {/* Desglosado en pagó/cobró con signo: "Caja bruta · Entró X salió Y"
+                    en una sola línea no contestaba la pregunta del dueño ("¿esto es
+                    lo que Dropi me pagó en el mes filtrado?" — 23-ago-2026). Sí: son
+                    los movimientos DEL RANGO FILTRADO, por fecha de pago. */}
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">Dropi te pagó en este rango</span>
+                    <span className="font-mono tabular-nums text-success shrink-0">+{formatCOP(totalEntradas)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">Dropi te cobró (fletes, devoluciones…)</span>
+                    <span className="font-mono tabular-nums text-danger shrink-0">−{formatCOP(totalSalidas)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 border-t border-border pt-1.5">
+                    <span className="text-foreground font-medium">
+                      Te quedó
+                      <span className="block text-[10px] font-normal text-muted-foreground/70">
+                        caja bruta · NO es tu ganancia: va por fecha de pago y mezcla pedidos de otros meses
+                      </span>
                     </span>
-                  </span>
-                  <span className={`text-base font-bold font-mono tabular-nums shrink-0 ${gananciaNeta >= 0 ? 'text-success' : 'text-danger'}`}>
-                    {formatCOP(gananciaNeta)}
-                  </span>
+                    <span className={`text-base font-bold font-mono tabular-nums shrink-0 ${gananciaNeta >= 0 ? 'text-success' : 'text-danger'}`}>
+                      {formatCOP(gananciaNeta)}
+                    </span>
+                  </div>
                 </div>
                 <div className="flex items-center justify-between gap-2 border-t border-border pt-2.5 mt-2.5">
-                  <span className="text-xs text-foreground font-medium">Saldo disponible hoy</span>
+                  <span className="text-xs text-foreground font-medium">
+                    Saldo disponible hoy
+                    <span className="block text-[10px] font-normal text-muted-foreground/70">
+                      tu plata en Dropi AHORA — este número no cambia con el filtro
+                    </span>
+                  </span>
                   <span className="text-base font-bold font-mono tabular-nums text-foreground shrink-0">
                     {saldoActual != null ? formatCOP(saldoActual) : '—'}
                   </span>
                 </div>
+                {filters.ciudad && (
+                  <p className="text-[10px] text-warning mt-2 leading-relaxed">
+                    El filtro de ciudad no aplica a la plata del wallet — Dropi no reporta sus
+                    movimientos por ciudad.
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -608,6 +689,8 @@ export default function MesActualResumen({ summary, filters }: Props) {
               pautaFromDaily={pautaFromDaily}
               pedidosEnCalle={enLaCalleCount}
               movimientosSinLink={movimientosSinLink}
+              diasConPauta={diasConPauta}
+              diasPeriodo={diasPeriodo}
             />
             )
           ) : (
@@ -617,18 +700,27 @@ export default function MesActualResumen({ summary, filters }: Props) {
             </p>
           )}
 
-          {/* Explicación llana del gap */}
+          {/* Explicación llana: los DOS relojes de la pantalla, en frases cortas.
+              El párrafo anterior era denso y el dueño igual quedó confundido
+              (23-ago-2026) — una idea por renglón. */}
           <div className="flex items-start gap-2 text-[11px] text-muted-foreground">
             <Info size={13} className="text-info shrink-0 mt-0.5" />
-            <p>
-              La cascada de arriba es el valor de los pedidos que <strong className="text-foreground">creaste este mes</strong>,
-              por estado. La <strong className="text-foreground">caja bruta del wallet</strong> es la plata que entró y salió
-              este mes — va por <strong className="text-foreground">fecha de pago</strong>, así que incluye pedidos de meses
-              anteriores y <strong className="text-foreground">NO es tu ganancia</strong>. Tu ganancia confiable es el
-              <strong className="text-foreground"> Operativo del mes</strong> (cohorte, arriba), que reconcilia con la
-              "Utilidad Total" de Dropi. El <strong className="text-foreground">saldo</strong> del wallet es tu plata
-              disponible hoy, después de fletes, devoluciones y retiros.
-            </p>
+            <div className="space-y-1">
+              <p>
+                <strong className="text-foreground">La cascada</strong> mira los pedidos que{' '}
+                <strong className="text-foreground">creaste</strong> en el período, estén donde estén hoy.
+              </p>
+              <p>
+                <strong className="text-foreground">El wallet y las devoluciones llegadas</strong> miran lo que{' '}
+                <strong className="text-foreground">pasó</strong> en el período — pagos que entraron y paquetes
+                que volvieron, aunque el pedido sea de un mes anterior. Por eso sus números no
+                tienen por qué coincidir con la cascada.
+              </p>
+              <p>
+                Tu ganancia confiable del mes es el <strong className="text-foreground">Operativo del mes</strong>{' '}
+                (tile de arriba) — cuadra con la "Utilidad Total" de Dropi.
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -730,6 +822,38 @@ export default function MesActualResumen({ summary, filters }: Props) {
         )}
       </div>
     </section>
+  );
+}
+
+/** Chip del resumen de conciliación: una canasta de plata con su tono. */
+function ResumenChip({
+  tone, label, valor, detalle,
+}: {
+  tone: 'success' | 'info' | 'danger' | 'muted';
+  label: string;
+  valor: number;
+  detalle: string;
+}) {
+  const cls =
+    tone === 'success' ? 'border-success/30 bg-success/8 text-success'
+    : tone === 'info' ? 'border-info/30 bg-info/8 text-info'
+    : tone === 'danger' ? 'border-danger/30 bg-danger/8 text-danger'
+    : 'border-border bg-card/40 text-muted-foreground';
+  return (
+    <div className={`rounded-xl border px-3 py-2 ${cls}`}>
+      <span className="block hud-label">{label}</span>
+      <span className="block text-sm font-bold font-mono tabular-nums mt-0.5">{formatCOP(valor)}</span>
+      <span className="block text-[10px] text-muted-foreground mt-0.5">{detalle}</span>
+    </div>
+  );
+}
+
+/** Separador con nombre dentro de la cascada — agrupa filas de la misma canasta. */
+function WaterfallGroupLabel({ texto }: { texto: string }) {
+  return (
+    <div className="px-3.5 pt-2 pb-1 bg-foreground/[0.02]">
+      <span className="hud-label">{texto}</span>
+    </div>
   );
 }
 

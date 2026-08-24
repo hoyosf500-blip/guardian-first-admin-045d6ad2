@@ -27,6 +27,9 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editing: StoreAdSpendRow | null;   // null = creando
+  /** Rango visible en la pantalla — para avisar si lo guardado queda fuera. */
+  visibleFrom?: string;
+  visibleTo?: string;
 }
 
 const PLATFORMS: { value: AdPlatform; label: string }[] = [
@@ -42,7 +45,16 @@ function yesterdayBogota(): string {
   return d.toISOString().slice(0, 10);
 }
 
-export default function StoreAdSpendDialog({ open, onOpenChange, editing }: Props) {
+/** "sáb 23 ago" — para que la fecha elegida se LEA, no solo se parsee. */
+function fmtDiaLargo(d: string): string {
+  const [y, m, day] = d.split('-').map(Number);
+  if (!y || !m || !day) return d;
+  return new Date(y, m - 1, day).toLocaleDateString('es-CO', { weekday: 'short', day: '2-digit', month: 'short' });
+}
+
+export default function StoreAdSpendDialog({
+  open, onOpenChange, editing, visibleFrom, visibleTo,
+}: Props) {
   const { activeStoreId, activeStore } = useStore();
   const upsert = useUpsertStoreAdSpend();
   const del = useDeleteStoreAdSpend();
@@ -95,7 +107,16 @@ export default function StoreAdSpendDialog({ open, onOpenChange, editing }: Prop
         amount: amt,
         notas: notas.trim(),
       });
-      toast.success('Pauta guardada');
+      // La fecha guardada VA en el toast: el default es AYER y más de una vez
+      // el registro "desaparecía" porque cayó en un día que no era el esperado
+      // o fuera del rango filtrado — se dice, no se deja adivinar.
+      toast.success(`Pauta guardada para el ${fmtDiaLargo(spendDate)}`);
+      if (visibleFrom && visibleTo && (spendDate < visibleFrom || spendDate > visibleTo)) {
+        toast.info(
+          `Ojo: el ${fmtDiaLargo(spendDate)} queda FUERA del rango que estás mirando — no la vas a ver en la tabla hasta ampliar las fechas.`,
+          { duration: 8000 },
+        );
+      }
       onOpenChange(false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Error desconocido';
@@ -132,13 +153,38 @@ export default function StoreAdSpendDialog({ open, onOpenChange, editing }: Prop
         <div className="space-y-3 py-2">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="ad-date" className="text-xs">Fecha</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="ad-date" className="text-xs">Fecha</Label>
+                {/* Atajos Hoy/Ayer: el default silencioso en AYER hacía que un
+                    registro de "hoy" cayera un día atrás sin que se notara. */}
+                <span className="inline-flex gap-1">
+                  {([['Hoy', bogotaToday()], ['Ayer', yesterdayBogota()]] as const).map(([lbl, d]) => (
+                    <button
+                      key={lbl}
+                      type="button"
+                      onClick={() => setSpendDate(d)}
+                      className={`px-2 py-0.5 rounded-lg border text-[10px] font-medium transition-colors ${
+                        spendDate === d
+                          ? 'border-accent/40 bg-accent/15 text-accent'
+                          : 'border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
+                      }`}
+                    >
+                      {lbl}
+                    </button>
+                  ))}
+                </span>
+              </div>
               <Input
                 id="ad-date"
                 type="date"
                 value={spendDate}
                 onChange={(e) => setSpendDate(e.target.value)}
               />
+              {/* La fecha LEÍDA ("vie 22 ago") al lado del input: es la defensa
+                  contra guardar en el día equivocado. */}
+              <span className="block text-[10px] text-muted-foreground">
+                Se guarda para el <strong className="text-foreground">{fmtDiaLargo(spendDate)}</strong>
+              </span>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Canal</Label>

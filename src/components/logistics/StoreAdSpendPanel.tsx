@@ -19,7 +19,8 @@ interface Props { filters: LogisticsFilters; }
 function fmtDay(d: string): string {
   const [y, m, day] = d.split('-').map(Number);
   if (!y || !m || !day) return d;
-  return new Date(y, m - 1, day).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
+  // Con día de semana: "vie 05 ago" — ubica el registro sin abrir el calendario.
+  return new Date(y, m - 1, day).toLocaleDateString('es-CO', { weekday: 'short', day: '2-digit', month: 'short' });
 }
 
 export default function StoreAdSpendPanel({ filters }: Props) {
@@ -31,6 +32,20 @@ export default function StoreAdSpendPanel({ filters }: Props) {
 
   const rows = data ?? [];
   const totals = sumAdSpend(rows);
+
+  // Cobertura: días transcurridos del período vs días con algo anotado. Un día
+  // sin registro entra como $0 al Neto Real y a los KPIs de pauta — si faltan
+  // días, se dice acá, que es donde se corrige (medido 23-ago-2026 EC: 1 de 23).
+  const hoy = new Date().toLocaleDateString('en-CA');
+  const hasta = filters.toDate < hoy ? filters.toDate : hoy;
+  const diasPeriodo = (() => {
+    const f = new Date(`${filters.fromDate}T12:00:00Z`);
+    const t = new Date(`${hasta}T12:00:00Z`);
+    if (isNaN(f.getTime()) || isNaN(t.getTime()) || t < f) return 0;
+    return Math.round((t.getTime() - f.getTime()) / 86400000) + 1;
+  })();
+  const diasConPauta = new Set(rows.map((r) => r.spend_date)).size;
+  const coberturaIncompleta = diasPeriodo > 0 && diasConPauta < diasPeriodo;
 
   return (
     <section className="rounded-2xl border border-border bg-card/40 overflow-hidden shadow-card3d hairline-top transition-colors duration-200 hover:border-border-strong">
@@ -63,7 +78,20 @@ export default function StoreAdSpendPanel({ filters }: Props) {
               rótulo en .hud-label sobre la cifra en mono, en vez de spans
               sueltos en una línea. El Total va con el tono de acento. */}
           <div className="px-5 py-4 border-b border-border">
-            <div className="hud-label mb-2.5">Este período:</div>
+            <div className="flex items-center justify-between gap-2 mb-2.5 flex-wrap">
+              <div className="hud-label">Este período:</div>
+              {/* Cobertura SIEMPRE visible: verde si está completa, ámbar si no.
+                  Es el dato que explica por qué el Neto Real puede estar inflado. */}
+              {diasPeriodo > 0 && (
+                <span className={`inline-flex items-center px-2.5 py-1 rounded-lg border text-[11px] font-semibold font-mono tabular-nums ${
+                  coberturaIncompleta
+                    ? 'border-warning/30 bg-warning/10 text-warning'
+                    : 'border-success/30 bg-success/10 text-success'
+                }`}>
+                  {diasConPauta} de {diasPeriodo} días con pauta anotada
+                </span>
+              )}
+            </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="rounded-xl border border-border bg-card/40 px-3 py-2.5">
                 <div className="hud-label-cased">Meta</div>
@@ -84,6 +112,12 @@ export default function StoreAdSpendPanel({ filters }: Props) {
                 <div className="text-sm font-mono tabular-nums font-bold text-accent mt-1.5">{formatCOP(totals.total)}</div>
               </div>
             </div>
+            {coberturaIncompleta && (
+              <p className="mt-2.5 text-[11px] text-warning leading-relaxed">
+                Los días sin registro cuentan como $0 en el Neto Real y en el semáforo — anotá
+                aunque sea el total del día para que la ganancia no salga inflada.
+              </p>
+            )}
           </div>
 
           {/* Tabla de últimos días */}
@@ -123,6 +157,13 @@ export default function StoreAdSpendPanel({ filters }: Props) {
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                <tr className="border-t border-border font-semibold text-foreground">
+                  <td className="px-5 py-2.5" colSpan={2}>Total del período</td>
+                  <td className="px-3 py-2.5 text-right font-mono tabular-nums">{formatCOP(totals.total)}</td>
+                  <td colSpan={2} />
+                </tr>
+              </tfoot>
             </table>
           )}
         </>
@@ -132,6 +173,8 @@ export default function StoreAdSpendPanel({ filters }: Props) {
         open={dialog.open}
         onOpenChange={(open) => setDialog({ open, row: open ? dialog.row : null })}
         editing={dialog.row}
+        visibleFrom={filters.fromDate}
+        visibleTo={filters.toDate}
       />
     </section>
   );

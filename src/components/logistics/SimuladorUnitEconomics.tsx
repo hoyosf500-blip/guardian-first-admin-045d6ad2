@@ -190,11 +190,11 @@ export default function SimuladorUnitEconomics({
           formatCOP) y StatTile sólo acepta un number crudo. */}
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 p-4">
         <UnitKpi label="Tasa de despachos" value={pct1(kpis.tasaDespachos)} icon={Truck} tone="info"
-          hint={`${despachadosCount} de ${generadosSinCancel} generados`} />
+          hint={`${despachadosCount} de ${generadosSinCancel} generados salieron a la calle`} />
         <UnitKpi label="Tasa de entrega" value={pct1(kpis.tasaEntrega)} icon={PackageCheck} tone="success"
-          hint={`${entregadosCount} de ${resueltos} resueltos · sin rechazos`} />
+          hint={`${entregadosCount} de ${resueltos} que ya concluyeron · sin rechazos`} />
         <UnitKpi label="% Devolución" value={pct1(kpis.pctDevolucion)} icon={Undo2} tone="danger"
-          hint={`${devueltosCount} de ${resueltos} resueltos`} />
+          hint={`${devueltosCount} de ${resueltos} que ya concluyeron · cuenta PEDIDOS, no plata`} />
         <UnitKpi label="% Rechazo" value={pct1(kpis.pctRechazo)} icon={Undo2} tone="warning"
           hint={`${rechazadosCount} rechazados / despachado`} />
         <UnitKpi label="% Inefectividad" value={pct1(kpis.pctInefectividad)} icon={TrendingDown} tone="warning"
@@ -203,6 +203,16 @@ export default function SimuladorUnitEconomics({
           hint="por pedido entregado" />
       </div>
 
+      {/* El puente que faltaba: el dueño comparaba "% Devolución 12.7%" de acá
+          con "Impacto de devoluciones 3.6%" del semáforo y creía que uno mentía
+          (23-ago-2026). Miden cosas distintas y se dice dónde. */}
+      <p className="px-4 pb-1 text-[10px] text-muted-foreground leading-relaxed">
+        Estos indicadores cuentan <strong className="text-foreground/80">pedidos</strong> (de cada 100 que
+        concluyeron, cuántos volvieron). El <strong className="text-foreground/80">semáforo de abajo</strong> mide{' '}
+        <strong className="text-foreground/80">plata</strong> (cuánta venta se pierde) — por eso su
+        "impacto de devoluciones" da un % más chico y los dos están bien.
+      </p>
+
       {/* Cascada real — ahora con barra proporcional sobre el facturado (la base
           del embudo), igual que el embudo de MesActualResumen. La barra no
           agrega ningún número a la pantalla: es el mismo `count` de la fila
@@ -210,7 +220,10 @@ export default function SimuladorUnitEconomics({
           se dibuja ninguna barra: no habría contra qué proporcionar. */}
       <div className="px-4 pb-4">
         <div className="rounded-2xl border border-border bg-muted/10 divide-y divide-border shadow-card3d">
-          <CascadaRow label="Facturado" sub="pedidos generados" count={generadosSinCancel} valor={totalVendido} tone="base" base={generadosSinCancel} />
+          {/* `totalVendido` acá es el facturadoValor coherente del padre (todo lo
+              no cancelado) — NO el tile "Total vendido" Dropi-parity. Ver el
+              comentario de facturadoValor en MesActualResumen. */}
+          <CascadaRow label="Facturado" sub="todo lo pedido sin cancelar" count={generadosSinCancel} valor={totalVendido} tone="base" base={generadosSinCancel} />
           <CascadaRow label="Despachado" sub="salió a la transportadora" count={Math.round(despachadosCount)} valor={despachadoValor} tone="muted" base={generadosSinCancel} />
           <CascadaRow label="Entregado" sub="realizado" count={entregadosCount} valor={valorEntregado} tone="success" base={generadosSinCancel} />
           <CascadaRow label="Devolución" sub="devolución logística" count={devueltosCount} valor={valorPerdido} tone="danger" base={generadosSinCancel} />
