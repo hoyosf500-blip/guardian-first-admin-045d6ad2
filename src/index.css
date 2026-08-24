@@ -753,17 +753,26 @@
 
 .scroll-hint { scrollbar-width: thin; }
 
-/* Riel de arrastre — la barra de arriba del tablero de Seguimiento.
+/* Riel de arrastre — las barras del tablero de Seguimiento (arriba Y abajo).
    A diferencia del resto de las barras (6 px, deliberadamente discretas), esta
    NO acompaña a un contenido: es un control, su única razón de existir es que
    la asesora la agarre y corra las 15 columnas. Con 6 px hay que apuntar, y
-   errarle significa hacer clic en el tablero. 12 px con el pulgar más marcado
-   se agarra al primer intento.
-   El `pointer: coarse` es para el táctil, donde el dedo no apunta a 12 px. */
-.rail-scroll { scrollbar-width: auto; }
-.rail-scroll::-webkit-scrollbar { height: 12px; }
+   errarle significa hacer clic en el tablero. 14 px con pulgar marcado Y RIEL
+   VISIBLE (el track pintado dice "acá hay barra" sin tener que adivinarla —
+   el dueño reportó "me cuesta deslizar" con el track invisible) se agarra al
+   primer intento.
+   El `pointer: coarse` es para el táctil, donde el dedo no apunta a 14 px. */
+.rail-scroll {
+  scrollbar-width: auto;
+  scrollbar-color: hsl(var(--border-strong)) hsl(var(--border) / 0.35);
+}
+.rail-scroll::-webkit-scrollbar { height: 14px; }
+.rail-scroll::-webkit-scrollbar-track {
+  background: hsl(var(--border) / 0.35);
+  border-radius: 999px;
+}
 .rail-scroll::-webkit-scrollbar-thumb {
-  background: hsl(var(--border-strong) / 0.85);
+  background: hsl(var(--border-strong));
   border-radius: 999px;
   /* El borde transparente adelgaza el pulgar SIN achicar el área de clic:
      se ve fino, se agarra grueso. */
@@ -776,7 +785,7 @@
   background-clip: content-box;
 }
 @media (pointer: coarse) {
-  .rail-scroll::-webkit-scrollbar { height: 16px; }
+  .rail-scroll::-webkit-scrollbar { height: 18px; }
 }
 
 /* ─────────────────────────────────────────────────────────────

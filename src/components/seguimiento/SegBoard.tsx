@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import {
   Package, Tag, Truck, MapPin, AlertTriangle, CheckCircle, RotateCcw,
   DollarSign, Layers, ExternalLink, RefreshCw, MessageCircle, Phone,
-  ChevronUp, ChevronDown, ChevronLeft, Maximize2, CheckCircle2, Building2,
+  ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Maximize2, CheckCircle2, Building2,
 } from 'lucide-react';
 import { OrderData, getTrackingUrl, getWhatsAppPhone, calcBusinessDays, parseDate } from '@/lib/orderUtils';
 import { classifySegEstado, estadoDifiereDeFase, normalizaRotulo, type SegStatusKey } from '@/lib/segStatus';
@@ -44,11 +44,34 @@ type Tone = 'neutral' | 'info' | 'accent' | 'warning' | 'danger' | 'success' | '
  * guarda el bucket del clasificador: es lo que miran LIVE_KEYS/CATCHALL_KEYS y el
  * filtro por estado, así una columna generada sigue comportándose como su bucket.
  */
-interface ColumnDef { key: string; baseKey: SegStatusKey; label: string; icon: React.ReactNode; tone: Tone; }
+interface ColumnDef {
+  key: string;
+  baseKey: SegStatusKey;
+  label: string;
+  icon: React.ReactNode;
+  tone: Tone;
+  /** Nombre de la FASE de la que salió esta columna (solo en las generadas por
+   *  estado crudo). El encabezado lo muestra como cejilla cuando difiere del
+   *  estatus, para no perder el contexto que daba la columna agrupada. */
+  faseLabel?: string;
+}
 
-// Orden de pipeline (izq → der), estilo embudo logístico. ESTE ORDEN NO SE
-// TOCA en un pase visual: las asesoras lo tienen memorizado y moverlo es
-// arquitectura de información, no dibujo.
+// ORDEN POR PRIORIDAD (pedido del dueño, 24-ago-2026: "coloquemos las
+// prioridades, por ejemplo oficina de primero"). Ya no es el embudo logístico
+// (procesamiento → entregado): la primera columna es la que más plata pierde
+// si espera un día más — el mismo criterio de la escalera del turno
+// (`siguienteAccion.ts`).
+//
+//   1. Oficina — el paquete YA llegó y espera al cliente; la transportadora lo
+//      devuelve en ~7 días (76 devoluciones en un mes en EC por no avisar).
+//   2. Novedad — incidencia abierta con reloj de la transportadora.
+//   3. En Reparto — llega HOY: avisar al cliente que esté pendiente.
+//   4. Nov. Solucionada — vigilar que la transportadora re-despache de verdad.
+//   5. Guía Generada — acá viven los POR RECOLECTAR muertos (guías que la
+//      transportadora nunca recogió: 44 de LAAR medidos el 24-ago).
+//   6–8. Bodega / Tránsito / Procesamiento — viajan solos; se miran, no se empujan.
+//   Tras el divisor: Rechazado y Devoluciones (llamada de rescate) y al final
+//   la HISTORIA (entregado/indemnizada/cancelado), que además se pliega.
 //
 // Ya NO hay columna "Otros". Era un cajón de 100+ pedidos que no decía nada:
 // "Otros" no es un estado, es la ausencia de uno. Los pedidos cuyo estado de
@@ -56,19 +79,22 @@ interface ColumnDef { key: string; baseKey: SegStatusKey; label: string; icon: R
 // generada en vivo y rotulada con el estado tal cual lo manda Dropi (ver
 // `columnasDeEstadosSinMapear`), así el dueño ve el estado exacto de cada
 // pedido y no una bolsa.
-const BOARD_COLUMNS: ColumnDef[] = [
-  { key: 'procesamiento', baseKey: 'procesamiento', label: 'En Procesamiento', icon: <Package size={13} />, tone: 'neutral' },
+//
+// Exportado para el guardián `ordenTablero.test.ts`: fija que la prioridad no
+// se degrade de vuelta al embudo en un pase visual.
+export const BOARD_COLUMNS: ColumnDef[] = [
+  { key: 'oficina', baseKey: 'oficina', label: 'En Oficina', icon: <MapPin size={13} />, tone: 'warning' },
+  { key: 'novedad', baseKey: 'novedad', label: 'Novedad', icon: <AlertTriangle size={13} />, tone: 'warning' },
+  { key: 'reparto', baseKey: 'reparto', label: 'En Reparto', icon: <Truck size={13} />, tone: 'accent' },
+  { key: 'novedad_sol', baseKey: 'novedad_sol', label: 'Nov. Solucionada', icon: <CheckCircle size={13} />, tone: 'success' },
   { key: 'guia', baseKey: 'guia', label: 'Guía Generada', icon: <Tag size={13} />, tone: 'info' },
   { key: 'bodega_trans', baseKey: 'bodega_trans', label: 'Bodega Transp.', icon: <Package size={13} />, tone: 'neutral' },
   { key: 'transito', baseKey: 'transito', label: 'En Tránsito', icon: <Truck size={13} />, tone: 'info' },
-  { key: 'reparto', baseKey: 'reparto', label: 'En Reparto', icon: <Truck size={13} />, tone: 'accent' },
-  { key: 'oficina', baseKey: 'oficina', label: 'En Oficina', icon: <MapPin size={13} />, tone: 'warning' },
-  { key: 'novedad', baseKey: 'novedad', label: 'Novedad', icon: <AlertTriangle size={13} />, tone: 'warning' },
-  { key: 'novedad_sol', baseKey: 'novedad_sol', label: 'Nov. Solucionada', icon: <CheckCircle size={13} />, tone: 'success' },
-  { key: 'entregado', baseKey: 'entregado', label: 'Entregado', icon: <CheckCircle size={13} />, tone: 'success' },
+  { key: 'procesamiento', baseKey: 'procesamiento', label: 'En Procesamiento', icon: <Package size={13} />, tone: 'neutral' },
   { key: 'rechazado', baseKey: 'rechazado', label: 'Rechazado', icon: <AlertTriangle size={13} />, tone: 'danger' },
   { key: 'devolucion_transito', baseKey: 'devolucion_transito', label: 'Dev. en Tránsito', icon: <RotateCcw size={13} />, tone: 'danger' },
   { key: 'devolucion', baseKey: 'devolucion', label: 'Devolución', icon: <RotateCcw size={13} />, tone: 'danger' },
+  { key: 'entregado', baseKey: 'entregado', label: 'Entregado', icon: <CheckCircle size={13} />, tone: 'success' },
   { key: 'indemnizada', baseKey: 'indemnizada', label: 'Indemnizada', icon: <DollarSign size={13} />, tone: 'muted' },
   { key: 'cancelado', baseKey: 'cancelado', label: 'Cancelado', icon: <Layers size={13} />, tone: 'muted' },
 ];
@@ -138,6 +164,7 @@ function columnasPorEstadoCrudo(base: ColumnDef, orders: OrderData[]): (ColumnDe
       label: g.label,
       icon: base.icon,
       tone: base.tone,
+      faseLabel: base.label,
       orders: g.orders,
     }));
 }
@@ -1002,6 +1029,63 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
     }
   };
 
+  // Flechas ◀ ▶ para correr el tablero SIN agarrar ninguna barra (pedido del
+  // dueño, 24-ago-2026: "esa barrita para deslizar me cuesta deslizar"). Cada
+  // click corre ~80% del ancho visible; se apagan en los extremos. El estado se
+  // actualiza idempotente desde el onScroll del tablero, así el arrastre, la
+  // rueda y las propias flechas lo mantienen al día sin renders de más.
+  const [flechas, setFlechas] = useState({ izq: false, der: false });
+  const actualizarFlechas = () => {
+    const el = boardRef.current;
+    if (!el) return;
+    const izq = el.scrollLeft > 1;
+    const der = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+    setFlechas((prev) => (prev.izq === izq && prev.der === der ? prev : { izq, der }));
+  };
+  const desplazar = (dir: 1 | -1) => {
+    const el = boardRef.current;
+    if (!el) return;
+    // `smooth` acá es feedback de un click, no animación ambiental — y el
+    // global de index.css ya lo vuelve `auto` con prefers-reduced-motion.
+    el.scrollBy({ left: dir * Math.max(320, Math.round(el.clientWidth * 0.8)), behavior: 'smooth' });
+  };
+
+  // Arrastre con el MOUSE sobre el espacio muerto del tablero (fondos de
+  // columna, huecos entre tarjetas): agarrar y correr, como en un mapa. Solo
+  // pointerType 'mouse' — en táctil el swipe nativo ya funciona y meterse ahí
+  // lo rompería. Nunca arranca sobre un control (botón/link/tarjeta), y recién
+  // se activa pasados 6px: un click normal jamás se convierte en arrastre.
+  // Con setPointerCapture el click fantasma del soltar cae en el contenedor,
+  // no en la tarjeta que quedó debajo del cursor.
+  const panRef = useRef<{ x: number; left: number; activo: boolean } | null>(null);
+  const onPanDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, textarea, select, [role="button"]')) return;
+    panRef.current = { x: e.clientX, left: boardRef.current?.scrollLeft ?? 0, activo: false };
+  };
+  const onPanMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const p = panRef.current;
+    const el = boardRef.current;
+    if (!p || !el) return;
+    const dx = e.clientX - p.x;
+    if (!p.activo) {
+      if (Math.abs(dx) < 6) return;
+      p.activo = true;
+      el.setPointerCapture(e.pointerId);
+      el.style.cursor = 'grabbing';
+    }
+    el.scrollLeft = p.left - dx;
+  };
+  const onPanUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = boardRef.current;
+    if (panRef.current?.activo && el) {
+      if (el.hasPointerCapture?.(e.pointerId)) el.releasePointerCapture(e.pointerId);
+      el.style.cursor = '';
+    }
+    panRef.current = null;
+  };
+
   useLayoutEffect(() => {
     const el = boardRef.current;
     if (!el) return;
@@ -1009,10 +1093,16 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
     // que vuelve a medir. Y como este efecto NO tenía lista de dependencias,
     // corría en cada render: creaba y destruía un ResizeObserver por render,
     // justo mientras la asesora arrastraba.
-    const medir = () => setAnchoTablero((prev) => {
-      const w = el.scrollWidth;
-      return Math.abs(prev - w) > 1 ? w : prev;
-    });
+    const medir = () => {
+      setAnchoTablero((prev) => {
+        const w = el.scrollWidth;
+        return Math.abs(prev - w) > 1 ? w : prev;
+      });
+      // Las flechas dependen de la misma medida (¿hay más tablero a la
+      // derecha?), así que se recalculan con cada medición — incluida la del
+      // montaje, que es la que las enciende por primera vez.
+      actualizarFlechas();
+    };
     medir();
     if (typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(medir);
@@ -1042,8 +1132,9 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
   // columna de historia siga funcionando aunque esté plegada.
   const todasLasColumnas = useMemo(
     () => [
-      // Una columna POR ESTADO REAL, en el orden del embudo (BOARD_COLUMNS) y
-      // por volumen dentro de cada fase. Ver columnasPorEstadoCrudo.
+      // Una columna POR ESTADO REAL, en el orden de PRIORIDAD (BOARD_COLUMNS:
+      // lo que más pierde si espera va primero) y por volumen dentro de cada
+      // fase. Ver columnasPorEstadoCrudo.
       ...BOARD_COLUMNS.flatMap((c) => columnasPorEstadoCrudo(c, byColumn.get(c.baseKey) ?? [])),
       // Una columna por cada estado real que no cae en las fases de arriba.
       ...columnasDeEstadosSinMapear(byColumn.get('otros') ?? []),
@@ -1158,16 +1249,40 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
 
   return (
     <>
-    {/* Riel gemelo: solo existe para tener barra ARRIBA. No lleva contenido
-        (un div del ancho del tablero) y queda fuera del árbol de accesibilidad
-        — el tablero de abajo es el que se anuncia. */}
-    <div
-      ref={topBarRef}
-      onScroll={() => sincronizar(topBarRef.current, boardRef.current)}
-      aria-hidden="true"
-      className="rail-scroll overflow-x-auto overflow-y-hidden -mx-1 px-1 mb-1.5"
-    >
-      <div style={{ width: anchoTablero || 1, height: 1 }} />
+    {/* Controles de desplazamiento: ◀ + riel gemelo + ▶. El riel solo existe
+        para tener barra ARRIBA (no lleva contenido: un div del ancho del
+        tablero, fuera del árbol de accesibilidad — el tablero de abajo es el
+        que se anuncia). Las flechas son para quien no quiere agarrar ninguna
+        barra: un click y el tablero corre casi una pantalla. */}
+    <div className="flex items-center gap-1.5 mb-1.5">
+      <button
+        type="button"
+        onClick={() => desplazar(-1)}
+        disabled={!flechas.izq}
+        title="Correr el tablero a la izquierda"
+        aria-label="Correr el tablero a la izquierda"
+        className="p-2 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-35 shrink-0"
+      >
+        <ChevronLeft size={15} aria-hidden="true" />
+      </button>
+      <div
+        ref={topBarRef}
+        onScroll={() => sincronizar(topBarRef.current, boardRef.current)}
+        aria-hidden="true"
+        className="rail-scroll flex-1 min-w-0 overflow-x-auto overflow-y-hidden"
+      >
+        <div style={{ width: anchoTablero || 1, height: 1 }} />
+      </div>
+      <button
+        type="button"
+        onClick={() => desplazar(1)}
+        disabled={!flechas.der}
+        title="Correr el tablero a la derecha"
+        aria-label="Correr el tablero a la derecha"
+        className="p-2 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-35 shrink-0"
+      >
+        <ChevronRight size={15} aria-hidden="true" />
+      </button>
     </div>
     {/* Sin `snap-x` (quitado 1-ago-2026). El imán a la columna peleaba contra el
         arrastre: se corría el riel, el tablero se iba solo al borde de la columna
@@ -1177,8 +1292,15 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
         una, que no es como se usa. */}
     <div
       ref={boardRef}
-      onScroll={() => sincronizar(boardRef.current, topBarRef.current)}
-      className="flex gap-3 overflow-x-auto pb-3 -mx-1 px-1 [scrollbar-width:thin] items-start"
+      onScroll={() => { sincronizar(boardRef.current, topBarRef.current); actualizarFlechas(); }}
+      onPointerDown={onPanDown}
+      onPointerMove={onPanMove}
+      onPointerUp={onPanUp}
+      onPointerCancel={onPanUp}
+      // rail-scroll también ABAJO: la barra de 6px del global era la mitad del
+      // "me cuesta deslizar". cursor-grab solo se ve en el espacio muerto (los
+      // controles y tarjetas ponen su propio cursor encima).
+      className="rail-scroll flex gap-3 overflow-x-auto pb-3 -mx-1 px-1 items-start cursor-grab"
     >
       {/* Historia plegada: el botón ocupa el lugar EXACTO donde estarían las
           columnas, para que se lea como "acá hay más" y no como un control
@@ -1220,6 +1342,10 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
                 : isCatchall
                   ? 'w-[248px] border-border shadow-card3d'
                   : 'w-[248px] border-border/60 shadow-card3d',
+              // Riel superior con el color de la FASE (mismo mapa TONE de las
+              // tarjetas): con columnas por estatus crudo, el color es lo que
+              // dice de un vistazo a qué familia pertenece cada columna.
+              cn('border-t-2', t.headBar),
             )}
           >
             {/* Header clickeable → enfoca esta carpeta (solo estos pedidos + ↑/↓).
@@ -1259,6 +1385,15 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
                     AGENCIA SERVIENTREGA") y el truncate los cortaba sin forma
                     de leerlos enteros. */}
                 <h3 className="hud-label truncate mt-1.5" title={col.label}>{col.label}</h3>
+                {/* Cejilla con la FASE cuando el estatus crudo no coincide con
+                    ella (POR RECOLECTAR → "Guía Generada"). Es el contexto que
+                    daba la columna agrupada, ahora en letra chica: el estatus
+                    real manda, la fase acompaña. */}
+                {col.faseLabel && estadoDifiereDeFase(col.label, col.faseLabel) && (
+                  <span className="block text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/60 truncate mt-0.5" title={`Fase: ${col.faseLabel}`}>
+                    {col.faseLabel}
+                  </span>
+                )}
               </div>
               {/* Affordance de enfoque PERMANENTE: era un Maximize2 que solo
                   aparecía al hover, o sea invisible en móvil/táctil — que es
