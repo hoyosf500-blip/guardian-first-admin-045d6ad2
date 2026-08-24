@@ -192,9 +192,15 @@ Deno.serve(async (req) => {
     const cronSecret = req.headers.get("x-cron-secret");
     let autorizado = false;
     if (cronSecret) {
-      const { data: cfg } = await sb
-        .from("app_settings").select("cron_shared_secret").limit(1).maybeSingle();
-      autorizado = !!cfg?.cron_shared_secret && cronSecret === cfg.cron_shared_secret;
+      // app_settings es CLAVE/VALOR (así la leen shopify-auto-push y
+      // resumen-diario). La versión anterior pedía una COLUMNA
+      // `cron_shared_secret` que no existe → cfg null → 401 eterno: el cron
+      // jamás habría podido correr. Detectado el 24-ago-2026 comparando las
+      // tres funciones antes del primer deploy.
+      const { data: secretRow } = await sb
+        .from("app_settings").select("value").eq("key", "cron_shared_secret").maybeSingle();
+      const esperado = String(secretRow?.value || "");
+      autorizado = !!esperado && cronSecret === esperado;
       if (!autorizado) return json({ ok: false, error: "cron secret inválido" }, 401);
     } else {
       const auth = req.headers.get("Authorization") ?? "";
