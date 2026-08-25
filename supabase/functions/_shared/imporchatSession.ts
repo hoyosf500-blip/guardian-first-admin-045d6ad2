@@ -26,7 +26,18 @@
 // Molde de `dropiSessionLogin.ts`, pero más simple: Dropi necesita email+clave
 // (y choca con 2FA); ImporChat se renueva con la propia llave.
 
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+// ⛔ Sin imports por URL a propósito: este archivo lo cruza `src/lib` para las
+// pruebas, y el `tsc` de la app sigue el re-export y typechequea lo que
+// importe. Un `import ... from "https://esm.sh/..."` acá rompe el build con
+// TS2307 (le pasó a imporchatSocket.ts). Por eso el cliente de Supabase se
+// tipa con la FORMA mínima que se usa, no con su tipo real.
+interface DbActualizable {
+  from(tabla: string): {
+    update(valores: Record<string, unknown>): {
+      eq(col: string, val: string): Promise<unknown> | { then?: unknown };
+    };
+  };
+}
 
 /** Cuántas horas ANTES del vencimiento se renueva. 7 días de vida y sync cada
  *  30 min hacen que 48 h de margen sean de sobra para reintentar si algo falla
@@ -133,7 +144,7 @@ export interface ImporchatCfg {
  * con una llave "vigente" que el servidor ya revocó).
  */
 export async function ensureFreshImporchatToken(
-  sb: SupabaseClient,
+  sb: DbActualizable,
   cfg: ImporchatCfg,
   opts: { force?: boolean } = {},
 ): Promise<string> {
