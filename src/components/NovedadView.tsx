@@ -465,6 +465,13 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
           externalId={o.externalId}
           nombre={o.nombre}
           estado={o.estado}
+          datos={{
+            guia: o.guia,
+            transportadora: o.transportadora,
+            ciudad: o.ciudad,
+            producto: o.producto,
+            valor: o.valor ? formatCOP(o.valor) : null,
+          }}
         />
       )}
     </>

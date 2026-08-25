@@ -5,8 +5,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useEnviarWhatsapp } from '@/hooks/useEnviarWhatsapp';
 import { useConversacion } from '@/hooks/useConversacion';
 import ConversacionChat from '@/components/seguimiento/ConversacionChat';
+import PlantillasWhatsapp from '@/components/seguimiento/PlantillasWhatsapp';
 import { plantillasPara } from '@/lib/plantillasChat';
+import { classifySegEstado } from '@/lib/segStatus';
 import { ventanaWhatsapp, MOTIVO_VENTANA, type EstadoVentana } from '@/lib/ventanaWhatsapp';
+import type { DatosPedido } from '@/lib/plantillasMeta';
 import type { ActividadChatOrden } from '@/lib/actividadChat';
 import { cn } from '@/lib/utils';
 
@@ -27,18 +30,27 @@ import { cn } from '@/lib/utils';
  * chat (ver `importchat-send`). Un "listo" sin confirmar sería peor que un
  * error: la asesora tacharía el pedido de su lista.
  */
-export default function EscribirWhatsappDialog({ open, onOpenChange, externalId, nombre, estado, actividad, onEnviado }: {
+export default function EscribirWhatsappDialog({ open, onOpenChange, externalId, nombre, estado, actividad, datos, onEnviado }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   externalId: string;
   nombre?: string | null;
   estado?: string | null;
   actividad?: ActividadChatOrden | null;
+  /** Guía, transportadora, ciudad… con lo que se rellenan los huecos de una
+   *  plantilla aprobada. Sin esto la plantilla igual se puede mandar: la
+   *  asesora escribe los datos a mano. */
+  datos?: DatosPedido;
   onEnviado?: () => void;
 }) {
   const { enviar, enviando } = useEnviarWhatsapp();
   const [texto, setTexto] = useState('');
   const plantillas = useMemo(() => plantillasPara(estado, nombre), [estado, nombre]);
+  const datosPedido = useMemo<DatosPedido>(
+    () => ({ ...datos, nombre: datos?.nombre ?? nombre ?? null }),
+    [datos, nombre],
+  );
+  const fase = useMemo(() => classifySegEstado(estado || ''), [estado]);
 
   const hilo = useConversacion(externalId, open);
 
@@ -118,6 +130,21 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
             <X size={13} aria-hidden="true" className="shrink-0 mt-0.5" />
             <span>{MOTIVO_VENTANA[v.estado]}</span>
           </div>
+        )}
+
+        {/* Cerrada la ventana, el camino NO se termina: Meta sí entrega una
+            plantilla aprobada. Antes acá solo decía "llamalo" y la asesora se
+            iba al teléfono teniendo el WhatsApp disponible.
+            `sin_dato` queda afuera a propósito: si todavía no se sabe si la
+            ventana está abierta, ofrecer la plantilla —que cuesta más— sería
+            empujar a la salida cara antes de saber si hace falta. */}
+        {!averiguando && (v.estado === 'vencida' || v.estado === 'nunca_escribio') && (
+          <PlantillasWhatsapp
+            externalId={externalId}
+            fase={fase}
+            datos={datosPedido}
+            onEnviado={() => { onEnviado?.(); hilo.recargar(); }}
+          />
         )}
 
         {puedeEscribir && (

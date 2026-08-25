@@ -50,13 +50,20 @@ export function ventanaWhatsapp(
   return { estado: "vencida", restanteMs: null };
 }
 
-/** Texto para la pantalla: por qué no se puede escribir y qué hacer. */
+/**
+ * Texto para la pantalla: por qué no se puede escribir y qué hacer.
+ *
+ * Desde el 25-ago-2026 la salida NO es solo "llamalo": Meta sí entrega fuera
+ * de la ventana si el mensaje es una **plantilla aprobada**, y la cuenta tiene
+ * 31. Decir únicamente "llamalo" mandaba a la asesora al teléfono teniendo el
+ * WhatsApp disponible. Ver `plantillasMeta.ts` e `importchat-plantillas`.
+ */
 export const MOTIVO_VENTANA: Record<EstadoVentana, string> = {
   abierta: "",
   vencida:
-    "Pasaron más de 24 h desde el último mensaje del cliente: WhatsApp ya no entrega mensajes escritos a mano. Llamalo por teléfono.",
+    "Pasaron más de 24 h desde el último mensaje del cliente: WhatsApp ya no entrega mensajes escritos a mano. Se le puede mandar una plantilla aprobada, o llamarlo.",
   nunca_escribio:
-    "Este cliente nunca escribió por WhatsApp, así que un mensaje escrito a mano no le llega. Llamalo por teléfono.",
+    "Este cliente nunca escribió por WhatsApp, así que un mensaje escrito a mano no le llega. Se le puede mandar una plantilla aprobada, o llamarlo.",
   sin_dato:
     "Todavía no se leyó la conversación de este pedido, así que no se sabe si el mensaje llegaría.",
 };

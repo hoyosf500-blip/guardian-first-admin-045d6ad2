@@ -851,6 +851,13 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           nombre={o.nombre}
           estado={o.estado}
           actividad={actividad}
+          datos={{
+            guia: o.guia,
+            transportadora: o.transportadora,
+            ciudad: o.ciudad,
+            producto: o.producto,
+            valor: o.valor ? formatCOP(o.valor) : null,
+          }}
           // Enviar ES gestionar: la tarjeta queda marcada como trabajada hoy
           // (la edge function ya insertó el touchpoint del lado del servidor).
           onEnviado={() => setGestionada('Escribí por WhatsApp')}

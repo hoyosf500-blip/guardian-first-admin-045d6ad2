@@ -4,7 +4,6 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
-import { useWaChat } from '@/contexts/WaChatContext';
 import { useRefreshOrder } from '@/hooks/useRefreshOrder';
 import { dbToOrderData, OrderData, getTrackingUrl, isPendiente, isNovedad, getErrorMessage, getWhatsAppPhone } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
@@ -28,6 +27,7 @@ import CustomerHistoryCard from '@/components/order-detail/CustomerHistoryCard';
 import Timeline from '@/components/order-detail/Timeline';
 import CommunicationLog from '@/components/order-detail/CommunicationLog';
 import ConversacionWhatsappCard from '@/components/order-detail/ConversacionWhatsappCard';
+import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDialog';
 import NotesPanel from '@/components/order-notes/NotesPanel';
 
 interface OrderRow {
@@ -131,7 +131,6 @@ export default function OrderDetailPage() {
   const { user } = useAuth();
   const { activeStoreId, activeStore } = useStore();
   const countryCode = activeStore?.country_code;
-  const { openChat, waEnabled } = useWaChat();
   const { refresh: refreshOrder } = useRefreshOrder();
 
   // Navegación entre hermanos: la lista de external_ids de la carpeta de la que
@@ -178,6 +177,9 @@ export default function OrderDetailPage() {
   // upsert de la edge re-leemos la fila nosotros mismos en el effect de abajo;
   // si no, la operadora seguiría viendo el estado viejo hasta salir y volver.
   const refreshedThisSession = useRef<Set<string>>(new Set());
+
+  // Escribirle al cliente (texto libre dentro de las 24 h, plantilla fuera).
+  const [escribiendo, setEscribiendo] = useState(false);
 
   // Novedad resolution state (F3)
   const [showReofferInput, setShowReofferInput] = useState(false);
@@ -362,15 +364,15 @@ export default function OrderDetailPage() {
         // contacto, si no la gestión se pierde de productividad.
         void logCommunication('CALL', 'Llamada saliente');
         window.location.href = 'tel:+' + getWhatsAppPhone(order.phone, countryCode);
-      } else if ((k === 'w' || k === 'W') && waEnabled && order?.phone) {
+      } else if ((k === 'w' || k === 'W') && order?.external_id) {
         e.preventDefault();
-        void openChat({ phone: order.phone, name: order.nombre });
+        setEscribiendo(true);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [puedeNavegar, sibIdx, siblingIds, order?.phone, order?.nombre, countryCode, waEnabled]);
+  }, [puedeNavegar, sibIdx, siblingIds, order?.phone, order?.nombre, order?.external_id, countryCode]);
 
   // Map operator_id → display_name for the timeline
   const operatorNames = useMemo(() => {
@@ -806,17 +808,23 @@ export default function OrderDetailPage() {
           </div>
 
           <div className="flex gap-2 pt-1">
-            {waEnabled && (
-              <button
-                type="button"
-                onClick={() => { void openChat({ phone: order.phone, name: order.nombre }); }}
-                aria-label="Abrir chat de WhatsApp con el cliente"
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-success/14 border border-success/30 text-success text-sm font-semibold py-3 sm:py-2.5 hover:bg-success/20 hover:border-success/50 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-success focus-visible:outline-none"
-              >
-                <MessageSquare size={14} aria-hidden="true" /> WhatsApp
-                <kbd className="hidden sm:inline-block font-mono text-[10px] leading-none px-1.5 py-0.5 rounded-md border border-current/30 bg-current/10 opacity-80" aria-hidden="true">W</kbd>
-              </button>
-            )}
+            {/* Escribirle, DE VERDAD.
+                Hasta el 25-ago-2026 este botón dependía de `waEnabled`, que es
+                `false` desde que se retiró el bot de WhatsApp: o sea que en
+                esta pantalla —la que tiene el chat al lado— no había NINGUNA
+                forma de escribirle al cliente. Lo reportó el dueño mirando un
+                pedido detenido en agencia: "mira que no se puede escribir".
+                Ahora abre el mismo cuadro que el tablero, que además ofrece la
+                plantilla aprobada cuando ya pasaron las 24 h. */}
+            <button
+              type="button"
+              onClick={() => setEscribiendo(true)}
+              aria-label="Escribirle al cliente por WhatsApp"
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-success/14 border border-success/30 text-success text-sm font-semibold py-3 sm:py-2.5 hover:bg-success/20 hover:border-success/50 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-success focus-visible:outline-none"
+            >
+              <MessageSquare size={14} aria-hidden="true" /> Escribirle
+              <kbd className="hidden sm:inline-block font-mono text-[10px] leading-none px-1.5 py-0.5 rounded-md border border-current/30 bg-current/10 opacity-80" aria-hidden="true">W</kbd>
+            </button>
             <a
               href={'tel:+' + getWhatsAppPhone(order.phone, countryCode)}
               onClick={() => logCommunication('CALL', 'Llamada saliente')}
@@ -1051,6 +1059,26 @@ export default function OrderDetailPage() {
 
       {/* Notas y recordatorios — componente compartido (también usado en CallView). */}
       <NotesPanel phone={order.phone} orderId={order.id} variant="full" />
+
+      {/* El mismo cuadro que el tablero de Seguimiento: la conversación arriba,
+          el texto libre si la ventana de 24 h sigue abierta y la plantilla
+          aprobada si ya venció. */}
+      {escribiendo && order.external_id && (
+        <EscribirWhatsappDialog
+          open={escribiendo}
+          onOpenChange={setEscribiendo}
+          externalId={String(order.external_id)}
+          nombre={order.nombre}
+          estado={order.estado}
+          datos={{
+            guia: order.guia,
+            transportadora: order.transportadora,
+            ciudad: order.ciudad,
+            producto: order.producto,
+            valor: valor == null ? null : formatCOP(valor),
+          }}
+        />
+      )}
     </section>
   );
 }
