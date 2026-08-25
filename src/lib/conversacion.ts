@@ -12,6 +12,7 @@ export {
   normalizarConversacion,
   ultimoEntranteMs,
   ultimoSaliente,
+  ultimoAutorNegocio,
   type MensajeConversacion,
   type MensajeIC,
   type QuienEscribe,

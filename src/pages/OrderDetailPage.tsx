@@ -26,7 +26,7 @@ import SlaAlertCard from '@/components/order-detail/SlaAlertCard';
 import CustomerHistoryCard from '@/components/order-detail/CustomerHistoryCard';
 import Timeline from '@/components/order-detail/Timeline';
 import CommunicationLog from '@/components/order-detail/CommunicationLog';
-import ConversacionWhatsappCard from '@/components/order-detail/ConversacionWhatsappCard';
+import ChatClienteCard from '@/components/chat/ChatClienteCard';
 import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDialog';
 import NotesPanel from '@/components/order-notes/NotesPanel';
 
@@ -873,7 +873,14 @@ export default function OrderDetailPage() {
             cliente. Va APARTE de la "Bitácora de comunicaciones" de más abajo
             a propósito: aquella registra lo que hizo GUARDIAN (llamadas, notas),
             ésta muestra lo que pasó en el chat. */}
-        <ConversacionWhatsappCard externalId={order.external_id} orderId={order.id} />
+        <ChatClienteCard
+          externalId={order.external_id}
+          orderId={order.id}
+          nombre={order.nombre}
+          estado={order.estado}
+          mostrarSenales
+          className="h-full"
+        />
       </div>
 
       {/* Envío y plata: se consultan, no se trabajan. Por eso van debajo. */}

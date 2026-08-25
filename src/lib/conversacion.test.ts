@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizarConversacion, ultimoEntranteMs, ultimoSaliente, type MensajeIC } from './conversacion';
+import { normalizarConversacion, ultimoEntranteMs, ultimoSaliente, ultimoAutorNegocio, type MensajeIC } from './conversacion';
 
 /**
  * El hilo de WhatsApp que ve la asesora dentro de Guardian.
@@ -169,5 +169,47 @@ describe('ultimoSaliente — para refrescar el pedido con lo recién leído', ()
   it('ignora al cliente y devuelve null si el negocio nunca escribió', () => {
     const r = normalizarConversacion([msg({ id: 1, rol_mensaje: 0, texto_mensaje: 'hola', created_at: enT(1) })]);
     expect(ultimoSaliente(r)).toBeNull();
+  });
+});
+
+// ⛔ "¿el bot le envió la automatización?" — pedido del dueño para Confirmar.
+// La respuesta honesta es el NOMBRE de quien escribió, no una etiqueta.
+describe('ultimoAutorNegocio', () => {
+  it('devuelve el nombre crudo del último mensaje del negocio', () => {
+    const r = normalizarConversacion([
+      msg({ id: 1, rol_mensaje: 1, texto_mensaje: 'a', responsable: 'Shopify Confirmación', created_at: enT(1) }),
+      msg({ id: 2, rol_mensaje: 0, texto_mensaje: 'ok', created_at: enT(2) }),
+      msg({ id: 3, rol_mensaje: 1, texto_mensaje: 'b', responsable: 'Dropi Status', created_at: enT(3) }),
+    ]);
+    expect(ultimoAutorNegocio(r)?.autor).toBe('Dropi Status');
+  });
+
+  it('el nombre de una persona sale igual de crudo: no se clasifica nada', () => {
+    const r = normalizarConversacion([
+      msg({ id: 1, rol_mensaje: 1, texto_mensaje: 'a', responsable: 'Estefano Moreno', created_at: enT(1) }),
+    ]);
+    const a = ultimoAutorNegocio(r);
+    expect(a?.autor).toBe('Estefano Moreno');
+    expect(JSON.stringify(a)).not.toMatch(/bot|asesora|autom/i);
+  });
+
+  // Guardian no puede saber quién es un robot; un `responsable` vacío se
+  // queda sin autor, jamás con un rótulo puesto por nosotros.
+  it('sin responsable NO inventa un autor', () => {
+    const r = normalizarConversacion([
+      msg({ id: 1, rol_mensaje: 1, texto_mensaje: 'a', created_at: enT(1) }),
+    ]);
+    expect(ultimoAutorNegocio(r)).toBeNull();
+  });
+
+  it('el cliente no cuenta como autor del negocio', () => {
+    const r = normalizarConversacion([
+      msg({ id: 1, rol_mensaje: 0, texto_mensaje: 'hola', responsable: 'Pamela', created_at: enT(1) }),
+    ]);
+    expect(ultimoAutorNegocio(r)).toBeNull();
+  });
+
+  it('hilo vacío devuelve null', () => {
+    expect(ultimoAutorNegocio([])).toBeNull();
   });
 });

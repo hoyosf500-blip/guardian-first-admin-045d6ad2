@@ -188,3 +188,36 @@ export function ultimoSaliente(msgs: MensajeConversacion[]): { fechaMs: number; 
   if (!ultimo || ultimo.fechaMs == null) return null;
   return { fechaMs: ultimo.fechaMs, tipo: ultimo.tipo === "template" ? "plantilla" : "directo" };
 }
+
+/**
+ * Quién escribió lo ÚLTIMO que salió del negocio, con su nombre tal cual.
+ *
+ * Pedido del dueño (25-ago-2026) para la pantalla de Confirmar: *"ver si el bot
+ * le envió la automatización"*. Ésta es la forma honesta de contestarlo.
+ *
+ * ⛔ **No devuelve "bot" ni "asesora": devuelve el NOMBRE.** Guardian no puede
+ * saber si 'Dropi Status' es un robot y 'Estefano Moreno' una persona — eso lo
+ * sabe quien mira la pantalla, de un vistazo, y en otra tienda los nombres
+ * serían otros. Clasificar acá sería inventar una regla que se rompe sola.
+ *
+ * Tampoco sirve `chat_saliente_tipo` para esto: dice si el mensaje fue
+ * plantilla o texto libre, NO quién lo mandó — y desde que Guardian también
+ * manda plantillas aprobadas, 'plantilla' ya no equivale a 'automático'.
+ *
+ * `null` = no salió nada del negocio. Nombre vacío ⇒ `null`, nunca un rótulo
+ * inventado (misma regla que el resto de este archivo).
+ */
+export function ultimoAutorNegocio(
+  msgs: MensajeConversacion[],
+): { autor: string; fechaMs: number | null } | null {
+  let ultimo: MensajeConversacion | null = null;
+  for (const m of msgs) {
+    if (m.de !== "negocio") continue;
+    if (!ultimo) { ultimo = m; continue; }
+    // Sin fecha no se puede comparar: gana el que viene después en el hilo,
+    // que ya está ordenado.
+    if (m.fechaMs == null || ultimo.fechaMs == null || m.fechaMs >= ultimo.fechaMs) ultimo = m;
+  }
+  const autor = String(ultimo?.autor ?? "").trim();
+  return autor ? { autor, fechaMs: ultimo!.fechaMs } : null;
+}

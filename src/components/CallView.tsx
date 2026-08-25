@@ -30,6 +30,7 @@ import { useOrderAttempts } from '@/hooks/useOrderAttempts';
 import { useRefreshOrderRow } from '@/hooks/useRefreshOrderRow';
 import { dupAlertsFor, overchargeFor, type ConfirmarOrderAlerts } from '@/lib/orderAlerts';
 import NotesPanel from '@/components/order-notes/NotesPanel';
+import ChatClienteCard from '@/components/chat/ChatClienteCard';
 import { AddressAutocomplete } from '@/components/address/AddressAutocomplete';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
 import { DespachoGateButton } from '@/components/address/DespachoGateButton';
@@ -1456,6 +1457,39 @@ export default function CallView({ items, alerts }: Props) {
           )
         )}
           </div>
+          )}
+
+          {/* El WhatsApp del cliente, ANTES de marcar el teléfono.
+              Pedido del dueño (25-ago-2026): "en confirmación, en formato de
+              llamada, que la asesora pueda enviar un mensaje y ver si el bot le
+              envió la automatización".
+
+              Va ARRIBA de las notas y no abajo: lo primero es saber si el bot
+              ya le preguntó y qué contestó el cliente — eso cambia la llamada
+              entera. Medido en agosto sobre 765 pedidos de esta tienda: el que
+              apretó "Confirmar pedido" cancela 10%, el que nunca escribió
+              cancela 66%. Llamar a los dos igual es tirar la llamada.
+
+              Se dibuja solo si ESTE pedido tiene conversación leída; si no, el
+              componente no existe (nada de una caja vacía en un rail de 360px).
+              La tarjeta es la MISMA de la ficha del pedido — no una copia. */}
+          {o.dbId && o.externalId && (
+            <ChatClienteCard
+              externalId={String(o.externalId)}
+              orderId={o.dbId}
+              nombre={o.nombre}
+              estado={o.estado}
+              datos={{
+                guia: o.guia,
+                transportadora: o.transportadora,
+                ciudad: o.ciudad,
+                producto: o.producto,
+                valor: o.valor ? formatCOP(o.valor) : null,
+              }}
+              mostrarSenales
+              mostrarEscribir
+              altoClase="min-h-[140px] max-h-[280px]"
+            />
           )}
 
           {/* Notas y recordatorios del cliente — visible para toda la tienda.
