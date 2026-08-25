@@ -2932,6 +2932,7 @@ export type Database = {
         Args: { p_from: string; p_to: string }
         Returns: {
           address_kind: string
+          address_kind_al_despachar: string
           ciudad: string
           confirmer_id: string
           confirmer_name: string
@@ -2939,6 +2940,7 @@ export type Database = {
           order_id: string
           tiene_novedad: boolean
           transportadora: string
+          validacion_al_despachar: string
           validation_decision: string
           valor: number
         }[]
