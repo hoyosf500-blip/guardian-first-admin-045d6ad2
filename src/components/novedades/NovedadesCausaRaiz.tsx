@@ -6,6 +6,7 @@ import {
   NovCard, MetricBar, RangePills, EmptyCard,
 } from '@/components/novedades/NovedadesChrome';
 import { fadeUp } from '@/components/novedades/chromeTokens';
+import DevolucionesPorSeguidor from '@/components/novedades/DevolucionesPorSeguidor';
 import { formatCOP } from '@/lib/utils';
 import { SEMANTIC_COLORS } from '@/components/logistics/charts/chartTokens';
 import { motion } from 'framer-motion';
@@ -267,6 +268,11 @@ export default function NovedadesCausaRaiz() {
                   </ul>
                 </NovCard>
               </motion.div>
+
+              {/* El otro lado de la responsabilidad: quién le hizo seguimiento a
+                  los devueltos (y cuántos no tocó nadie). Complementa el ranking
+                  de confirmadoras de arriba. */}
+              <DevolucionesPorSeguidor range={s.range} />
 
               {s.partial && (
                 <p className="text-[10px] text-warning text-center">
