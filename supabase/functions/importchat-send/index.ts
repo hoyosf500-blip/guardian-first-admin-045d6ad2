@@ -160,10 +160,23 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: `La credencial de ImporChat venció el ${cfg.token_expira_at}. Hay que renovarla.` }, 409);
     }
 
-    // Nombre de quien escribe: queda registrado en ImporChat como responsable.
+    // Nombre de quien escribe: queda registrado en ImporChat como responsable,
+    // y es lo que después distingue un mensaje de la asesora de uno del bot.
+    //
+    // ⛔ Medido en producción el 25-ago-2026: esto pedía `full_name` filtrando
+    // por `id`, y las DOS cosas estaban mal — la tabla tiene `display_name` y
+    // se busca por `user_id`. El SELECT devolvía 42703 (columna inexistente),
+    // el `?.` se tragaba el error y el autor caía al **correo personal** de
+    // quien escribía. O sea: en ImporChat el responsable habría quedado como
+    // "estefano@gmail.com" en vez de "Estefano Moreno" — justo lo contrario de
+    // lo que este campo existe para lograr, y con el correo de la asesora
+    // guardado en el panel de un tercero.
+    //
+    // El correo queda como último recurso a propósito (un nombre vacío sería
+    // peor: no se sabría quién escribió), pero ya no es el caso normal.
     const { data: perfil } = await sb.from("profiles")
-      .select("full_name").eq("id", u.user.id).maybeSingle();
-    const autor = String(perfil?.full_name || u.user.email || "Guardian");
+      .select("display_name").eq("user_id", u.user.id).maybeSingle();
+    const autor = String(perfil?.display_name || u.user.email || "Guardian");
 
     if (dryRun) {
       return json({
