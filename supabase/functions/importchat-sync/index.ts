@@ -51,6 +51,10 @@ import {
   derivarSenal,
   type MensajeChat,
 } from "../_shared/senalConfirmacion.ts";
+import {
+  ensureFreshImporchatToken,
+  IMPORCHAT_BASE_DEFAULT,
+} from "../_shared/imporchatSession.ts";
 
 const SOURCE = "importchat-sync";
 const PAGE_SIZE = 200;
@@ -418,7 +422,7 @@ Deno.serve(async (req) => {
         await log("warn", "Se acabó el presupuesto de tiempo antes de terminar las tiendas", totalTocados);
         break;
       }
-      const token = String(cfg.session_token || "");
+      let token = String(cfg.session_token || "");
       if (!token) {
         // Fail-closed y RUIDOSO: sin token la señal se apaga, y una señal
         // apagada en silencio es peor que no tenerla — la pantalla mostraría
@@ -427,8 +431,34 @@ Deno.serve(async (req) => {
         resumen.push({ store_id: storeId, ok: false, error: "sin token" });
         continue;
       }
-      if (cfg.token_expira_at && new Date(cfg.token_expira_at).getTime() < Date.now()) {
-        await log("error", `El token de ImporChat venció el ${cfg.token_expira_at}`, null);
+
+      // ── Renovación PROACTIVA de la llave (antes de todo lo demás) ──────────
+      // La llave vence a los 7 días y NADA la renovaba: una bomba de tiempo que
+      // apagaba todo ImporChat sin aviso. Este cron corre cada 30 min, así que
+      // renovar acá —al arranque, antes del XLSX que a veces muere por memoria—
+      // mantiene la llave viva para siempre con 48 h de margen. Si la
+      // renovación falla, se sigue con la llave que había (no rompe la corrida).
+      // Ver `_shared/imporchatSession.ts`.
+      try {
+        const frescoTok = await ensureFreshImporchatToken(sb, {
+          storeId,
+          base: String(cfg.api_base || IMPORCHAT_BASE_DEFAULT),
+          sessionToken: token,
+          tokenExpiraAt: cfg.token_expira_at ? String(cfg.token_expira_at) : null,
+        });
+        if (frescoTok && frescoTok !== token) {
+          token = frescoTok;
+          await log("success", "Llave de ImporChat renovada automáticamente", 0);
+        }
+      } catch (e) {
+        // La renovación nunca debe tumbar el sync: se anota y se sigue.
+        console.warn("[importchat-sync] renovación falló:", e instanceof Error ? e.message : e);
+      }
+
+      if (cfg.token_expira_at && new Date(cfg.token_expira_at).getTime() < Date.now() && token === String(cfg.session_token || "")) {
+        // Solo se rinde si SIGUE vencida tras intentar renovar (la renovación
+        // ya habría cambiado el token y actualizado token_expira_at).
+        await log("error", `El token de ImporChat venció el ${cfg.token_expira_at} y no se pudo renovar`, null);
         resumen.push({ store_id: storeId, ok: false, error: "token vencido" });
         continue;
       }
