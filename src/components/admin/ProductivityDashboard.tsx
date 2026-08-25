@@ -20,6 +20,7 @@ import { scheduleFromMinutes, DEFAULT_SCHEDULE, bogotaSecondsOfDay } from '@/lib
 import { minutosSinGestion, mayorHuecoEntreBloques, UMBRAL_SIN_GESTION_MIN } from '@/lib/huecosGestion';
 import { useMezclaAsesor } from '@/hooks/useMezclaAsesor';
 import MezclaTrabajoPanel from '@/components/admin/MezclaTrabajoPanel';
+import ResponsabilidadAsesorPanel from '@/components/admin/ResponsabilidadAsesorPanel';
 import InactivityDetailModal from '@/components/admin/InactivityDetailModal';
 import TeamNowStrip from '@/components/admin/TeamNowStrip';
 import { useStoreSchedule } from '@/hooks/useStoreSchedule';
@@ -713,6 +714,13 @@ export default function ProductivityDashboard() {
                 Dashboard y del cierre del equipo). Para subirla, la palanca es recuperar los "no contestó".
               </p>
             </motion.div>
+          )}
+
+          {/* Tablero UNIFICADO de responsabilidad por asesor: junta esfuerzo +
+              devoluciones + disciplina de validación en una fila con semáforo.
+              Recibe las filas de productividad ya cargadas (no re-consulta esa RPC). */}
+          {rows.length > 0 && (
+            <ResponsabilidadAsesorPanel range={range} prodRows={rows} />
           )}
 
           {/* Jornada SIEMPRE arriba si hay activityRows — métrica de presencia

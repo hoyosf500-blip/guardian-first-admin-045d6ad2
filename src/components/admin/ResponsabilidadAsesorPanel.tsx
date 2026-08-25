@@ -1,0 +1,154 @@
+import { motion } from 'framer-motion';
+import { Loader2, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { useResponsabilidadAsesor, type ProdRowLite } from '@/hooks/useResponsabilidadAsesor';
+import { semaforoAsesor, META_GESTIONES_DIA } from '@/lib/responsabilidadAsesor';
+
+type Range = 'today' | '7d' | '30d';
+
+const SEMAFORO_DOT: Record<'rojo' | 'ambar' | 'verde' | 'neutro', string> = {
+  rojo: 'bg-danger shadow-[0_0_6px_hsl(var(--danger))]',
+  ambar: 'bg-warning shadow-[0_0_6px_hsl(var(--warning))]',
+  verde: 'bg-success shadow-[0_0_6px_hsl(var(--success))]',
+  neutro: 'bg-muted-foreground/40',
+};
+const SEMAFORO_LABEL: Record<'rojo' | 'ambar' | 'verde' | 'neutro', string> = {
+  rojo: 'Revisar — no llega a la meta, o mucha devolución, o despacha en rojo',
+  ambar: 'Ojo — en la banda de alerta',
+  verde: 'Bien',
+  neutro: 'Sin actividad para evaluar',
+};
+
+const fadeUp = (delay = 0) => ({
+  initial: { opacity: 0, y: 14 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.35, delay, ease: 'easeOut' as const },
+});
+
+/**
+ * Tablero UNIFICADO de responsabilidad por asesor: esfuerzo (gestionados vs meta),
+ * resultado (confirmados), calidad (devoluciones + tasa) y disciplina de validación
+ * (% despachado en rojo). Una fila, un semáforo — "el sistema que funciona solo".
+ *
+ * Recibe las filas de productividad que el dashboard ya cargó; el resto lo junta el
+ * hook. Honesto: dato que no se pudo medir va "—", nunca 0.
+ */
+export default function ResponsabilidadAsesorPanel({
+  range, prodRows,
+}: { range: Range; prodRows: ProdRowLite[] }) {
+  const { loading, status, scores, metaGestiones, selloEscaso } = useResponsabilidadAsesor(range, prodRows);
+
+  if (status === 'error') return null;
+
+  return (
+    <motion.section
+      {...fadeUp(0.04)}
+      className="hairline-top bg-card/40 border border-border rounded-2xl p-5 shadow-card3d"
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <ShieldCheck size={17} className="text-accent" aria-hidden="true" strokeWidth={2.25} />
+        <h3 className="text-base font-bold text-foreground">Responsabilidad por asesor</h3>
+      </div>
+      <p className="text-xs text-muted-foreground mb-4">
+        Esfuerzo, devoluciones y disciplina de validación en una sola fila. El semáforo se prende
+        rojo si no llega a la meta, si tiene mucha devolución, o si despacha muchos en rojo.
+      </p>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="animate-spin text-accent" size={18} aria-hidden="true" />
+        </div>
+      ) : scores.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-6 text-center">Sin asesores con actividad en el período.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th className="w-8" title="Semáforo: verde bien · ámbar ojo · rojo revisar" aria-label="Semáforo" />
+                <th>Asesor</th>
+                <th className="text-right" title={`Pedidos trabajados (confirmó + canceló + no contestó). Meta orientativa del período: ${metaGestiones} (${META_GESTIONES_DIA}/día laboral, ajustable).`}>
+                  Gestionados
+                </th>
+                <th className="text-right">Confirmó</th>
+                <th className="text-right" title="Devoluciones del período atribuidas a este asesor como confirmador.">Devol.</th>
+                <th className="text-right" title="Devoluciones ÷ confirmados. La medida justa: el conteo absoluto castiga al que más volumen mueve.">Tasa</th>
+                <th className="text-right" title="De los pedidos que confirmó y se despacharon CON sello, cuántos salieron con el semáforo en rojo/amarillo (confirmó rápido sin validar). El sello arrancó el 22-ago, así que aún hay poca base.">
+                  % en rojo
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {scores.map((s) => {
+                const sem = semaforoAsesor(s);
+                return (
+                  <tr key={s.operatorId}>
+                    <td>
+                      <span
+                        className={`inline-block w-2.5 h-2.5 rounded-full ${SEMAFORO_DOT[sem]}`}
+                        title={SEMAFORO_LABEL[sem]}
+                        aria-label={SEMAFORO_LABEL[sem]}
+                      />
+                    </td>
+                    <td className="font-semibold text-foreground">{s.name}</td>
+                    <td className="text-right">
+                      <div className="inline-flex flex-col items-end leading-tight">
+                        <span className={`font-mono tabular-nums font-bold ${s.metaOk === false ? 'text-danger' : 'text-foreground'}`}>
+                          {s.gestionados}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground tabular-nums">meta {s.metaGestiones}</span>
+                      </div>
+                    </td>
+                    <td className="text-right font-mono tabular-nums text-foreground">{s.confirmados}</td>
+                    <td className="text-right font-mono tabular-nums text-muted-foreground">
+                      {s.devoluciones}
+                      {s.evitables > 0 && <span className="ml-1 text-danger text-[10px]">· {s.evitables} evit</span>}
+                    </td>
+                    <td className="text-right">
+                      <span className={`font-mono tabular-nums font-bold ${
+                        s.tasaDevolucion == null ? 'text-muted-foreground'
+                          : s.tasaDevolucion >= 15 ? 'text-danger'
+                          : s.tasaDevolucion >= 10 ? 'text-warning' : 'text-muted-foreground'
+                      }`} title={s.tasaDevolucion == null ? 'Sin confirmados para calcular.' : `${s.devoluciones} devol ÷ ${s.confirmados} confirmados`}>
+                        {s.tasaDevolucion == null ? '—' : `${s.tasaDevolucion}%`}
+                      </span>
+                    </td>
+                    <td className="text-right">
+                      <span className={`font-mono tabular-nums font-bold ${
+                        s.pctEnRojo == null || s.despachadosConSello < 5 ? 'text-muted-foreground'
+                          : s.pctEnRojo >= 30 ? 'text-danger'
+                          : s.pctEnRojo >= 15 ? 'text-warning' : 'text-muted-foreground'
+                      }`} title={s.pctEnRojo == null
+                        ? 'Todavía no hay pedidos con sello de este asesor.'
+                        : `${s.despachadosEnRojo} en rojo de ${s.despachadosConSello} con sello`}>
+                        {s.pctEnRojo == null ? '—' : `${s.pctEnRojo}%`}
+                        {s.pctEnRojo != null && s.despachadosConSello < 5 && (
+                          <span className="ml-1 text-[9px] text-muted-foreground">(poca base)</span>
+                        )}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {selloEscaso && !loading && scores.length > 0 && (
+        <div className="mt-3 flex items-start gap-2 text-[11px] text-muted-foreground">
+          <AlertTriangle size={13} className="text-warning mt-0.5 shrink-0" aria-hidden="true" />
+          <span>
+            La columna «% en rojo» usa el sello del despacho, que arrancó el 22-ago y no tiene histórico:
+            se va a ir llenando con los pedidos nuevos. La tasa de devolución y la meta sí son completas.
+          </span>
+        </div>
+      )}
+
+      <p className="mt-3 text-[10px] text-muted-foreground">
+        Meta {META_GESTIONES_DIA}/día laboral (orientativa — decime el número que querés y lo cambio).
+        Devoluciones por confirmador = match exacto por pedido; la tasa es devol ÷ confirmados. Es para
+        revisar con datos, no una condena automática.
+      </p>
+    </motion.section>
+  );
+}
