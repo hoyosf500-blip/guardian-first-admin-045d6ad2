@@ -55,6 +55,10 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
     ? { estado: hilo.ventana.estado as EstadoVentana, restanteMs: hilo.ventana.restanteMs }
     : vSincronizada;
   const puedeEscribir = v.estado === 'abierta';
+  // Sin dato sincronizado (Novedades no lo carga) y con el hilo todavía en
+  // camino, no se sabe si se puede escribir. Decir "no se puede" ahí sería
+  // afirmar algo que un segundo después se desmiente solo.
+  const averiguando = !actividad && (hilo.estado === 'inicial' || hilo.estado === 'cargando');
 
   // Arranca con la primera sugerencia ya puesta: a las 9 de la mañana, con 40
   // pedidos, el cuadro en blanco es lo que hace que nadie escriba.
@@ -96,7 +100,12 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
         />
 
         {/* El estado de la ventana: decide si tiene sentido escribir. */}
-        {puedeEscribir ? (
+        {averiguando ? (
+          <div className="flex items-center gap-2 rounded-xl border border-border bg-card/40 px-3 py-2 text-xs text-muted-foreground">
+            <Clock size={13} aria-hidden="true" className="shrink-0 animate-pulse" />
+            <span>Viendo si todavía se le puede escribir…</span>
+          </div>
+        ) : puedeEscribir ? (
           <div className="flex items-center gap-2 rounded-xl border border-success/30 bg-success/10 px-3 py-2 text-xs text-success">
             <Clock size={13} aria-hidden="true" className="shrink-0" />
             <span>

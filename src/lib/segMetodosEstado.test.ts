@@ -91,6 +91,20 @@ describe('metodosParaEstado', () => {
       expect(SEG_CLOSERS as readonly string[]).not.toContain(m);
     }
   });
+
+  // ⛔ 25-ago-2026. La botonera NO vuelve a pedir que se declare un WhatsApp:
+  // desde que Guardian manda el mensaje y lo verifica releyendo el chat, ese
+  // touchpoint lo escribe la edge function. Un botón que declara lo que ya se
+  // mide es un dato peor (no comprobable) compitiendo con uno bueno.
+  // Las gestiones de LLAMADA sí se quedan: eso no lo puede medir nadie más.
+  it('ningún estado ofrece declarar "WhatsApp" — se registra solo', () => {
+    for (const estado of ['PENDIENTE', 'GUIA GENERADA', 'EN TRANSPORTE', 'EN REPARTO',
+      'RECLAME EN OFICINA', 'NOVEDAD', 'RECHAZADO', 'DEVOLUCION', 'lo-que-sea', null]) {
+      expect(metodosParaEstado(estado), String(estado)).not.toContain('WhatsApp');
+      // …pero la llamada nunca puede quedarse sin salida.
+      expect(metodosParaEstado(estado).some((m) => /llam/i.test(m)), String(estado)).toBe(true);
+    }
+  });
 });
 
 describe('esContactoEfectivo — evita que un cliente desaparezca del tablero', () => {

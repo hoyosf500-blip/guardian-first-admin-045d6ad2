@@ -9,7 +9,18 @@
  * Reglas:
  *  - La acción MÁS relevante para ese estado va PRIMERA.
  *  - 'No contestó' está siempre (es el desenlace más común de una llamada).
- *  - Los canales genéricos (Llamé / WhatsApp) van después de lo específico.
+ *  - El canal genérico 'Llamé' va después de lo específico.
+ *  - ⛔ **'WhatsApp' se quitó de la botonera el 25-ago-2026** (pedido del dueño:
+ *    "ya notamos la acción que hace la persona; lo único es que si llama sí
+ *    tiene que indicarlo"). Ese botón solo DECLARABA "le escribí": desde que
+ *    Guardian manda el mensaje (`importchat-send`) y lo verifica releyendo el
+ *    chat, escribir por WhatsApp **se registra solo** — el touchpoint
+ *    `SEG: Escribí por WhatsApp` lo pone la edge function. Pedirle a la asesora
+ *    que lo anote otra vez es pedir un dato que ya medimos, y encima sin poder
+ *    comprobarlo. Los de LLAMADA se quedan todos: una llamada no la puede
+ *    medir nadie más que quien la hizo.
+ *    El valor `'WhatsApp'` sigue vivo en `esContactoEfectivo` porque hay
+ *    touchpoints históricos con ese texto — se quitó el botón, no el idioma.
  *  - 'Cliente recoge' se reusa tal cual (ya existe en el histórico de
  *    touchpoints) — no se inventa un sinónimo nuevo.
  *  - NINGUNA de estas es cierre: todas registran `SEG: <acción>` y siguen el
@@ -87,27 +98,26 @@ export const METODOS_DEFAULT: readonly string[] = [
   'Llamé',
   'No contestó',
   'Volver a llamar',
-  'WhatsApp',
   'Reclamé transportadora',
   'Cliente recoge',
 ];
 
 const METODOS_POR_BUCKET: Partial<Record<SegStatusKey, string[]>> = {
   // Aún no viaja: lo útil es avisar que el pedido va en camino de salir.
-  procesamiento: ['Avisé que está en proceso', 'No contestó', 'Volver a llamar', 'Llamé', 'WhatsApp'],
+  procesamiento: ['Avisé que está en proceso', 'No contestó', 'Volver a llamar', 'Llamé'],
   // Guía lista: mandarle la guía / número de rastreo al cliente.
-  guia: ['Envié la guía', 'No contestó', 'Volver a llamar', 'Llamé', 'WhatsApp'],
-  bodega_trans: ['Envié la guía', 'No contestó', 'Volver a llamar', 'Llamé', 'WhatsApp'],
-  transito: ['Avisé que va en camino', 'No contestó', 'Volver a llamar', 'Llamé', 'WhatsApp'],
+  guia: ['Envié la guía', 'No contestó', 'Volver a llamar', 'Llamé'],
+  bodega_trans: ['Envié la guía', 'No contestó', 'Volver a llamar', 'Llamé'],
+  transito: ['Avisé que va en camino', 'No contestó', 'Volver a llamar', 'Llamé'],
   // En reparto: avisar que llega HOY (que tenga el efectivo listo).
-  reparto: ['Avisé que llega hoy', 'No contestó', 'Volver a llamar', 'Reclamé transportadora', 'Llamé', 'WhatsApp'],
+  reparto: ['Avisé que llega hoy', 'No contestó', 'Volver a llamar', 'Reclamé transportadora', 'Llamé'],
   // En oficina: avisar dónde está y confirmar que lo va a recoger.
-  oficina: ['Avisé: en oficina', 'Cliente recoge', 'No contestó', 'Volver a llamar', 'Reclamé transportadora', 'Llamé', 'WhatsApp'],
-  novedad: ['Reclamé transportadora', 'Coordiné nueva entrega', 'No contestó', 'Volver a llamar', 'Llamé', 'WhatsApp'],
-  novedad_sol: ['Reclamé transportadora', 'Coordiné nueva entrega', 'No contestó', 'Volver a llamar', 'Llamé', 'WhatsApp'],
-  rechazado: ['Llamé', 'Reclamé transportadora', 'No contestó', 'Volver a llamar', 'WhatsApp'],
-  devolucion_transito: ['Reclamé transportadora', 'Llamé', 'No contestó', 'WhatsApp'],
-  devolucion: ['Reclamé transportadora', 'Llamé', 'No contestó', 'WhatsApp'],
+  oficina: ['Avisé: en oficina', 'Cliente recoge', 'No contestó', 'Volver a llamar', 'Reclamé transportadora', 'Llamé'],
+  novedad: ['Reclamé transportadora', 'Coordiné nueva entrega', 'No contestó', 'Volver a llamar', 'Llamé'],
+  novedad_sol: ['Reclamé transportadora', 'Coordiné nueva entrega', 'No contestó', 'Volver a llamar', 'Llamé'],
+  rechazado: ['Llamé', 'Reclamé transportadora', 'No contestó', 'Volver a llamar'],
+  devolucion_transito: ['Reclamé transportadora', 'Llamé', 'No contestó'],
+  devolucion: ['Reclamé transportadora', 'Llamé', 'No contestó'],
 };
 
 /**

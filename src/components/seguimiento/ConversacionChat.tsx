@@ -30,6 +30,9 @@ interface Props {
   /** `false` cuando la tarjeta que lo contiene ya pone el título y el botón de
    *  recargar — si no, el mismo encabezado aparecería dos veces. */
   mostrarEncabezado?: boolean;
+  /** Alto del hilo. En la ficha del pedido es la zona de trabajo y va alta; en
+   *  el cuadro de escribir comparte espacio con el teclado y va baja. */
+  altoClase?: string;
 }
 
 const hora = (ms: number | null) =>
@@ -46,7 +49,7 @@ const dia = (ms: number | null) => {
   return d.toLocaleDateString('es', { day: '2-digit', month: 'short' });
 };
 
-export default function ConversacionChat({ mensajes, estado, error, onRecargar, className, mostrarEncabezado = true }: Props) {
+export default function ConversacionChat({ mensajes, estado, error, onRecargar, className, mostrarEncabezado = true, altoClase = 'min-h-[120px] max-h-[260px]' }: Props) {
   const finRef = useRef<HTMLDivElement>(null);
 
   // Lo último es lo que importa: el hilo se abre abajo, como cualquier chat.
@@ -92,7 +95,7 @@ export default function ConversacionChat({ mensajes, estado, error, onRecargar, 
         </div>
       )}
 
-      <div role="log" aria-live="polite" className="flex-1 overflow-y-auto px-3 py-2.5 space-y-2 min-h-[120px] max-h-[260px]">
+      <div role="log" aria-live="polite" className={cn('flex-1 overflow-y-auto px-3 py-2.5 space-y-2', altoClase)}>
         {estado === 'inicial' || estado === 'cargando' ? (
           // ⛔ Acá NO puede decir "sin conversación": todavía no se sabe.
           <div className="space-y-2" aria-label="Leyendo la conversación">

@@ -781,7 +781,13 @@ export default function OrderDetailPage() {
       {/* SLA Alert Card */}
       <SlaAlertCard order={orderData} />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* ── ZONA DE TRABAJO ───────────────────────────────────────────────
+          El cliente a la izquierda y la CONVERSACIÓN a la derecha, arriba de
+          todo — mismo molde que /novedades, que es el que le funciona al
+          equipo: a un lado con quién estás hablando, al otro dónde trabajás.
+          Antes el chat estaba al final de la página y había que scrollear
+          media ficha para leer lo que el cliente había dicho. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         {/* Info card */}
         <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 space-y-4 shadow-card3d h-full">
           <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 tilt-layer-2">
@@ -855,6 +861,15 @@ export default function OrderDetailPage() {
           </div>
         </TiltCard>
 
+        {/* La conversación de WhatsApp de verdad (ImporChat), al lado del
+            cliente. Va APARTE de la "Bitácora de comunicaciones" de más abajo
+            a propósito: aquella registra lo que hizo GUARDIAN (llamadas, notas),
+            ésta muestra lo que pasó en el chat. */}
+        <ConversacionWhatsappCard externalId={order.external_id} orderId={order.id} />
+      </div>
+
+      {/* Envío y plata: se consultan, no se trabajan. Por eso van debajo. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Shipping card */}
         <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 space-y-4 shadow-card3d h-full">
           <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 tilt-layer-2">
@@ -1033,11 +1048,6 @@ export default function OrderDetailPage() {
 
         <CommunicationLog events={timelineEvents} />
       </div>
-
-      {/* La conversación de WhatsApp de verdad (ImporChat). Va APARTE de la
-          bitácora de arriba a propósito: aquella dice lo que hizo Guardian,
-          ésta lo que pasó en el chat. */}
-      <ConversacionWhatsappCard externalId={order.external_id} />
 
       {/* Notas y recordatorios — componente compartido (también usado en CallView). */}
       <NotesPanel phone={order.phone} orderId={order.id} variant="full" />

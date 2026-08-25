@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useOrders } from '@/contexts/OrderContext';
-import { useWaChat } from '@/contexts/WaChatContext';
 import { useStore } from '@/contexts/StoreContext';
 import { OrderData, formatPhone, getTrackingUrl, getWhatsAppPhone } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
 import { TruncatedText } from '@/components/TruncatedText';
+import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDialog';
 import { useSessionState } from '@/hooks/useSessionState';
 import { copyToClipboard } from '@/lib/clipboard';
 import { useMarkNovedadResolved } from '@/hooks/useMarkNovedadResolved';
@@ -51,7 +51,6 @@ const URGENCIA = {
 export default function NovedadView({ items, stateKey = 'novedades:callOrderId' }: Props) {
   const { loadNovedades } = useOrders();
   const { markNovedad } = useMarkNovedadResolved();
-  const { openChat, waEnabled } = useWaChat();
   const recordContacto = useRecordGestion();
   const { activeStore } = useStore();
   const countryCode = activeStore?.country_code;
@@ -125,20 +124,14 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
     if (o.externalId) void copyToClipboard(o.externalId, `ID ${o.externalId} copiado`);
   };
 
-  // Contacto WhatsApp de 1 click — mismo fallback consciente que CallView:
-  // canal in-app si la tienda lo tiene; si no (ej. tienda sin canal
-  // registrado), wa.me externo + registro manual del contacto (openChat no
-  // corre, así que la gestión se anota acá). Sin esto, en tiendas sin canal el
-  // botón desaparecía y la operadora copiaba/pegaba el número por cada novedad.
-  const handleWhatsApp = () => {
-    if (waEnabled) {
-      // openChat ya registra el intento de contacto internamente.
-      void openChat({ phone: o.phone, name: o.nombre });
-    } else {
-      void recordContacto(o.phone, 'WHATSAPP', 'abrió WhatsApp');
-      window.open(`https://wa.me/${getWhatsAppPhone(o.phone, countryCode)}`, '_blank', 'noopener,noreferrer');
-    }
-  };
+  // ⛔ Acá había un `wa.me` (25-ago-2026). Abría una conversación NUEVA desde el
+  // WhatsApp de quien apretara el botón: **partía el hilo del cliente en dos**,
+  // el mensaje no quedaba en ImporChat ni en Guardian, y el contacto se
+  // registraba por DECLARACIÓN ("abrió WhatsApp"), sin saber si se escribió
+  // algo. Ahora abre el chat de Guardian: mismo hilo de siempre, queda el
+  // nombre de quien escribió, y la gestión se registra sola y VERIFICADA
+  // (`importchat-send` relee el chat antes de darla por hecha).
+  const [escribiendo, setEscribiendo] = useState(false);
 
   const navCall = (dir: number) => {
     const target = visibleItems[Math.max(0, Math.min(visibleItems.length - 1, callIdx + dir))];
@@ -251,13 +244,16 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
             >
               <Phone size={10} aria-hidden="true" /> Llamar
             </a>
-            <button
-              type="button"
-              onClick={handleWhatsApp}
-              className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[#25D366]/10 text-success border border-[#25D366]/25 hover:bg-[#25D366]/20 transition-colors"
-            >
-              <MessageSquare size={10} aria-hidden="true" /> WhatsApp
-            </button>
+            {o.externalId && (
+              <button
+                type="button"
+                onClick={() => setEscribiendo(true)}
+                title="Ver la conversación y escribirle sin salir de Guardian"
+                className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[#25D366]/10 text-success border border-[#25D366]/25 hover:bg-[#25D366]/20 transition-colors"
+              >
+                <MessageSquare size={10} aria-hidden="true" /> WhatsApp
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-1.5">
             <MapPin size={12} aria-hidden="true" /> {o.ciudad || '—'}{o.departamento ? `, ${o.departamento}` : ''}
@@ -456,6 +452,20 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
             </div>
           </div>
         </div>
+      )}
+
+      {/* El hilo real del cliente, sin salir de Novedades. `actividad` no se
+          pasa a propósito: acá no se carga la señal sincronizada, así que la
+          ventana de 24 h la decide el hilo recién leído — la fuente más fresca
+          y la misma que valida el servidor. */}
+      {escribiendo && o.externalId && (
+        <EscribirWhatsappDialog
+          open={escribiendo}
+          onOpenChange={setEscribiendo}
+          externalId={o.externalId}
+          nombre={o.nombre}
+          estado={o.estado}
+        />
       )}
     </>
   );
