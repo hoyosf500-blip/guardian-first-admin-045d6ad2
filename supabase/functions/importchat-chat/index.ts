@@ -48,6 +48,24 @@ Deno.serve(async (req) => {
       .select("role").eq("store_id", storeId).eq("user_id", u.user.id).maybeSingle();
     if (!miembro) return json({ ok: false, error: "no sos miembro de esa tienda" }, 403);
 
+    // ── Credenciales de la tienda ─────────────────────────────────────────
+    // ⚠️ Va ANTES del pedido a propósito. Al revés, una tienda que no usa
+    // ImporChat (los otros dueños, que usan otras IA) recibía "todavía no tiene
+    // conversación leída, esperá al próximo sync" — un mensaje que promete algo
+    // que nunca va a pasar, porque para esa tienda no hay ningún sync.
+    // Verificado en producción el 25-ago-2026 contra un pedido de Colombia.
+    // Además así ni se consulta la tabla de pedidos para quien no puede usar
+    // la función.
+    const { data: cfg } = await sb.from("store_importchat_config")
+      .select("id_configuracion, session_token, token_expira_at, habilitado")
+      .eq("store_id", storeId).maybeSingle();
+    if (!cfg?.habilitado || !cfg?.session_token) {
+      return json({ ok: false, sin_config: true, error: "Esta tienda no tiene ImporChat configurado" }, 409);
+    }
+    if (cfg.token_expira_at && new Date(cfg.token_expira_at).getTime() < Date.now()) {
+      return json({ ok: false, error: `La credencial de ImporChat venció el ${cfg.token_expira_at}. Hay que renovarla.` }, 409);
+    }
+
     // ── El pedido y su conversación ───────────────────────────────────────
     const { data: pedido, error: pedErr } = await sb.from("orders")
       .select("id, phone, nombre, importchat_chat_id")
@@ -64,19 +82,6 @@ Deno.serve(async (req) => {
         ok: false, sin_chat: true,
         error: "Este pedido todavía no tiene conversación leída de ImporChat. Esperá al próximo sync.",
       }, 409);
-    }
-
-    // ── Credenciales de la tienda ─────────────────────────────────────────
-    // Una tienda sin fila (los otros dueños, que usan otras IA) sale por acá
-    // con un motivo legible y la pantalla simplemente no dibuja el panel.
-    const { data: cfg } = await sb.from("store_importchat_config")
-      .select("id_configuracion, session_token, token_expira_at, habilitado")
-      .eq("store_id", storeId).maybeSingle();
-    if (!cfg?.habilitado || !cfg?.session_token) {
-      return json({ ok: false, sin_config: true, error: "Esta tienda no tiene ImporChat configurado" }, 409);
-    }
-    if (cfg.token_expira_at && new Date(cfg.token_expira_at).getTime() < Date.now()) {
-      return json({ ok: false, error: `La credencial de ImporChat venció el ${cfg.token_expira_at}. Hay que renovarla.` }, 409);
     }
 
     const cred = { token: String(cfg.session_token), idConf: Number(cfg.id_configuracion) };
