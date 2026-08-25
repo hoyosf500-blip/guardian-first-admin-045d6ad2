@@ -11,6 +11,7 @@ import { useRiesgoChat } from '@/hooks/useRiesgoChat';
 import { compararRiesgo, contarPorRiesgo } from '@/lib/riesgoChat';
 import ResumenRiesgoStrip from '@/components/confirmar/ResumenRiesgoStrip';
 import VelocimetroTurno from '@/components/confirmar/VelocimetroTurno';
+import MetaDiaBar from '@/components/confirmar/MetaDiaBar';
 import { useRitmoTurno } from '@/hooks/useRitmoTurno';
 import { useOperatorNames } from '@/hooks/useOperatorNames';
 import { useSessionState } from '@/hooks/useSessionState';
@@ -1088,6 +1089,10 @@ export default function ConfirmarTab({ profile }: Props) {
             </div>
 
             <WorkFilters workQueue={visibleQueue} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} notesIndex={notesIndex} currentUserId={user?.id ?? null} />
+
+            {/* Meta del día (barra grande) + racha de pedidos rápidos: presión
+                psicológica — la meta se ve todo el día y la racha engancha. */}
+            <MetaDiaBar gestionados={myConfirmTouchedToday.size} />
 
             {/* Velocímetro del turno: apura al asesor con su ritmo en vivo. */}
             <VelocimetroTurno gestionados={myConfirmTouchedToday.size} faltan={conteoRiesgo.total} ritmo={ritmoTurno} />
