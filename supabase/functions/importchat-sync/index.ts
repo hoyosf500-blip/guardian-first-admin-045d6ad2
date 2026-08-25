@@ -463,6 +463,10 @@ Deno.serve(async (req) => {
         continue;
       }
 
+      // finding #4: si una tienda falla (token muerto → traerPedidos/traerMensajes
+      // hacen throw), NO debe tumbar el sync de las DEMÁS. Antes el throw salía al
+      // catch global y las tiendas restantes no se procesaban. Se aísla por tienda.
+      try {
       const { data: store } = await sb
         .from("stores").select("country_code").eq("id", storeId).maybeSingle();
       const cc = String(store?.country_code || "EC");
@@ -646,6 +650,17 @@ Deno.serve(async (req) => {
         actualizados: tocados, con_boton: conBoton, mudos,
         sin_saliente: sinSaliente, saltados, frescos, chats: chats.size, dry_run: dryRun,
       });
+      } catch (eStore) {
+        // La tienda falló entera (p. ej. 401 de un token que murió a mitad de
+        // corrida): se anota y se SIGUE con las demás. Un "success" final no puede
+        // taparlo → también entra a `parciales`.
+        const emsg = eStore instanceof Error ? eStore.message : String(eStore);
+        console.error(`[${SOURCE}] ${storeId} falló, sigo con las demás: ${emsg}`);
+        await log("error", `Tienda ${storeId}: ${emsg}`, null);
+        resumen.push({ store_id: storeId, ok: false, error: emsg });
+        parciales.push(`tienda ${storeId} falló (${emsg})`);
+        continue;
+      }
     }
 
     storeId = "";

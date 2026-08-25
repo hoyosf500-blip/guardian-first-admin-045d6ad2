@@ -37,17 +37,35 @@ import { usarSocket, emitirMensaje, leerChat, type CredencialIC } from "../_shar
 import { normalizarConversacion, type MensajeConversacion } from "../_shared/conversacion.ts";
 
 const MAX_LARGO = 1000;
-/** Cuánto se espera a que el mensaje aparezca en el chat al releerlo. */
-const ESPERA_VERIFICACION_MS = 3500;
+/** Reintentos de RELECTURA tras emitir (ms de espera antes de cada uno). Con una
+ *  sola espera fija, si ImporChat tardaba en persistir daba falso negativo → la
+ *  asesora reintentaba → DOBLE WhatsApp al cliente (finding #2). Con reintentos
+ *  se confirma apenas aparece, y el caso normal es MÁS rápido que la espera vieja. */
+const RELECTURA_MS = [1500, 2000, 3000];
+
+/** Cuántos salientes con EXACTAMENTE este texto hay en el hilo crudo. */
+function contarMismoTexto(
+  crudos: Array<{ rol_mensaje?: number; texto_mensaje?: unknown }>,
+  texto: string,
+): number {
+  const t = texto.trim();
+  return crudos.filter(
+    (m) => m.rol_mensaje === 1 && String(m.texto_mensaje ?? "").trim() === t,
+  ).length;
+}
 
 /**
  * Conecta, emite el mensaje y RELEE el chat para confirmar que salió.
  *
- * La verificación se hace sobre los mensajes CRUDOS, con exactamente el mismo
- * criterio de siempre — normalizar antes de comparar cambiaría, aunque sea en
- * un borde, la regla que decide si a la asesora se le dice "enviado". El hilo
- * normalizado se devuelve APARTE, como agregado, para que la pantalla pueda
- * mostrar la conversación sin pedirla de nuevo.
+ * ⛔ Confirma por CONTEO, no por "existe un mensaje con este texto" (finding #1):
+ * lee el hilo ANTES de emitir y cuenta cuántas copias exactas de este texto ya
+ * hay; después de emitir, confirma SOLO si apareció una copia NUEVA. Así una
+ * respuesta enlatada idéntica mandada antes, o un saludo del bot igual, NO se
+ * confunde con "mi mensaje salió" — el falso "enviado" que la regla de la casa
+ * prohíbe. NO se compara por hora: el `created_at` del socket puede venir en
+ * local sin zona y el filtro temporal daba falsos positivos y negativos.
+ *
+ * El hilo normalizado se devuelve APARTE para que la pantalla no lo pida de nuevo.
  */
 async function enviarPorSocket(opts: {
   cred: CredencialIC; chatId: string; telefono: string;
@@ -55,26 +73,33 @@ async function enviarPorSocket(opts: {
 }): Promise<{ ok: boolean; confirmado: boolean; detalle: string; mensajes: MensajeConversacion[] }> {
   try {
     return await usarSocket(async (socket) => {
+      // Baseline: cuántas copias de este texto ya había. Si no se pudo leer antes
+      // (raro), no hay baseline y se cae a "aparece al menos una" — el único caso
+      // con riesgo de falso positivo, pero mejor que bloquear siempre.
+      const antes = await leerChat(socket, opts.cred, opts.chatId);
+      const conBaseline = antes !== null;
+      const antesN = conBaseline ? contarMismoTexto(antes, opts.mensaje) : 0;
+
       emitirMensaje(socket, opts.cred, {
         chatId: opts.chatId, telefono: opts.telefono,
         mensaje: opts.mensaje, autor: opts.autor,
       });
 
-      // Verificación: releer el chat y buscar NUESTRO texto entre los salientes.
-      await new Promise((r) => setTimeout(r, ESPERA_VERIFICACION_MS));
-      const crudos = await leerChat(socket, opts.cred, opts.chatId);
-      // No poder releer NO es "no llegó": es no saber. Y no saber se trata
-      // como fallo, porque marcar un pedido como avisado sin confirmarlo es
-      // peor que pedirle a la asesora que reintente.
+      // Releer con reintentos hasta ver la copia nueva (o agotar los intentos).
+      let crudos: Awaited<ReturnType<typeof leerChat>> = null;
+      for (const espera of RELECTURA_MS) {
+        await new Promise((r) => setTimeout(r, espera));
+        crudos = await leerChat(socket, opts.cred, opts.chatId);
+        if (crudos !== null && contarMismoTexto(crudos, opts.mensaje) > antesN) break;
+      }
+      // No poder releer NO es "no llegó": es no saber, y no saber se trata como
+      // fallo (marcar un pedido como avisado sin confirmar es peor que reintentar).
       if (crudos === null) {
         return { ok: false, confirmado: false, detalle: "ImporChat no contestó al releer el chat", mensajes: [] };
       }
 
-      const desde = Date.now() - 5 * 60_000;
-      const confirmado = crudos.some((m) =>
-        m.rol_mensaje === 1 &&
-        String(m.texto_mensaje ?? "").trim() === opts.mensaje.trim() &&
-        (!m.created_at || Date.parse(m.created_at) >= desde));
+      const despuesN = contarMismoTexto(crudos, opts.mensaje);
+      const confirmado = conBaseline ? despuesN > antesN : despuesN > 0;
 
       const mensajes = normalizarConversacion(crudos);
       return confirmado

@@ -125,7 +125,12 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
           <div className="flex items-center gap-2 rounded-xl border border-success/30 bg-success/10 px-3 py-2 text-xs text-success">
             <Clock size={13} aria-hidden="true" className="shrink-0" />
             <span>
-              Se puede escribir por {v.restanteMs == null ? '' : `${Math.max(1, Math.round(v.restanteMs / 3600_000))} h más`}
+              Se puede escribir por {v.restanteMs == null ? '' : (() => {
+                // Minutos cuando falta menos de 1 h: "1 h más" con 3 min restantes
+                // hacía creer que había margen y el próximo envío se bloqueaba.
+                const min = Math.round(v.restanteMs / 60_000);
+                return min < 60 ? `${Math.max(1, min)} min más` : `${Math.round(min / 60)} h más`;
+              })()}
               {' '}— después de eso WhatsApp ya no entrega mensajes escritos a mano.
             </span>
           </div>

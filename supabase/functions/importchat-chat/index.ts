@@ -107,18 +107,25 @@ Deno.serve(async (req) => {
     // pedido durante 6 h y sus otras columnas (riesgo, mudo, botón) —que esta
     // función NO calcula— se quedarían viejas sin que nadie se entere.
     const saliente = ultimoSaliente(mensajes);
-    const parche: Record<string, unknown> = {
-      chat_entrante_at: entranteMs ? new Date(entranteMs).toISOString() : null,
-    };
+    // ⛔ `chat_entrante_at` se escribe SOLO si de verdad vimos un mensaje del
+    // cliente en esta lectura — NUNCA se pisa con null. Un historial truncado o
+    // vacío (el socket a veces no trae el último entrante) daría entranteMs=null
+    // y borraría una medición buena; después `importchat-send` gatea la ventana
+    // de 24 h con esa columna y bloquearía un envío legítimo (finding #6). Mismo
+    // criterio "un null no borra un dato medido" que el saliente de acá abajo.
+    const parche: Record<string, unknown> = {};
+    if (entranteMs) parche.chat_entrante_at = new Date(entranteMs).toISOString();
     if (saliente) {
       parche.chat_saliente_at = new Date(saliente.fechaMs).toISOString();
       parche.chat_saliente_tipo = saliente.tipo;
     }
-    const { error: upErr } = await sb.from("orders").update(parche)
-      .eq("store_id", storeId).eq("external_id", externalId);
     // Que no se pueda refrescar el pedido no invalida el hilo que ya leímos:
     // se avisa por consola y se devuelve la conversación igual.
-    if (upErr) console.error("[importchat-chat] no se pudo refrescar el pedido:", upErr.message);
+    if (Object.keys(parche).length > 0) {
+      const { error: upErr } = await sb.from("orders").update(parche)
+        .eq("store_id", storeId).eq("external_id", externalId);
+      if (upErr) console.error("[importchat-chat] no se pudo refrescar el pedido:", upErr.message);
+    }
 
     return json({
       ok: true,
