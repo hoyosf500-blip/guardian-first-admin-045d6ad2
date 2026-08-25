@@ -766,12 +766,17 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setEscribiendo(true); }}
+              /* ⛔ "No se puede escribir" ya NO es cierto: fuera de la ventana
+                 Meta sí entrega una plantilla aprobada, y el cuadro las ofrece.
+                 Dejar el texto viejo mandaba a la asesora al teléfono teniendo
+                 el WhatsApp disponible — el mismo error que se corrigió en
+                 MOTIVO_VENTANA. Lo que cambia es CÓMO se escribe, no si se puede. */
               title={ventanaChat.estado === 'abierta'
                 ? 'Ver la conversación y escribirle sin salir de Guardian'
-                : `Ver la conversación — no se puede escribir: ${MOTIVO_VENTANA[ventanaChat.estado]}`}
+                : `Ver la conversación y mandarle una plantilla — ${MOTIVO_VENTANA[ventanaChat.estado]}`}
               aria-label={ventanaChat.estado === 'abierta'
                 ? 'Ver la conversación y escribirle por WhatsApp'
-                : 'Ver la conversación de WhatsApp'}
+                : 'Ver la conversación y mandarle una plantilla de WhatsApp'}
               className={cn(
                 'p-2 min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg border transition-colors',
                 ventanaChat.estado === 'abierta'
