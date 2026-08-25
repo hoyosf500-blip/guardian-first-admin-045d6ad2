@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { MessagesSquare, RefreshCw, Send, Bot } from 'lucide-react';
+import { MessagesSquare, RefreshCw, Send, Bot, Clock } from 'lucide-react';
 import { useStore } from '@/contexts/StoreContext';
 import { useRiesgoChat } from '@/hooks/useRiesgoChat';
 import { useConversacion } from '@/hooks/useConversacion';
@@ -9,6 +9,7 @@ import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDia
 import type { ModuloEnvio } from '@/hooks/useEnviarWhatsapp';
 import { ultimoAutorNegocio } from '@/lib/conversacion';
 import { estadoConversacion, haceCuantoMs } from '@/lib/actividadChat';
+import { ventanaWhatsapp } from '@/lib/ventanaWhatsapp';
 import { RIESGO_INFO, type NivelRiesgo } from '@/lib/riesgoChat';
 import type { ActividadChatOrden } from '@/lib/actividadChat';
 import type { DatosPedido } from '@/lib/plantillasMeta';
@@ -95,6 +96,15 @@ export default function ChatClienteCard({
   );
   const conversacion = estadoConversacion(act);
 
+  // La ventana la manda el hilo RECIÉN leído; mientras no esté, la sincronizada.
+  // Nunca se asume "abierta" por no saber: `sin_dato` se dibuja como "viendo".
+  const ventana = useMemo(() => {
+    if (hilo.estado === 'ok' && hilo.ventana) {
+      return { estado: hilo.ventana.estado, restanteMs: hilo.ventana.restanteMs };
+    }
+    return ventanaWhatsapp(act?.entranteAt ?? null, !!act);
+  }, [hilo.estado, hilo.ventana, act]);
+
   if (!externalId || !hayConversacion) return null;
 
   const info = riesgo ? RIESGO_INFO[riesgo] : null;
@@ -167,14 +177,41 @@ export default function ChatClienteCard({
         className="border-0 bg-transparent flex-1"
       />
 
+      {/* Cómo se le puede escribir, ANTES de abrir el cuadro.
+          Sin esto el botón dice "Escribirle" para todos y la asesora se entera
+          recién adentro, dos segundos después, de que a éste solo le entra una
+          plantilla. Medido el 25-ago sobre los 157 pendientes de esta tienda:
+          55 aceptan texto libre, 77 NUNCA escribieron y 25 escribieron hace
+          más de 24 h — o sea que a DOS DE CADA TRES el aviso les aplica. */}
       {mostrarEscribir && (
-        <button
-          type="button"
-          onClick={() => setEscribiendo(true)}
-          className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-xl bg-success/14 border border-success/30 text-success text-sm font-semibold py-2.5 hover:bg-success/20 hover:border-success/50 transition-colors focus-visible:ring-2 focus-visible:ring-success focus-visible:outline-none"
-        >
-          <Send size={14} aria-hidden="true" /> Escribirle
-        </button>
+        <>
+          <p className="mt-3 text-[11px] flex items-center gap-1.5">
+            <Clock size={12} className="shrink-0 opacity-70" aria-hidden="true" />
+            {ventana.estado === 'abierta' ? (
+              <span className="text-success">
+                Se le puede escribir a mano por{' '}
+                {ventana.restanteMs == null ? '' : `${Math.max(1, Math.round(ventana.restanteMs / 3600_000))} h más`}
+              </span>
+            ) : ventana.estado === 'sin_dato' ? (
+              // ⛔ No se sabe todavía: no se afirma ni que sí ni que no.
+              <span className="text-muted-foreground">Viendo cómo se le puede escribir…</span>
+            ) : (
+              <span className="text-muted-foreground">
+                {ventana.estado === 'nunca_escribio'
+                  ? 'Nunca escribió, así que solo le entra una plantilla'
+                  : 'Pasaron más de 24 h: solo le entra una plantilla'}
+              </span>
+            )}
+          </p>
+          <button
+            type="button"
+            onClick={() => setEscribiendo(true)}
+            className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-xl bg-success/14 border border-success/30 text-success text-sm font-semibold py-2.5 hover:bg-success/20 hover:border-success/50 transition-colors focus-visible:ring-2 focus-visible:ring-success focus-visible:outline-none"
+          >
+            <Send size={14} aria-hidden="true" />
+            {ventana.estado === 'abierta' ? 'Escribirle' : 'Mandarle una plantilla'}
+          </button>
+        </>
       )}
 
       {escribiendo && (
