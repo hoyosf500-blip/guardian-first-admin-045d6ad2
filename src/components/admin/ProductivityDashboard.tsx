@@ -18,6 +18,8 @@ import { formatTimeBogota, formatDateTimeBogota, formatDurationHM } from '@/lib/
 import { shouldAlertSinConfirmar, asWorkedBlocks, sumWorkedSeconds, computeHorarioCompliance, UMBRAL_DESCONECTADA_MIN } from '@/lib/jornadaMath';
 import { scheduleFromMinutes, DEFAULT_SCHEDULE, bogotaSecondsOfDay } from '@/lib/inactivityWindow';
 import { minutosSinGestion, mayorHuecoEntreBloques, UMBRAL_SIN_GESTION_MIN } from '@/lib/huecosGestion';
+import { useMezclaAsesor } from '@/hooks/useMezclaAsesor';
+import MezclaTrabajoPanel from '@/components/admin/MezclaTrabajoPanel';
 import InactivityDetailModal from '@/components/admin/InactivityDetailModal';
 import TeamNowStrip from '@/components/admin/TeamNowStrip';
 import { useStoreSchedule } from '@/hooks/useStoreSchedule';
@@ -256,6 +258,8 @@ export default function ProductivityDashboard() {
   // Shopify configurado, el hook devuelve configured:false → no mostramos nada.
   const activeStoreId = useActiveStoreId();
   const shopifyPending = useShopifyPending(activeStoreId);
+  // Mezcla de trabajo por asesor (anti-descreme) — solo HOY (query liviana).
+  const { mezcla: mezclaAsesor, loading: mezclaLoading, error: mezclaError } = useMezclaAsesor(activeStoreId, range === 'today');
   // Horario laboral de la tienda (excluye almuerzo) → base de "En su puesto".
   const { data: scheduleMin } = useStoreSchedule(activeStoreId);
   const schedule = scheduleMin ? scheduleFromMinutes(scheduleMin) : DEFAULT_SCHEDULE;
@@ -1155,6 +1159,14 @@ export default function ProductivityDashboard() {
                 </table>
               </div>
             </Section>
+          )}
+
+          {/* Mezcla de trabajo por asesor (anti-descreme). Solo HOY: el hook no
+              consulta en 7d/30d (query pesada). Debajo de Jornada. */}
+          {isToday && jornadaOps.length > 0 && (
+            <div className="mt-3">
+              <MezclaTrabajoPanel mezcla={mezclaAsesor} loading={mezclaLoading} error={mezclaError} />
+            </div>
           )}
 
           {/* "Sin actividad" — solo cuando NI hay productividad NI hay jornada.
