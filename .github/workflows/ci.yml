@@ -26,6 +26,16 @@ jobs:
         run: npx eslint src/lib/ src/hooks/ src/contexts/ --max-warnings 0
         continue-on-error: true
 
+      # Reglas de hooks sobre TODO src/, BLOQUEANTE (sin continue-on-error).
+      # El lint de arriba solo mira 3 carpetas y no tumba el build, así que un
+      # hook mal puesto en un COMPONENTE pasaba el pipeline entero — y un hook
+      # después de un early-return tira React #300/#310 y CAE LA PANTALLA
+      # completa. Pasó el 25-ago-2026: CallView y NovedadView tenían un
+      # useState/useRiesgoChat debajo del "¡Todos gestionados!" y una operadora
+      # de Colombia quedó bloqueada cuando su cola llegó a cero.
+      - name: Hooks rules (blocking)
+        run: node scripts/check-hooks.mjs
+
       - name: Unit tests
         run: npm test
 

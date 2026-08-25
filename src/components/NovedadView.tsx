@@ -97,6 +97,13 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
     setSubmitting(false);
   }, [o?.dbId]);
 
+  // ⛔ ARRIBA del early-return. Estaba más abajo y violaba las reglas de hooks:
+  // con la cola de Novedades vacía el componente toma el camino corto y corre
+  // menos hooks → React #300/#310 y la pantalla se cae. Mismo bug que tumbó
+  // Confirmar (reportado por Colombia el 25-ago). El cuadro de escribir no
+  // depende de que haya novedad en pantalla.
+  const [escribiendo, setEscribiendo] = useState(false);
+
   if (!visibleItems.length || !o) {
     return (
       <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
@@ -131,7 +138,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
   // algo. Ahora abre el chat de Guardian: mismo hilo de siempre, queda el
   // nombre de quien escribió, y la gestión se registra sola y VERIFICADA
   // (`importchat-send` relee el chat antes de darla por hecha).
-  const [escribiendo, setEscribiendo] = useState(false);
+  // (`escribiendo` se declara ARRIBA del early-return — ver la nota del crash.)
 
   const navCall = (dir: number) => {
     const target = visibleItems[Math.max(0, Math.min(visibleItems.length - 1, callIdx + dir))];
