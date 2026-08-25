@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import { bogotaToday } from '@/lib/utils';
 import { bogotaDateNDaysAgo } from '@/lib/novedadGestion';
-import { summarizeRootCause, RootCauseRow, RootCauseSummary } from '@/lib/novedadRootCause';
+import { summarizeRootCause, conTasaDevolucion, RootCauseRow, RootCauseSummary } from '@/lib/novedadRootCause';
 
 /**
  * Rango PROPIO, no el de la cola de novedades.
@@ -117,7 +117,33 @@ export function useNovedadRootCause(): NovedadRootCauseData {
         return;
       }
       const rows = (data ?? []).map(mapRow);
-      setSummary(summarizeRootCause(rows));
+      let resumen = summarizeRootCause(rows);
+
+      // TASA justa (÷ confirmados): el denominador sale de
+      // operator_productivity_stats, que ya existe (rangos today/7d/30d). Para
+      // 90d no hay rango equivalente → la tasa queda null y se muestra "—", sin
+      // inventar. Fallo de esta consulta NO tumba la causa raíz: se degrada a
+      // solo-absolutos (la tasa es un extra, no el dato principal).
+      const prodRange = range === '90d' ? null : range;
+      if (prodRange) {
+        try {
+          const { data: prod } = await (supabase.rpc as unknown as (
+            fn: string, args: Record<string, unknown>,
+          ) => Promise<{ data: Record<string, unknown>[] | null; error: unknown }>)(
+            'operator_productivity_stats', { p_range: prodRange },
+          );
+          if (seq !== seqRef.current) return;
+          const map = new Map<string, number>();
+          for (const p of prod ?? []) {
+            const id = p.operator_id as string | undefined;
+            const conf = Number(p.confirmados);
+            if (id && Number.isFinite(conf)) map.set(id, conf);
+          }
+          if (map.size > 0) resumen = { ...resumen, porOperadora: conTasaDevolucion(resumen.porOperadora, map) };
+        } catch { /* la tasa es opcional: sin ella, solo-absolutos */ }
+      }
+
+      setSummary(resumen);
       setPartial(rows.length >= ROW_CAP);
       setStatus('ok');
     } catch {

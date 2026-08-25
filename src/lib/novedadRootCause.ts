@@ -83,6 +83,32 @@ export interface OperatorRootCause {
   valorPerdido: number;
   valorEvitable: number;
   pctEvitable: number | null;
+  /** Confirmados del período (denominador de la tasa). null si no se pudo traer. */
+  confirmados?: number | null;
+  /** devoluciones ÷ confirmados, en %. null si no hay confirmados. La MEDIDA
+   *  JUSTA: el conteo absoluto castiga al que más volumen mueve. */
+  tasaDevolucion?: number | null;
+}
+
+/**
+ * Enriquece el ranking por operadora con la TASA de devolución (÷ confirmados).
+ *
+ * El conteo absoluto engaña: el que confirma 900 pedidos va a tener más
+ * devoluciones que el que confirma 100, aunque devuelva MENOS por pedido. La
+ * tasa lo corrige. `confirmadosPorOp` viene de `operator_productivity_stats`
+ * (por eso es aparte: la RPC de causa raíz no trae el denominador).
+ *
+ * Puro: si no hay confirmados para un operador, tasa = null (no se inventa un 0).
+ */
+export function conTasaDevolucion(
+  ops: OperatorRootCause[],
+  confirmadosPorOp: Map<string, number>,
+): OperatorRootCause[] {
+  return ops.map((op) => {
+    const c = op.operatorId ? confirmadosPorOp.get(op.operatorId) ?? null : null;
+    const tasa = c && c > 0 ? Math.round((op.devoluciones / c) * 1000) / 10 : null;
+    return { ...op, confirmados: c, tasaDevolucion: tasa };
+  });
 }
 
 export interface CiudadRootCause {

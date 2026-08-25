@@ -180,6 +180,7 @@ export default function NovedadesCausaRaiz() {
                     <span className="w-2.5 shrink-0" aria-hidden="true" />
                     <span className="flex-1">Operadora</span>
                     <span className="w-10 text-right">Devol.</span>
+                    <span className="w-14 text-right" title="Devoluciones ÷ confirmados. La medida JUSTA: el conteo absoluto castiga al que más volumen mueve.">Tasa</span>
                     <span className="w-12 text-right">Evit.</span>
                     <span className="w-12 text-right">% evit</span>
                   </div>
@@ -196,6 +197,18 @@ export default function NovedadesCausaRaiz() {
                           right={
                             <span className="flex items-baseline gap-2">
                               <span className="w-10 text-right text-muted-foreground">{o.devoluciones}</span>
+                              <span
+                                className={`w-14 text-right font-bold tabular-nums ${
+                                  o.tasaDevolucion == null ? 'text-muted-foreground'
+                                    : o.tasaDevolucion >= 15 ? 'text-danger'
+                                    : o.tasaDevolucion >= 10 ? 'text-warning' : 'text-muted-foreground'
+                                }`}
+                                title={o.tasaDevolucion == null
+                                  ? (o.operatorId ? 'No hay confirmados del período para calcular la tasa (o es rango 90d).' : 'Sin confirmador.')
+                                  : `${o.devoluciones} devoluciones ÷ ${o.confirmados} confirmados`}
+                              >
+                                {o.tasaDevolucion == null ? '—' : `${o.tasaDevolucion}%`}
+                              </span>
                               <span className="w-12 text-right text-foreground">{o.evitables}</span>
                               <span className={`w-12 text-right font-bold ${danger ? 'text-danger' : 'text-muted-foreground'}`}>
                                 {pct(o.pctEvitable)}
