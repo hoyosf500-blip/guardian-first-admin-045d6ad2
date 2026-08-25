@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import TiempoEnPedido from '@/components/confirmar/TiempoEnPedido';
 import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrderLock } from '@/hooks/useOrderLock';
@@ -1086,6 +1087,9 @@ export default function CallView({ items, alerts }: Props) {
         </div>
       )}
         <div className="ml-auto flex items-center gap-2">
+        {/* Reloj del pedido actual: apura a no demorarse. Self-contained (tick
+            propio) → no re-renderiza todo CallView. */}
+        <TiempoEnPedido pedidoId={o?.dbId} />
         <span className="font-mono tabular-nums text-xs text-muted-foreground px-2.5 py-1 rounded-lg bg-card/40 border border-border">{callIdx + 1} / {items.length}</span>
         <div className="flex gap-2">
           <button aria-label="Pedido anterior" onClick={() => navCall(-1)} disabled={callIdx <= 0} className="min-h-11 min-w-11 justify-center px-3 rounded-xl bg-card/40 border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors">
