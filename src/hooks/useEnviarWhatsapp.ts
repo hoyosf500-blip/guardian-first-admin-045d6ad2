@@ -15,6 +15,14 @@ import { motivoEdge, cuerpoDelError } from '@/lib/errorEdge';
  * `ok:true` significa **confirmado en el chat**, no "se emitió": la función
  * relee la conversación antes de contestar que sí.
  */
+/**
+ * Desde qué pantalla se escribió. Decide el PREFIJO del touchpoint, y eso no
+ * es cosmético: `SEG:%` cuenta como gestión de Seguimiento. Escribirle a un
+ * cliente desde Confirmar es un intento de contacto —la gestión ahí es
+ * confirmar o cancelar—, así que va con `WHATSAPP:`.
+ */
+export type ModuloEnvio = 'SEG' | 'WHATSAPP';
+
 export interface ResultadoEnvio {
   ok: boolean;
   error?: string;
@@ -37,14 +45,14 @@ export function useEnviarWhatsapp() {
   const { activeStoreId } = useStore();
   const [enviando, setEnviando] = useState(false);
 
-  const enviar = useCallback(async (externalId: string, mensaje: string): Promise<ResultadoEnvio> => {
+  const enviar = useCallback(async (externalId: string, mensaje: string, modulo?: ModuloEnvio): Promise<ResultadoEnvio> => {
     if (!activeStoreId) return { ok: false, error: 'No hay tienda activa' };
     const texto = mensaje.trim();
     if (!texto) return { ok: false, error: 'Escribí un mensaje' };
     setEnviando(true);
     try {
       const { data, error } = await supabase.functions.invoke('importchat-send', {
-        body: { store_id: activeStoreId, external_id: externalId, mensaje: texto },
+        body: { store_id: activeStoreId, external_id: externalId, mensaje: texto, modulo },
       });
       if (error) {
         // El cuerpo del error trae el motivo REAL (ventana vencida, sin chat

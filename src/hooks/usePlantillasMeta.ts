@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import type { PlantillaMeta } from '@/lib/plantillasMeta';
 import { motivoEdge, cuerpoDelError } from '@/lib/errorEdge';
+import type { ModuloEnvio } from '@/hooks/useEnviarWhatsapp';
 
 /**
  * Las plantillas aprobadas por Meta, para cuando la ventana de 24 h ya venció.
@@ -95,12 +96,13 @@ export function useEnviarPlantilla() {
     externalId: string,
     nombre: string,
     valores: Record<number, string>,
+    modulo?: ModuloEnvio,
   ): Promise<ResultadoPlantilla> => {
     if (!activeStoreId) return { ok: false, error: 'No hay tienda activa' };
     setEnviando(true);
     try {
       const { data, error } = await supabase.functions.invoke('importchat-plantillas', {
-        body: { store_id: activeStoreId, accion: 'enviar', external_id: externalId, nombre, valores },
+        body: { store_id: activeStoreId, accion: 'enviar', external_id: externalId, nombre, valores, modulo },
       });
       if (error) {
         const { detalle } = await motivoReal(error, 'No se pudo enviar la plantilla');

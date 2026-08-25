@@ -6,11 +6,22 @@ import { useRiesgoChat } from '@/hooks/useRiesgoChat';
 import { useConversacion } from '@/hooks/useConversacion';
 import ConversacionChat from '@/components/seguimiento/ConversacionChat';
 import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDialog';
+import type { ModuloEnvio } from '@/hooks/useEnviarWhatsapp';
 import { ultimoAutorNegocio } from '@/lib/conversacion';
 import { estadoConversacion, haceCuantoMs } from '@/lib/actividadChat';
-import { RIESGO_INFO } from '@/lib/riesgoChat';
+import { RIESGO_INFO, type NivelRiesgo } from '@/lib/riesgoChat';
+import type { ActividadChatOrden } from '@/lib/actividadChat';
 import type { DatosPedido } from '@/lib/plantillasMeta';
 import { cn } from '@/lib/utils';
+
+/** Lo que hay que saber de un pedido ANTES de tocar el chat: si tiene
+ *  conversación leída, qué hizo el cliente con el botón del bot, y cuándo
+ *  habló cada lado. Sale de una sola consulta barata (`useRiesgoChat`). */
+export interface SenalesChat {
+  hayConversacion: boolean;
+  actividad: ActividadChatOrden | null;
+  riesgo: NivelRiesgo | null;
+}
 
 /**
  * El WhatsApp REAL del cliente, dentro de Guardian: qué pasó y cómo responder.
@@ -36,7 +47,7 @@ import { cn } from '@/lib/utils';
  * confirmar y la actividad), así que mostrarlas no cuesta una query extra.
  */
 export default function ChatClienteCard({
-  externalId, orderId, nombre, estado, datos,
+  externalId, orderId, nombre, estado, datos, senales, modulo,
   mostrarEscribir = false, mostrarSenales = false, altoClase, className,
 }: {
   externalId?: string | null;
@@ -44,6 +55,16 @@ export default function ChatClienteCard({
   nombre?: string | null;
   estado?: string | null;
   datos?: DatosPedido;
+  /**
+   * Las señales ya consultadas por quien llama, para no pedirlas dos veces.
+   *
+   * `undefined` = la tarjeta las busca sola (así la usa la ficha del pedido).
+   * En Confirmar las pide CallView, porque además las necesita para decidir si
+   * el botón de arriba abre el chat de Guardian o cae a `wa.me`.
+   */
+  senales?: SenalesChat;
+  /** Prefijo del touchpoint: ver `EscribirWhatsappDialog`. */
+  modulo?: ModuloEnvio;
   /** Botón "Escribirle" dentro de la tarjeta. La ficha del pedido ya tiene el
    *  suyo arriba, así que ahí va en `false` para no ofrecer lo mismo dos veces. */
   mostrarEscribir?: boolean;
@@ -55,11 +76,13 @@ export default function ChatClienteCard({
 }) {
   const { activeStoreId } = useStore();
   const [escribiendo, setEscribiendo] = useState(false);
-  const ids = useMemo(() => (orderId ? [orderId] : []), [orderId]);
-  const { actividad, index: riesgoIndex } = useRiesgoChat(activeStoreId, ids);
-  const act = orderId ? actividad.get(orderId) ?? null : null;
-  const riesgo = orderId ? riesgoIndex.get(orderId) ?? null : null;
-  const hayConversacion = !!orderId && actividad.has(orderId);
+  // Si las señales vienen de afuera, no se vuelve a consultar: ids vacío hace
+  // que el hook corte antes de tocar la base.
+  const ids = useMemo(() => (orderId && !senales ? [orderId] : []), [orderId, senales]);
+  const propio = useRiesgoChat(activeStoreId, ids);
+  const act = senales ? senales.actividad : (orderId ? propio.actividad.get(orderId) ?? null : null);
+  const riesgo = senales ? senales.riesgo : (orderId ? propio.index.get(orderId) ?? null : null);
+  const hayConversacion = senales ? senales.hayConversacion : (!!orderId && propio.actividad.has(orderId));
 
   const hilo = useConversacion(externalId, hayConversacion);
 
@@ -163,6 +186,7 @@ export default function ChatClienteCard({
           estado={estado}
           actividad={act}
           datos={datos}
+          modulo={modulo}
           onEnviado={hilo.recargar}
         />
       )}

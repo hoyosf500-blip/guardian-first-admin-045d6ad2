@@ -226,10 +226,14 @@ Deno.serve(async (req) => {
       chat_saliente_tipo: "plantilla",
     }).eq("store_id", storeId).eq("external_id", externalId);
 
+    // El prefijo sigue a la PANTALLA: `SEG:%` cuenta como gestión de
+    // Seguimiento, y escribirle desde Confirmar es un intento de contacto.
+    // Ver el comentario largo en `importchat-send`.
     const ahora = new Date();
+    const modulo = body?.modulo === "WHATSAPP" ? "WHATSAPP" : "SEG";
     await sb.from("touchpoints").insert({
       phone: pedido.phone,
-      action: `SEG: Mandé la plantilla ${elegida.nombre}`,
+      action: `${modulo}: Mandé la plantilla ${elegida.nombre}`,
       operator_id: u.user.id,
       store_id: storeId,
       action_date: new Date(ahora.getTime() - 5 * 3600_000).toISOString().slice(0, 10),

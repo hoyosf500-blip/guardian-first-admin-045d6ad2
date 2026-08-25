@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { MessageCircle, Send, Clock, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { useEnviarWhatsapp } from '@/hooks/useEnviarWhatsapp';
+import { useEnviarWhatsapp, type ModuloEnvio } from '@/hooks/useEnviarWhatsapp';
 import { useConversacion } from '@/hooks/useConversacion';
 import ConversacionChat from '@/components/seguimiento/ConversacionChat';
 import PlantillasWhatsapp from '@/components/seguimiento/PlantillasWhatsapp';
@@ -30,7 +30,7 @@ import { cn } from '@/lib/utils';
  * chat (ver `importchat-send`). Un "listo" sin confirmar sería peor que un
  * error: la asesora tacharía el pedido de su lista.
  */
-export default function EscribirWhatsappDialog({ open, onOpenChange, externalId, nombre, estado, actividad, datos, onEnviado }: {
+export default function EscribirWhatsappDialog({ open, onOpenChange, externalId, nombre, estado, actividad, datos, modulo, onEnviado }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   externalId: string;
@@ -41,6 +41,10 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
    *  plantilla aprobada. Sin esto la plantilla igual se puede mandar: la
    *  asesora escribe los datos a mano. */
   datos?: DatosPedido;
+  /** Desde qué pantalla se escribe. Decide el prefijo del touchpoint: `SEG:%`
+   *  cuenta como gestión de Seguimiento, y escribir desde Confirmar es un
+   *  intento de contacto, no la gestión de esa pantalla. */
+  modulo?: ModuloEnvio;
   onEnviado?: () => void;
 }) {
   const { enviar, enviando } = useEnviarWhatsapp();
@@ -79,7 +83,7 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
   }, [open, plantillas]);
 
   const mandar = async () => {
-    const r = await enviar(externalId, texto);
+    const r = await enviar(externalId, texto, modulo);
     if (r.ok) {
       toast.success('Mensaje enviado y confirmado en el chat');
       // El servidor ya releyó el chat para verificar: se pinta lo que devolvió
@@ -143,6 +147,7 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
             externalId={externalId}
             fase={fase}
             datos={datosPedido}
+            modulo={modulo}
             onEnviado={() => { onEnviado?.(); hilo.recargar(); }}
           />
         )}

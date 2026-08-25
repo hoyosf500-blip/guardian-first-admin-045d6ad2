@@ -1,10 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrderLock } from '@/hooks/useOrderLock';
 import { OrderData, formatPhone, getTrackingUrl, truncate, dbToOrderData, isValidPhoneForCountry, getWhatsAppPhone } from '@/lib/orderUtils';
 import { useStore } from '@/contexts/StoreContext';
-import { useWaChat } from '@/contexts/WaChatContext';
 import { formatCOP } from '@/lib/utils';
 import { CANCEL_REASONS } from '@/lib/constants';
 import { diasReales } from '@/components/WorkList';
@@ -31,6 +30,8 @@ import { useRefreshOrderRow } from '@/hooks/useRefreshOrderRow';
 import { dupAlertsFor, overchargeFor, type ConfirmarOrderAlerts } from '@/lib/orderAlerts';
 import NotesPanel from '@/components/order-notes/NotesPanel';
 import ChatClienteCard from '@/components/chat/ChatClienteCard';
+import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDialog';
+import { useRiesgoChat } from '@/hooks/useRiesgoChat';
 import { AddressAutocomplete } from '@/components/address/AddressAutocomplete';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
 import { DespachoGateButton } from '@/components/address/DespachoGateButton';
@@ -93,7 +94,6 @@ export default function CallView({ items, alerts }: Props) {
   const { user, isAdmin } = useAuth();
   const { activeStore, activeStoreId } = useStore();
   const countryCode = activeStore?.country_code;
-  const { openChat, waEnabled } = useWaChat();
   const recordContacto = useRecordGestion();
   const { claimOrder, releaseOrder } = useOrderLock();
   // FIX "Siguiente salta ~10": último pedido cuyo lock conseguimos NOSOTROS y
@@ -954,20 +954,33 @@ export default function CallView({ items, alerts }: Props) {
 
   // Contacto de 1 click. `getWhatsAppPhone` es country-aware (57 CO / 593 EC,
   // strip del 0 en EC) — mismo helper que usa el canal in-app.
+  const [escribiendoWa, setEscribiendoWa] = useState(false);
   const waPhone = getWhatsAppPhone(o.phone, countryCode);
+
+  // La señal del chat de ESTE pedido, en una sola consulta barata. La usan dos
+  // cosas: la tarjeta del rail y la decisión del botón de acá abajo.
+  const idsSenal = useMemo(() => (o.dbId ? [o.dbId] : []), [o.dbId]);
+  const senalChat = useRiesgoChat(activeStoreId, idsSenal);
+  const senales = useMemo(() => ({
+    hayConversacion: !!o.dbId && senalChat.actividad.has(o.dbId),
+    actividad: o.dbId ? senalChat.actividad.get(o.dbId) ?? null : null,
+    riesgo: o.dbId ? senalChat.index.get(o.dbId) ?? null : null,
+  }), [o.dbId, senalChat.actividad, senalChat.index]);
+
   const handleWhatsApp = () => {
-    // Canal in-app (estilo Chatea Pro, anti-baneo) si la tienda lo tiene
-    // configurado. Si no (ej. EC sin número), FALLBACK consciente a wa.me
-    // externo — relajación del diseño anti-baneo SOLO para Confirmar, donde
-    // hoy no hay segundo canal y el contacto está por el piso. Ver concerns.
-    if (waEnabled) {
-      // openChat ya registra el intento de contacto (WHATSAPP:) internamente.
-      void openChat({ phone: o.phone, name: o.nombre });
-    } else {
-      // Fallback wa.me externo: openChat no corre, así que registramos acá.
-      void recordContacto(o.phone, 'WHATSAPP', 'abrió WhatsApp');
-      window.open(`https://wa.me/${waPhone}`, '_blank', 'noopener,noreferrer');
+    // ⛔ `wa.me` ARRANCA UN HILO NUEVO, aparte del de ImporChat: el bot no lo
+    // ve, Guardian no lo ve, y el cliente termina con dos conversaciones con
+    // el mismo negocio. Por eso, si este pedido TIENE conversación en
+    // ImporChat, se escribe ahí — en el hilo de siempre, con el nombre de la
+    // asesora, y con plantilla aprobada si ya pasaron las 24 h.
+    if (senales.hayConversacion) {
+      setEscribiendoWa(true);
+      return;
     }
+    // Sin conversación en ImporChat (o tienda que no lo usa) se conserva la
+    // salida de siempre: es preferible un hilo aparte a no poder escribir.
+    void recordContacto(o.phone, 'WHATSAPP', 'abrió WhatsApp');
+    window.open(`https://wa.me/${waPhone}`, '_blank', 'noopener,noreferrer');
   };
 
   // Handler de atajos del render VIGENTE (ver hotkeysRef arriba del
@@ -1246,7 +1259,7 @@ export default function CallView({ items, alerts }: Props) {
             <button
               type="button"
               onClick={handleWhatsApp}
-              title={waEnabled ? 'Abrir WhatsApp del cliente' : 'Abrir WhatsApp (canal externo)'}
+              title={senales.hayConversacion ? 'Escribirle en el chat de siempre' : 'Abrir WhatsApp (hilo aparte)'}
               className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 min-h-11 rounded-xl bg-gradient-to-br from-success/25 to-success/10 text-success border border-success/30 glow-success hover:brightness-110 transition-all duration-200"
             >
               <MessageSquare size={14} aria-hidden="true" /> WhatsApp
@@ -1486,6 +1499,8 @@ export default function CallView({ items, alerts }: Props) {
                 producto: o.producto,
                 valor: o.valor ? formatCOP(o.valor) : null,
               }}
+              senales={senales}
+              modulo="WHATSAPP"
               mostrarSenales
               mostrarEscribir
               altoClase="min-h-[140px] max-h-[280px]"
@@ -1499,6 +1514,28 @@ export default function CallView({ items, alerts }: Props) {
             <NotesPanel phone={o.phone} orderId={o.dbId} variant="rail" />
           )}
         </aside>
+
+        {/* El cuadro de escribir del botón de arriba. Es EL MISMO de
+            Seguimiento, Novedades y la ficha: texto libre si la ventana de
+            24 h sigue abierta, plantilla aprobada si ya venció. */}
+        {escribiendoWa && o.externalId && (
+          <EscribirWhatsappDialog
+            open={escribiendoWa}
+            onOpenChange={setEscribiendoWa}
+            externalId={String(o.externalId)}
+            nombre={o.nombre}
+            estado={o.estado}
+            actividad={senales.actividad}
+            datos={{
+              guia: o.guia,
+              transportadora: o.transportadora,
+              ciudad: o.ciudad,
+              producto: o.producto,
+              valor: o.valor ? formatCOP(o.valor) : null,
+            }}
+            modulo="WHATSAPP"
+          />
+        )}
 
         {/* Barra de decision — fila 2 del grid, FUERA de la card.
             En movil (1 columna) el orden de lectura queda: ficha -> direccion

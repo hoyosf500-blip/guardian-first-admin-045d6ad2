@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Send, Lock, AlertTriangle, FileText } from 'lucide-react';
 import { usePlantillasMeta, useEnviarPlantilla } from '@/hooks/usePlantillasMeta';
+import type { ModuloEnvio } from '@/hooks/useEnviarWhatsapp';
 import {
   renderizar, faltantes, sugerirValores,
   type PlantillaMeta, type DatosPedido,
@@ -28,10 +29,11 @@ import { cn } from '@/lib/utils';
  *    video, imagen o botón-con-enlace aparecen bloqueadas y con el motivo: si
  *    desaparecieran, la asesora creería que no existen.
  */
-export default function PlantillasWhatsapp({ externalId, fase, datos, onEnviado }: {
+export default function PlantillasWhatsapp({ externalId, fase, datos, modulo, onEnviado }: {
   externalId: string;
   fase?: string | null;
   datos: DatosPedido;
+  modulo?: ModuloEnvio;
   onEnviado?: () => void;
 }) {
   const { plantillas, estado, error, recargar } = usePlantillasMeta(true, fase);
@@ -61,7 +63,7 @@ export default function PlantillasWhatsapp({ externalId, fase, datos, onEnviado 
 
   const mandar = async () => {
     if (!elegida) return;
-    const r = await enviarPlantilla(externalId, elegida.nombre, valores);
+    const r = await enviarPlantilla(externalId, elegida.nombre, valores, modulo);
     if (r.ok) {
       toast.success('Plantilla enviada al cliente');
       setElegida(null);

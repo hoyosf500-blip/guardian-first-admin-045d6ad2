@@ -189,13 +189,24 @@ Deno.serve(async (req) => {
       chat_saliente_tipo: "directo",
     }).eq("store_id", storeId).eq("external_id", externalId);
 
-    // Y queda como GESTIÓN en Guardian, con el mismo formato que usa el resto
-    // de la pantalla (`SEG: ...`) para que los contadores lo reconozcan.
+    // Y queda registrado en Guardian con el prefijo de LA PANTALLA donde se
+    // escribió, no siempre `SEG:`.
+    //
+    // No es cosmético: `SEG:%` cuenta como gestión de Seguimiento en
+    // `operator_productivity_stats` y en SegCounterBar. Escribirle a un cliente
+    // desde Confirmar es un INTENTO DE CONTACTO —la gestión ahí es confirmar o
+    // cancelar—, así que va con `WHATSAPP:`, el prefijo que la casa ya usa para
+    // eso (ver `useRecordGestion`). Sin esto, el trabajo de Confirmar le
+    // sumaría acciones de Seguimiento a la asesora.
+    //
+    // Default `SEG` a propósito: es lo que hacía antes, así que un cliente
+    // viejo que no mande `modulo` se comporta igual.
     if (pedido.phone) {
       const ahora = new Date();
+      const modulo = body?.modulo === "WHATSAPP" ? "WHATSAPP" : "SEG";
       await sb.from("touchpoints").insert({
         phone: pedido.phone,
-        action: "SEG: Escribí por WhatsApp",
+        action: `${modulo}: Escribí por WhatsApp`,
         operator_id: u.user.id,
         store_id: storeId,
         action_date: new Date(ahora.getTime() - 5 * 3600_000).toISOString().slice(0, 10),
