@@ -5,8 +5,26 @@ import {
   attemptClock,
   attemptDaySuffix,
   intentosDeHoy,
+  esIntentoDeLlamada,
   type AttemptRow,
 } from './attemptFormat';
+
+describe('esIntentoDeLlamada — separa llamadas de toques de auditoría', () => {
+  it('conf/canc/noresp son llamadas', () => {
+    expect(esIntentoDeLlamada('conf')).toBe(true);
+    expect(esIntentoDeLlamada('canc')).toBe(true);
+    expect(esIntentoDeLlamada('noresp')).toBe(true);
+  });
+  it('ediciones y cambio de transportadora NO son llamadas', () => {
+    // Es la regla que evita que "Intentos previos (5)" cuente 3 llamadas + 2
+    // ediciones. El dueño se guía por ese número para saber si ya llamaron.
+    expect(esIntentoDeLlamada('edicion_orden')).toBe(false);
+    expect(esIntentoDeLlamada('edicion_completa')).toBe(false);
+    expect(esIntentoDeLlamada('cambio_transportadora')).toBe(false);
+    expect(esIntentoDeLlamada('reagendado')).toBe(false);
+    expect(esIntentoDeLlamada('')).toBe(false);
+  });
+});
 
 describe('attemptLabel', () => {
   it('mapea los resultados conocidos', () => {

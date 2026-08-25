@@ -14,6 +14,23 @@ export interface AttemptRow {
 }
 
 /**
+ * ¿Esta fila de order_results es un INTENTO DE LLAMADA?
+ *
+ * Solo conf/canc/noresp cuentan como haber llamado al cliente. Las filas de
+ * auditoría —editar el pedido (`edicion_orden`, `edicion_completa`), cambiar la
+ * transportadora (`cambio_transportadora`), reagendar (`reagendado`)— quedaron
+ * registradas en la misma tabla pero NO son un intento de contacto: alguien
+ * tocó el pedido, no lo llamó.
+ *
+ * Una sola definición, usada por el contador diario Y por la ficha "Intentos
+ * previos": si divergen, el número grande dice una cosa y el "Hoy N de 3" otra
+ * (que es justo el bug que tenía la ficha — contaba ediciones como llamadas).
+ */
+export function esIntentoDeLlamada(result: string): boolean {
+  return result === 'conf' || result === 'canc' || result === 'noresp';
+}
+
+/**
  * Cuántas veces se llamó a ESTE pedido HOY.
  *
  * El tope diario es 3 (`MAX_DAILY_ATTEMPTS`) y hasta ahora la asesora no tenía
@@ -22,8 +39,8 @@ export interface AttemptRow {
  * el pedido iba a volver mañana. Son dos preguntas distintas y el número grande
  * respondía la que nadie hace.
  *
- * Solo cuenta resultados de LLAMADA: las filas de auditoría (edición del pedido,
- * cambio de transportadora) no gastan intento.
+ * Solo cuenta resultados de LLAMADA (`esIntentoDeLlamada`): las filas de
+ * auditoría (edición del pedido, cambio de transportadora) no gastan intento.
  *
  * `todayStr` = 'YYYY-MM-DD' de hoy (Bogotá). Se inyecta para poder testear.
  */
@@ -31,7 +48,7 @@ export function intentosDeHoy(rows: AttemptRow[] | null | undefined, todayStr: s
   if (!rows || !rows.length) return 0;
   let n = 0;
   for (const r of rows) {
-    if (r.result !== 'conf' && r.result !== 'canc' && r.result !== 'noresp') continue;
+    if (!esIntentoDeLlamada(r.result)) continue;
     const fecha = r.result_date || (r.created_at ? r.created_at.slice(0, 10) : '');
     if (fecha === todayStr) n += 1;
   }

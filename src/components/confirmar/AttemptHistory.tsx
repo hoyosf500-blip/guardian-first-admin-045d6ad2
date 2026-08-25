@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { History } from 'lucide-react';
 import { useOperatorNames } from '@/hooks/useOperatorNames';
-import { attemptLabel, attemptTone, attemptClock, attemptDaySuffix, intentosDeHoy, type AttemptRow } from '@/lib/attemptFormat';
+import { attemptLabel, attemptTone, attemptClock, attemptDaySuffix, intentosDeHoy, esIntentoDeLlamada, type AttemptRow } from '@/lib/attemptFormat';
 import { MAX_DAILY_ATTEMPTS } from '@/lib/confirmarQueue';
 import { haceCuanto } from '@/lib/gestionPorPedido';
 import { bogotaToday } from '@/lib/utils';
@@ -38,17 +38,26 @@ export default function AttemptHistory({ attempts, loadError }: { attempts: Atte
     );
   }
 
-  if (!attempts.length) return null;
+  // ⛔ "Intentos previos" son LLAMADAS, no toques. La ficha contaba
+  // `attempts.length` crudo, que incluye ediciones y cambios de transportadora
+  // (viven en la misma tabla order_results): "Intentos previos (5)" podía ser 3
+  // llamadas + 2 ediciones, y la lista pintaba filas feas "edicion_orden". El
+  // dueño se guía por esta etiqueta para saber si YA llamaron al cliente, así
+  // que un número inflado lo hace creer que se llamó más de lo que se llamó.
+  // Se filtra a llamadas para el conteo Y la lista, con la MISMA regla que el
+  // "Hoy N de 3" (esIntentoDeLlamada).
+  const llamadas = attempts.filter((a) => esIntentoDeLlamada(a.result));
+
+  if (!llamadas.length) return null;
 
   const MAX_COLLAPSED = 4;
-  const shown = expanded ? attempts : attempts.slice(0, MAX_COLLAPSED);
-  const hidden = attempts.length - shown.length;
+  const shown = expanded ? llamadas : llamadas.slice(0, MAX_COLLAPSED);
+  const hidden = llamadas.length - shown.length;
 
-  // "Intentos previos (5)" contaba los 7 días y no respondía la pregunta que la
-  // asesora sí se hace antes de marcar: ¿cuántas llamadas le quedan HOY a este
-  // cliente? El tope diario es 3 y sale de la misma constante que usa el
-  // cooldown, así que el contador nunca puede desalinearse de la regla real.
-  const hoyN = intentosDeHoy(attempts, today);
+  // ¿Cuántas llamadas le quedan HOY a este cliente? El tope diario es 3 y sale
+  // de la misma constante que usa el cooldown, así que el contador nunca puede
+  // desalinearse de la regla real.
+  const hoyN = intentosDeHoy(llamadas, today);
   const agotado = hoyN >= MAX_DAILY_ATTEMPTS;
   const pielHoy = agotado
     ? 'bg-danger/15 text-danger border-danger/35'
@@ -62,7 +71,7 @@ export default function AttemptHistory({ attempts, loadError }: { attempts: Atte
         <span className="w-7 h-7 rounded-xl bg-muted/60 border border-border flex items-center justify-center flex-shrink-0" aria-hidden="true">
           <History size={13} />
         </span>
-        Intentos previos ({attempts.length})
+        Intentos previos ({llamadas.length})
         <span
           className={`ml-auto text-[11px] font-bold px-2 py-0.5 rounded-lg border tabular-nums ${pielHoy}`}
           title={agotado
