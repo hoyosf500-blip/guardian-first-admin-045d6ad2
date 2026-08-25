@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { useStore } from '@/contexts/StoreContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { useInactivityGuard } from '@/hooks/useInactivityGuard';
+import { useSinGestionNudge } from '@/hooks/useSinGestionNudge';
 import { useSegTouchIndex } from '@/hooks/useSegTouchIndex';
 import InactivityWarningModal from '@/components/InactivityWarningModal';
 import { hasSeguimientoWork } from '@/lib/segLists';
@@ -15,7 +17,8 @@ import { segVisiblesParaCola } from '@/lib/segVisibles';
  */
 export default function InactivityGuard() {
   const { workQueue, segData, novedadesQueue } = useOrders();
-  const { activeStoreId } = useStore();
+  const { activeStoreId, isManagerOfActive } = useStore();
+  const { isAdmin } = useAuth();
   // Los cierres del equipo, para no regañar por trabajo YA hecho. El canal
   // realtime del hook lleva nombre por instancia (useId), así que montarlo acá
   // además de en la barra y en Seguimiento no colisiona.
@@ -42,6 +45,11 @@ export default function InactivityGuard() {
   );
 
   const { warning, acknowledge } = useInactivityGuard({ hasPendingWork });
+
+  // Aviso SUAVE por huecos sin gestionar (no bloquea, no cuenta falta). Mismo
+  // universo que el guard duro: solo operadora pura (ni admin, ni dueño, ni
+  // supervisor) — a un manager este recordatorio le mentiría.
+  useSinGestionNudge({ hasPendingWork, enabled: !isAdmin && !isManagerOfActive });
 
   if (!warning) return null;
   return <InactivityWarningModal warning={warning} onAcknowledge={acknowledge} />;

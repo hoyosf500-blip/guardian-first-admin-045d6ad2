@@ -1088,6 +1088,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     }));
     setLastMark({ order, result, reason });
 
+    // Señal LOCAL de "acabo de gestionar" para el aviso suave de huecos
+    // (`useSinGestionNudge`). Va acá, en la acción optimista, no tras el INSERT:
+    // el asesor YA hizo el trabajo aunque Dropi/la base tarden o fallen. Es un
+    // evento del navegador → instantáneo y sin depender del realtime.
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('guardian:mi-gestion'));
+
     // M4: setter funcional para evitar stale closure. El `markResult`
     // dentro de useCallback capturaba `timerStart=0` en el primer render;
     // si la operadora marcaba el primer pedido y luego el segundo antes
