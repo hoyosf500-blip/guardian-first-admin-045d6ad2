@@ -41,8 +41,8 @@ import {
   payloadTexto, payloadMedia, TIPOS_MEDIA, type TipoMedia,
 } from "../_shared/metaWhatsapp.ts";
 
-type Accion = "verificar" | "texto" | "plantilla" | "media";
-const ACCIONES: Accion[] = ["verificar", "texto", "plantilla", "media"];
+type Accion = "verificar" | "listar" | "prueba" | "texto" | "plantilla" | "media";
+const ACCIONES: Accion[] = ["verificar", "listar", "prueba", "texto", "plantilla", "media"];
 
 Deno.serve(async (req) => {
   const cors = getCorsHeaders(req);
@@ -137,6 +137,81 @@ Deno.serve(async (req) => {
           sin_depender_llave_7dias_importchat: true,
         },
       });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // LISTAR — las plantillas aprobadas con sus huecos (read-only, para elegir).
+    // ════════════════════════════════════════════════════════════════════════
+    if (accion === "listar") {
+      const tpl = await leerPlantillasMeta({ version, token, wabaId });
+      if (!tpl.ok) return json({ ok: false, error: `No se pudieron leer las plantillas: ${tpl.detalle}` }, 502);
+      const aprobadas = parsearPlantillas(tpl.datos?.data);
+      return json({
+        ok: true,
+        plantillas: aprobadas.map((p) => ({
+          nombre: p.nombre,
+          categoria: p.categoria,
+          cuerpo: p.cuerpo,
+          variables: p.variables,
+          no_soportada: p.noSoportada,
+          lista: !p.noSoportada,
+        })),
+      });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // PRUEBA — mandar a un número CRUDO (no a un pedido), para probar en vivo.
+    // Solo dueño/supervisor: manda a cualquier número, no es para operar. No
+    // escribe nada en la base (no hay pedido detrás). modo: plantilla|texto|media.
+    // ════════════════════════════════════════════════════════════════════════
+    if (accion === "prueba") {
+      if (miembro.role !== "owner" && miembro.role !== "supervisor") {
+        return json({ ok: false, error: "Solo el dueño o un supervisor puede mandar una prueba" }, 403);
+      }
+      const telRaw = String(body?.telefono || "").replace(/\D/g, "");
+      if (telRaw.length < 8) return json({ ok: false, error: "Pasá un teléfono válido (con código de país) en 'telefono'" }, 400);
+      const modo = String(body?.modo || "plantilla");
+
+      let payload: Record<string, unknown>;
+      if (modo === "texto") {
+        const mensaje = String(body?.mensaje || "").trim();
+        if (!mensaje) return json({ ok: false, error: "Falta 'mensaje'" }, 400);
+        payload = payloadTexto(telRaw, mensaje);
+      } else if (modo === "media") {
+        const tipo = String(body?.tipo || "") as TipoMedia;
+        const link = String(body?.link || "").trim();
+        if (!TIPOS_MEDIA.includes(tipo)) return json({ ok: false, error: `tipo tiene que ser uno de: ${TIPOS_MEDIA.join(", ")}` }, 400);
+        if (!/^https:\/\//i.test(link)) return json({ ok: false, error: "El link tiene que ser una URL https pública" }, 400);
+        payload = payloadMedia(telRaw, tipo, link, {
+          caption: body?.caption ? String(body.caption) : null,
+          filename: body?.filename ? String(body.filename) : null,
+        });
+      } else {
+        const nombre = String(body?.nombre || "");
+        if (!nombre) return json({ ok: false, error: "Falta 'nombre' de la plantilla" }, 400);
+        const tpl = await leerPlantillasMeta({ version, token, wabaId });
+        if (!tpl.ok) return json({ ok: false, error: tpl.detalle }, 502);
+        const aprobadas = parsearPlantillas(tpl.datos?.data);
+        const elegida: PlantillaMeta | undefined = aprobadas.find((p) => p.nombre === nombre);
+        if (!elegida) return json({ ok: false, error: `No existe la plantilla "${nombre}"`, disponibles: aprobadas.map((p) => p.nombre) }, 409);
+        if (elegida.noSoportada) return json({ ok: false, error: elegida.noSoportada }, 409);
+        const crudos = (body?.valores ?? {}) as Record<string, unknown>;
+        const valores: Record<number, string> = {};
+        for (const [k, v] of Object.entries(crudos)) {
+          const n = Number(k);
+          if (Number.isFinite(n) && n > 0) valores[n] = String(v ?? "").trim();
+        }
+        const huecos = faltantes(elegida, valores);
+        if (huecos.length > 0) {
+          return json({ ok: false, error: `Faltan valores: ${huecos.join(", ")}`, faltantes: huecos, variables: elegida.variables }, 400);
+        }
+        payload = construirPayloadMeta(elegida, valores, telRaw);
+      }
+
+      if (body?.dry_run === true) return json({ ok: true, dry_run: true, enviaria_a: telRaw, payload });
+      const envio = await enviarMensajeMeta({ version, token, phoneNumberId, payload });
+      if (!envio.ok) return json({ ok: false, error: `Meta rechazó el envío: ${envio.detalle}` }, 502);
+      return json({ ok: true, prueba: true, enviado_a: telRaw, wamid: envio.wamid });
     }
 
     // ── De acá para abajo, todo envío necesita el pedido y su teléfono ──────
