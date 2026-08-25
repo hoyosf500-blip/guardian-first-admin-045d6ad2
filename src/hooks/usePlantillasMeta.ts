@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import type { PlantillaMeta } from '@/lib/plantillasMeta';
+import { motivoEdge, cuerpoDelError } from '@/lib/errorEdge';
 
 /**
  * Las plantillas aprobadas por Meta, para cuando la ventana de 24 h ya venció.
@@ -20,16 +21,8 @@ export type EstadoPlantillas = 'inicial' | 'cargando' | 'ok' | 'sin_config' | 'e
 export const PLANTILLAS_SIN_DESPLEGAR =
   'El envío de plantillas todavía no está activado en el servidor. Mandala desde ImporChat y avisá para que lo activen.';
 
-async function motivoReal(error: unknown, porDefecto: string): Promise<{ detalle: string; sinConfig: boolean }> {
-  try {
-    const ctx = (error as { context?: { json?: () => Promise<{ error?: string; code?: string; sin_config?: boolean }> } }).context;
-    const cuerpo = ctx?.json ? await ctx.json() : null;
-    if (cuerpo?.sin_config) return { detalle: cuerpo.error ?? '', sinConfig: true };
-    if (cuerpo?.error) return { detalle: cuerpo.error, sinConfig: false };
-    if (cuerpo?.code === 'NOT_FOUND') return { detalle: PLANTILLAS_SIN_DESPLEGAR, sinConfig: false };
-  } catch { /* el cuerpo no era JSON */ }
-  const msg = (error as { message?: string })?.message;
-  return { detalle: msg || porDefecto, sinConfig: false };
+async function motivoReal(error: unknown, porDefecto: string) {
+  return motivoEdge(error, await cuerpoDelError(error), PLANTILLAS_SIN_DESPLEGAR, porDefecto);
 }
 
 /**

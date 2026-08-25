@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import type { MensajeConversacion } from '@/lib/conversacion';
+import { motivoEdge, cuerpoDelError } from '@/lib/errorEdge';
 
 /**
  * Manda un WhatsApp al cliente SIN salir de Guardian (edge `importchat-send`).
@@ -48,14 +49,11 @@ export function useEnviarWhatsapp() {
       if (error) {
         // El cuerpo del error trae el motivo REAL (ventana vencida, sin chat
         // leído, credencial vencida). Sin esto la asesora solo vería "falló".
-        let detalle = '';
-        try {
-          const ctx = (error as { context?: { json?: () => Promise<{ error?: string; code?: string }> } }).context;
-          const cuerpo = ctx?.json ? await ctx.json() : null;
-          detalle = cuerpo?.error ?? '';
-          if (!detalle && cuerpo?.code === 'NOT_FOUND') detalle = FALTA_DESPLEGAR;
-        } catch { /* el cuerpo no era JSON */ }
-        return { ok: false, error: detalle || error.message || 'No se pudo enviar' };
+        // Y si NI SIQUIERA se llegó a la función, supabase-js devuelve un texto
+        // en inglés sin cuerpo que se colaba tal cual a la pantalla — lo
+        // traduce `motivoEdge`, que es donde está probado.
+        const { detalle } = motivoEdge(error, await cuerpoDelError(error), FALTA_DESPLEGAR, 'No se pudo enviar');
+        return { ok: false, error: detalle };
       }
       const r = data as { ok?: boolean; error?: string; mensajes?: MensajeConversacion[] } | null;
       if (!r?.ok) return { ok: false, error: r?.error || 'No se pudo confirmar el envío' };
