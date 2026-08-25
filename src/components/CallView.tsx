@@ -740,6 +740,22 @@ export default function CallView({ items, alerts }: Props) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
+  // ⛔ ARRIBA del early-return, con `o` OPCIONAL. Estos 4 hooks vivían más abajo
+  // (después del `if (!items.length || !o) return`) y eso viola las reglas de
+  // hooks: cuando a la operadora se le VACÍA la cola, el componente toma el
+  // camino corto y corre menos hooks que en el render con pedido → React
+  // #300/#310 y la pantalla entera se cae con "Algo salió mal". Lo reportó una
+  // operadora de Colombia el 25-ago (su cola de Confirmar quedó en cero).
+  // El cuadro de escribir y la señal del chat NO dependen de que haya pedido.
+  const [escribiendoWa, setEscribiendoWa] = useState(false);
+  const idsSenal = useMemo(() => (o?.dbId ? [o.dbId] : []), [o?.dbId]);
+  const senalChat = useRiesgoChat(activeStoreId, idsSenal);
+  const senales = useMemo(() => ({
+    hayConversacion: !!o?.dbId && senalChat.actividad.has(o.dbId),
+    actividad: o?.dbId ? senalChat.actividad.get(o.dbId) ?? null : null,
+    riesgo: o?.dbId ? senalChat.index.get(o.dbId) ?? null : null,
+  }), [o?.dbId, senalChat.actividad, senalChat.index]);
+
   if (!items.length || !o) {
     // Sin pedido en pantalla no hay atajos (ver hotkeysRef arriba).
     hotkeysRef.current = null;
@@ -954,18 +970,9 @@ export default function CallView({ items, alerts }: Props) {
 
   // Contacto de 1 click. `getWhatsAppPhone` es country-aware (57 CO / 593 EC,
   // strip del 0 en EC) — mismo helper que usa el canal in-app.
-  const [escribiendoWa, setEscribiendoWa] = useState(false);
+  // (`escribiendoWa` y `senales` se declaran ARRIBA del early-return — ver la
+  // nota allá sobre el crash de hooks que reportó Colombia.)
   const waPhone = getWhatsAppPhone(o.phone, countryCode);
-
-  // La señal del chat de ESTE pedido, en una sola consulta barata. La usan dos
-  // cosas: la tarjeta del rail y la decisión del botón de acá abajo.
-  const idsSenal = useMemo(() => (o.dbId ? [o.dbId] : []), [o.dbId]);
-  const senalChat = useRiesgoChat(activeStoreId, idsSenal);
-  const senales = useMemo(() => ({
-    hayConversacion: !!o.dbId && senalChat.actividad.has(o.dbId),
-    actividad: o.dbId ? senalChat.actividad.get(o.dbId) ?? null : null,
-    riesgo: o.dbId ? senalChat.index.get(o.dbId) ?? null : null,
-  }), [o.dbId, senalChat.actividad, senalChat.index]);
 
   const handleWhatsApp = () => {
     // ⛔ `wa.me` ARRANCA UN HILO NUEVO, aparte del de ImporChat: el bot no lo
