@@ -8,7 +8,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { useOrderNotesIndex } from '@/hooks/useOrderNotesIndex';
 import { useRiesgoChat } from '@/hooks/useRiesgoChat';
-import { compararRiesgo } from '@/lib/riesgoChat';
+import { compararRiesgo, contarPorRiesgo } from '@/lib/riesgoChat';
+import ResumenRiesgoStrip from '@/components/confirmar/ResumenRiesgoStrip';
 import { useOperatorNames } from '@/hooks/useOperatorNames';
 import { useSessionState } from '@/hooks/useSessionState';
 import { supabase } from '@/integrations/supabase/client';
@@ -439,6 +440,15 @@ export default function ConfirmarTab({ profile }: Props) {
       if (!Number.isFinite(t) || t > Date.now() + REMIND_LOOKAHEAD_MS) return false;
     }
     if (filter.startsWith('prod_') && o.producto !== filter.slice(5)) return false;
+    // Filtro por SEÑAL DE CHAT (rescate): el resumen de arriba filtra a una
+    // etiqueta (ej. solo "Quedó con dudas"). Solo pendientes — es una cola de
+    // trabajo, no un histórico. Sin dbId/señal nunca matchea una etiqueta.
+    if (filter.startsWith('riesgo_')) {
+      if (o.result) return false;
+      const want = filter.slice(7);
+      const r = o.dbId ? riesgoIndex.get(o.dbId) ?? null : null;
+      if (r !== want) return false;
+    }
     // Date filter
     if (dateFrom || dateTo) {
       const orderDate = parseDate(o.fecha);
@@ -475,6 +485,12 @@ export default function ConfirmarTab({ profile }: Props) {
     const rb = b.dbId ? riesgoIndex.get(b.dbId) ?? null : null;
     return compararRiesgo(ra, rb);
   }), [visibleQueue, filter, search, dateFrom, dateTo, notesIndex, riesgoIndex, onlyUntouched, myConfirmTouchedToday, gestionPorPedido, coverageConfirmError, user?.id, esAplazado]);
+
+  // Resumen de la cola PENDIENTE por etiqueta de chat (para el strip de arriba).
+  // Sobre `visibleQueue` (no `filteredItems`): el conteo tiene que reflejar TODA
+  // la cola, no la ya filtrada por una etiqueta — si no, tocar "Con dudas"
+  // dejaría el resto en 0 y no se podría volver.
+  const conteoRiesgo = useMemo(() => contarPorRiesgo(visibleQueue, riesgoIndex), [visibleQueue, riesgoIndex]);
 
   // Si el rebuild de la cola (cambio de `filteredItems` por un refresh) tiró el
   // scroll hacia el tope, lo restauramos. Solo actúa cuando saltó claramente
@@ -1066,6 +1082,14 @@ export default function ConfirmarTab({ profile }: Props) {
             </div>
 
             <WorkFilters workQueue={visibleQueue} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} notesIndex={notesIndex} currentUserId={user?.id ?? null} />
+
+            {/* Resumen de la cola por señal de WhatsApp: conteo por etiqueta +
+                filtro de rescate (tocar "Con dudas" muestra solo esos). */}
+            <ResumenRiesgoStrip
+              conteo={conteoRiesgo}
+              filtroActivo={filter}
+              onSelect={(r) => setFilter(r ? `riesgo_${r}` : 'pending')}
+            />
           </motion.div>
 
           {/* ⚠ DUPLICADOS VIVOS (incidente 2026-07-13, #6107398): el pedido viejo

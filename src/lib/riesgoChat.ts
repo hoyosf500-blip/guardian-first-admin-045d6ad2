@@ -72,6 +72,43 @@ export const RIESGO_INFO: Record<NivelRiesgo, RiesgoInfo> = {
   },
 };
 
+/** El conteo de la cola PENDIENTE partido por etiqueta de chat. Para el resumen
+ *  de arriba de Confirmar: "96 llamar · 8 con dudas · 12 ya confirmó". */
+export interface ConteoRiesgo {
+  mudo: number;
+  frio: number;
+  tibio: number;
+  sin_dato: number;
+  confirmado: number;
+  /** Pendientes sin dbId o sin señal todavía (no cae en ninguna etiqueta). */
+  sinSenal: number;
+  /** Total de pendientes contados. */
+  total: number;
+}
+
+/**
+ * Cuenta los pedidos PENDIENTES (sin `result`) por etiqueta de riesgo.
+ *
+ * Solo pendientes a propósito: el resumen es "qué trabajo me QUEDA por
+ * atender", no un histórico. Un pedido ya gestionado no es carga. Un pendiente
+ * sin señal de chat (dbId ausente o no sincronizado) cae en `sinSenal`, no se
+ * fuerza a ninguna etiqueta — mismo criterio que `normalizarRiesgo`.
+ */
+export function contarPorRiesgo(
+  items: Array<{ dbId?: string | null; result?: string | null }>,
+  index: Map<string, NivelRiesgo>,
+): ConteoRiesgo {
+  const c: ConteoRiesgo = { mudo: 0, frio: 0, tibio: 0, sin_dato: 0, confirmado: 0, sinSenal: 0, total: 0 };
+  for (const o of items) {
+    if (o.result) continue;
+    c.total += 1;
+    const r = o.dbId ? index.get(o.dbId) ?? null : null;
+    if (r) c[r] += 1;
+    else c.sinSenal += 1;
+  }
+  return c;
+}
+
 /** Normaliza lo que venga de la base. Cualquier cosa rara → `null`.
  *
  *  Devuelve `null` y NO `'sin_dato'` a propósito: son cosas distintas.
