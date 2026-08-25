@@ -46,7 +46,10 @@ export default function VelocimetroTurno({
     <div className={`mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border-2 px-3.5 py-2 text-sm transition-colors ${
       vaLento ? 'border-danger/50 bg-danger/10' : 'border-success/40 bg-success/10'
     }`}>
-      <span className={`inline-flex items-center gap-1.5 font-bold ${vaLento ? 'text-danger' : 'text-success'}`}>
+      <span
+        className={`inline-flex items-center gap-1.5 font-bold ${vaLento ? 'text-danger' : 'text-success'}`}
+        title="Meta: 20 pedidos por hora = máximo 3 minutos por pedido. Por debajo, se pone en rojo."
+      >
         <Gauge size={16} aria-hidden="true" />
         <span className="tabular-nums text-base">{porHora}</span>
         <span className="text-xs font-semibold">/hora</span>

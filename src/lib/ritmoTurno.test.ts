@@ -15,7 +15,7 @@ describe('calcularRitmo', () => {
     expect(r.porHora).toBeNull();
   });
 
-  it('37 gestionados en 3 horas = ~12,3/hora, va lento (bajo la meta de 15)', () => {
+  it('37 gestionados en 3 horas = ~12,3/hora, va lento (bajo la meta de 20)', () => {
     const r = calcularRitmo({ gestionados: 37, desdeMs: 0, nowMs: 180 * MIN, faltan: 104 });
     expect(r.porHora).toBe(12.3);
     expect(r.vaLento).toBe(true);
@@ -28,9 +28,15 @@ describe('calcularRitmo', () => {
     expect(r.etaMin).toBeLessThan(520);
   });
 
-  it('a buen ritmo (20/h) NO va lento', () => {
+  it('justo en la meta (20/h = 3 min/pedido) NO va lento', () => {
     const r = calcularRitmo({ gestionados: 40, desdeMs: 0, nowMs: 120 * MIN, faltan: 50 });
     expect(r.porHora).toBe(20);
+    expect(r.vaLento).toBe(false);
+  });
+
+  it('por encima de la meta (25/h) claramente NO va lento', () => {
+    const r = calcularRitmo({ gestionados: 50, desdeMs: 0, nowMs: 120 * MIN, faltan: 50 });
+    expect(r.porHora).toBe(25);
     expect(r.vaLento).toBe(false);
   });
 
@@ -39,7 +45,7 @@ describe('calcularRitmo', () => {
     expect(r.etaMin).toBe(0);
   });
 
-  it('la meta por defecto es 15/hora', () => {
-    expect(RITMO_META_POR_HORA).toBe(15);
+  it('la meta por defecto es 20/hora (3 min por pedido)', () => {
+    expect(RITMO_META_POR_HORA).toBe(20);
   });
 });

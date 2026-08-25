@@ -22,7 +22,7 @@ describe('seDemora', () => {
     expect(seDemora(UMBRAL_PEDIDO_SEG)).toBe(true);
     expect(seDemora(600)).toBe(true);
   });
-  it('el umbral por defecto son 5 min', () => {
-    expect(UMBRAL_PEDIDO_SEG).toBe(300);
+  it('el umbral por defecto son 3 min', () => {
+    expect(UMBRAL_PEDIDO_SEG).toBe(180);
   });
 });

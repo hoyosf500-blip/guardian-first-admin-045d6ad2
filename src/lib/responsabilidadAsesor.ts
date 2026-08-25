@@ -9,10 +9,11 @@
 // null y se pinta "—", NUNCA 0 (un 0 acusa; un "—" dice "no se pudo medir").
 
 /** Meta ORIENTATIVA de gestiones por día laboral. Ajustable — es la palanca que el
- *  dueño calibra. 15 gestiones/hora (la misma del velocímetro) × ~6h de turno. Se
- *  compara contra `total_atendidos` (pedidos distintos trabajados), que incluye los
- *  "no contestó" (rápidos), así que es una vara de ESFUERZO, no de ventas. */
-export const META_GESTIONES_DIA = 90;
+ *  dueño calibra. Regla del dueño: MÁX 3 min/pedido = 20 gestiones/hora (la misma
+ *  del velocímetro) × ~6h de turno = 120. Se compara contra `total_atendidos`
+ *  (pedidos distintos trabajados), que incluye los "no contestó" (rápidos), así que
+ *  es una vara de ESFUERZO, no de ventas. */
+export const META_GESTIONES_DIA = 120;
 
 /** Días del rango, para escalar la meta. */
 export function diasDelRango(range: 'today' | '7d' | '30d'): number {

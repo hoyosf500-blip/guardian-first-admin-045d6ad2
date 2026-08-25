@@ -40,8 +40,8 @@ export default function TiempoEnPedido({ pedidoId }: { pedidoId: string | null |
         demora ? 'border-danger/50 bg-danger/15 text-danger' : 'border-border bg-muted/40 text-muted-foreground'
       }`}
       title={demora
-        ? 'Llevás más de 5 minutos en este pedido — dale, hay cola esperando.'
-        : 'Tiempo en este pedido.'}
+        ? 'Llevás más de 3 minutos en este pedido — dale, hay cola esperando.'
+        : 'Tiempo en este pedido (meta: 3 min).'}
     >
       <Timer size={12} aria-hidden="true" />
       {formatMMSS(seg)}

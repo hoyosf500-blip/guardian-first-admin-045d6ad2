@@ -11,9 +11,11 @@
 // La tasa de devolución por asesor (Causa raíz) es el contrapeso que lo vigila
 // por detrás. Este velocímetro presiona el ritmo; esa tasa cuida la calidad.
 
-/** Meta de ritmo por defecto (pedidos gestionados por hora). El dueño considera
- *  que ~12/h es lento; 15 es el objetivo por debajo del cual se pinta en rojo. */
-export const RITMO_META_POR_HORA = 15;
+/** Meta de ritmo por defecto (pedidos gestionados por hora). Regla del dueño
+ *  (25-ago-2026): MÁXIMO 3 minutos por pedido → 60/3 = **20 por hora**. Por debajo
+ *  de eso el velocímetro se pinta rojo y grita "Acelerá". Es la vara estricta que
+ *  pidió: que el colaborador sienta la presión del reloj. */
+export const RITMO_META_POR_HORA = 20;
 
 /** Antes de este tiempo trabajado NO se calcula ritmo: con 3 gestiones en 4 min
  *  daría "45/hora", un número fantasioso que desinfla la presión después. */
