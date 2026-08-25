@@ -47,6 +47,8 @@ import {
   parsearPlantillas, construirPayloadMeta, faltantes, ordenarParaFase,
   type PlantillaMeta,
 } from "../_shared/plantillasMeta.ts";
+import { ensureFreshImporchatToken, decodeJwtExp, IMPORCHAT_BASE_DEFAULT } from "../_shared/imporchatSession.ts";
+import { fechaHoraLocal } from "../_shared/horaLocal.ts";
 
 const BASE_IC = "https://chat.imporfactory.app/api/v1";
 const TIMEOUT_MS = 25_000;
@@ -114,15 +116,22 @@ Deno.serve(async (req) => {
     // "no está configurado", no "esperá al próximo sync" — ese fue justamente
     // el mensaje engañoso que se corrigió en `importchat-chat` (3526e56).
     const { data: cfg } = await sb.from("store_importchat_config")
-      .select("id_configuracion, session_token, token_expira_at, habilitado")
+      .select("id_configuracion, session_token, token_expira_at, habilitado, api_base")
       .eq("store_id", storeId).maybeSingle();
     if (!cfg?.habilitado || !cfg?.session_token) {
       return json({ ok: false, sin_config: true, error: "Esta tienda no tiene ImporChat configurado" }, 409);
     }
-    if (cfg.token_expira_at && new Date(cfg.token_expira_at).getTime() < Date.now()) {
-      return json({ ok: false, error: `La credencial de ImporChat venció el ${cfg.token_expira_at}. Hay que renovarla.` }, 409);
+    // finding #11: self-heal barato de la llave (no solo el cron). Camino feliz sin red.
+    const token = await ensureFreshImporchatToken(sb, {
+      storeId,
+      base: String(cfg.api_base || IMPORCHAT_BASE_DEFAULT),
+      sessionToken: String(cfg.session_token),
+      tokenExpiraAt: cfg.token_expira_at ? String(cfg.token_expira_at) : null,
+    });
+    const expSeg = decodeJwtExp(token);
+    if (expSeg && expSeg * 1000 < Date.now()) {
+      return json({ ok: false, error: "La credencial de ImporChat venció y no se pudo renovar. Hay que renovarla." }, 409);
     }
-    const token = String(cfg.session_token);
     const idConf = String(cfg.id_configuracion);
 
     // ── Las plantillas aprobadas (las dos acciones las necesitan) ──────────
@@ -130,6 +139,13 @@ Deno.serve(async (req) => {
       id_configuracion: idConf, limit: 100,
     });
     if (!lista.ok) return json({ ok: false, error: `No se pudieron leer las plantillas: ${lista.detalle}` }, 502);
+    // finding #3: "no hay plantillas" (cero real) ≠ "no se pudo medir". Si `data`
+    // no es un array (200 con envoltorio inesperado, o body no-JSON), NO afirmar
+    // que la cuenta no tiene plantillas — sería un cero falso que le esconde a la
+    // asesora la única salida fuera de las 24 h teniendo 31 aprobadas.
+    if (!Array.isArray(lista.datos?.data)) {
+      return json({ ok: false, error: "ImporChat devolvió las plantillas en un formato inesperado. Reintentá; si sigue, avisá." }, 502);
+    }
     const plantillas = parsearPlantillas(lista.datos?.data);
     if (plantillas.length === 0) {
       // Cero plantillas es un dato raro pero posible (cuenta nueva). Se dice,
@@ -229,15 +245,17 @@ Deno.serve(async (req) => {
     // El prefijo sigue a la PANTALLA: `SEG:%` cuenta como gestión de
     // Seguimiento, y escribirle desde Confirmar es un intento de contacto.
     // Ver el comentario largo en `importchat-send`.
-    const ahora = new Date();
+    // Hora LOCAL de la tienda (finding #9): antes -5h fijo para la fecha y la
+    // hora en UTC. `tienda` ya se leyó arriba para el destinatario.
+    const { fecha: tpFecha, hora: tpHora } = fechaHoraLocal(tienda?.country_code);
     const modulo = body?.modulo === "WHATSAPP" ? "WHATSAPP" : "SEG";
     await sb.from("touchpoints").insert({
       phone: pedido.phone,
       action: `${modulo}: Mandé la plantilla ${elegida.nombre}`,
       operator_id: u.user.id,
       store_id: storeId,
-      action_date: new Date(ahora.getTime() - 5 * 3600_000).toISOString().slice(0, 10),
-      action_time: ahora.toISOString().slice(11, 16),
+      action_date: tpFecha,
+      action_time: tpHora,
     });
 
     return json({

@@ -392,6 +392,15 @@ Deno.serve(async (req) => {
           .from("store_members").select("role")
           .eq("store_id", body.store_id).eq("user_id", u.user.id).maybeSingle();
         if (!m) return json({ ok: false, error: "no sos miembro de esa tienda" }, 403);
+      } else {
+        // finding #5: SIN store_id un humano NO puede disparar el sync
+        // multi-tienda — es pesado (paginación + XLSX ~9 MB por tienda) y el
+        // `resumen` de respuesta filtraría datos de TODAS las tiendas a cualquier
+        // usuario logueado. Solo un admin de plataforma (o el cron, que va por la
+        // otra rama) puede correr todas.
+        const { data: rol } = await sb.from("user_roles")
+          .select("role").eq("user_id", u.user.id).eq("role", "admin").maybeSingle();
+        if (!rol) return json({ ok: false, error: "Especificá store_id: solo un admin puede sincronizar todas las tiendas." }, 403);
       }
       autorizado = true;
     }

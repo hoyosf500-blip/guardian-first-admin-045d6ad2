@@ -40,6 +40,7 @@ import {
   enviarMensajeMeta, leerNumeroMeta, leerPlantillasMeta,
   payloadTexto, payloadMedia, TIPOS_MEDIA, type TipoMedia,
 } from "../_shared/metaWhatsapp.ts";
+import { fechaHoraLocal } from "../_shared/horaLocal.ts";
 
 type Accion = "verificar" | "listar" | "prueba" | "texto" | "plantilla" | "media";
 const ACCIONES: Accion[] = ["verificar", "listar", "prueba", "texto", "plantilla", "media"];
@@ -145,6 +146,10 @@ Deno.serve(async (req) => {
     if (accion === "listar") {
       const tpl = await leerPlantillasMeta({ version, token, wabaId });
       if (!tpl.ok) return json({ ok: false, error: `No se pudieron leer las plantillas: ${tpl.detalle}` }, 502);
+      // finding #3: data no-array = formato inesperado, no "cero plantillas".
+      if (!Array.isArray(tpl.datos?.data)) {
+        return json({ ok: false, error: "Meta devolvió las plantillas en un formato inesperado. Reintentá." }, 502);
+      }
       const aprobadas = parsearPlantillas(tpl.datos?.data);
       return json({
         ok: true,
@@ -315,15 +320,17 @@ Deno.serve(async (req) => {
     // Touchpoint con el prefijo de LA PANTALLA (mismo criterio que
     // importchat-send: SEG cuenta como gestión de Seguimiento; WHATSAPP es un
     // intento de contacto desde Confirmar).
-    const ahora = new Date();
+    // Hora LOCAL (finding #9): meta-whatsapp está gateado a EC (UTC-5), pero se
+    // usa el helper por país igual, para no volver a hardcodear el offset.
+    const { fecha: tpFecha, hora: tpHora } = fechaHoraLocal("EC");
     const modulo = body?.modulo === "WHATSAPP" ? "WHATSAPP" : "SEG";
     await sb.from("touchpoints").insert({
       phone: pedido.phone,
       action: `${modulo}: ${descripcionTouchpoint}`,
       operator_id: u.user.id,
       store_id: storeId,
-      action_date: new Date(ahora.getTime() - 5 * 3600_000).toISOString().slice(0, 10),
-      action_time: ahora.toISOString().slice(11, 16),
+      action_date: tpFecha,
+      action_time: tpHora,
     });
 
     return json({ ok: true, confirmado: true, enviado_a: destino, wamid: envio.wamid, via: "meta" });

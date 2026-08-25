@@ -35,6 +35,8 @@ import { ventanaWhatsapp, MOTIVO_VENTANA } from "../_shared/ventanaWhatsapp.ts";
 // la necesita. Es el mismo molde que `_shared/dropiWebQuote.ts`.
 import { usarSocket, emitirMensaje, leerChat, type CredencialIC } from "../_shared/imporchatSocket.ts";
 import { normalizarConversacion, type MensajeConversacion } from "../_shared/conversacion.ts";
+import { ensureFreshImporchatToken, decodeJwtExp, IMPORCHAT_BASE_DEFAULT } from "../_shared/imporchatSession.ts";
+import { fechaHoraLocal } from "../_shared/horaLocal.ts";
 
 const MAX_LARGO = 1000;
 /** Reintentos de RELECTURA tras emitir (ms de espera antes de cada uno). Con una
@@ -176,14 +178,28 @@ Deno.serve(async (req) => {
 
     // ── Credenciales de la tienda ─────────────────────────────────────────
     const { data: cfg } = await sb.from("store_importchat_config")
-      .select("id_configuracion, session_token, token_expira_at, habilitado")
+      .select("id_configuracion, session_token, token_expira_at, habilitado, api_base")
       .eq("store_id", storeId).maybeSingle();
     if (!cfg?.habilitado || !cfg?.session_token) {
       return json({ ok: false, error: "Esta tienda no tiene ImporChat configurado" }, 409);
     }
-    if (cfg.token_expira_at && new Date(cfg.token_expira_at).getTime() < Date.now()) {
-      return json({ ok: false, error: `La credencial de ImporChat venció el ${cfg.token_expira_at}. Hay que renovarla.` }, 409);
+    // finding #11: self-heal barato de la llave (antes solo el cron la renovaba;
+    // si el cron se caía cerca del vencimiento se apagaba el WhatsApp interactivo).
+    // En el camino feliz NO toca red — devuelve la llave que ya había.
+    const token = await ensureFreshImporchatToken(sb, {
+      storeId,
+      base: String(cfg.api_base || IMPORCHAT_BASE_DEFAULT),
+      sessionToken: String(cfg.session_token),
+      tokenExpiraAt: cfg.token_expira_at ? String(cfg.token_expira_at) : null,
+    });
+    const expSeg = decodeJwtExp(token);
+    if (expSeg && expSeg * 1000 < Date.now()) {
+      return json({ ok: false, error: "La credencial de ImporChat venció y no se pudo renovar. Hay que renovarla." }, 409);
     }
+    // País de la tienda → fecha/hora LOCAL del touchpoint (finding #9).
+    const { data: tienda } = await sb.from("stores")
+      .select("country_code").eq("id", storeId).maybeSingle();
+    const cc = String(tienda?.country_code || "CO");
 
     // Nombre de quien escribe: queda registrado en ImporChat como responsable,
     // y es lo que después distingue un mensaje de la asesora de uno del bot.
@@ -212,7 +228,7 @@ Deno.serve(async (req) => {
     }
 
     const r = await enviarPorSocket({
-      cred: { token: String(cfg.session_token), idConf: Number(cfg.id_configuracion) },
+      cred: { token, idConf: Number(cfg.id_configuracion) },
       chatId: String(pedido.importchat_chat_id),
       telefono: String(pedido.phone || ""),
       mensaje, autor,
@@ -240,15 +256,15 @@ Deno.serve(async (req) => {
     // Default `SEG` a propósito: es lo que hacía antes, así que un cliente
     // viejo que no mande `modulo` se comporta igual.
     if (pedido.phone) {
-      const ahora = new Date();
+      const { fecha, hora } = fechaHoraLocal(cc);
       const modulo = body?.modulo === "WHATSAPP" ? "WHATSAPP" : "SEG";
       await sb.from("touchpoints").insert({
         phone: pedido.phone,
         action: `${modulo}: Escribí por WhatsApp`,
         operator_id: u.user.id,
         store_id: storeId,
-        action_date: new Date(ahora.getTime() - 5 * 3600_000).toISOString().slice(0, 10),
-        action_time: ahora.toISOString().slice(11, 16),
+        action_date: fecha,
+        action_time: hora,
       });
     }
 

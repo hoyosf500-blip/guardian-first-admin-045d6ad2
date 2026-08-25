@@ -20,6 +20,7 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 import { usarSocket, leerChat } from "../_shared/imporchatSocket.ts";
 import { normalizarConversacion, ultimoEntranteMs, ultimoSaliente } from "../_shared/conversacion.ts";
 import { ventanaWhatsapp } from "../_shared/ventanaWhatsapp.ts";
+import { ensureFreshImporchatToken, decodeJwtExp, IMPORCHAT_BASE_DEFAULT } from "../_shared/imporchatSession.ts";
 
 Deno.serve(async (req) => {
   const cors = getCorsHeaders(req);
@@ -57,13 +58,21 @@ Deno.serve(async (req) => {
     // Además así ni se consulta la tabla de pedidos para quien no puede usar
     // la función.
     const { data: cfg } = await sb.from("store_importchat_config")
-      .select("id_configuracion, session_token, token_expira_at, habilitado")
+      .select("id_configuracion, session_token, token_expira_at, habilitado, api_base")
       .eq("store_id", storeId).maybeSingle();
     if (!cfg?.habilitado || !cfg?.session_token) {
       return json({ ok: false, sin_config: true, error: "Esta tienda no tiene ImporChat configurado" }, 409);
     }
-    if (cfg.token_expira_at && new Date(cfg.token_expira_at).getTime() < Date.now()) {
-      return json({ ok: false, error: `La credencial de ImporChat venció el ${cfg.token_expira_at}. Hay que renovarla.` }, 409);
+    // finding #11: self-heal barato de la llave (no solo el cron). Camino feliz sin red.
+    const token = await ensureFreshImporchatToken(sb, {
+      storeId,
+      base: String(cfg.api_base || IMPORCHAT_BASE_DEFAULT),
+      sessionToken: String(cfg.session_token),
+      tokenExpiraAt: cfg.token_expira_at ? String(cfg.token_expira_at) : null,
+    });
+    const expSeg = decodeJwtExp(token);
+    if (expSeg && expSeg * 1000 < Date.now()) {
+      return json({ ok: false, error: "La credencial de ImporChat venció y no se pudo renovar. Hay que renovarla." }, 409);
     }
 
     // ── El pedido y su conversación ───────────────────────────────────────
@@ -84,7 +93,7 @@ Deno.serve(async (req) => {
       }, 409);
     }
 
-    const cred = { token: String(cfg.session_token), idConf: Number(cfg.id_configuracion) };
+    const cred = { token, idConf: Number(cfg.id_configuracion) };
     const crudos = await usarSocket((s) => leerChat(s, cred, String(pedido.importchat_chat_id)));
 
     // ⛔ `null` (no contestó) y `[]` (chat vacío) NO son lo mismo. Devolver una
