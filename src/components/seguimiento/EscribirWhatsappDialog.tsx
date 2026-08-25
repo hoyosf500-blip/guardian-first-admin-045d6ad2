@@ -3,13 +3,20 @@ import { toast } from 'sonner';
 import { MessageCircle, Send, Clock, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useEnviarWhatsapp } from '@/hooks/useEnviarWhatsapp';
+import { useConversacion } from '@/hooks/useConversacion';
+import ConversacionChat from '@/components/seguimiento/ConversacionChat';
 import { plantillasPara } from '@/lib/plantillasChat';
-import { ventanaWhatsapp, MOTIVO_VENTANA } from '@/lib/ventanaWhatsapp';
+import { ventanaWhatsapp, MOTIVO_VENTANA, type EstadoVentana } from '@/lib/ventanaWhatsapp';
 import type { ActividadChatOrden } from '@/lib/actividadChat';
 import { cn } from '@/lib/utils';
 
 /**
- * Escribirle al cliente por WhatsApp sin salir de Guardian.
+ * Escribirle al cliente por WhatsApp sin salir de Guardian — leyendo primero
+ * lo que dijo.
+ *
+ * La conversación va ARRIBA del cuadro de texto y se muestra SIEMPRE, también
+ * cuando la ventana de 24 h ya venció: aunque no se pueda escribir, saber qué
+ * pasó es justo lo que decide si hay que llamar por teléfono.
  *
  * La ventana de 24 h se muestra ANTES de escribir, no después de fallar: si
  * está vencida el cuadro lo dice con todas las letras y ofrece el teléfono, en
@@ -32,10 +39,21 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
   const { enviar, enviando } = useEnviarWhatsapp();
   const [texto, setTexto] = useState('');
   const plantillas = useMemo(() => plantillasPara(estado, nombre), [estado, nombre]);
-  const v = useMemo(
+
+  const hilo = useConversacion(externalId, open);
+
+  // La ventana la decide el hilo RECIÉN leído. La columna sincronizada puede
+  // tener media hora, y en una ventana de 24 h eso es la diferencia entre que
+  // el mensaje llegue o se pierda sin que nadie se entere. Mientras el hilo
+  // carga (o si no se pudo leer) manda lo sincronizado, que es lo mejor que
+  // hay — nunca se asume "abierta" por no saber.
+  const vSincronizada = useMemo(
     () => ventanaWhatsapp(actividad?.entranteAt ?? null, !!actividad),
     [actividad],
   );
+  const v = hilo.estado === 'ok' && hilo.ventana
+    ? { estado: hilo.ventana.estado as EstadoVentana, restanteMs: hilo.ventana.restanteMs }
+    : vSincronizada;
   const puedeEscribir = v.estado === 'abierta';
 
   // Arranca con la primera sugerencia ya puesta: a las 9 de la mañana, con 40
@@ -48,8 +66,11 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
     const r = await enviar(externalId, texto);
     if (r.ok) {
       toast.success('Mensaje enviado y confirmado en el chat');
+      // El servidor ya releyó el chat para verificar: se pinta lo que devolvió
+      // en vez de pedirlo otra vez.
+      if (r.mensajes) hilo.setMensajes(r.mensajes);
+      setTexto('');
       onEnviado?.();
-      onOpenChange(false);
     } else {
       toast.error(r.error || 'No se pudo enviar');
     }
@@ -57,15 +78,24 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <MessageCircle size={16} className="text-success" aria-hidden="true" />
-            Escribirle a {nombre || 'el cliente'}
+            {nombre || 'El cliente'} por WhatsApp
           </DialogTitle>
         </DialogHeader>
 
-        {/* El estado de la ventana va PRIMERO: decide si tiene sentido escribir. */}
+        {/* Lo que pasó, primero. Aunque no se pueda escribir, esto es lo que
+            decide si hay que llamar. */}
+        <ConversacionChat
+          mensajes={hilo.mensajes}
+          estado={hilo.estado}
+          error={hilo.error}
+          onRecargar={hilo.recargar}
+        />
+
+        {/* El estado de la ventana: decide si tiene sentido escribir. */}
         {puedeEscribir ? (
           <div className="flex items-center gap-2 rounded-xl border border-success/30 bg-success/10 px-3 py-2 text-xs text-success">
             <Clock size={13} aria-hidden="true" className="shrink-0" />
@@ -104,7 +134,7 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
             <textarea
               value={texto}
               onChange={(e) => setTexto(e.target.value)}
-              rows={5}
+              rows={4}
               maxLength={1000}
               placeholder="Escribile al cliente…"
               className="w-full rounded-xl border border-border bg-card/40 px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"

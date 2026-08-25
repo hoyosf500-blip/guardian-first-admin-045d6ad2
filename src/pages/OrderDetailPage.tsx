@@ -27,6 +27,7 @@ import SlaAlertCard from '@/components/order-detail/SlaAlertCard';
 import CustomerHistoryCard from '@/components/order-detail/CustomerHistoryCard';
 import Timeline from '@/components/order-detail/Timeline';
 import CommunicationLog from '@/components/order-detail/CommunicationLog';
+import ConversacionWhatsappCard from '@/components/order-detail/ConversacionWhatsappCard';
 import NotesPanel from '@/components/order-notes/NotesPanel';
 
 interface OrderRow {
@@ -1032,6 +1033,11 @@ export default function OrderDetailPage() {
 
         <CommunicationLog events={timelineEvents} />
       </div>
+
+      {/* La conversación de WhatsApp de verdad (ImporChat). Va APARTE de la
+          bitácora de arriba a propósito: aquella dice lo que hizo Guardian,
+          ésta lo que pasó en el chat. */}
+      <ConversacionWhatsappCard externalId={order.external_id} />
 
       {/* Notas y recordatorios — componente compartido (también usado en CallView). */}
       <NotesPanel phone={order.phone} orderId={order.id} variant="full" />

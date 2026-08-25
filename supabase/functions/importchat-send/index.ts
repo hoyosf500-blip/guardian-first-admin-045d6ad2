@@ -29,89 +29,62 @@
 // Body: { store_id, external_id, mensaje, dry_run? }
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { io } from "https://esm.sh/socket.io-client@4.7.5";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { ventanaWhatsapp, MOTIVO_VENTANA } from "../_shared/ventanaWhatsapp.ts";
+// La plomería del socket vive en `_shared` desde que `importchat-chat` también
+// la necesita. Es el mismo molde que `_shared/dropiWebQuote.ts`.
+import { usarSocket, emitirMensaje, leerChat, type CredencialIC } from "../_shared/imporchatSocket.ts";
+import { normalizarConversacion, type MensajeConversacion } from "../_shared/conversacion.ts";
 
-const SOCKET_URL = "https://chat.imporfactory.app";
 const MAX_LARGO = 1000;
 /** Cuánto se espera a que el mensaje aparezca en el chat al releerlo. */
 const ESPERA_VERIFICACION_MS = 3500;
-const TIMEOUT_SOCKET_MS = 15_000;
 
-interface MensajeIC {
-  id?: number;
-  rol_mensaje?: number;
-  texto_mensaje?: string | null;
-  created_at?: string;
-  responsable?: string | null;
-}
-
-/** Conecta, emite el mensaje y RELEE el chat para confirmar que salió. */
+/**
+ * Conecta, emite el mensaje y RELEE el chat para confirmar que salió.
+ *
+ * La verificación se hace sobre los mensajes CRUDOS, con exactamente el mismo
+ * criterio de siempre — normalizar antes de comparar cambiaría, aunque sea en
+ * un borde, la regla que decide si a la asesora se le dice "enviado". El hilo
+ * normalizado se devuelve APARTE, como agregado, para que la pantalla pueda
+ * mostrar la conversación sin pedirla de nuevo.
+ */
 async function enviarPorSocket(opts: {
-  token: string; idConf: number; chatId: string; telefono: string;
+  cred: CredencialIC; chatId: string; telefono: string;
   mensaje: string; autor: string;
-}): Promise<{ ok: boolean; confirmado: boolean; detalle: string }> {
-  const socket = io(SOCKET_URL, {
-    transports: ["websocket"], reconnection: false, timeout: TIMEOUT_SOCKET_MS,
-  });
-  const cerrar = () => { try { socket.close(); } catch { /* ya cerrado */ } };
-
+}): Promise<{ ok: boolean; confirmado: boolean; detalle: string; mensajes: MensajeConversacion[] }> {
   try {
-    await new Promise<void>((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error("el socket no conectó en 15 s")), TIMEOUT_SOCKET_MS);
-      socket.on("connect", () => { clearTimeout(t); resolve(); });
-      socket.on("connect_error", (e: Error) => { clearTimeout(t); reject(new Error(`socket: ${e.message}`)); });
-    });
-
-    // Mismo payload que emite el panel (leído de su bundle). `client_tmp_id`
-    // es el id optimista que usa su UI; se manda uno propio y reconocible.
-    socket.emit("SEND_MESSAGE", {
-      id_configuracion: opts.idConf,
-      chatId: Number(opts.chatId) || opts.chatId,
-      source: "wa",
-      page_id: null,
-      external_id: null,
-      to: opts.telefono,
-      mensaje: opts.mensaje,
-      tipo_mensaje: "text",
-      attachment_url: null,
-      ruta_archivo: null,
-      nombre_encargado: opts.autor,
-      client_tmp_id: `guardian-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      jwt_token: opts.token,
-    });
-
-    // Verificación: releer el chat y buscar NUESTRO texto entre los salientes.
-    await new Promise((r) => setTimeout(r, ESPERA_VERIFICACION_MS));
-    const confirmado = await new Promise<boolean>((resolve) => {
-      const t = setTimeout(() => resolve(false), 8000);
-      socket.once("CHATS_BOX_RESPONSE", (data: unknown) => {
-        clearTimeout(t);
-        const chat = Array.isArray(data) ? data[0] as { mensajes?: MensajeIC[] } : null;
-        const msgs = chat?.mensajes ?? [];
-        const desde = Date.now() - 5 * 60_000;
-        resolve(msgs.some((m) =>
-          m.rol_mensaje === 1 &&
-          String(m.texto_mensaje ?? "").trim() === opts.mensaje.trim() &&
-          (!m.created_at || Date.parse(m.created_at) >= desde)));
+    return await usarSocket(async (socket) => {
+      emitirMensaje(socket, opts.cred, {
+        chatId: opts.chatId, telefono: opts.telefono,
+        mensaje: opts.mensaje, autor: opts.autor,
       });
-      socket.emit("GET_CHATS_BOX", {
-        chatId: Number(opts.chatId) || opts.chatId,
-        id_configuracion: opts.idConf,
-        jwt_token: opts.token,
-      });
-    });
 
-    cerrar();
-    return confirmado
-      ? { ok: true, confirmado: true, detalle: "enviado y confirmado en el chat" }
-      // Enviado sin confirmar NO es un éxito: puede haberse perdido. El
-      // llamador NO marca el pedido como avisado con esto.
-      : { ok: false, confirmado: false, detalle: "se emitió pero no apareció en el chat al releerlo" };
+      // Verificación: releer el chat y buscar NUESTRO texto entre los salientes.
+      await new Promise((r) => setTimeout(r, ESPERA_VERIFICACION_MS));
+      const crudos = await leerChat(socket, opts.cred, opts.chatId);
+      // No poder releer NO es "no llegó": es no saber. Y no saber se trata
+      // como fallo, porque marcar un pedido como avisado sin confirmarlo es
+      // peor que pedirle a la asesora que reintente.
+      if (crudos === null) {
+        return { ok: false, confirmado: false, detalle: "ImporChat no contestó al releer el chat", mensajes: [] };
+      }
+
+      const desde = Date.now() - 5 * 60_000;
+      const confirmado = crudos.some((m) =>
+        m.rol_mensaje === 1 &&
+        String(m.texto_mensaje ?? "").trim() === opts.mensaje.trim() &&
+        (!m.created_at || Date.parse(m.created_at) >= desde));
+
+      const mensajes = normalizarConversacion(crudos);
+      return confirmado
+        ? { ok: true, confirmado: true, detalle: "enviado y confirmado en el chat", mensajes }
+        // Enviado sin confirmar NO es un éxito: puede haberse perdido. El
+        // llamador NO marca el pedido como avisado con esto.
+        : { ok: false, confirmado: false, detalle: "se emitió pero no apareció en el chat al releerlo", mensajes };
+    });
   } catch (e) {
-    cerrar();
-    return { ok: false, confirmado: false, detalle: e instanceof Error ? e.message : String(e) };
+    return { ok: false, confirmado: false, detalle: e instanceof Error ? e.message : String(e), mensajes: [] };
   }
 }
 
@@ -201,8 +174,7 @@ Deno.serve(async (req) => {
     }
 
     const r = await enviarPorSocket({
-      token: String(cfg.session_token),
-      idConf: Number(cfg.id_configuracion),
+      cred: { token: String(cfg.session_token), idConf: Number(cfg.id_configuracion) },
       chatId: String(pedido.importchat_chat_id),
       telefono: String(pedido.phone || ""),
       mensaje, autor,
@@ -231,7 +203,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    return json({ ok: true, confirmado: true, autor, enviado_a: pedido.phone });
+    // El hilo actualizado viaja de vuelta: la pantalla lo pinta al instante,
+    // sin una segunda vuelta a ImporChat.
+    return json({ ok: true, confirmado: true, autor, enviado_a: pedido.phone, mensajes: r.mensajes });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[importchat-send]", msg);

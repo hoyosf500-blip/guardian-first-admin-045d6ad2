@@ -5,6 +5,7 @@ import {
   Package, Tag, Truck, MapPin, AlertTriangle, CheckCircle, RotateCcw,
   DollarSign, Layers, ExternalLink, RefreshCw, MessageCircle, Phone,
   ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Maximize2, CheckCircle2, Building2, Send,
+  MessagesSquare,
 } from 'lucide-react';
 import { OrderData, getTrackingUrl, getWhatsAppPhone, calcBusinessDays, parseDate } from '@/lib/orderUtils';
 import { classifySegEstado, estadoDifiereDeFase, normalizaRotulo, type SegStatusKey } from '@/lib/segStatus';
@@ -752,27 +753,35 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
               <MessageCircle size={14} aria-hidden="true" />
             </button>
           )}
-          {/* ESCRIBIRLE desde acá (ImporChat). Solo aparece si la conversación
-              está leída: sin ese dato no se sabe si el mensaje llegaría, y un
-              botón que a veces no entrega es peor que no tenerlo. Deshabilitado
-              —con el motivo en el title— cuando la ventana de 24 h venció. */}
+          {/* LA CONVERSACIÓN (ImporChat). Solo aparece si el chat está leído:
+              sin ese dato no hay hilo que mostrar.
+
+              ⚠️ El botón abre SIEMPRE, también con la ventana de 24 h vencida.
+              Antes se deshabilitaba, y eso dejaba sin ver la conversación justo
+              a los pedidos donde NO se puede escribir — que son los que hay que
+              llamar por teléfono, o sea donde más falta hace saber qué se dijo.
+              Lo que cambia es qué se puede hacer adentro, y el cuadro lo
+              explica en la cara. */}
           {actividad && o.externalId && (
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setEscribiendo(true); }}
-              disabled={ventanaChat.estado !== 'abierta'}
               title={ventanaChat.estado === 'abierta'
-                ? 'Escribirle por WhatsApp sin salir de Guardian'
-                : MOTIVO_VENTANA[ventanaChat.estado]}
-              aria-label="Escribirle por WhatsApp"
+                ? 'Ver la conversación y escribirle sin salir de Guardian'
+                : `Ver la conversación — no se puede escribir: ${MOTIVO_VENTANA[ventanaChat.estado]}`}
+              aria-label={ventanaChat.estado === 'abierta'
+                ? 'Ver la conversación y escribirle por WhatsApp'
+                : 'Ver la conversación de WhatsApp'}
               className={cn(
                 'p-2 min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg border transition-colors',
                 ventanaChat.estado === 'abierta'
                   ? 'bg-success/12 border-success/30 text-success hover:bg-success/20 hover:border-success/60'
-                  : 'border-border text-muted-foreground/40 cursor-not-allowed',
+                  : 'border-border text-muted-foreground hover:text-foreground hover:border-border-strong',
               )}
             >
-              <Send size={14} aria-hidden="true" />
+              {ventanaChat.estado === 'abierta'
+                ? <Send size={14} aria-hidden="true" />
+                : <MessagesSquare size={14} aria-hidden="true" />}
             </button>
           )}
         </div>
