@@ -1517,29 +1517,35 @@ export default function SeguimientoTab() {
           filtro — igual que el aro de confirmación del Dashboard. Misma fuente
           (chipsBase en Lista / dedupedByDate en Tablero), misma fórmula. */}
 
-      {/* Clientes esperando respuesta. Es un BOTÓN, no un cartel: toca y el
-          tablero muestra solo esos pedidos. Solo aparece cuando hay alguien
-          esperando de verdad — un cero no se anuncia. */}
-      {viewMode === 'board' && esperandoRespuesta.size > 0 && (
+      {/* Clientes esperando respuesta — "la mano levantada". Es un BOTÓN: toca y
+          el tablero muestra solo esos. Aparece en AMBAS vistas (antes solo en
+          Tablero, así que en Lista la operadora no veía que un cliente escribió).
+          Desde Lista lleva al Tablero ya filtrado, porque el filtro vive ahí.
+          Un cero no se anuncia. Reforzado (pedido del dueño 25-ago): siempre en
+          rojo, no en gris tenue — es lo más urgente que puede pasar. */}
+      {esperandoRespuesta.size > 0 && (
         <button
           type="button"
-          onClick={() => setSoloEsperando((v) => !v)}
-          aria-pressed={soloEsperando}
-          title="El cliente escribió por WhatsApp y su mensaje es el último del chat: nadie le respondió."
+          onClick={() => {
+            if (viewMode !== 'board') { setViewMode('board'); setSoloEsperando(true); return; }
+            setSoloEsperando((v) => !v);
+          }}
+          aria-pressed={viewMode === 'board' && soloEsperando}
+          title="Un cliente escribió por WhatsApp y su mensaje es el último del chat: nadie le respondió. Tocá para verlos."
           className={cn(
-            'mb-3 w-full flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-left transition-colors',
-            soloEsperando
-              ? 'bg-danger/15 border-danger/50 text-danger'
-              : 'bg-card/40 border-danger/30 text-foreground hover:border-danger/50',
+            'mb-3 w-full flex items-center gap-2.5 rounded-xl border-2 px-3.5 py-2.5 text-left transition-colors',
+            viewMode === 'board' && soloEsperando
+              ? 'bg-danger/20 border-danger/60 text-danger'
+              : 'bg-danger/10 border-danger/40 text-foreground hover:bg-danger/15 hover:border-danger/60',
           )}
         >
-          <span className="w-2 h-2 rounded-full bg-danger glow-danger shrink-0" aria-hidden="true" />
-          <span className="font-mono tabular-nums text-[15px] font-bold text-danger">{esperandoRespuesta.size}</span>
-          <span className="text-sm min-w-0 flex-1 truncate">
+          <span className="w-2.5 h-2.5 rounded-full bg-danger glow-danger shrink-0" aria-hidden="true" />
+          <span className="font-mono tabular-nums text-lg font-bold text-danger">{esperandoRespuesta.size}</span>
+          <span className="text-sm min-w-0 flex-1 truncate font-medium">
             {esperandoRespuesta.size === 1 ? 'cliente te escribió' : 'clientes te escribieron'} y nadie les contestó
           </span>
-          <span className="text-[11px] font-semibold shrink-0 opacity-80">
-            {soloEsperando ? 'Ver todo' : 'Ver solo estos'}
+          <span className="text-[11px] font-bold shrink-0 rounded-lg bg-danger/20 text-danger px-2 py-1">
+            {viewMode !== 'board' ? 'Ir a verlos' : soloEsperando ? 'Ver todo' : 'Ver solo estos'}
           </span>
         </button>
       )}
