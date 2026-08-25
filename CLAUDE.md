@@ -4,6 +4,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > **This file is the source of truth.** `AGENTS.md` and `README.md` are older and stale on several points — they still describe the pre-multitienda model (`app_settings.dropi_token`, "integration-key not Bearer"), a `mapDbRow()` mapper that no longer exists (it's `dbToOrderData`), a `/rescate` route that was removed, CO-only scope, and a 1-min cron. When they disagree with this file, this file wins.
 
+## ⛔ REGLA #0 — DDL sobre tablas calientes puede TUMBAR toda la base
+
+**Qué pasó (2026-08-25):** una migración de Lovable hizo `ALTER TABLE orders ADD COLUMN` +
+`CREATE INDEX` (no-concurrent) sobre `orders`. Quedó ESPERANDO el lock detrás de una
+transacción larga y **todas las lecturas se encolaron atrás** → la base entera se congeló
+~20 min, hasta el login (`auth/token`) daba 504. El equipo de Ecuador quedó sin CRM. Se
+destrabó **reiniciando el backend** (el SQL editor de Lovable NO tiene permiso para
+`pg_terminate_backend` — da "Server Error"; el reinicio lo hace el agente de Lovable o
+Supabase, NO hay botón "Restart" en el panel de Lovable). Diagnóstico en vivo desde afuera:
+`auth/v1/health` respondía en 42 ms pero `SELECT id FROM orders LIMIT 1` se colgaba 20 s =
+**lock sobre `orders`**, no infra caída.
+
+**Reglas duras para CUALQUIER migración que toque `orders` / `order_results` / `touchpoints`
+(tablas calientes que los crons y el frontend usan sin parar):**
+- Empezar el archivo con `SET lock_timeout = '5s';` — así el DDL **falla rápido** en vez de
+  encolar a todo el mundo detrás de un lock que no consigue.
+- Índices con **`CREATE INDEX CONCURRENTLY`** (no bloquea lecturas/escrituras). OJO: no corre
+  dentro de una transacción.
+- Aplicarla en un **momento tranquilo**, no en hora pico con los crons corriendo.
+- `ADD COLUMN` sin default es instantáneo; un `ADD COLUMN ... DEFAULT` o un `UPDATE` masivo
+  reescribe la tabla y la bloquea — evitarlos o hacerlos por lotes.
+
+La migración `20260825230000_blindaje_timeouts_db.sql` puso dos redes de seguridad a nivel de
+rol para que un lock/consulta trabada no vuelva a congelar TODO: `idle_in_transaction_session_timeout`
+(mata la transacción ociosa que retiene el lock — la causa raíz exacta) y `statement_timeout`
+(cancela la consulta eterna antes de que tape el pool). NO tocan `service_role` (edge/crons).
+
 ## ⛔ REGLA #1 — NUNCA reescribir una función SQL copiándola del repo
 
 **Las funciones desplegadas en la base DIFIEREN de las de `supabase/migrations/`.** Lovable
