@@ -1,9 +1,21 @@
 import { motion } from 'framer-motion';
 import { Loader2, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { useResponsabilidadAsesor, type ProdRowLite } from '@/hooks/useResponsabilidadAsesor';
-import { semaforoAsesor, META_GESTIONES_DIA } from '@/lib/responsabilidadAsesor';
+import { semaforoAsesor, metaGestionesDelRango, META_GESTIONES_DIA } from '@/lib/responsabilidadAsesor';
+import { useActiveStoreId } from '@/contexts/StoreContext';
+import { useStoreSchedule } from '@/hooks/useStoreSchedule';
+import { scheduleFromMinutes, DEFAULT_SCHEDULE, bogotaSecondsOfDay } from '@/lib/inactivityWindow';
 
 type Range = 'today' | '7d' | '30d';
+
+/** Fracción del turno laboral ya transcurrida hoy (0..1), para prorratear la meta
+ *  de "Hoy". Descuenta lo previo al inicio y topa al fin del horario. */
+function fraccionTurnoHoy(schedule: { workStartSec: number; workEndSec: number }, now: Date): number {
+  const nowSec = bogotaSecondsOfDay(now);
+  const total = schedule.workEndSec - schedule.workStartSec;
+  if (total <= 0) return 1;
+  return Math.max(0, Math.min(1, (nowSec - schedule.workStartSec) / total));
+}
 
 const SEMAFORO_DOT: Record<'rojo' | 'ambar' | 'verde' | 'neutro', string> = {
   rojo: 'bg-danger shadow-[0_0_6px_hsl(var(--danger))]',
@@ -35,7 +47,16 @@ const fadeUp = (delay = 0) => ({
 export default function ResponsabilidadAsesorPanel({
   range, prodRows,
 }: { range: Range; prodRows: ProdRowLite[] }) {
-  const { loading, status, scores, metaGestiones, selloEscaso } = useResponsabilidadAsesor(range, prodRows);
+  const activeStoreId = useActiveStoreId();
+  const { data: scheduleMin } = useStoreSchedule(activeStoreId);
+  const schedule = scheduleMin ? scheduleFromMinutes(scheduleMin) : DEFAULT_SCHEDULE;
+  // Meta del rango: para "Hoy" prorrateada al turno transcurrido (justa a media
+  // mañana); para 7d/30d, la meta completa de días cerrados.
+  const metaGestionesInput = metaGestionesDelRango(
+    range,
+    range === 'today' ? fraccionTurnoHoy(schedule, new Date()) : 1,
+  );
+  const { loading, status, scores, metaGestiones, selloEscaso } = useResponsabilidadAsesor(range, prodRows, metaGestionesInput);
 
   if (status === 'error') return null;
 
@@ -66,7 +87,7 @@ export default function ResponsabilidadAsesorPanel({
               <tr>
                 <th className="w-8" title="Semáforo: verde bien · ámbar ojo · rojo revisar" aria-label="Semáforo" />
                 <th>Asesor</th>
-                <th className="text-right" title={`Pedidos trabajados (confirmó + canceló + no contestó). Meta orientativa del período: ${metaGestiones} (${META_GESTIONES_DIA}/día laboral, ajustable).`}>
+                <th className="text-right" title={`Pedidos trabajados (confirmó + canceló + no contestó). Meta orientativa: ${metaGestiones}${range === 'today' ? ' hasta esta hora del turno (se prorratea — a media mañana no se exige el día entero)' : ' del período'} · ${META_GESTIONES_DIA}/día laboral, ajustable.`}>
                   Gestionados
                 </th>
                 <th className="text-right">Confirmó</th>

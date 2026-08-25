@@ -5,7 +5,7 @@ import { bogotaToday } from '@/lib/utils';
 import { bogotaDateNDaysAgo } from '@/lib/novedadGestion';
 import { summarizeRootCause, type RootCauseRow } from '@/lib/novedadRootCause';
 import {
-  construirScores, diasDelRango, META_GESTIONES_DIA,
+  construirScores,
   type AsesorScore, type AsesorScoreInput,
 } from '@/lib/responsabilidadAsesor';
 
@@ -46,6 +46,7 @@ export interface ResponsabilidadAsesorData {
 export function useResponsabilidadAsesor(
   range: Range,
   prodRows: ProdRowLite[],
+  metaGestiones: number,
 ): ResponsabilidadAsesorData {
   const { activeStoreId } = useStore();
   const [loading, setLoading] = useState(true);
@@ -53,7 +54,6 @@ export function useResponsabilidadAsesor(
   const [scores, setScores] = useState<AsesorScore[]>([]);
   const [selloEscaso, setSelloEscaso] = useState(false);
   const seqRef = useRef(0);
-  const metaGestiones = META_GESTIONES_DIA * diasDelRango(range);
 
   // `prodRows` es una referencia nueva en cada render del padre (que re-renderiza
   // seguido por el realtime). Para no re-consultar en cada frame, la carga depende

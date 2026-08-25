@@ -19,6 +19,24 @@ export function diasDelRango(range: 'today' | '7d' | '30d'): number {
   return range === 'today' ? 1 : range === '7d' ? 7 : 30;
 }
 
+/**
+ * Meta de gestiones del rango. Para 'today' se PRORRATEA al turno transcurrido
+ * (`fraccionHoy` ∈ 0..1): a media mañana no se le puede exigir el día entero —
+ * sin esto, a las 3 h con 37 gestiones TODAS las filas salían rojas por injusto
+ * (mismo criterio que el % de horario prorrateado a lo transcurrido del dashboard).
+ * Para 7d/30d son días ya cerrados → meta completa.
+ */
+export function metaGestionesDelRango(
+  range: 'today' | '7d' | '30d',
+  fraccionHoy = 1,
+): number {
+  if (range === 'today') {
+    const f = Math.max(0, Math.min(1, fraccionHoy));
+    return Math.round(META_GESTIONES_DIA * f);
+  }
+  return META_GESTIONES_DIA * diasDelRango(range);
+}
+
 export interface AsesorScoreInput {
   operatorId: string;
   name: string;

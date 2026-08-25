@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  construirScores, semaforoAsesor, diasDelRango, META_GESTIONES_DIA,
+  construirScores, semaforoAsesor, diasDelRango, metaGestionesDelRango, META_GESTIONES_DIA,
   type AsesorScoreInput, type AsesorScore,
 } from './responsabilidadAsesor';
 
@@ -77,6 +77,22 @@ describe('semaforoAsesor', () => {
   });
   it('todo bien → verde', () => {
     expect(semaforoAsesor(mk({ tasaDevolucion: 3, pctEnRojo: 5, metaOk: true }))).toBe('verde');
+  });
+});
+
+describe('metaGestionesDelRango', () => {
+  it('today se prorratea al turno transcurrido', () => {
+    expect(metaGestionesDelRango('today', 0.5)).toBe(Math.round(META_GESTIONES_DIA * 0.5));
+    expect(metaGestionesDelRango('today', 0)).toBe(0);
+    expect(metaGestionesDelRango('today', 1)).toBe(META_GESTIONES_DIA);
+  });
+  it('today clampa fracciones fuera de rango', () => {
+    expect(metaGestionesDelRango('today', 2)).toBe(META_GESTIONES_DIA);
+    expect(metaGestionesDelRango('today', -1)).toBe(0);
+  });
+  it('7d/30d usan la meta completa (días cerrados)', () => {
+    expect(metaGestionesDelRango('7d')).toBe(META_GESTIONES_DIA * 7);
+    expect(metaGestionesDelRango('30d')).toBe(META_GESTIONES_DIA * 30);
   });
 });
 
