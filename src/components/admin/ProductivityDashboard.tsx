@@ -17,6 +17,7 @@ import { ShoppingBag } from 'lucide-react';
 import { formatTimeBogota, formatDateTimeBogota, formatDurationHM } from '@/lib/timeFormat';
 import { shouldAlertSinConfirmar, asWorkedBlocks, sumWorkedSeconds, computeHorarioCompliance, UMBRAL_DESCONECTADA_MIN } from '@/lib/jornadaMath';
 import { scheduleFromMinutes, DEFAULT_SCHEDULE, bogotaSecondsOfDay } from '@/lib/inactivityWindow';
+import { minutosSinGestion, mayorHuecoEntreBloques, UMBRAL_SIN_GESTION_MIN } from '@/lib/huecosGestion';
 import InactivityDetailModal from '@/components/admin/InactivityDetailModal';
 import TeamNowStrip from '@/components/admin/TeamNowStrip';
 import { useStoreSchedule } from '@/hooks/useStoreSchedule';
@@ -768,6 +769,14 @@ export default function ProductivityDashboard() {
                       <th className="text-right" title="Avisos de inactividad: cuántas veces se quedó más de 6 minutos sin ninguna acción TENIENDO pedidos en cola, dentro de su horario. Debajo, el total de minutos. Tocá el número para ver cada aviso con su hora. OJO: un rato quieta puede ser una llamada — es una señal para revisar, no una condena.">
                         Sin trabajar
                       </th>
+                      {/* SIN GESTIONAR — huecos REALES sin marcar pedidos, no por
+                          mouse. Arriba: hace cuánto no marca nada (en vivo).
+                          Abajo: el peor hueco del día. Solo tiene sentido HOY.
+                          Nació del reclamo del dueño (25-ago): "Sin trabajar"
+                          mira el mouse y marcaba 0 con huecos de 30 min. */}
+                      <th className="text-right" title="Basado en PEDIDOS marcados (no en el mouse). Arriba: hace cuánto no gestiona ningún pedido, en vivo. Abajo: el peor hueco del día (el rato más largo sin marcar nada, descontando almuerzo). OJO: una llamada larga también se ve como hueco — es para revisar, no para condenar.">
+                        Sin gestionar
+                      </th>
                       {/* MIN/INTENTO — sobre TODOS los intentos (incl. no
                           contestó), por decisión del dueño. */}
                       <th className="text-right" title="Promedio de minutos por pedido marcado = horas trabajando ÷ total de intentos (incluye los 'no contestó', que son rápidos). Sirve para comparar ritmo entre operadoras, no como estándar absoluto.">
@@ -788,6 +797,20 @@ export default function ProductivityDashboard() {
                       // worked_seconds (evidencia de marcado) — respaldo para 7d/30d y
                       // para la entrada/salida cuando no hay heartbeat.
                       const blocks = w ? asWorkedBlocks(w.blocks) : [];
+                      // Huecos SIN GESTIONAR (por pedidos marcados, no por mouse).
+                      // Solo HOY: en 7d/30d los bloques cruzan días y el "hueco"
+                      // sería la noche. `last_event` = última gestión real.
+                      const sinGestionMin = isToday
+                        ? minutosSinGestion(Date.parse(w?.last_event ?? '') || null, nowMs, schedule)
+                        : null;
+                      const peorHuecoMin = isToday
+                        ? mayorHuecoEntreBloques(
+                            blocks
+                              .map((b) => ({ startMs: Date.parse(b.start), endMs: Date.parse(b.end) }))
+                              .filter((b) => Number.isFinite(b.startMs) && Number.isFinite(b.endMs)),
+                            schedule,
+                          )
+                        : null;
                       const wsNum = w ? Number(w.worked_seconds) : NaN;
                       const workedSec = w
                         ? (Number.isFinite(wsNum) && wsNum > 0 ? wsNum : sumWorkedSeconds(blocks))
@@ -992,6 +1015,32 @@ export default function ProductivityDashboard() {
                                     {perdidoMin} min
                                   </span>
                                 </button>
+                              );
+                            })()}
+                          </td>
+                          {/* SIN GESTIONAR — huecos por pedidos marcados, no mouse. */}
+                          <td className="text-right">
+                            {(() => {
+                              if (!isToday) {
+                                return <span className="font-mono text-muted-foreground text-xs" title="El hueco en vivo solo se mide en el día de hoy.">—</span>;
+                              }
+                              if (sinGestionMin == null) {
+                                return <span className="font-mono text-muted-foreground text-xs" title="Todavía no marcó ningún pedido hoy.">sin marcar</span>;
+                              }
+                              const tone = sinGestionMin >= UMBRAL_SIN_GESTION_MIN ? 'danger' : sinGestionMin >= 12 ? 'warning' : 'muted-foreground';
+                              const mostrarPeor = peorHuecoMin != null && peorHuecoMin >= 15;
+                              return (
+                                <span className="inline-flex flex-col items-end gap-0.5"
+                                  title={`Hace ${sinGestionMin} min que no marca un pedido${mostrarPeor ? ` · el peor hueco de hoy fue de ${peorHuecoMin} min` : ''}. Se descuenta el almuerzo. Ojo: una llamada larga también se ve así.`}>
+                                  <span className={`font-mono tabular-nums text-xs font-bold text-${tone}`}>
+                                    {sinGestionMin < 1 ? '<1' : sinGestionMin} min
+                                  </span>
+                                  {mostrarPeor && (
+                                    <span className={`text-[10px] tabular-nums ${peorHuecoMin >= UMBRAL_SIN_GESTION_MIN ? 'text-danger' : 'text-muted-foreground'}`}>
+                                      peor: {peorHuecoMin} min
+                                    </span>
+                                  )}
+                                </span>
                               );
                             })()}
                           </td>

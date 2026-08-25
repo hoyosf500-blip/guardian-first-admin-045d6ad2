@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { minutosSinGestion, mayorHuecoMin, debeAvisarSinGestion, UMBRAL_SIN_GESTION_MIN } from './huecosGestion';
+import { minutosSinGestion, mayorHuecoMin, mayorHuecoEntreBloques, debeAvisarSinGestion, UMBRAL_SIN_GESTION_MIN } from './huecosGestion';
 
 // Helper: hora Bogotá (UTC-5) → ms. 10:00 Bogotá = 15:00 UTC.
 const bog = (hhmm: string) => Date.parse(`2026-08-25T${String(Number(hhmm.slice(0, 2)) + 5).padStart(2, '0')}:${hhmm.slice(3)}:00Z`);
@@ -31,6 +31,22 @@ describe('mayorHuecoMin', () => {
   it('menos de 2 marcas → null', () => {
     expect(mayorHuecoMin([bog('10:00')])).toBeNull();
     expect(mayorHuecoMin([])).toBeNull();
+  });
+});
+
+describe('mayorHuecoEntreBloques', () => {
+  it('el mayor hueco entre el fin de un bloque y el inicio del siguiente', () => {
+    // bloque 10:00-10:10, hueco 25min, bloque 10:35-10:45, hueco 15min, bloque 11:00-11:10
+    const bloques = [
+      { startMs: bog('10:00'), endMs: bog('10:10') },
+      { startMs: bog('10:35'), endMs: bog('10:45') },
+      { startMs: bog('11:00'), endMs: bog('11:10') },
+    ];
+    expect(mayorHuecoEntreBloques(bloques)).toBe(25);
+  });
+  it('menos de 2 bloques → null', () => {
+    expect(mayorHuecoEntreBloques([{ startMs: bog('10:00'), endMs: bog('10:10') }])).toBeNull();
+    expect(mayorHuecoEntreBloques([])).toBeNull();
   });
 });
 

@@ -58,6 +58,27 @@ export function mayorHuecoMin(
 }
 
 /**
+ * El mayor hueco LABORAL entre BLOQUES de trabajo consecutivos (en minutos).
+ *
+ * Para el tablero del dueño. `operator_worked_blocks` agrupa las gestiones en
+ * bloques con corte de 15 min, así que el hueco entre `end` de uno y `start`
+ * del siguiente ES un rato ≥15 min sin marcar nada — justo lo que el dueño
+ * quiere ver. Se descuenta almuerzo y fuera de horario. null si <2 bloques.
+ */
+export function mayorHuecoEntreBloques(
+  bloques: Array<{ startMs: number; endMs: number }>,
+  schedule: WorkSchedule = DEFAULT_SCHEDULE,
+): number | null {
+  if (!bloques || bloques.length < 2) return null;
+  const s = [...bloques].sort((a, b) => a.startMs - b.startMs);
+  let max = 0;
+  for (let i = 1; i < s.length; i++) {
+    max = Math.max(max, workingSecondsLost(new Date(s[i - 1].endMs), new Date(s[i].startMs), schedule));
+  }
+  return Math.floor(max / 60);
+}
+
+/**
  * ¿Hay que darle el aviso suave al asesor?
  *
  * Condiciones (todas): hay trabajo pendiente, es horario laboral, pasaron
