@@ -495,6 +495,21 @@ export default function ConfirmarTab({ profile }: Props) {
   // dejaría el resto en 0 y no se podría volver.
   const conteoRiesgo = useMemo(() => contarPorRiesgo(visibleQueue, riesgoIndex), [visibleQueue, riesgoIndex]);
 
+  // COBERTURA del día para la barra de meta ("que a todos se les llame, nada se
+  // enfríe"). `sinTocar` = de la cola pendiente, cuántos NO llamó NADIE hoy (mismo
+  // criterio de equipo que el chip "Tu cola hoy"). `null` si la cobertura no se
+  // pudo leer (coverageConfirmError): un 0 falso diría "todos llamados" con
+  // clientes fríos. Sobre `visibleQueue` (toda la cola pendiente, no la filtrada
+  // por etiqueta): la meta es cubrir TODO lo que entró, no un subconjunto.
+  const cobertura = useMemo(() => {
+    const total = visibleQueue.length;
+    if (coverageConfirmError) return { total, sinTocar: null as number | null };
+    const sinTocar = gestionCargada
+      ? visibleQueue.filter((o) => !o.dbId || !gestionPorPedido.has(o.dbId)).length
+      : visibleQueue.filter((o) => !o.dbId || !myConfirmTouchedToday.has(o.dbId)).length;
+    return { total, sinTocar };
+  }, [visibleQueue, gestionCargada, gestionPorPedido, myConfirmTouchedToday, coverageConfirmError]);
+
   // Velocímetro del turno: gestionados por MÍ hoy vs pendientes de la cola.
   // `conteoRiesgo.total` = pendientes (sin result) = lo que "falta".
   const ritmoTurno = useRitmoTurno(activeStoreId, user?.id ?? null, myConfirmTouchedToday.size, conteoRiesgo.total);
@@ -1090,9 +1105,10 @@ export default function ConfirmarTab({ profile }: Props) {
 
             <WorkFilters workQueue={visibleQueue} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} notesIndex={notesIndex} currentUserId={user?.id ?? null} />
 
-            {/* Meta del día (barra grande) + racha de pedidos rápidos: presión
-                psicológica — la meta se ve todo el día y la racha engancha. */}
-            <MetaDiaBar gestionados={myConfirmTouchedToday.size} />
+            {/* Meta del día = COBERTURA: que a todos los de la cola se les haga el
+                primer intento, 0 sin tocar (nada se enfríe). Con la racha a la
+                derecha. Presión psicológica sobre el objetivo REAL del dueño. */}
+            <MetaDiaBar total={cobertura.total} sinTocar={cobertura.sinTocar} />
 
             {/* Velocímetro del turno: apura al asesor con su ritmo en vivo. */}
             <VelocimetroTurno gestionados={myConfirmTouchedToday.size} faltan={conteoRiesgo.total} ritmo={ritmoTurno} />
