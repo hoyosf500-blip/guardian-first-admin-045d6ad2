@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Timer } from 'lucide-react';
-import { formatMMSS, seDemora } from '@/lib/tiempoEnPedido';
+import { formatMMSS, nivelTiempo } from '@/lib/tiempoEnPedido';
 
 /**
  * Reloj del pedido actual: cuánto lleva el asesor en el que tiene abierto.
@@ -32,20 +32,29 @@ export default function TiempoEnPedido({ pedidoId }: { pedidoId: string | null |
 
   if (!pedidoId) return null;
   const seg = Math.max(0, Math.floor((nowMs - inicioMs) / 1000));
-  const demora = seDemora(seg);
+  const nivel = nivelTiempo(seg);
+
+  // Verde/neutro <3 min (dentro del óptimo) · ámbar 3-5 (te pasaste del óptimo) ·
+  // rojo 5+ (alerta, te estás demorando). El óptimo se ve como meta sin gritar.
+  const estilo = nivel === 'alerta'
+    ? 'border-danger/50 bg-danger/15 text-danger'
+    : nivel === 'optimo_pasado'
+      ? 'border-warning/50 bg-warning/15 text-warning'
+      : 'border-border bg-muted/40 text-muted-foreground';
+  const titulo = nivel === 'alerta'
+    ? 'Llevás más de 5 minutos en este pedido — dale, hay cola esperando.'
+    : nivel === 'optimo_pasado'
+      ? 'Te pasaste del óptimo de 3 min — cerralo pronto.'
+      : 'Tiempo en este pedido (óptimo: 3 min).';
 
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-xs font-bold tabular-nums transition-colors ${
-        demora ? 'border-danger/50 bg-danger/15 text-danger' : 'border-border bg-muted/40 text-muted-foreground'
-      }`}
-      title={demora
-        ? 'Llevás más de 3 minutos en este pedido — dale, hay cola esperando.'
-        : 'Tiempo en este pedido (meta: 3 min).'}
+      className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-xs font-bold tabular-nums transition-colors ${estilo}`}
+      title={titulo}
     >
       <Timer size={12} aria-hidden="true" />
       {formatMMSS(seg)}
-      {demora && <span className="ml-0.5">· dale</span>}
+      {nivel === 'alerta' && <span className="ml-0.5">· dale</span>}
     </span>
   );
 }

@@ -87,7 +87,7 @@ export default function ResponsabilidadAsesorPanel({
               <tr>
                 <th className="w-8" title="Semáforo: verde bien · ámbar ojo · rojo revisar" aria-label="Semáforo" />
                 <th>Asesor</th>
-                <th className="text-right" title={`Pedidos trabajados (confirmó + canceló + no contestó). Meta orientativa: ${metaGestiones}${range === 'today' ? ' hasta esta hora del turno (se prorratea — a media mañana no se exige el día entero)' : ' del período'} · ${META_GESTIONES_DIA}/día laboral, ajustable.`}>
+                <th className="text-right" title={`Pedidos trabajados (confirmó + canceló + no contestó). Óptimo: ${metaGestiones}${range === 'today' ? ' hasta esta hora del turno (se prorratea — a media mañana no se exige el día entero)' : ' del período'} · ${META_GESTIONES_DIA}/día laboral (3 min/pedido). Verde = en el óptimo · ámbar = aceptable · rojo = bajo la alerta (5 min/pedido). Ajustable.`}>
                   Gestionados
                 </th>
                 <th className="text-right">Confirmó</th>
@@ -113,10 +113,18 @@ export default function ResponsabilidadAsesorPanel({
                     <td className="font-semibold text-foreground">{s.name}</td>
                     <td className="text-right">
                       <div className="inline-flex flex-col items-end leading-tight">
-                        <span className={`font-mono tabular-nums font-bold ${s.metaOk === false ? 'text-danger' : 'text-foreground'}`}>
+                        <span className={`font-mono tabular-nums font-bold ${
+                          s.nivelMeta === 'lento' ? 'text-danger'
+                            : s.nivelMeta === 'aceptable' ? 'text-warning'
+                            : s.nivelMeta === 'optimo' ? 'text-success' : 'text-foreground'
+                        }`} title={
+                          s.nivelMeta === 'lento' ? 'Bajo la alerta (menos del 60% del óptimo = ritmo de +5 min/pedido).'
+                            : s.nivelMeta === 'aceptable' ? 'Aceptable pero bajo el óptimo (entre 60% y 100% de la meta).'
+                            : s.nivelMeta === 'optimo' ? 'En el óptimo o por encima (3 min/pedido).' : ''
+                        }>
                           {s.gestionados}
                         </span>
-                        <span className="text-[10px] text-muted-foreground tabular-nums">meta {s.metaGestiones}</span>
+                        <span className="text-[10px] text-muted-foreground tabular-nums">óptimo {s.metaGestiones}</span>
                       </div>
                     </td>
                     <td className="text-right font-mono tabular-nums text-foreground">{s.confirmados}</td>
@@ -166,7 +174,8 @@ export default function ResponsabilidadAsesorPanel({
       )}
 
       <p className="mt-3 text-[10px] text-muted-foreground">
-        Meta {META_GESTIONES_DIA}/día laboral (orientativa — decime el número que querés y lo cambio).
+        Óptimo {META_GESTIONES_DIA}/día laboral = 3 min/pedido (verde). Ámbar = aceptable pero bajo el óptimo;
+        rojo = bajo la alerta (ritmo de +5 min/pedido). Orientativo — decime el número que querés y lo cambio.
         Devoluciones por confirmador = match exacto por pedido; la tasa es devol ÷ confirmados. Es para
         revisar con datos, no una condena automática.
       </p>
