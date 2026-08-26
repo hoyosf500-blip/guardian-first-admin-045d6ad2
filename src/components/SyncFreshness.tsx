@@ -189,7 +189,7 @@ export default function SyncFreshness({ onAuditClick }: Props) {
     // reciente que trajo algo) — "N pedidos actualizados".
     const cambios = lastSuccess?.synced_count ?? 0;
     return (
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-success/30 bg-success/[0.06] px-3 py-1.5">
+      <div className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-full border border-success/30 bg-success/[0.06] px-3 py-1">
         <CheckCircle2 size={15} className="text-success flex-shrink-0" aria-hidden />
         <span className="text-xs font-semibold text-success">Sincronizado con Dropi</span>
         <span className="text-[11px] text-muted-foreground">

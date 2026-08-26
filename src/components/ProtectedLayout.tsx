@@ -14,7 +14,6 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { BarChart3, Phone, Package, Settings, LogOut, Menu, AlertTriangle, RefreshCw, X, Truck, DollarSign, Building2, BookOpen, Inbox } from 'lucide-react';
-import CounterBar from '@/components/CounterBar';
 import SiguienteAccionBar from '@/components/SiguienteAccionBar';
 import WelcomeGate from '@/components/WelcomeGate';
 import NovedadesButton from '@/components/NovedadesButton';
@@ -553,7 +552,10 @@ function ProtectedLayoutInner() {
                     ARRIBA del contador y del contenido: es lo primero que se
                     lee al entrar a cualquier pantalla. */}
                 <SiguienteAccionBar />
-                {isConfirmar && <CounterBar />}
+                {/* La franja "EQUIPO HOY" (CounterBar) se fundió DENTRO del hero
+                    de Confirmar: mostraba los mismos conf/canc/noresp del equipo
+                    que las StatTiles del hero, más la barra de cobertura — que
+                    ahora vive ahí. Una franja ancha menos apilada arriba. */}
                 <Suspense fallback={<InlineRouteLoader />}>
                   <Outlet />
                 </Suspense>

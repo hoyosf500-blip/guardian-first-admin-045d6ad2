@@ -26,6 +26,7 @@ import WorkList, { diasReales } from '@/components/WorkList';
 import CallView from '@/components/CallView';
 import WorkFilters from '@/components/WorkFilters';
 import TasaMetaBanner from '@/components/TasaMetaBanner';
+import { confRateOficial, CONF_TARGET_PCT } from '@/lib/confirmationRate';
 import SiguienteColaBanner from '@/components/SiguienteColaBanner';
 import ShopifyPendingPanel from '@/components/confirmar/ShopifyPendingPanel';
 import DropiSyncFailuresPanel from '@/components/confirmar/DropiSyncFailuresPanel';
@@ -952,6 +953,40 @@ export default function ConfirmarTab({ profile }: Props) {
                     <StatTile icon={PhoneOff} label="noresp" value={counter.noresp} tone="neutral" />
                     <StatTile icon={ClipboardCheck} label="gestionados" value={total} tone="accent" />
                   </div>
+                  {/* Cobertura del día del equipo — absorbe la vieja franja
+                      "EQUIPO HOY" (misma matemática que tenía CounterBar):
+                      gestionado ÷ (gestionado + lo que queda sin resultado). El
+                      COLOR codifica la confirmación del día (conf÷gestionados vs
+                      meta 85%); el ANCHO es cobertura. tasa null = sin gestiones
+                      aún → barra NEUTRA, nunca roja (no se juzga sobre cero dato). */}
+                  {(() => {
+                    const pendSinResultado = workQueue.filter(o => !o.result).length;
+                    const goal = total + pendSinResultado;
+                    const pct = goal > 0 ? Math.min(100, Math.round((total / goal) * 100)) : 0;
+                    const { tasa } = confRateOficial(counter.conf, counter.canc, counter.noresp);
+                    const barTone =
+                      tasa === null ? 'bg-muted-foreground/40'
+                      : tasa >= CONF_TARGET_PCT ? 'bg-gradient-to-r from-success to-success/75'
+                      : tasa >= CONF_TARGET_PCT - 5 ? 'bg-gradient-to-r from-warning to-warning/75'
+                      : 'bg-gradient-to-r from-danger to-danger/75';
+                    return (
+                      <div className="flex items-center gap-3 mt-0.5">
+                        <span className="hud-label text-muted-foreground/70 shrink-0">Equipo hoy</span>
+                        <div
+                          className="flex-1 h-2 rounded-full bg-foreground/10 overflow-hidden"
+                          role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}
+                          title={tasa === null
+                            ? 'Sin gestiones todavía: aún no hay confirmación del día que medir'
+                            : `Confirmación del día del equipo: ${tasa}% (${counter.conf} confirmados ÷ ${total} gestionados · meta ${CONF_TARGET_PCT}%). Incluye los "no contestó".`}
+                        >
+                          <div className={`h-full rounded-full ${barTone} transition-all duration-500 ease-out`} style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="text-xs font-semibold text-muted-foreground shrink-0 tabular-nums">
+                          <span className="font-mono text-foreground">{total}</span>/{goal} · {pct}%
+                        </span>
+                      </div>
+                    );
+                  })()}
                   {/* El desglose de los "no contestó". El número solo (36) no
                       dice nada accionable, y peor: un pedido ENFRIANDO no
                       aparece en NINGUNA lista, así que el equipo cerraba el día
