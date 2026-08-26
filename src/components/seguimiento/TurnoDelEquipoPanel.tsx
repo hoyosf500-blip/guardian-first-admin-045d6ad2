@@ -47,12 +47,12 @@ export default function TurnoDelEquipoPanel({ resumen, nombreDe, onRepartir, rep
         <span className="hud-label inline-flex items-center gap-1.5">
           <Users size={12} aria-hidden="true" /> El turno de hoy
         </span>
-        <span className="text-[11px] text-muted-foreground">
-          <span className="font-mono tabular-nums font-semibold text-foreground">{cifra(tocadosTotal)}</span>
-          {' de '}
-          <span className="font-mono tabular-nums">{totalAccionable}</span>
-          {' gestionados'}
-        </span>
+        {/* El «X de N gestionados» global se quitó de acá (26-ago-2026): ya lo
+            imprime la línea-resumen del hero (visible para TODOS), y este panel
+            es manager-only — el dueño lo veía dos veces. Las filas por asesora
+            (tocados/asignados) SÍ quedan, que es lo que este panel aporta.
+            `tocadosTotal` queda sin uso en el destructuring: es inocuo
+            (noUnusedLocals:false) y se deja para no tocar lógica. */}
         {sinDueno > 0 && (
           <span
             className="text-[11px] font-semibold text-warning inline-flex items-center gap-1"

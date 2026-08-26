@@ -679,7 +679,7 @@ export default function SeguimientoTab() {
   return (
     <div className="max-w-7xl mx-auto">
       <SegCounterBar />
-      <div className="mb-6 space-y-4">
+      <div className="mb-6 space-y-3">
         {/* Título y controles en FILAS SEPARADAS, no lado a lado.
             El cluster de controles son 6 (toggle, buscador, rango de fechas,
             total, WhatsApp, sincronizar) y su ancho mínimo ronda los 1100px:
@@ -1005,6 +1005,11 @@ export default function SeguimientoTab() {
             calculado, solo no se dibujaba) + la cifra contando + la barra de
             meta. Al lado, el Total con anatomía de StatTile.
             ───────────────────────────────────────────────────────────── */}
+        {/* HERO + TURNO agrupados como UN solo bloque (26-ago-2026): la cifra
+            del día y el panel del turno se leen pegados (space-y-2) en vez de
+            dos tarjetas sueltas separadas por el aire del contenedor externo.
+            Es solo un wrapper de markup — el cierre y los chips SLA quedan fuera. */}
+        <div className="space-y-2">
         {(() => {
           // Las cuentas pesadas viven en el memo `hero` (arriba) — acá solo
           // quedan derivaciones baratas de estilo.
@@ -1330,6 +1335,7 @@ export default function SeguimientoTab() {
             />
           </motion.div>
         )}
+        </div>
 
         {/* El cierre del día. `gestionados` va en null si la lectura falló:
             el diálogo se niega a firmar números que nadie midió.
@@ -1552,15 +1558,18 @@ export default function SeguimientoTab() {
           aria-pressed={viewMode === 'board' && soloEsperando}
           title="Un cliente escribió por WhatsApp y su mensaje es el último del chat: nadie le respondió. Tocá para verlos."
           className={cn(
-            'mb-3 w-full flex items-center gap-2.5 rounded-xl border-2 px-3.5 py-2.5 text-left transition-colors',
+            // Chip compacto (26-ago-2026): era un banner de ancho completo con
+            // border-2 y padding grande — el mayor foco de ruido rojo del tope.
+            // Mismos tokens rojos, ahora inline y fino. Handlers/condición intactos.
+            'mb-3 inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-left transition-colors',
             viewMode === 'board' && soloEsperando
               ? 'bg-danger/20 border-danger/60 text-danger'
               : 'bg-danger/10 border-danger/40 text-foreground hover:bg-danger/15 hover:border-danger/60',
           )}
         >
-          <span className="w-2.5 h-2.5 rounded-full bg-danger glow-danger shrink-0" aria-hidden="true" />
-          <span className="font-mono tabular-nums text-lg font-bold text-danger">{esperandoRespuesta.size}</span>
-          <span className="text-sm min-w-0 flex-1 truncate font-medium">
+          <span className="w-2 h-2 rounded-full bg-danger glow-danger shrink-0" aria-hidden="true" />
+          <span className="font-mono tabular-nums text-sm font-bold text-danger">{esperandoRespuesta.size}</span>
+          <span className="text-xs min-w-0 truncate font-medium">
             {esperandoRespuesta.size === 0
               ? 'Ya les respondiste a todos — quitá el filtro para ver el tablero'
               : `${esperandoRespuesta.size === 1 ? 'cliente te escribió' : 'clientes te escribieron'} y nadie les contestó`}

@@ -720,6 +720,14 @@ export default function ConfirmarTab({ profile }: Props) {
 
       {excelLoaded && workQueue.length > 0 && (
         <>
+          {/* Hero unificado: KPI (arriba, order-1) + cobertura por operadora
+              (tira inferior, order-2) dentro de UNA sola tarjeta. El orden
+              visual lo dan `flex flex-col` + `order-*`; el orden del código no
+              cambia, así que no se mueve ningún bloque de lógica. */}
+          <motion.section
+            {...fadeUp(0.1)}
+            className="relative overflow-hidden rounded-3xl border border-border bg-card/40 shadow-card3d-lg hairline-top mb-4 flex flex-col"
+          >
           {/* Chip "Tu cola hoy" — cobertura por operadora. La queja del usuario
               fue: "no sé si Mayra YA llamó a las 20 o si le faltan 5". Este
               chip lo resuelve por encima del KPI: muestra cuántos ya tocaste
@@ -769,7 +777,7 @@ export default function ConfirmarTab({ profile }: Props) {
                   ? { bar: 'bg-danger', box: 'border-danger/30 bg-danger/10', chip: 'bg-danger/20 text-danger glow-danger', num: 'text-danger' }
                   : { bar: 'bg-muted-foreground/40', box: 'border-border bg-card/40', chip: 'bg-foreground/10 text-muted-foreground', num: 'text-muted-foreground' };
             return (
-              <div className={`relative mb-3 rounded-2xl border ${skin.box} px-4 py-3 pl-5 shadow-card3d flex items-center flex-wrap gap-x-4 gap-y-2`}>
+              <div className="relative order-2 border-t border-border px-4 py-3 pl-5 flex items-center flex-wrap gap-x-4 gap-y-2">
                 <span className={`absolute left-0 top-3 bottom-3 w-1 rounded-full ${skin.bar}`} aria-hidden="true" />
                 <span className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${skin.chip}`} aria-hidden="true">
                   <ClipboardCheck size={17} />
@@ -875,7 +883,7 @@ export default function ConfirmarTab({ profile }: Props) {
                  propio). Los conteos y sus rótulos son EXACTAMENTE los mismos;
                  lo que cambia es que ahora se leen de un vistazo por color y
                  tamaño en vez de escanear una fila de texto. */
-              <motion.div {...fadeUp(0.12)} className="grid grid-cols-1 md:grid-cols-12 gap-4 mb-4">
+              <div className="order-1 grid grid-cols-1 md:grid-cols-12 gap-4 p-5 sm:p-6">
                 <TiltCard
                   sheen
                   brackets
@@ -993,9 +1001,10 @@ export default function ConfirmarTab({ profile }: Props) {
                     </div>
                   )}
                 </div>
-              </motion.div>
+              </div>
             );
           })()}
+          </motion.section>
 
           {(() => {
             const retryOrders = visibleQueue.filter(o => o.retryCount && !o.result);
