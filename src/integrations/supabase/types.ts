@@ -473,6 +473,33 @@ export type Database = {
         }
         Relationships: []
       }
+      importchat_envios: {
+        Row: {
+          created_at: string
+          dia: string
+          external_id: string
+          id: string
+          plantilla: string
+          store_id: string
+        }
+        Insert: {
+          created_at?: string
+          dia: string
+          external_id: string
+          id?: string
+          plantilla: string
+          store_id: string
+        }
+        Update: {
+          created_at?: string
+          dia?: string
+          external_id?: string
+          id?: string
+          plantilla?: string
+          store_id?: string
+        }
+        Relationships: []
+      }
       logistica_monthly_costs: {
         Row: {
           costos_admin: number
