@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import { bogotaToday } from '@/lib/utils';
+import { bogotaSecondsOfDay } from '@/lib/inactivityWindow';
+import { repartirPorHora } from '@/lib/ritmoEnVivo';
 
 /**
  * Datos de la franja "Ahora mismo" (TeamNowStrip, embebida en Productividad):
@@ -48,6 +50,13 @@ export interface LiveOperator {
   ultimaAccion: string | null;
   enLinea: boolean;
   estado: WorkStatus;
+  /** Instante (ms) de la PRIMERA señal del día (mouse o trabajo, la más temprana).
+   *  Base de "entró a las HH:MM (tarde)" y del ritmo en vivo. null si ninguna. */
+  firstSignalMs: number | null;
+  /** Gestiones por hora del día (Bogotá) para las barritas del turno. OJO: puede
+   *  estar CAPADA a las ~400 marcas más recientes (EVENT_SCAN_LIMIT) — en equipos
+   *  chicos cubre el día entero; en uno grande, las horas más viejas subcontarían. */
+  hourly: { hora: number; cantidad: number }[];
 }
 
 export interface LiveTeam {
@@ -68,7 +77,7 @@ interface ProdRow {
   confirmados: number; cancelados: number; noresp: number;
   seg_acciones: number; novedades_resueltas: number;
 }
-interface ActRow { operator_id: string; display_name?: string | null; last_active_at: string | null; }
+interface ActRow { operator_id: string; display_name?: string | null; last_active_at: string | null; first_action_at?: string | null; }
 
 function accionResultado(result: string): string {
   if (result === 'conf') return 'confirmó';
@@ -143,10 +152,30 @@ export function useLiveTeam(): LiveTeam {
       const ms = Date.parse(iso);
       if (Number.isFinite(ms)) lastWork.set(opId, { whenMs: ms, label });
     };
-    if (!results.error) for (const r of (results.data as { operator_id: string | null; result: string; created_at: string }[] ?? []))
+    // EARLIEST marca del día + reparto por hora (para "entró (tarde)" y las
+    // barritas del turno). Distinto de lastWork (que guarda la MÁS reciente): acá
+    // se recorre TODA marca, no solo la primera vista.
+    const firstWorkByOp = new Map<string, number>();
+    const horasByOp = new Map<string, number[]>();
+    const noteEvento = (opId: string | null, iso: string) => {
+      if (!opId) return;
+      const ms = Date.parse(iso);
+      if (!Number.isFinite(ms)) return;
+      const prev = firstWorkByOp.get(opId);
+      if (prev == null || ms < prev) firstWorkByOp.set(opId, ms);
+      const hora = Math.floor(bogotaSecondsOfDay(new Date(ms)) / 3600);
+      const arr = horasByOp.get(opId) ?? [];
+      arr.push(hora);
+      horasByOp.set(opId, arr);
+    };
+    if (!results.error) for (const r of (results.data as { operator_id: string | null; result: string; created_at: string }[] ?? [])) {
       noteWork(r.operator_id, r.created_at, accionResultado(r.result));
-    if (!tps.error) for (const t of (tps.data as { operator_id: string | null; action: string; created_at: string }[] ?? []))
+      noteEvento(r.operator_id, r.created_at);
+    }
+    if (!tps.error) for (const t of (tps.data as { operator_id: string | null; action: string; created_at: string }[] ?? [])) {
       noteWork(t.operator_id, t.created_at, accionTouchpoint(t.action));
+      noteEvento(t.operator_id, t.created_at);
+    }
 
     const minsSince = (ms: number | null | undefined) =>
       ms != null && Number.isFinite(ms) ? Math.max(0, Math.floor((nowMs - ms) / 60000)) : null;
@@ -169,6 +198,15 @@ export function useLiveTeam(): LiveTeam {
       const mouseMin = minsSince(mouseIso ? Date.parse(mouseIso) : null);
       const work = lastWork.get(id);
       const lastWorkMin = minsSince(work?.whenMs ?? null);
+      // PRIMERA señal del día = la más temprana entre el primer mouse (heartbeat,
+      // dato fiable sin tope) y la marca más vieja que trajimos. El mouse manda
+      // para "entró": es cuándo se conectó, aunque aún no hubiera marcado nada.
+      const mouseFirstMs = actByOp.get(id)?.first_action_at
+        ? Date.parse(actByOp.get(id)!.first_action_at as string) : NaN;
+      const workFirstMs = firstWorkByOp.get(id);
+      const firstCandidates = [mouseFirstMs, workFirstMs ?? NaN].filter((x): x is number => Number.isFinite(x));
+      const firstSignalMs = firstCandidates.length ? Math.min(...firstCandidates) : null;
+      const hourly = repartirPorHora(horasByOp.get(id) ?? []);
       // Señal más reciente entre mouse y trabajo.
       const candidates = [mouseMin, lastWorkMin].filter((x): x is number => x != null);
       const lastSignalMin = candidates.length ? Math.min(...candidates) : null;
@@ -190,6 +228,7 @@ export function useLiveTeam(): LiveTeam {
         lastSignalMin, lastWorkMin,
         ultimaAccion: work?.label ?? null,
         enLinea, estado,
+        firstSignalMs, hourly,
       };
     })
     // Trabajando primero, luego presente, luego por trabajo del día.
