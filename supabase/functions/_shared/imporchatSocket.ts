@@ -76,9 +76,21 @@ export function leerChat(
     const t = setTimeout(() => resolve(null), esperaMs);
     socket.once("CHATS_BOX_RESPONSE", (data: unknown) => {
       clearTimeout(t);
-      // La respuesta es un array de UN objeto: `[{...datosDelChat, mensajes}]`.
-      const chat = Array.isArray(data) ? data[0] as { mensajes?: MensajeIC[] } | undefined : null;
-      resolve(chat?.mensajes ?? []);
+      // La respuesta bien formada es un array de UN objeto con `mensajes`:
+      // `[{...datosDelChat, mensajes: [...]}]`. Un chat SIN mensajes viene como
+      // `[{mensajes: []}]` → eso es un `[]` legítimo.
+      //
+      // ⛔ Todo lo demás (array vacío `[]`, objeto de error no-array, o `[{...}]`
+      // sin la clave `mensajes`) es una respuesta que NO pudimos leer, y se
+      // devuelve `null` — NUNCA `[]`. Antes colapsaba a `[]`, y ese `[]` viajaba
+      // como "el chat no tiene mensajes" → `ventanaWhatsapp(null)` = "el cliente
+      // nunca escribió" (bloquea el envío) y el hilo se pintaba vacío. Un fallo
+      // de lectura tiene que verse como fallo (504 / reintento), no como un chat
+      // vacío. (Auditoría 25-ago: fragilidad E4.)
+      const chat = Array.isArray(data) && data.length > 0
+        ? (data[0] as { mensajes?: MensajeIC[] } | undefined)
+        : undefined;
+      resolve(chat && Array.isArray(chat.mensajes) ? chat.mensajes : null);
     });
     socket.emit("GET_CHATS_BOX", {
       chatId: normalizarChatId(chatId),

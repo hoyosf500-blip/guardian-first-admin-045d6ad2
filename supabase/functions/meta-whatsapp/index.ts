@@ -252,6 +252,10 @@ Deno.serve(async (req) => {
     let payload: Record<string, unknown>;
     let tipoSaliente: "directo" | "plantilla" = "directo";
     let descripcionTouchpoint = "";
+    // Clave de idempotencia por CONTENIDO: identico texto/media/plantilla al
+    // mismo pedido el mismo dia no sale dos veces (bloquea el doble por reintento),
+    // pero contenido distinto SI puede salir.
+    let claveIdem = "";
 
     if (accion === "texto") {
       const mensaje = String(body?.mensaje || "").trim();
@@ -259,6 +263,7 @@ Deno.serve(async (req) => {
       if (mensaje.length > 1000) return json({ ok: false, error: "El mensaje no puede pasar de 1000 caracteres" }, 400);
       payload = payloadTexto(destino, mensaje);
       descripcionTouchpoint = "Escribí por WhatsApp";
+      claveIdem = "texto:" + mensaje.slice(0, 120);
     } else if (accion === "media") {
       const tipo = String(body?.tipo || "") as TipoMedia;
       const link = String(body?.link || "").trim();
@@ -273,6 +278,7 @@ Deno.serve(async (req) => {
         filename: body?.filename ? String(body.filename) : null,
       });
       descripcionTouchpoint = `Mandé un ${tipo === "image" ? "imagen" : tipo === "audio" ? "audio" : tipo === "video" ? "video" : "archivo"} por WhatsApp`;
+      claveIdem = "media:" + tipo + ":" + link;
     } else {
       // plantilla
       const nombre = String(body?.nombre || "");
@@ -301,21 +307,52 @@ Deno.serve(async (req) => {
       payload = construirPayloadMeta(elegida, valores, destino);
       tipoSaliente = "plantilla";
       descripcionTouchpoint = `Mandé la plantilla ${elegida.nombre}`;
+      claveIdem = "plantilla:" + elegida.nombre;
     }
 
     if (body?.dry_run === true) {
       return json({ ok: true, dry_run: true, enviaria_a: destino, payload });
     }
 
+    // ── IDEMPOTENCIA: claim atómico antes del POST a Meta (mismo patrón que
+    //    importchat-plantillas). Un reintento de red no puede mandar el mismo
+    //    mensaje dos veces al cliente. (Auditoría 25-ago: hallazgo E1.)
+    const { fecha: diaIdem } = fechaHoraLocal("EC");
+    let claimHecho = false;
+    const liberarClaim = async () => {
+      if (!claimHecho) return;
+      await sb.from("importchat_envios").delete()
+        .eq("store_id", storeId).eq("external_id", externalId)
+        .eq("plantilla", claveIdem).eq("dia", diaIdem);
+    };
+    {
+      const { error: claimErr } = await sb.from("importchat_envios").insert({
+        store_id: storeId, external_id: externalId, plantilla: claveIdem, dia: diaIdem,
+      });
+      if (claimErr) {
+        const code = (claimErr as { code?: string }).code;
+        if (code === "23505") {
+          return json({ ok: true, ya_enviado: true, enviado_a: destino, via: "meta" });
+        }
+        if (code !== "42P01" && !/does not exist|relation .* does not exist/i.test(claimErr.message || "")) {
+          throw new Error(claimErr.message);
+        }
+        console.warn("[meta-whatsapp] sin tabla importchat_envios — envío SIN idempotencia");
+      } else {
+        claimHecho = true;
+      }
+    }
+
     // ── Enviar a Meta ───────────────────────────────────────────────────────
     const envio = await enviarMensajeMeta({ version, token, phoneNumberId, payload });
-    if (!envio.ok) return json({ ok: false, error: `Meta rechazó el envío: ${envio.detalle}` }, 502);
+    if (!envio.ok) { await liberarClaim(); return json({ ok: false, error: `Meta rechazó el envío: ${envio.detalle}` }, 502); }
 
     // Marcar el pedido para que la pantalla reaccione ya (el sync lo reescribe).
-    await sb.from("orders").update({
+    const { error: updErr } = await sb.from("orders").update({
       chat_saliente_at: new Date().toISOString(),
       chat_saliente_tipo: tipoSaliente,
     }).eq("store_id", storeId).eq("external_id", externalId);
+    if (updErr) console.warn(`[meta-whatsapp] no se pudo marcar chat_saliente: ${updErr.message}`);
 
     // Touchpoint con el prefijo de LA PANTALLA (mismo criterio que
     // importchat-send: SEG cuenta como gestión de Seguimiento; WHATSAPP es un
@@ -324,7 +361,7 @@ Deno.serve(async (req) => {
     // usa el helper por país igual, para no volver a hardcodear el offset.
     const { fecha: tpFecha, hora: tpHora } = fechaHoraLocal("EC");
     const modulo = body?.modulo === "WHATSAPP" ? "WHATSAPP" : "SEG";
-    await sb.from("touchpoints").insert({
+    const { error: tpErr } = await sb.from("touchpoints").insert({
       phone: pedido.phone,
       action: `${modulo}: ${descripcionTouchpoint}`,
       operator_id: u.user.id,
@@ -332,6 +369,7 @@ Deno.serve(async (req) => {
       action_date: tpFecha,
       action_time: tpHora,
     });
+    if (tpErr) console.warn(`[meta-whatsapp] envío OK pero no se registró el touchpoint: ${tpErr.message}`);
 
     return json({ ok: true, confirmado: true, enviado_a: destino, wamid: envio.wamid, via: "meta" });
   } catch (e) {

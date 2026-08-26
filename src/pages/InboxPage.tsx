@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { MessageSquare, Phone, MapPin, Package, Clock, Inbox, CheckCircle2, Loader2 } from 'lucide-react';
 import { useStore } from '@/contexts/StoreContext';
 import { useInboxEsperando, type InboxItem } from '@/hooks/useInboxEsperando';
+import { useImporchatSyncHealth } from '@/hooks/useImporchatSyncHealth';
+import ImporchatSyncBadge from '@/components/chat/ImporchatSyncBadge';
 import { haceCuantoMs } from '@/lib/actividadChat';
 import { getWhatsAppPhone, formatPhone } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
@@ -29,11 +31,17 @@ function tono(entranteAt: number): { chip: string; dot: string } {
 export default function InboxPage() {
   const { activeStoreId, activeStore } = useStore();
   const { items, status } = useInboxEsperando(activeStoreId);
+  const salud = useImporchatSyncHealth(activeStoreId);
   const recordContacto = useRecordGestion();
   const [abierto, setAbierto] = useState<InboxItem | null>(null);
   useMinuteTick();
 
   const cc = activeStore?.country_code;
+  // ¿El feed de ImporChat podría estar caído? Si el sync falla o lleva mucho sin
+  // correr, esta lista puede estar INCOMPLETA — y un "Nadie esperando" en verde
+  // sobre un feed muerto es una mentira tranquilizadora (hallazgo P1). El badge
+  // vive acá (no solo en /admin) para que la operadora que trabaja el inbox lo vea.
+  const feedDudoso = salud.data?.status === 'failing' || salud.data?.status === 'critical';
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -54,7 +62,16 @@ export default function InboxPage() {
           Clientes que escribieron y nadie contestó todavía. El de arriba es el que lleva más esperando —
           a ninguno se lo deja enfriar.
         </p>
+        <div className="mt-2"><ImporchatSyncBadge size="md" /></div>
       </header>
+
+      {feedDudoso && (
+        <div className="mb-4 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+          ⚠️ El sync de ImporChat está fallando o lleva mucho sin correr — esta lista puede estar
+          <strong> incompleta</strong>. Si dice "nadie esperando", puede que sí haya clientes esperando.
+          Avisá para revisar la conexión.
+        </div>
+      )}
 
       {status === 'cargando' && (
         <div className="flex items-center justify-center py-16 text-muted-foreground text-sm">

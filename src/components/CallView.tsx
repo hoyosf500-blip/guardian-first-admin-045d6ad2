@@ -1499,6 +1499,7 @@ export default function CallView({ items, alerts }: Props) {
               La tarjeta es la MISMA de la ficha del pedido — no una copia. */}
           {o.dbId && o.externalId && (
             <ChatClienteCard
+              key={String(o.externalId)}
               externalId={String(o.externalId)}
               orderId={o.dbId}
               nombre={o.nombre}

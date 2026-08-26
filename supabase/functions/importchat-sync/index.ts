@@ -457,7 +457,13 @@ Deno.serve(async (req) => {
         });
         if (frescoTok && frescoTok !== token) {
           token = frescoTok;
-          await log("success", "Llave de ImporChat renovada automáticamente", 0);
+          // ⛔ traza(), NO log("success"): esto pasa a MITAD de corrida. log()
+          // cierra la fila 'running' en 'success', y si la función muere después
+          // (el XLSX de 9MB puede tumbarla por OOM) la corrida muerta queda en
+          // VERDE — el mismo "muerto en verde" que sync_logs existe para evitar.
+          // traza() solo anota la fase y mantiene 'running'; el status final lo
+          // fija el log() del cierre real. (Auditoría 25-ago: hallazgo E3.)
+          await traza("Llave de ImporChat renovada automáticamente");
         }
       } catch (e) {
         // La renovación nunca debe tumbar el sync: se anota y se sigue.

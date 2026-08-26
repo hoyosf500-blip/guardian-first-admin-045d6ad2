@@ -365,6 +365,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
             tiene conversación leída; si no, no existe (nada de una caja vacía). */}
         {o.dbId && o.externalId && (
           <ChatClienteCard
+            key={String(o.externalId)}
             externalId={String(o.externalId)}
             orderId={o.dbId}
             nombre={o.nombre}

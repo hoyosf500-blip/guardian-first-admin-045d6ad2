@@ -1086,6 +1086,7 @@ export default function CrmCallView({
               salir a ImporChat. Se dibuja sola solo si el pedido tiene chat leído. */}
           {o?.dbId && o.externalId && (
             <ChatClienteCard
+              key={String(o.externalId)}
               externalId={String(o.externalId)}
               orderId={o.dbId}
               nombre={o.nombre}

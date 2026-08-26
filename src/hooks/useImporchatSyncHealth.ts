@@ -60,17 +60,21 @@ export function useImporchatSyncHealth(storeId?: string | null) {
         .eq('source', 'importchat-sync')
         .order('created_at', { ascending: false })
         .limit(1);
-      // 2) Vencimiento de la llave (best-effort: store_importchat_config puede ser
-      //    owner-only; si falla, el badge sigue vivo con solo el estado del sync).
-      let tokQ = supabase
-        .from('store_importchat_config')
-        .select('token_expira_at')
-        .limit(1);
-      if (storeId) {
-        runQ = runQ.eq('store_id', storeId);
-        tokQ = tokQ.eq('store_id', storeId);
-      }
-      const [runRes, tokRes] = await Promise.all([runQ.maybeSingle(), tokQ.maybeSingle()]);
+      if (storeId) runQ = runQ.eq('store_id', storeId);
+      // 2) Vencimiento de la llave vía RPC (SECURITY DEFINER): el browser NO puede
+      //    leer store_importchat_config (RLS: tiene la llave secreta), así que la
+      //    lectura directa daba siempre null y el aviso "Llave vence en Nh" era
+      //    código muerto (hallazgo D1). La RPC devuelve SOLO las horas. Best-effort:
+      //    si la migración no corrió, queda null y el badge sigue vivo con el sync.
+      const [runRes, tokRes] = await Promise.all([
+        runQ.maybeSingle(),
+        storeId
+          // `as never`: types.ts (autogenerado) todavía no conoce esta RPC (la
+          // migración es nueva). Se casan los ARGS, NO se desbindea supabase.rpc
+          // (perder `this` rompe la llamada — ver rpc_supabase_binding_pattern).
+          ? supabase.rpc('importchat_token_horas' as never, { p_store_id: storeId } as never)
+          : Promise.resolve({ data: null, error: null }),
+      ]);
       // El run query SÍ es crítico: si falla, el badge se oculta (isError).
       if (runRes.error) throw runRes.error;
 
@@ -79,10 +83,10 @@ export function useImporchatSyncHealth(storeId?: string | null) {
       const lastRunStatus = (runRes.data as { status?: string } | null)?.status ?? null;
       const lastErrorMessage = (runRes.data as { error_message?: string } | null)?.error_message ?? null;
 
-      const tokRaw = !tokRes.error ? (tokRes.data as { token_expira_at?: string } | null)?.token_expira_at : null;
-      const tokenExpiraAt = tokRaw ? new Date(tokRaw) : null;
-      const tokenHorasRestantes = tokenExpiraAt
-        ? (tokenExpiraAt.getTime() - Date.now()) / 3_600_000
+      const tokRaw = !tokRes.error && tokRes.data != null ? Number(tokRes.data) : null;
+      const tokenHorasRestantes = tokRaw != null && Number.isFinite(tokRaw) ? tokRaw : null;
+      const tokenExpiraAt = tokenHorasRestantes != null
+        ? new Date(Date.now() + tokenHorasRestantes * 3_600_000)
         : null;
 
       return {
