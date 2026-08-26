@@ -219,16 +219,55 @@ Deno.serve(async (req) => {
       return json({ ok: true, dry_run: true, enviaria_a: destino, payload, chat_id: pedido.importchat_chat_id });
     }
 
+    // ── IDEMPOTENCIA: un reintento de red NO puede mandar la misma plantilla dos
+    //    veces al mismo pedido el mismo día. Se CLAMA antes del POST (patrón de
+    //    shopify-push-dropi: claim atómico antes del efecto externo). El `enviando`
+    //    del cliente solo bloquea el doble-click de UNA pestaña; esto blinda contra
+    //    reintentos de red, otra pestaña, o dos asesoras — clave con envío masivo.
+    const { fecha: diaLocal } = fechaHoraLocal(tienda?.country_code);
+    let claimHecho = false;
+    const liberarClaim = async () => {
+      if (!claimHecho) return;
+      await sb.from("importchat_envios").delete()
+        .eq("store_id", storeId).eq("external_id", externalId)
+        .eq("plantilla", elegida.nombre).eq("dia", diaLocal);
+    };
+    {
+      const { error: claimErr } = await sb.from("importchat_envios").insert({
+        store_id: storeId, external_id: externalId, plantilla: elegida.nombre, dia: diaLocal,
+      });
+      if (claimErr) {
+        const code = (claimErr as { code?: string }).code;
+        // 23505 = ya hay un envío (o intento en curso) de esta plantilla a este
+        // pedido hoy → NO se reenvía. Se responde éxito suave para que la pantalla
+        // no muestre un error rojo por algo que en realidad ya salió.
+        if (code === "23505") {
+          return json({ ok: true, ya_enviado: true, enviado_a: destino, plantilla: elegida.nombre });
+        }
+        // 42P01 = la tabla todavía no existe (Lovable no aplicó la migración).
+        // Se degrada al comportamiento anterior (sin candado) en vez de romper.
+        if (code !== "42P01" && !/does not exist|relation .* does not exist/i.test(claimErr.message || "")) {
+          throw new Error(claimErr.message);
+        }
+        console.warn("[importchat-plantillas] sin tabla importchat_envios — envío SIN idempotencia (aplicar migración)");
+      } else {
+        claimHecho = true;
+      }
+    }
+
     const envio = await postIC("whatsapp_managment/enviar_template_masivo", token, {
       id_configuracion: idConf,
       body: payload,
       id_cliente_chat_center: String(pedido.importchat_chat_id),
       header_default_asset: null,
     });
-    if (!envio.ok) return json({ ok: false, error: `Meta rechazó el envío: ${envio.detalle}` }, 502);
+    // El envío no salió: se LIBERA el claim para que un reintento legítimo pueda
+    // volver a intentar (si no, el candado bloquearía el reenvío todo el día).
+    if (!envio.ok) { await liberarClaim(); return json({ ok: false, error: `Meta rechazó el envío: ${envio.detalle}` }, 502); }
     if (envio.datos?.success !== true) {
       // Respondió 200 pero sin confirmar: NO se marca nada. Un "listo" sin
       // confirmación es peor que un error — la asesora tacharía el pedido.
+      await liberarClaim();
       return json({
         ok: false,
         error: String(envio.datos?.message || "ImporChat no confirmó el envío"),
@@ -237,10 +276,11 @@ Deno.serve(async (req) => {
 
     // Recién con el envío CONFIRMADO se marca el pedido. `plantilla` (no
     // `directo`) es el mismo vocabulario que ya usa `chat_saliente_tipo`.
-    await sb.from("orders").update({
+    const { error: updErr } = await sb.from("orders").update({
       chat_saliente_at: new Date().toISOString(),
       chat_saliente_tipo: "plantilla",
     }).eq("store_id", storeId).eq("external_id", externalId);
+    if (updErr) console.warn(`[importchat-plantillas] no se pudo marcar chat_saliente: ${updErr.message}`);
 
     // El prefijo sigue a la PANTALLA: `SEG:%` cuenta como gestión de
     // Seguimiento, y escribirle desde Confirmar es un intento de contacto.
@@ -249,7 +289,7 @@ Deno.serve(async (req) => {
     // hora en UTC. `tienda` ya se leyó arriba para el destinatario.
     const { fecha: tpFecha, hora: tpHora } = fechaHoraLocal(tienda?.country_code);
     const modulo = body?.modulo === "WHATSAPP" ? "WHATSAPP" : "SEG";
-    await sb.from("touchpoints").insert({
+    const { error: tpErr } = await sb.from("touchpoints").insert({
       phone: pedido.phone,
       action: `${modulo}: Mandé la plantilla ${elegida.nombre}`,
       operator_id: u.user.id,
@@ -257,6 +297,9 @@ Deno.serve(async (req) => {
       action_date: tpFecha,
       action_time: tpHora,
     });
+    // Si el touchpoint falla, el WhatsApp YA salió: no se revierte, pero queda
+    // rastro (sin esto el pedido podía reaparecer "sin tocar" en otra cola).
+    if (tpErr) console.warn(`[importchat-plantillas] envío OK pero no se registró el touchpoint: ${tpErr.message}`);
 
     return json({
       ok: true,
