@@ -141,13 +141,20 @@ export default function AdvisorCard({
       {/* Ritmo en vivo + entrada + barritas por hora */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-border bg-card/40 px-3 py-2">
         <span className={`inline-flex items-baseline gap-1 font-semibold ${TXT[vm.ritmoTono]}`}
-          title={`Velocidad ${isToday ? 'ahora' : 'del rango'} (pedidos por hora).${isToday ? ' Óptimo 25/h · rojo bajo 15/h.' : ''}`}>
+          title={`Velocidad ${isToday ? 'ahora' : 'del rango'} (gestiones por hora).${isToday ? ' Óptimo 25/h · rojo bajo 15/h.' : ''}`}>
           <Gauge size={13} className="self-center" aria-hidden="true" />
           <span className="font-mono tabular-nums text-lg leading-none">{vm.ritmoPorHora == null ? '—' : vm.ritmoPorHora}</span>
-          <span className="text-[11px] text-muted-foreground font-normal">pedidos/hora</span>
+          <span className="text-[11px] text-muted-foreground font-normal">por hora</span>
           {vm.ritmoTag && <span className="text-[11px] font-semibold">· {vm.ritmoTag}</span>}
         </span>
         {isToday && serie.length > 0 && <span className="ml-auto"><Barritas serie={serie} /></span>}
+        {vm.ritmoCount != null && (
+          <span className="w-full text-[11px] text-muted-foreground">
+            marcó <b className="font-mono tabular-nums font-semibold text-foreground">{vm.ritmoCount}</b> {vm.ritmoCount === 1 ? 'gestión' : 'gestiones'}
+            {vm.ritmoElapsedMin != null && <> en <b className="font-semibold text-foreground">{hmMin(vm.ritmoElapsedMin)}</b>{isToday ? '' : ' de trabajo'}</>}
+            {' '}— el {vm.ritmoPorHora == null ? 'ritmo' : `${vm.ritmoPorHora}`} es <b className="font-semibold text-foreground">por hora</b>, no pedidos sueltos
+          </span>
+        )}
         {isToday && vm.entroHora && (
           <span className={`inline-flex w-full items-center gap-1.5 text-[11px] ${vm.tardeMin ? 'text-danger font-semibold' : 'text-muted-foreground'}`}>
             <LogIn size={12} aria-hidden="true" />
@@ -164,6 +171,19 @@ export default function AdvisorCard({
         <Stat label="no contestó" value={vm.noContesto} tone={vm.noContesto > 0 ? 'warn' : undefined} />
         <Stat label="devoluciones" value={vm.devoluciones == null ? '—' : vm.devoluciones} tone={vm.devoluciones && vm.devoluciones > 0 ? 'bad' : undefined} />
       </div>
+
+      {/* Seguimiento / Novedades en la CARA — el trabajo que Confirmar no cuenta */}
+      {(d.segAcciones > 0 || d.novResueltas > 0) && (
+        <div className="-mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 px-0.5 text-[11px] text-muted-foreground">
+          {d.segAcciones > 0 && (
+            <span>Seguimiento <b className="font-mono tabular-nums text-foreground">{d.segAcciones}</b>
+              {d.segTasa != null && <span className="text-muted-foreground/70"> · {d.segTasa}% resuelto</span>}</span>
+          )}
+          {d.novResueltas > 0 && (
+            <span>Novedades <b className="font-mono tabular-nums text-foreground">{d.novResueltas}</b> resueltas</span>
+          )}
+        </div>
+      )}
 
       {/* Bandera de atención — el porqué, en cristiano */}
       {vm.atencion !== 'idle' && vm.motivos.length > 0 ? (
@@ -196,7 +216,8 @@ export default function AdvisorCard({
       {open && (
         <div className="flex flex-col gap-3 border-t border-border/60 pt-3 text-[12px]">
           {/* Calidad */}
-          <DetalleGrupo titulo="Calidad">
+          <DetalleGrupo titulo="Calidad"
+            nota="«Direcciones malas» = de lo que confirmó y YA se despachó, cuánto salió con la dirección en rojo del validador. Dato nuevo (desde el 22-ago) y por heurística — señal para revisar, no sentencia. En «—» = todavía no hay con qué medir.">
             <DetalleItem label="Tasa de devolución" value={d.tasaDevolucion == null ? '—' : `${d.tasaDevolucion}%`}
               tone={d.tasaDevolucion != null && d.tasaDevolucion >= 15 ? 'bad' : d.tasaDevolucion != null && d.tasaDevolucion >= 10 ? 'warn' : 'muted'} />
             <DetalleItem label="Direcciones malas" value={d.dirMalas == null ? '—' : `${d.dirMalas}%`}
@@ -218,10 +239,16 @@ export default function AdvisorCard({
           </DetalleGrupo>
 
           {/* Jornada */}
-          <DetalleGrupo titulo="Jornada">
-            <DetalleItem label="Cumplió del horario" value={d.cumplioPct == null ? '—' : `${d.cumplioPct}%`} />
+          <DetalleGrupo titulo="Jornada"
+            nota="«Estuvo en el horario» es PRESENCIA (entró a tiempo y sigue conectada), no cuánto trabajó — por eso puede ir en 96% con pocas horas de trabajo medido. La diferencia entre «horas presente» y «con trabajo medido» es la que hay que mirar.">
+            <DetalleItem label="Estuvo en el horario" value={d.cumplioPct == null ? '—' : `${d.cumplioPct}%`}
+              hint="entró a tiempo y sigue conectada; NO es cuánto trabajó" />
+            <DetalleItem label="Horas presente" value={hm(d.presenciaSec ?? d.enCrmSec)}
+              hint="desde que entró hasta su última señal, dentro del horario" />
+            <DetalleItem label="Con trabajo medido" value={hm(d.trabajandoSec)}
+              tone={d.trabajandoSec != null && d.presenciaSec != null && d.presenciaSec > 0 && d.trabajandoSec < d.presenciaSec * 0.6 ? 'warn' : 'muted'}
+              hint="tiempo con acciones reales (marcar, notas). Muy por debajo de «horas presente» = presente pero flojo" />
             <DetalleItem label="Con el CRM abierto" value={hm(d.enCrmSec)} hint={d.fueraSec ? `${hm(d.fueraSec)} fuera` : undefined} />
-            <DetalleItem label="Trabajando (evidencia)" value={hm(d.trabajandoSec)} />
             <DetalleItem label="Minutos por pedido" value={d.minPorPedido == null ? '—' : `${d.minPorPedido} min`} />
             {isToday && (
               <DetalleItem label="Sin marcar hace" value={d.sinGestionMin == null ? '—' : `${d.sinGestionMin} min`}
@@ -276,10 +303,11 @@ export default function AdvisorCard({
   );
 }
 
-function DetalleGrupo({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+function DetalleGrupo({ titulo, nota, children }: { titulo: string; nota?: string; children: React.ReactNode }) {
   return (
     <div>
       <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground font-semibold">{titulo}</span>
+      {nota && <p className="mt-0.5 text-[10.5px] leading-snug text-muted-foreground/70">{nota}</p>}
       <div className="mt-1.5 grid grid-cols-2 gap-1.5">{children}</div>
     </div>
   );

@@ -46,6 +46,35 @@ describe('buildAdvisorVMs — guardas de honestidad (nunca un 0 falso)', () => {
   });
 });
 
+describe('ritmo: el "19" viene con su conteo y su tiempo (no es 19 pedidos)', () => {
+  const NOW = 1_700_000_000_000;
+  const live = (over: Partial<import('./advisorCardVM').LiveLite> = {}): import('./advisorCardVM').LiveLite => ({
+    estado: 'trabajando', ultimaAccion: 'confirmó', lastWorkMin: 1, enLinea: true,
+    firstSignalMs: NOW - 5 * 3600 * 1000, hourly: [], total: 98, ...over,
+  });
+
+  it('hoy: expone las gestiones y los minutos que las produjeron', () => {
+    const [vm] = buildAdvisorVMs(baseInput({
+      nowMs: NOW, isToday: true,
+      rows: [row({ confirmados: 60, cancelados: 8, noresp: 30, total_atendidos: 98 })],
+      liveByOp: new Map([['a', live()]]),
+    }));
+    expect(vm.ritmoCount).toBe(98);          // el conteo real
+    expect(vm.ritmoElapsedMin).toBe(300);    // 5 h desde la 1ª señal
+    expect(vm.ritmoPorHora).toBeCloseTo(19.6, 1); // 98 ÷ 5 h = el RITMO, no "19 pedidos"
+  });
+
+  it('sin primera señal → ritmo sin medir, y el tiempo no se inventa', () => {
+    const [vm] = buildAdvisorVMs(baseInput({
+      nowMs: NOW, isToday: true,
+      rows: [row({ confirmados: 3, total_atendidos: 3 })],
+      liveByOp: new Map([['a', live({ firstSignalMs: null, total: 3 })]]),
+    }));
+    expect(vm.ritmoPorHora).toBeNull();
+    expect(vm.ritmoElapsedMin).toBeNull();   // null, nunca un 0 que mienta
+  });
+});
+
 describe('atención', () => {
   it('score rojo (lento) → atención bad + motivo en cristiano', () => {
     const s = score({ nivelMeta: 'lento' });

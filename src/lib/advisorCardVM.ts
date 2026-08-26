@@ -90,6 +90,8 @@ export interface AdvisorVM {
   ritmoPorHora: number | null;
   ritmoTono: Tono;
   ritmoTag: string | null;      // "al ritmo" / "sube" / "lento" / "sin medir"
+  ritmoCount: number | null;    // cuántas gestiones producen ese ritmo (el "19" no es pedidos, es el RITMO)
+  ritmoElapsedMin: number | null; // en cuánto tiempo (hoy: desde la 1ª señal; rango: horas trabajadas)
   // Entrada
   entroHora: string | null;     // ISO de la primera señal (la UI formatea)
   tardeMin: number | null;      // minutos tarde (>0) o null
@@ -120,7 +122,8 @@ export interface AdvisorDetalle {
   llamadasHora: number | null;  // esfuerzo (intentos ÷ horas)
   llamadasHoraTono: Tono;
   // Jornada
-  cumplioPct: number | null;
+  cumplioPct: number | null;    // % del horario que ESTUVO presente (no es cuánto trabajó)
+  presenciaSec: number | null;  // tiempo presente dentro del horario (entró→última señal ∩ horario)
   enCrmSec: number | null;
   fueraSec: number | null;
   trabajandoSec: number | null;
@@ -189,17 +192,29 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
     let ritmoPorHora: number | null = null;
     let ritmoTono: Tono = 'muted';
     let ritmoTag: string | null = null;
+    // El "19" que confunde al dueño NO es "19 pedidos": es el RITMO. Guardamos
+    // el conteo real y el tiempo que le tomó para que la tarjeta muestre
+    // "marcó 98 en 5h 05m", y ahí el 19/hora se lea como lo que es.
+    let ritmoCount: number | null = null;
+    let ritmoElapsedMin: number | null = null;
     if (isToday && live) {
       const rv = ritmoVivo({ gestionados: live.total, desdeMs: live.firstSignalMs, nowMs, faltan: 0 });
       ritmoPorHora = rv.porHora;
+      ritmoCount = live.total;
+      ritmoElapsedMin = live.firstSignalMs != null
+        ? Math.max(0, Math.round((nowMs - live.firstSignalMs) / 60000))
+        : null;
       if (rv.porHora == null) { ritmoTono = 'muted'; ritmoTag = 'midiendo'; }
       else if (rv.vaLento) { ritmoTono = 'bad'; ritmoTag = 'lento'; }
       else if (rv.bajoOptimo) { ritmoTono = 'warn'; ritmoTag = `sube (óptimo ${RITMO_VIVO_META})`; }
       else { ritmoTono = 'good'; ritmoTag = 'al ritmo'; }
     } else {
-      const intentos = r.intentos_total ?? atendidos;
-      const iph = gestionesPorHora(intentos, worked?.worked_seconds);
+      const intentosRitmo = r.intentos_total ?? atendidos;
+      const iph = gestionesPorHora(intentosRitmo, worked?.worked_seconds);
       ritmoPorHora = iph == null ? null : Math.round(iph * 10) / 10;
+      ritmoCount = intentosRitmo;
+      const wsRitmo = worked ? Number(worked.worked_seconds) : NaN;
+      ritmoElapsedMin = Number.isFinite(wsRitmo) && wsRitmo > 0 ? Math.round(wsRitmo / 60) : null;
       if (iph == null) { ritmoTono = 'muted'; ritmoTag = null; }
       else {
         const t = ritmoTone(iph, MIN_INTENTOS_POR_HORA);
@@ -225,6 +240,9 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
     const turnoEnd = lastSignalMs > 0 ? new Date(lastSignalMs).toISOString() : null;
     const comp = isToday ? computeHorarioCompliance({ turnoStart, turnoEnd, schedule, nowMs }) : null;
     const cumplioPct = comp?.cumplimientoPctTranscurrido ?? null;
+    // Presencia REAL en el horario (entró→última señal ∩ horario − almuerzo). Es el
+    // "estuvo", NO el "trabajó": por eso puede dar 96% con solo 3h de trabajo medido.
+    const presenciaSec = comp?.cubiertoSec ?? null;
     const tardeMin = isToday && comp && (comp.tardeMin ?? 0) > 0 ? comp.tardeMin ?? null : null;
 
     const enCrmSec = act ? (Number(act.active_seconds) || 0) + (Number(act.idle_seconds) || 0) : null;
@@ -335,6 +353,8 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
       ritmoPorHora,
       ritmoTono,
       ritmoTag,
+      ritmoCount,
+      ritmoElapsedMin,
       entroHora: isToday ? turnoStart : null,
       tardeMin,
       hourly: live?.hourly ?? [],
@@ -350,7 +370,7 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
         sinCerrarAun: r.noresp,
         contactoPct, contactoFaltan,
         clientesHora, llamadasHora, llamadasHoraTono: llTone,
-        cumplioPct, enCrmSec, fueraSec, trabajandoSec,
+        cumplioPct, presenciaSec, enCrmSec, fueraSec, trabajandoSec,
         avisos, avisosMin,
         sinGestionMin, peorHuecoMin, minPorPedido,
         cierreIso, cierreTempranoMin, trabajoExtraMin, salioTexto,
