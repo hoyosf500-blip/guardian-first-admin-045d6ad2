@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import SyncHistory from '@/components/admin/SyncHistory';
 import SyncPanel from '@/components/admin/SyncPanel';
 import StoreCredentialsPanel from '@/components/admin/StoreCredentialsPanel';
+import ImporchatSyncBadge from '@/components/chat/ImporchatSyncBadge';
 import StoreInvitePanel from '@/components/admin/StoreInvitePanel';
 import { isRpcMissing } from '@/lib/rpcError';
 import CompartirGuardianPanel from '@/components/admin/CompartirGuardianPanel';
@@ -286,6 +287,11 @@ export default function AdminTab() {
           <p className="text-sm text-muted-foreground">
             Configuración de integraciones (Dropi, IA, huella), gestión de operadoras y reportes.
           </p>
+          {/* Salud de ImporChat (lo que el cliente nos escribe): si el sync se
+              cae o la llave de 7 días vence, acá se ve — antes moría en silencio. */}
+          <div className="mt-2">
+            <ImporchatSyncBadge size="md" />
+          </div>
         </div>
       </motion.header>
 
