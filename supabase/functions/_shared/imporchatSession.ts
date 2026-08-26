@@ -160,9 +160,22 @@ export async function ensureFreshImporchatToken(
   if (!fresco) return cfg.sessionToken;
 
   const expIso = fresco.expSeg ? new Date(fresco.expSeg * 1000).toISOString() : null;
-  await sb.from("store_importchat_config")
+  // ⛔ No tragarse el fallo de la ESCRITURA. Si guardar la llave nueva falla,
+  // esta corrida sigue con la llave fresca en mano —bien—, pero la nueva no
+  // queda persistida: la PRÓXIMA corrida renueva otra vez desde la vieja. Si
+  // ImporChat revoca la llave previa al rotar (rotación de un solo uso), eso
+  // termina apagando TODO ImporChat sin aviso claro. No se puede perder en
+  // silencio: queda constancia en el log de la función.
+  const res = await sb.from("store_importchat_config")
     .update({ session_token: fresco.token, token_expira_at: expIso })
     .eq("store_id", cfg.storeId);
+  const errPersist = (res as unknown as { error?: { message?: string } } | null)?.error;
+  if (errPersist) {
+    console.error(
+      "[imporchat] no se pudo guardar la llave renovada:",
+      errPersist.message ?? errPersist,
+    );
+  }
 
   return fresco.token;
 }

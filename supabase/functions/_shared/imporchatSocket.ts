@@ -73,8 +73,14 @@ export function leerChat(
   esperaMs = ESPERA_LECTURA_MS,
 ): Promise<MensajeIC[] | null> {
   return new Promise((resolve) => {
-    const t = setTimeout(() => resolve(null), esperaMs);
-    socket.once("CHATS_BOX_RESPONSE", (data: unknown) => {
+    // Oyente con NOMBRE para poder des-registrarlo si la lectura vence. En el
+    // flujo de `send` se leen hasta 4 veces sobre el MISMO socket (baseline +
+    // 3 reintentos): un oyente que quedaba vivo tras un timeout podía dispararse
+    // con la respuesta de la lectura SIGUIENTE y cruzar los datos. Con `once`
+    // (se auto-quita al disparar) + `off` en el timeout, cada lectura queda
+    // aislada. `let t` primero evita cualquier TDZ entre los dos closures.
+    let t: ReturnType<typeof setTimeout>;
+    const onResp = (data: unknown) => {
       clearTimeout(t);
       // La respuesta bien formada es un array de UN objeto con `mensajes`:
       // `[{...datosDelChat, mensajes: [...]}]`. Un chat SIN mensajes viene como
@@ -91,7 +97,14 @@ export function leerChat(
         ? (data[0] as { mensajes?: MensajeIC[] } | undefined)
         : undefined;
       resolve(chat && Array.isArray(chat.mensajes) ? chat.mensajes : null);
-    });
+    };
+    t = setTimeout(() => {
+      // La respuesta llegó tarde (o no llegó): se quita el oyente pendiente para
+      // que no resuelva esta lectura ni se cruce con la próxima del mismo socket.
+      socket.off("CHATS_BOX_RESPONSE", onResp);
+      resolve(null);
+    }, esperaMs);
+    socket.once("CHATS_BOX_RESPONSE", onResp);
     socket.emit("GET_CHATS_BOX", {
       chatId: normalizarChatId(chatId),
       id_configuracion: cred.idConf,

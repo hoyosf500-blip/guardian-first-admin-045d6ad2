@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import type { MensajeConversacion } from '@/lib/conversacion';
+import { motivoEdge, cuerpoDelError } from '@/lib/errorEdge';
 
 /**
  * La conversación de WhatsApp de un pedido, leída en vivo de ImporChat
@@ -32,6 +33,14 @@ interface Respuesta {
   ventana?: VentanaHilo;
 }
 
+/**
+ * Lovable NO redespliega edge functions con un push: `importchat-chat` puede
+ * seguir sin existir en el servidor aunque el código esté en GitHub. Sin esto,
+ * la asesora veía el texto crudo en inglés de supabase-js al abrir una tarjeta.
+ */
+const FALTA_LEER =
+  'La lectura del chat todavía no está activada en el servidor. Abrí ImporChat para ver la conversación y avisá para que la activen.';
+
 export function useConversacion(externalId: string | null | undefined, activo: boolean) {
   const { activeStoreId } = useStore();
   const [mensajes, setMensajes] = useState<MensajeConversacion[]>([]);
@@ -56,17 +65,18 @@ export function useConversacion(externalId: string | null | undefined, activo: b
 
       if (err) {
         // El motivo REAL viaja en el cuerpo (sin configurar, token vencido,
-        // sin chat todavía). Sin esto la asesora solo vería "falló".
-        let cuerpo: Respuesta | null = null;
-        try {
-          const ctx = (err as { context?: { json?: () => Promise<Respuesta> } }).context;
-          cuerpo = ctx?.json ? await ctx.json() : null;
-        } catch { /* el cuerpo no era JSON */ }
+        // sin chat todavía). Y si la función NO está desplegada, supabase-js
+        // devuelve un texto en inglés sin cuerpo ("non-2xx"/"Failed to send"):
+        // `motivoEdge` lo traduce a algo accionable, igual que hace el envío.
+        const cuerpo = await cuerpoDelError(err);
         if (turno !== turnoRef.current) return;
         if (cuerpo?.sin_config) { setEstado('sin_config'); return; }
-        if (cuerpo?.sin_chat) { setEstado('sin_chat'); setError(cuerpo.error ?? ''); return; }
+        if ((cuerpo as { sin_chat?: boolean } | null)?.sin_chat) {
+          setEstado('sin_chat'); setError(cuerpo?.error ?? ''); return;
+        }
+        const { detalle } = motivoEdge(err, cuerpo, FALTA_LEER, 'No se pudo leer la conversación');
         setEstado('error');
-        setError(cuerpo?.error || err.message || 'No se pudo leer la conversación');
+        setError(detalle);
         return;
       }
 
@@ -83,8 +93,9 @@ export function useConversacion(externalId: string | null | undefined, activo: b
       setEstado('ok');
     } catch (e) {
       if (turno !== turnoRef.current) return;
+      const { detalle } = motivoEdge(e, null, FALTA_LEER, 'No se pudo leer la conversación');
       setEstado('error');
-      setError(e instanceof Error ? e.message : 'No se pudo leer la conversación');
+      setError(detalle);
     }
   }, [activeStoreId, externalId]);
 
