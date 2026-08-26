@@ -30,6 +30,7 @@ import {
   X,
 } from 'lucide-react';
 import FingerprintBadge from '@/components/FingerprintBadge';
+import { diasSinMovimiento } from '@/lib/segPulso';
 
 interface Props {
   items: OrderData[];
@@ -46,6 +47,9 @@ const URGENCIA = {
   danger:  { chip: 'bg-danger/14 border-danger/30 text-danger glow-danger',    dot: 'bg-danger' },
   warning: { chip: 'bg-warning/14 border-warning/30 text-warning glow-warning', dot: 'bg-warning' },
   success: { chip: 'bg-success/14 border-success/30 text-success glow-success', dot: 'bg-success' },
+  // Sin fecha de movimiento: no sabemos hace cuánto salió la novedad. Tono neutro
+  // a propósito — pintarla verde mentiría "recién", pintarla roja mentiría "vieja".
+  neutral: { chip: 'bg-muted/40 border-border text-muted-foreground', dot: 'bg-muted-foreground' },
 } as const;
 
 export default function NovedadView({ items, stateKey = 'novedades:callOrderId' }: Props) {
@@ -118,7 +122,14 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
     );
   }
 
-  const urg = URGENCIA[o.dias >= 7 ? 'danger' : o.dias >= 4 ? 'warning' : 'success'];
+  // Edad de la NOVEDAD (días desde el último movimiento en Dropi), NO edad del
+  // pedido. Antes mostraba `o.dias` = días desde que se CREÓ el pedido: una
+  // novedad de ayer sobre un pedido viejo salía "D12 crítica" y el dueño regañó
+  // al equipo por una demora inexistente. `null` = sin fecha de movimiento: no
+  // se sabe hace cuánto, así que ni se pinta rojo ni verde (no saber ≠ tranquilo).
+  const diasNovedad = diasSinMovimiento(o);
+  const urgKey = diasNovedad == null ? 'neutral' : diasNovedad >= 7 ? 'danger' : diasNovedad >= 4 ? 'warning' : 'success';
+  const urg = URGENCIA[urgKey];
 
   const copyPhone = () => {
     void copyToClipboard(o.phone, `${o.phone} copiado`);
@@ -220,9 +231,14 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
         <div className="relative flex flex-col gap-3.5 lg:flex-1 lg:basis-[340px] lg:min-w-[280px]">
         {/* Header: badges */}
         <div className="flex items-center gap-2 flex-wrap">
-          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold ${urg.chip}`}>
+          <span
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold ${urg.chip}`}
+            title={diasNovedad == null
+              ? 'Sin fecha de movimiento en Dropi — no se sabe hace cuánto salió la novedad'
+              : `Hace ${diasNovedad} día${diasNovedad === 1 ? '' : 's'} sin movimiento en Dropi (edad de la novedad, no del pedido)`}
+          >
             <span className={`w-1.5 h-1.5 rounded-full ${urg.dot}`} aria-hidden="true" />
-            <span className="font-mono tabular-nums">D{o.dias}</span>
+            <span className="font-mono tabular-nums">{diasNovedad == null ? 'D—' : `D${diasNovedad}`}</span>
           </span>
           <span className="pill pill-neutral text-[10px] px-2 py-0.5 rounded-full font-semibold">{o.estado}</span>
           {o.transportadora && (

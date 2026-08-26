@@ -4,6 +4,7 @@ import {
   contarGestionadosHoy,
   estaDetenido,
   horasSinMovimiento,
+  diasSinMovimiento,
   asesorasEnSeguimientoHoy,
   HORAS_DETENIDO,
 } from './segPulso';
@@ -113,6 +114,28 @@ describe('estaDetenido — el paquete que se está pudriendo', () => {
   // pedido. Solo que ahí la medianoche ES el dato, no una suposición.
   it('una fecha suelta (sin hora) sigue contando desde su medianoche', () => {
     expect(horasSinMovimiento(pedido({ lastMovementAt: '2026-08-01' }), AHORA)).toBe(15);
+  });
+});
+
+describe('diasSinMovimiento — edad de la novedad, NO edad del pedido', () => {
+  // El caso exacto que hizo que el dueño regañara al equipo: novedad de ayer,
+  // pedido de 12 días. Antes salía "D12". Ahora tiene que decir D1.
+  it('una novedad de ayer es D1, aunque el pedido tenga 12 días de creado', () => {
+    const o = pedido({ dias: 12, lastMovementAt: haceHoras(28) } as Partial<OrderData>);
+    expect(diasSinMovimiento(o, AHORA)).toBe(1);
+  });
+
+  it('20 horas de quietud son D0 (floor), no D1', () => {
+    expect(diasSinMovimiento(pedido({ lastMovementAt: haceHoras(20) }), AHORA)).toBe(0);
+  });
+
+  it('7 días sin moverse cruza al rojo (>= 7)', () => {
+    expect(diasSinMovimiento(pedido({ lastMovementAt: haceHoras(7 * 24 + 1) }), AHORA)).toBe(7);
+  });
+
+  it('sin fecha de movimiento devuelve null, NUNCA un número inventado', () => {
+    expect(diasSinMovimiento(pedido({ lastMovementAt: null }), AHORA)).toBeNull();
+    expect(diasSinMovimiento(pedido({ lastMovementAt: 'no-es-fecha' }), AHORA)).toBeNull();
   });
 });
 

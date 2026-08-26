@@ -62,6 +62,24 @@ export function horasSinMovimiento(o: OrderData, ahoraMs: number = Date.now()): 
 }
 
 /**
+ * Días CALENDARIO desde el último movimiento real en Dropi. `null` si no hay fecha.
+ *
+ * Es la edad de la NOVEDAD (o de la quietud), NO la edad del pedido. Existe
+ * porque la vista de Novedades mostraba `o.dias` —días desde que se CREÓ el
+ * pedido— en el badge de urgencia: una novedad que salió AYER sobre un pedido de
+ * 12 días se pintaba "D12 crítica", como si la novedad llevara 12 días abierta.
+ * El dueño llegó a regañar al equipo por una demora que no existía. Acá el número
+ * dice la verdad: hace cuánto no se mueve.
+ *
+ * `floor` a propósito: 20 h de quietud son 0 días completos, no "1". Un pedido
+ * movido ayer 18:00 y mirado hoy 14:00 = ~20 h → D0 (hoy), no D1.
+ */
+export function diasSinMovimiento(o: OrderData, ahoraMs: number = Date.now()): number | null {
+  const h = horasSinMovimiento(o, ahoraMs);
+  return h == null ? null : Math.floor(h / 24);
+}
+
+/**
  * ¿Este pedido está detenido? Solo cuentan los que siguen en juego: un pedido
  * entregado hace un mes no se movió nunca más, y contarlo ahogaría la cifra en
  * ruido justo cuando tiene que gritar.

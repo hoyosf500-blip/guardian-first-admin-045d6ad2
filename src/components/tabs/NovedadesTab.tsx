@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { isWithinLastDays } from '@/lib/orderUtils';
+import { diasSinMovimiento } from '@/lib/segPulso';
 import { splitNovedades } from '@/lib/novedadesSplit';
 import { useOpenIncidences } from '@/hooks/useOpenIncidences';
 import { AlertTriangle, RefreshCw, Search, CheckCircle2, Truck, ListChecks, BarChart3, Lightbulb, Target, Clock, ChevronDown, ChevronRight, Info } from 'lucide-react';
@@ -81,8 +82,11 @@ export default function NovedadesTab() {
 
   const stats = {
     total: porGestionar.length,
-    urgentes: porGestionar.filter(o => o.dias >= 7).length,
-    warning: porGestionar.filter(o => o.dias >= 4 && o.dias < 7).length,
+    // Por EDAD DE LA NOVEDAD (días sin movimiento en Dropi), no edad del pedido —
+    // así el contador de arriba coincide con el badge "D{n}" de cada tarjeta.
+    // `null` (sin fecha) no cuenta como crítico: no saber ≠ vencido.
+    urgentes: porGestionar.filter(o => (diasSinMovimiento(o) ?? -1) >= 7).length,
+    warning: porGestionar.filter(o => { const d = diasSinMovimiento(o); return d != null && d >= 4 && d < 7; }).length,
     carriers: new Set(porGestionar.map(o => o.transportadora).filter(Boolean)).size,
   };
 
