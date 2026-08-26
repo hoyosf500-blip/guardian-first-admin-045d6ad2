@@ -586,6 +586,15 @@ Deno.serve(async (req) => {
         const faltaChatId = !!p.chatId && !conChatId.has(p.externalId);
         if (!faltaChatId && leido && ahoraMs - leido < FRESCURA_MS && ultimoMs <= leido) { frescos++; continue; }
 
+        // ⛔ ¿Se LEYÓ de verdad el chat de este pedido? `historial===null` = el
+        // export de ImporChat todavía no lo trae (o el id no matcheó). En ese
+        // caso NO sabemos nada de la conversación y NO se puede pisar lo que ya
+        // había: escribir `chat_entrante_at=NULL` borraba la marca de "el cliente
+        // escribió" y `ventanaWhatsapp` bloqueaba responderle al que ACABA de
+        // escribir (misma regresión que `importchat-chat` ya protege). Cuando no
+        // se leyó, se omiten TODAS las columnas de actividad (incl. chat_leido_at,
+        // así el próximo sync lo reintenta) y solo se tocan datos estables.
+        const leyoChat = historial !== null;
         tareas.push({
           externalId: p.externalId,
           // Columnas de 20260824230000. Van aparte para poder REINTENTAR sin
@@ -593,20 +602,25 @@ Deno.serve(async (req) => {
           // Las fechas de mensajes YA son UTC (seriales de Excel): meterles el
           // offset otra vez las correría 5 horas.
           columnasNuevas: {
-            chat_saliente_at: act.salienteAt ? act.salienteAt.toISOString() : null,
-            chat_saliente_tipo: act.salienteTipo,
-            chat_entrante_at: act.entranteAt ? act.entranteAt.toISOString() : null,
+            ...(leyoChat ? {
+              chat_saliente_at: act.salienteAt ? act.salienteAt.toISOString() : null,
+              chat_saliente_tipo: act.salienteTipo,
+              chat_entrante_at: act.entranteAt ? act.entranteAt.toISOString() : null,
+            } : {}),
             // Sin esto no se le puede RESPONDER al cliente desde Guardian: el
-            // canal de ImporChat pide el id del chat, no el teléfono.
-            importchat_chat_id: p.chatId,
+            // canal de ImporChat pide el id del chat, no el teléfono. Se escribe
+            // solo si lo conocemos (nunca se pisa un id ya guardado con null).
+            ...(p.chatId ? { importchat_chat_id: p.chatId } : {}),
           },
           payloadBase: {
-            confirmo_boton_at: s.apretoBotonAt ? s.apretoBotonAt.toISOString() : null,
-            chat_cliente_escribio_at: s.clienteEscribioAt
-              ? s.clienteEscribioAt.toISOString() : null,
-            chat_mudo: s.mudo,
-            chat_riesgo: s.riesgo,
-            chat_leido_at: new Date().toISOString(),
+            ...(leyoChat ? {
+              confirmo_boton_at: s.apretoBotonAt ? s.apretoBotonAt.toISOString() : null,
+              chat_cliente_escribio_at: s.clienteEscribioAt
+                ? s.clienteEscribioAt.toISOString() : null,
+              chat_mudo: s.mudo,
+              chat_riesgo: s.riesgo,
+              chat_leido_at: new Date().toISOString(),
+            } : {}),
             pedido_creado_at: p.creadoUTC.toISOString(),
           },
         });

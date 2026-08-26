@@ -34,7 +34,7 @@ import { ventanaWhatsapp, MOTIVO_VENTANA } from "../_shared/ventanaWhatsapp.ts";
 // La plomería del socket vive en `_shared` desde que `importchat-chat` también
 // la necesita. Es el mismo molde que `_shared/dropiWebQuote.ts`.
 import { usarSocket, emitirMensaje, leerChat, type CredencialIC } from "../_shared/imporchatSocket.ts";
-import { normalizarConversacion, type MensajeConversacion } from "../_shared/conversacion.ts";
+import { normalizarConversacion, ultimoEntranteMs, type MensajeConversacion } from "../_shared/conversacion.ts";
 import { ensureFreshImporchatToken, decodeJwtExp, IMPORCHAT_BASE_DEFAULT } from "../_shared/imporchatSession.ts";
 import { fechaHoraLocal } from "../_shared/horaLocal.ts";
 
@@ -72,7 +72,10 @@ function contarMismoTexto(
 async function enviarPorSocket(opts: {
   cred: CredencialIC; chatId: string; telefono: string;
   mensaje: string; autor: string;
-}): Promise<{ ok: boolean; confirmado: boolean; detalle: string; mensajes: MensajeConversacion[] }> {
+  // Fallback de la ventana para cuando NO se pudo releer el hilo (raro): la marca
+  // de la base. Con el hilo fresco en la mano NO se usa.
+  entranteAtDb: number | null; leidoDb: boolean;
+}): Promise<{ ok: boolean; confirmado: boolean; detalle: string; mensajes: MensajeConversacion[]; ventanaCerrada?: string }> {
   try {
     return await usarSocket(async (socket) => {
       // Baseline: cuántas copias de este texto ya había. Si no se pudo leer antes
@@ -81,6 +84,23 @@ async function enviarPorSocket(opts: {
       const antes = await leerChat(socket, opts.cred, opts.chatId);
       const conBaseline = antes !== null;
       const antesN = conBaseline ? contarMismoTexto(antes, opts.mensaje) : 0;
+
+      // ⛔ VENTANA DE 24h decidida acá, con el hilo RECIÉN LEÍDO — no con la
+      // columna del sync (hasta 30 min vieja). Antes se gateaba arriba con la
+      // columna: si el cliente respondía EN VIVO tras el último sync, la columna
+      // decía "hace 25h" → 409 y se bloqueaba una respuesta perfectamente
+      // entregable. El hilo fresco trae SIEMPRE el último entrante, así que la
+      // ventana solo puede ABRIRSE respecto de la columna, nunca cerrarse de
+      // más. Sin baseline (no se pudo releer) se cae a la marca de la base.
+      const ultimoEnt = conBaseline ? ultimoEntranteMs(normalizarConversacion(antes)) : opts.entranteAtDb;
+      const leido = conBaseline ? true : opts.leidoDb;
+      const vFresca = ventanaWhatsapp(ultimoEnt, leido);
+      if (vFresca.estado !== "abierta") {
+        return {
+          ok: false, confirmado: false, ventanaCerrada: vFresca.estado,
+          detalle: MOTIVO_VENTANA[vFresca.estado], mensajes: [],
+        };
+      }
 
       emitirMensaje(socket, opts.cred, {
         chatId: opts.chatId, telefono: opts.telefono,
@@ -167,14 +187,15 @@ Deno.serve(async (req) => {
       }, 409);
     }
 
-    // ── La ventana de 24 h, decidida en el SERVIDOR ────────────────────────
+    // ── La ventana de 24 h ─────────────────────────────────────────────────
+    // `v` (columna de la base) es solo para el PREVIEW del dry_run. La decisión
+    // REAL de si se puede enviar la toma `enviarPorSocket` con el hilo recién
+    // leído (ver la nota ahí): la columna del sync puede tener 30 min y bloquear
+    // una respuesta al cliente que acaba de escribir. NO se rechaza acá.
     const v = ventanaWhatsapp(
       pedido.chat_entrante_at ? Date.parse(pedido.chat_entrante_at) : null,
       !!pedido.chat_leido_at,
     );
-    if (v.estado !== "abierta") {
-      return json({ ok: false, error: MOTIVO_VENTANA[v.estado], ventana: v.estado }, 409);
-    }
 
     // ── Credenciales de la tienda ─────────────────────────────────────────
     const { data: cfg } = await sb.from("store_importchat_config")
@@ -232,7 +253,14 @@ Deno.serve(async (req) => {
       chatId: String(pedido.importchat_chat_id),
       telefono: String(pedido.phone || ""),
       mensaje, autor,
+      entranteAtDb: pedido.chat_entrante_at ? Date.parse(pedido.chat_entrante_at) : null,
+      leidoDb: !!pedido.chat_leido_at,
     });
+    // La ventana la decidió el hilo fresco: si está cerrada, es un 409 (hay que
+    // mandar plantilla), no un 502 de "no se pudo confirmar".
+    if (r.ventanaCerrada) {
+      return json({ ok: false, error: r.detalle, ventana: r.ventanaCerrada }, 409);
+    }
     if (!r.ok) return json({ ok: false, error: `No se pudo confirmar el envío: ${r.detalle}` }, 502);
 
     // Recién con el envío CONFIRMADO se marca el pedido. El sync de las 30 min
