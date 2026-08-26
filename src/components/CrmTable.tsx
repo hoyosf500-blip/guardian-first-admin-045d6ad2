@@ -15,7 +15,7 @@ import {
   Send, Tag, CheckCircle, ChevronDown, Search, List, Bell, Building2,
 } from 'lucide-react';
 import { useStore } from '@/contexts/StoreContext';
-import { useWaChat } from '@/contexts/WaChatContext';
+import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDialog';
 import { useOrderNotesIndex } from '@/hooks/useOrderNotesIndex';
 import { useRefreshOrder } from '@/hooks/useRefreshOrder';
 import { isReminderDue } from '@/lib/reminders';
@@ -1243,8 +1243,12 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
   // rompe el memo porque memo compara props (no contexts).
   const { activeStoreId: cardActiveStoreId } = useStore();
   const { refresh: refreshOrder, isRefreshing } = useRefreshOrder();
-  const { openChat, waEnabled } = useWaChat();
   const recordContacto = useRecordGestion();
+  // Chat de WhatsApp de este pedido, dentro de Guardian (mismo hilo de ImporChat).
+  // Antes esta vista Lista colgaba del stub muerto useWaChat y había que salir a
+  // ImporChat. El diálogo lee el hilo solo y decide la ventana de 24h con lo
+  // recién leído (no necesita que le pasemos actividad → cero query por fila).
+  const [escribiendoWa, setEscribiendoWa] = useState(false);
   const priority = calcPriority(o);
   const pLevel = getPriorityLevel(priority);
   const pConfig = PRIORITY_CONFIG[pLevel];
@@ -1693,10 +1697,11 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
               {/* Canales de contacto (solo abren la app — el registro de la
                   gestión va por "Gestioné hoy", abajo). */}
               <div className="flex gap-2">
-                {waEnabled && (
+                {o.externalId && (
                   <button
                     type="button"
-                    onClick={() => void openChat({ phone: o.phone, name: o.nombre })}
+                    onClick={() => setEscribiendoWa(true)}
+                    title="Ver la conversación y escribirle sin salir de Guardian"
                     className="flex-1 text-[11px] py-2.5 rounded-xl bg-success/16 border border-success/40 text-success font-semibold hover:border-success/70 inline-flex items-center justify-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success">
                     <Send size={12} /> WhatsApp
                   </button>
@@ -1711,6 +1716,24 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
               {/* Gestión diaria — pool compartido: visible para cualquier operadora. */}
               {!managed && (
                 <SegActionButtons variant="list" onAction={(a) => onAction(o, a)} estado={o.estado} />
+              )}
+
+              {escribiendoWa && o.externalId && (
+                <EscribirWhatsappDialog
+                  open={escribiendoWa}
+                  onOpenChange={setEscribiendoWa}
+                  externalId={String(o.externalId)}
+                  nombre={o.nombre}
+                  estado={o.estado}
+                  datos={{
+                    guia: o.guia,
+                    transportadora: o.transportadora,
+                    ciudad: o.ciudad,
+                    producto: o.producto,
+                    valor: o.valor ? formatCOP(o.valor) : null,
+                  }}
+                  modulo="SEG"
+                />
               )}
 
             </div>
