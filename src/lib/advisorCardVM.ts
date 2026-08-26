@@ -39,6 +39,9 @@ export interface AdvisorRow {
   intentos_total?: number;
 }
 
+/** Info del roster para un asesor SIN actividad en el rango: desde cuándo no
+ *  trabaja. Permite pintar "sin trabajar hace X días" en vez de esconderlo. */
+export interface RosterLite { role: 'operator' | 'supervisor'; lastActivityIso: string | null; }
 export interface WorkedLite { worked_seconds: number; first_event: string | null; last_event: string | null; blocks: unknown; }
 export interface ActivityLite { first_action_at: string | null; last_active_at: string | null; active_seconds: number; idle_seconds: number; }
 export interface InactivityLite { warnings_count: number; total_lost_seconds: number; }
@@ -64,6 +67,9 @@ export interface BuildAdvisorsInput {
   mezcla: ReadonlyMap<string, MezclaAsesor>;
   scoresByOp: ReadonlyMap<string, AsesorScore>;
   liveByOp: ReadonlyMap<string, LiveLite>;
+  /** Roster completo (para mostrar inactivos con su "última vez"). Opcional: sin
+   *  él, un asesor sin actividad simplemente no trae días de inactividad. */
+  rosterByOp?: ReadonlyMap<string, RosterLite>;
   schedule: WorkSchedule;
   nowMs: number;
   entrantes: number;
@@ -82,6 +88,13 @@ export interface AdvisorVM {
   estado: LiveLite['estado'] | null;
   estadoTexto: string | null;   // "Trabajando · marcó hace 1 min"
   enLinea: boolean;
+  // Asesor SIN actividad en el rango (no gestionó nada). Para "sin trabajar hace
+  // X días" — el que dejó de venir, que antes se escondía. null = sí trabajó.
+  inactivoDias: number | null;
+  ultimaVezIso: string | null;
+  // Se ACTIVÓ hoy (hizo apertura / entró) pero todavía no marcó nada. El "presente
+  // sin marcar" que el dueño quiere ver salir aunque no haya gestionado.
+  soloApertura: boolean;
   // Cabecera
   confirmados: number;
   tasaDia: number | null;       // % del día = conf ÷ atendidos
@@ -317,6 +330,26 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
       if (sinGestionMin != null && sinGestionMin >= UMBRAL_SIN_GESTION_MIN) motivos.push(`sin marcar hace ${sinGestionMin} min`);
       if (live && live.estado === 'presente_sin_marcar') motivos.push('presente pero sin marcar');
     }
+    // ── Inactivo (dejó de trabajar) vs apertura (se activó, aún sin marcar) ────
+    // Sin NINGUNA gestión en el rango (confirmar + seg + nov + rescate).
+    const sinActividadRango =
+      atendidos === 0 && contestaron === 0 &&
+      r.seg_acciones === 0 && r.novedades_resueltas === 0 && r.rescate_acciones === 0;
+    const presenteHoy = Boolean(isToday && live && live.estado !== 'ausente');
+    // soloApertura: se activó hoy pero no marcó nada → el "presente sin marcar".
+    const soloApertura = sinActividadRango && presenteHoy;
+    // inactivo: sin actividad en el rango Y sin apertura hoy → días desde su
+    // última gestión (del roster). Solo se calcula con dato; nunca inventa.
+    const rosterInfo = input.rosterByOp?.get(id) ?? null;
+    let inactivoDias: number | null = null;
+    let ultimaVezIso: string | null = null;
+    if (sinActividadRango && !presenteHoy && rosterInfo) {
+      ultimaVezIso = rosterInfo.lastActivityIso;
+      inactivoDias = rosterInfo.lastActivityIso
+        ? Math.max(0, Math.floor((nowMs - Date.parse(rosterInfo.lastActivityIso)) / 86400000))
+        : null;
+    }
+
     const inflowSuelto = isToday && entrantes > 0;
     const sinDato = atendidos === 0 && r.confirmados === 0 && (!live || live.estado === 'ausente');
     if (sinDato) {
@@ -347,6 +380,9 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
       estado: live?.estado ?? null,
       estadoTexto,
       enLinea: Boolean(live?.enLinea),
+      inactivoDias,
+      ultimaVezIso,
+      soloApertura,
       confirmados: r.confirmados,
       tasaDia,
       atendidos,

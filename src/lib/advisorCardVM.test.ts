@@ -75,6 +75,47 @@ describe('ritmo: el "19" viene con su conteo y su tiempo (no es 19 pedidos)', ()
   });
 });
 
+describe('mostrar SIEMPRE a los asesores (roster): inactivos y apertura', () => {
+  const NOW = 1_700_000_000_000;
+
+  it('inactivo: sin actividad en el rango → días desde la última vez (no se esconde)', () => {
+    const hace40dias = new Date(NOW - 40 * 86400000).toISOString();
+    const [vm] = buildAdvisorVMs(baseInput({
+      nowMs: NOW, isToday: true,
+      rows: [row()],  // todo en cero
+      rosterByOp: new Map([['a', { role: 'operator', lastActivityIso: hace40dias }]]),
+    }));
+    expect(vm.inactivoDias).toBe(40);
+    expect(vm.ultimaVezIso).toBe(hace40dias);
+    expect(vm.soloApertura).toBe(false);
+    expect(vm.atencion).toBe('idle');
+  });
+
+  it('inactivo sin fecha conocida → días en null, nunca un 0 que mienta', () => {
+    const [vm] = buildAdvisorVMs(baseInput({
+      nowMs: NOW, isToday: true, rows: [row()],
+      rosterByOp: new Map([['a', { role: 'operator', lastActivityIso: null }]]),
+    }));
+    expect(vm.inactivoDias).toBeNull();
+    expect(vm.ultimaVezIso).toBeNull();
+  });
+
+  it('apertura: se activó hoy pero no marcó → soloApertura, NO inactivo', () => {
+    const live = {
+      estado: 'presente_sin_marcar' as const, ultimaAccion: null, lastWorkMin: null,
+      enLinea: true, firstSignalMs: NOW - 3 * 3600 * 1000, hourly: [], total: 0,
+    };
+    const [vm] = buildAdvisorVMs(baseInput({
+      nowMs: NOW, isToday: true, rows: [row()],
+      liveByOp: new Map([['a', live]]),
+      rosterByOp: new Map([['a', { role: 'operator', lastActivityIso: new Date(NOW - 2 * 86400000).toISOString() }]]),
+    }));
+    expect(vm.soloApertura).toBe(true);
+    expect(vm.inactivoDias).toBeNull();   // presente hoy ⇒ no se cuenta como inactivo
+    expect(vm.atencion).toBe('warn');     // presente pero sin marcar = a revisar
+  });
+});
+
 describe('atención', () => {
   it('score rojo (lento) → atención bad + motivo en cristiano', () => {
     const s = score({ nivelMeta: 'lento' });

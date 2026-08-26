@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, Gauge, LogIn, AlertTriangle, Check, CircleAlert } from 'lucide-react';
-import { formatTimeBogota, formatDurationHM } from '@/lib/timeFormat';
+import { formatTimeBogota, formatDurationHM, formatDateBogota } from '@/lib/timeFormat';
 import type { AdvisorVM, Tono, Atencion } from '@/lib/advisorCardVM';
 
 /**
@@ -86,6 +86,34 @@ export default function AdvisorCard({
   onInactivityDetail?: (id: string, name: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+
+  // Asesor INACTIVO (dejó de trabajar) → tarjeta compacta: nombre + hace cuánto no
+  // trabaja + última vez. Antes se escondía; el dueño lo quiere ver. Render corto
+  // (sin anillo/ritmo/stats en "—") = más limpio y más liviano.
+  if (vm.inactivoDias != null) {
+    const rojo = vm.inactivoDias >= 7;
+    return (
+      <article className="relative flex items-center gap-3 overflow-hidden rounded-2xl border border-border bg-card/30 p-3.5">
+        <span className={`absolute left-0 top-0 bottom-0 w-[3px] ${rojo ? 'bg-danger/70' : 'bg-warning/70'}`} aria-hidden="true" />
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-muted/30 text-muted-foreground font-bold text-xs">
+          {vm.initials}
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="font-semibold text-foreground/80 truncate leading-tight" title={vm.name}>{vm.name}</h3>
+          <span className="block text-[11px] text-muted-foreground leading-tight">
+            {vm.inactivoDias >= 1
+              ? <>sin trabajar hace <b className={rojo ? 'text-danger' : 'text-warning'}>{vm.inactivoDias} {vm.inactivoDias === 1 ? 'día' : 'días'}</b></>
+              : 'sin gestionar en el rango'}
+            {vm.ultimaVezIso ? ` · última vez ${formatDateBogota(vm.ultimaVezIso)}` : ' · sin registro'}
+          </span>
+        </div>
+        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.04em] ${rojo ? 'border-danger/30 bg-danger/10 text-danger' : 'border-warning/30 bg-warning/10 text-warning'}`}>
+          {rojo ? 'inactivo' : 'sin marcar'}
+        </span>
+      </article>
+    );
+  }
+
   const rt = ringTone(vm.tasaDia);
   const d = vm.detalle;
   const serie = isToday ? vm.hourly : [];

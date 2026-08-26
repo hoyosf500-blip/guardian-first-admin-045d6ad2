@@ -262,11 +262,15 @@ export function useLiveTeam(): LiveTeam {
       timer = setTimeout(() => { void load(); }, 800);
     };
     const filter = `store_id=eq.${storeId}`;
+    // NO escuchamos `orders`: el sync la reescribe sin parar y disparaba un refetch
+    // de las 6 consultas de este hook en bucle (parte de la lentitud del panel,
+    // 26-ago). La presencia y las gestiones llegan por order_results/touchpoints;
+    // los conteos de cola (pendingConfirmar/Novedades, que sí salen de orders) se
+    // refrescan en el poll de 30 s — suficiente para un contador de backlog.
     const channel = supabase
       .channel(`live-team-${storeId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'order_results', filter }, debounced)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'touchpoints', filter }, debounced)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter }, debounced)
       .subscribe();
     // Poll solo con la pestaña visible (no gastar en background).
     const interval = setInterval(() => {

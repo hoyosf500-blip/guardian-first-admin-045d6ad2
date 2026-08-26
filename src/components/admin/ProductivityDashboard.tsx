@@ -24,6 +24,7 @@ import AdvisorCard from '@/components/admin/AdvisorCard';
 import { buildAdvisorVMs } from '@/lib/advisorCardVM';
 import { useLiveTeam } from '@/hooks/useLiveTeam';
 import { useResponsabilidadAsesor } from '@/hooks/useResponsabilidadAsesor';
+import { useAdvisorRoster } from '@/hooks/useAdvisorRoster';
 import { metaGestionesDelRango } from '@/lib/responsabilidadAsesor';
 
 interface ActivityRow {
@@ -227,6 +228,9 @@ export default function ProductivityDashboard() {
   // ritmo, entró/tarde y barritas por hora; useResponsabilidadAsesor trae
   // devoluciones + % en rojo + el semáforo. Ambos store-scoped.
   const liveTeam = useLiveTeam();
+  // Roster completo de la tienda → mostrar SIEMPRE a los asesores, incluidos los
+  // inactivos (dejaron de trabajar) que la RPC de productividad esconde.
+  const { roster: advisorRoster } = useAdvisorRoster(activeStoreId);
   const fraccionTurnoHoy = (() => {
     const tot = schedule.workEndSec - schedule.workStartSec;
     if (tot <= 0) return 1;
@@ -428,9 +432,15 @@ export default function ProductivityDashboard() {
       timer = setTimeout(() => load(true), 1000);
     };
     const storeFilter = `store_id=eq.${activeStoreId}`;
+    // OJO: NO nos suscribimos a `orders`. El sync la reescribe sin parar (cientos de
+    // filas por corrida cada ~10 min) → cada cambio disparaba un refetch de las 4
+    // RPCs + cierres, y con useLiveTeam haciendo lo mismo, el panel recargaba en
+    // bucle (la lentitud que reportó el dueño, 26-ago). Las gestiones (lo que este
+    // panel mide) llegan por order_results/touchpoints; el inflow se refresca en el
+    // próximo evento de gestión o en el refresh manual. Medido: las RPCs tardan
+    // ~200 ms, así que el costo era el volumen de recargas, no cada consulta.
     const channel = supabase
       .channel(`admin-productivity-${activeStoreId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: storeFilter }, debounced)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_results', filter: storeFilter }, debounced)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'touchpoints', filter: storeFilter }, debounced)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'operator_activity_daily', filter: storeFilter }, debounced)
@@ -526,11 +536,40 @@ export default function ProductivityDashboard() {
   // todos los guardas ("—" nunca 0) y ordena por quién hay que revisar primero.
   const liveByOp = new Map(liveTeam.operators.map((o) => [o.id, o]));
   const scoresByOp = new Map(respScores.map((s) => [s.operatorId, s]));
-  const advisorVMs = rows.length > 0
+
+  // Universo de tarjetas = SIEMPRE todos los asesores (pedido del dueño):
+  //  1. los que gestionaron en el rango → vienen en `rows`;
+  //  2. los que hicieron APERTURA hoy pero aún no marcaron → de liveTeam;
+  //  3. los INACTIVOS (roster, sin actividad en el rango) → con su "última vez".
+  // Se agregan con fila en cero; `rows` (totales del equipo, líder, chart) NO se
+  // toca. Si el roster falla, `extra` queda vacío → degrada al comportamiento previo.
+  const rosterByOp = new Map(advisorRoster.map((r) => [r.operator_id, { role: r.role, lastActivityIso: r.lastActivityIso }]));
+  const yaEnTarjetas = new Set(rows.map((r) => r.operator_id));
+  const zeroRow = (operator_id: string, display_name: string): Row => ({
+    operator_id, display_name,
+    confirmados: 0, cancelados: 0, noresp: 0, novedades_resueltas: 0,
+    seg_acciones: 0, seg_resueltos: 0, rescate_acciones: 0, rescate_resueltos: 0,
+    total_atendidos: 0, total_entrantes: rows[0]?.total_entrantes ?? 0,
+    tasa_contacto: 0, tasa_confirmacion: 0,
+  });
+  const extraRows: Row[] = [];
+  if (isToday) {
+    for (const o of liveTeam.operators) {
+      if (yaEnTarjetas.has(o.id)) continue;
+      yaEnTarjetas.add(o.id); extraRows.push(zeroRow(o.id, o.name));
+    }
+  }
+  for (const r of advisorRoster) {
+    if (yaEnTarjetas.has(r.operator_id)) continue;
+    yaEnTarjetas.add(r.operator_id); extraRows.push(zeroRow(r.operator_id, r.display_name));
+  }
+  const cardRows = extraRows.length ? [...rows, ...extraRows] : rows;
+
+  const advisorVMs = cardRows.length > 0
     ? buildAdvisorVMs({
-        rows, workedByOp, activityByOp, inactivityByOp,
+        rows: cardRows, workedByOp, activityByOp, inactivityByOp,
         closingByOp, closingError, mezcla: mezclaAsesor, scoresByOp,
-        liveByOp, schedule, nowMs, entrantes, isToday, confTarget: CONF_TARGET_PCT,
+        liveByOp, rosterByOp, schedule, nowMs, entrantes, isToday, confTarget: CONF_TARGET_PCT,
       })
     : [];
   const trabajandoAhora = liveTeam.operators.filter((o) => o.estado === 'trabajando').length;
@@ -776,7 +815,7 @@ export default function ProductivityDashboard() {
               Antes mostraba este mensaje con rows=0 aunque hubiera pings,
               ocultando la sección Jornada. Ahora cubre solo el verdadero
               cero-y-cero. */}
-          {rows.length === 0 && jornadaOps.length === 0 && (
+          {rows.length === 0 && jornadaOps.length === 0 && advisorVMs.length === 0 && (
             <div className="rounded-2xl border border-dashed border-border bg-card/40 p-10 text-center">
               <p className="text-sm font-semibold text-foreground mb-1">Sin actividad</p>
               <p className="text-xs text-muted-foreground">Nadie ha registrado acciones en {RANGE_LABELS[range].toLowerCase()}.</p>
@@ -795,7 +834,7 @@ export default function ProductivityDashboard() {
               las secciones se habían perdido. Ahora se muestran con un estado
               vacío explícito — "existe y hoy no hay datos" se lee distinto de
               "ya no está". */}
-          {rows.length === 0 && jornadaOps.length > 0 && (
+          {rows.length === 0 && jornadaOps.length > 0 && advisorVMs.length === 0 && (
             <div className="rounded-2xl border border-dashed border-border bg-card/40 p-6 text-center">
               {/* Dos situaciones MUY distintas que antes se leían igual. El
                   cartel viejo decía siempre "Todavía sin gestiones", así que un

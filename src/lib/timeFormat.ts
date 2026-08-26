@@ -47,6 +47,22 @@ export function formatTimeBogota(ts: string | null | undefined): string {
 }
 
 /**
+ * Formatea un timestamp como fecha corta en zona Bogotá ("16 jul"). Sin hora ni
+ * año: para "última vez que trabajó" de un asesor inactivo, donde el día importa
+ * y la hora es ruido. Devuelve '—' si el input es null/undefined o inválido.
+ */
+export function formatDateBogota(ts: string | null | undefined): string {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '—';
+  return new Intl.DateTimeFormat('es-CO', {
+    day: '2-digit',
+    month: 'short',
+    timeZone: 'America/Bogota',
+  }).format(d);
+}
+
+/**
  * Igual que formatTimeBogota pero anteponiendo el día ("12 jul, 08:34 a. m.").
  *
  * Existe para los rangos de varios días: ahí una hora suelta no dice nada
