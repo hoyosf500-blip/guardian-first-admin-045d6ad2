@@ -2715,6 +2715,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      importchat_token_horas: { Args: { p_store_id: string }; Returns: number }
       is_store_manager: { Args: { p_store_id: string }; Returns: boolean }
       is_store_member: { Args: { p_store_id: string }; Returns: boolean }
       is_store_owner: { Args: { p_store_id: string }; Returns: boolean }
