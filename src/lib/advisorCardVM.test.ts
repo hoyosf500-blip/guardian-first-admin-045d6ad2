@@ -1,0 +1,81 @@
+import { describe, it, expect } from 'vitest';
+import { buildAdvisorVMs, sortByAttention, type BuildAdvisorsInput, type AdvisorRow, type AdvisorVM } from './advisorCardVM';
+import type { AsesorScore } from './responsabilidadAsesor';
+import { DEFAULT_SCHEDULE } from './inactivityWindow';
+
+const row = (over: Partial<AdvisorRow> = {}): AdvisorRow => ({
+  operator_id: 'a', display_name: 'Ana Pérez', confirmados: 0, cancelados: 0, noresp: 0,
+  novedades_resueltas: 0, seg_acciones: 0, seg_resueltos: 0, rescate_acciones: 0,
+  rescate_resueltos: 0, total_atendidos: 0, ...over,
+});
+
+const score = (over: Partial<AsesorScore> = {}): AsesorScore => ({
+  operatorId: 'a', name: 'Ana Pérez', gestionados: 100, confirmados: 40, devoluciones: 4,
+  evitables: 2, despachadosConSello: 20, despachadosEnRojo: 2, tasaDevolucion: 10,
+  pctEnRojo: 10, nivelMeta: 'optimo', metaGestiones: 90, ...over,
+});
+
+const baseInput = (over: Partial<BuildAdvisorsInput> = {}): BuildAdvisorsInput => ({
+  rows: [row()], workedByOp: new Map(), activityByOp: new Map(), inactivityByOp: new Map(),
+  closingByOp: {}, closingError: false, mezcla: new Map(), scoresByOp: new Map(),
+  liveByOp: new Map(), schedule: DEFAULT_SCHEDULE, nowMs: 1_700_000_000_000,
+  entrantes: 0, isToday: true, confTarget: 85, ...over,
+});
+
+describe('buildAdvisorVMs — guardas de honestidad (nunca un 0 falso)', () => {
+  it('sin datos medidos → todo en null y atención idle', () => {
+    const [vm] = buildAdvisorVMs(baseInput());
+    expect(vm.tasaDia).toBeNull();          // no atendió nada → no hay % que medir
+    expect(vm.ritmoPorHora).toBeNull();     // sin horas trabajadas
+    expect(vm.devoluciones).toBeNull();     // sin score → no medido, no 0
+    expect(vm.detalle.tasaDevolucion).toBeNull();
+    expect(vm.detalle.clientesHora).toBeNull();
+    expect(vm.atencion).toBe('idle');
+  });
+
+  it('iniciales del nombre', () => {
+    expect(buildAdvisorVMs(baseInput())[0].initials).toBe('AP');
+  });
+
+  it('% del día = confirmó ÷ trabajó, topado a 100', () => {
+    const [vm] = buildAdvisorVMs(baseInput({ rows: [row({ confirmados: 37, cancelados: 4, noresp: 24, total_atendidos: 65 })] }));
+    expect(vm.tasaDia).toBe(57);            // 37/65
+    expect(vm.contestaron).toBe(41);        // 37+4
+    expect(vm.noContesto).toBe(24);
+    expect(vm.trabajo).toBe(65);
+  });
+});
+
+describe('atención', () => {
+  it('score rojo (lento) → atención bad + motivo en cristiano', () => {
+    const s = score({ nivelMeta: 'lento' });
+    const [vm] = buildAdvisorVMs(baseInput({
+      rows: [row({ confirmados: 5, total_atendidos: 10 })],
+      scoresByOp: new Map([['a', s]]),
+    }));
+    expect(vm.atencion).toBe('bad');
+    expect(vm.motivos.join(' ')).toMatch(/lento/);
+  });
+
+  it('score verde + algo de trabajo → good', () => {
+    const s = score({ nivelMeta: 'optimo', tasaDevolucion: 3, pctEnRojo: 5 });
+    const [vm] = buildAdvisorVMs(baseInput({
+      rows: [row({ confirmados: 30, total_atendidos: 34 })],
+      scoresByOp: new Map([['a', s]]),
+    }));
+    expect(vm.atencion).toBe('good');
+    expect(vm.motivos).toHaveLength(0);
+  });
+});
+
+describe('sortByAttention', () => {
+  it('bad → warn → good → idle; dentro de good por confirmados', () => {
+    const mk = (id: string, atencion: AdvisorVM['atencion'], conf: number): AdvisorVM =>
+      ({ operatorId: id, name: id, atencion, confirmados: conf } as AdvisorVM);
+    const out = sortByAttention([
+      mk('idle', 'idle', 0), mk('good1', 'good', 5), mk('bad', 'bad', 1),
+      mk('good2', 'good', 20), mk('warn', 'warn', 3),
+    ]);
+    expect(out.map((v) => v.operatorId)).toEqual(['bad', 'warn', 'good2', 'good1', 'idle']);
+  });
+});

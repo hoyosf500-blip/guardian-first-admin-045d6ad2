@@ -22,11 +22,16 @@ import { useMezclaAsesor } from '@/hooks/useMezclaAsesor';
 import MezclaTrabajoPanel from '@/components/admin/MezclaTrabajoPanel';
 import ResponsabilidadAsesorPanel from '@/components/admin/ResponsabilidadAsesorPanel';
 import InactivityDetailModal from '@/components/admin/InactivityDetailModal';
-import TeamNowStrip from '@/components/admin/TeamNowStrip';
 import { useStoreSchedule } from '@/hooks/useStoreSchedule';
 import { gestionesPorHora, ritmoTone, MIN_INTENTOS_POR_HORA } from '@/lib/operatorThroughput';
 import { bogotaToday } from '@/lib/utils';
 import { isRpcMissing } from '@/lib/rpcError';
+import AdvisorCard from '@/components/admin/AdvisorCard';
+import { buildAdvisorVMs } from '@/lib/advisorCardVM';
+import { useLiveTeam } from '@/hooks/useLiveTeam';
+import { useResponsabilidadAsesor } from '@/hooks/useResponsabilidadAsesor';
+import { metaGestionesDelRango } from '@/lib/responsabilidadAsesor';
+import { Radio } from 'lucide-react';
 
 interface ActivityRow {
   operator_id: string;
@@ -162,6 +167,12 @@ const fadeUp = (delay = 0) => ({
   transition: { duration: 0.35, delay, ease: 'easeOut' as const },
 });
 
+// Bandera de migración (rediseño 26-ago-2026): las viejas tablas por-operador
+// (Jornada + Confirmar/Seguimiento/Novedades) quedaron reemplazadas por las
+// tarjetas de asesor (AdvisorCard). El bloque JSX viejo sigue en el árbol tras
+// esta bandera en `false` y se borra en el commit de limpieza siguiente.
+const DEAD_OLD_TABLES = false;
+
 /**
  * Degradado vertical por serie. Los ids de `<defs>` son GLOBALES al documento:
  * de ahí el `prefix` obligatorio para no pisar los de otra card.
@@ -264,6 +275,20 @@ export default function ProductivityDashboard() {
   // Horario laboral de la tienda (excluye almuerzo) → base de "En su puesto".
   const { data: scheduleMin } = useStoreSchedule(activeStoreId);
   const schedule = scheduleMin ? scheduleFromMinutes(scheduleMin) : DEFAULT_SCHEDULE;
+
+  // Rediseño 26-ago (tarjeta por asesor): datos EN VIVO (hoy) + scores de
+  // responsabilidad, para armar el VM de cada tarjeta. useLiveTeam trae estado,
+  // ritmo, entró/tarde y barritas por hora; useResponsabilidadAsesor trae
+  // devoluciones + % en rojo + el semáforo. Ambos store-scoped.
+  const liveTeam = useLiveTeam();
+  const fraccionTurnoHoy = (() => {
+    const tot = schedule.workEndSec - schedule.workStartSec;
+    if (tot <= 0) return 1;
+    const s = bogotaSecondsOfDay(new Date());
+    return Math.max(0, Math.min(1, (s - schedule.workStartSec) / tot));
+  })();
+  const metaGestionesInput = metaGestionesDelRango(range, range === 'today' ? fraccionTurnoHoy : 1);
+  const { scores: respScores } = useResponsabilidadAsesor(range, rows, metaGestionesInput);
 
   // Tienda de la corrida MÁS RECIENTE de load(). Las 4 RPCs de abajo resuelven
   // su alcance server-side: una respuesta en vuelo de la tienda anterior NO se
@@ -549,6 +574,24 @@ export default function ProductivityDashboard() {
       ? 'success'
       : teamTasaDia >= CONF_TARGET_PCT - 5 ? 'warning' : 'danger';
 
+  // ── VMs de las tarjetas por asesor (rediseño 26-ago) ──────────────────────
+  // Se computan cada render: es el MISMO costo que la tabla vieja (que también
+  // calculaba inline) y para un equipo chico es trivial. buildAdvisorVMs aplica
+  // todos los guardas ("—" nunca 0) y ordena por quién hay que revisar primero.
+  const liveByOp = new Map(liveTeam.operators.map((o) => [o.id, o]));
+  const scoresByOp = new Map(respScores.map((s) => [s.operatorId, s]));
+  const advisorVMs = rows.length > 0
+    ? buildAdvisorVMs({
+        rows, workedByOp, activityByOp, inactivityByOp,
+        closingByOp, closingError, mezcla: mezclaAsesor, scoresByOp,
+        liveByOp, schedule, nowMs, entrantes, isToday, confTarget: CONF_TARGET_PCT,
+      })
+    : [];
+  const trabajandoAhora = liveTeam.operators.filter((o) => o.estado === 'trabajando').length;
+  const ausentesAhora = liveTeam.operators.filter((o) => o.estado === 'ausente').length;
+  const backlogConfirmar = liveTeam.pendingConfirmar;
+  const backlogNovedades = liveTeam.pendingNovedades;
+
   return (
     <div className="space-y-5">
       {/* Page sub-header — eyebrow + título + meta + actions */}
@@ -595,11 +638,9 @@ export default function ProductivityDashboard() {
         </div>
       </motion.header>
 
-      {/* Pulso EN VIVO del equipo — reemplaza la vieja página /en-vivo, ahora
-          embebida acá. Solo en 'Hoy': el "quién trabaja ahora" no tiene sentido
-          mirando un rango pasado. Monta su propio hook (useLiveTeam) únicamente
-          cuando se renderiza, así no dispara consultas en 7d/30d. */}
-      {isToday && <TeamNowStrip />}
+      {/* El pulso EN VIVO del equipo ahora vive DENTRO de cada tarjeta de asesor
+          (rediseño 26-ago-2026); el resumen "quién trabaja ahora" va en el
+          encabezado de la grilla. useLiveTeam se monta arriba del componente. */}
 
       {error && (
         <div className="rounded-2xl border border-danger/30 bg-danger/5 p-4 shadow-card3d">
@@ -716,11 +757,55 @@ export default function ProductivityDashboard() {
             </motion.div>
           )}
 
-          {/* Tablero UNIFICADO de responsabilidad por asesor: junta esfuerzo +
-              devoluciones + disciplina de validación en una fila con semáforo.
-              Recibe las filas de productividad ya cargadas (no re-consulta esa RPC). */}
-          {rows.length > 0 && (
-            <ResponsabilidadAsesorPanel range={range} prodRows={rows} />
+          {/* Fuga Shopify→Dropi — banner suelto (antes vivía dentro de la tabla
+              de Confirmar, que ya no existe). Debería estar en 0. */}
+          {shopifyPending.data?.configured !== false && (shopifyPending.data?.pendingCount ?? 0) > 0 && (
+            <div className="rounded-2xl border border-danger/30 bg-danger/8 px-4 py-3 flex items-center gap-3 shadow-card3d">
+              <ShoppingBag size={16} className="text-danger shrink-0" aria-hidden="true" />
+              <div className="flex-1 min-w-0 text-xs">
+                <span className="font-bold text-danger tabular-nums">{shopifyPending.data!.pendingCount}</span>
+                <span className="text-foreground font-semibold"> venta{shopifyPending.data!.pendingCount === 1 ? '' : 's'} sin pasar a Dropi</span>
+                <span className="text-muted-foreground">
+                  {' '}(últimos {shopifyPending.data!.days ?? 7}d
+                  {typeof shopifyPending.data!.todayPending === 'number' ? ` · ${shopifyPending.data!.todayPending} hoy` : ''})
+                  {' '}— entraron a Shopify pero nunca llegaron al flujo de confirmación. Deberían estar en 0: subilas desde <strong className="text-foreground">Confirmar → "Subir todos"</strong>.
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* TARJETAS POR ASESOR — reemplazan las 7 tablas por-operador (rediseño
+              26-ago). Cada tarjeta cuenta la historia de un asesor; el detalle
+              hondo va plegado en "Ver detalle". Ordenadas: primero a quién revisar. */}
+          {advisorVMs.length > 0 && (
+            <motion.section {...fadeUp(0.06)} className="space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap px-0.5">
+                <div className="hud-label flex items-center gap-1.5">
+                  <Users size={13} className="text-accent" aria-hidden="true" />
+                  Asesores · {RANGE_LABELS[range].toLowerCase()}
+                </div>
+                {isToday && liveTeam.status === 'ok' && (
+                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground font-medium flex-wrap">
+                    <span className="inline-flex items-center gap-1.5 text-success">
+                      <Radio size={12} className="animate-pulse" aria-hidden="true" />{trabajandoAhora} trabajando
+                    </span>
+                    {ausentesAhora > 0 && <span className="text-warning">{ausentesAhora} ausente{ausentesAhora === 1 ? '' : 's'}</span>}
+                    {backlogConfirmar != null && <span>· {backlogConfirmar} por confirmar</span>}
+                    {backlogNovedades != null && backlogNovedades > 0 && <span>· {backlogNovedades} novedades</span>}
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {advisorVMs.map((vm) => (
+                  <AdvisorCard
+                    key={vm.operatorId}
+                    vm={vm}
+                    isToday={isToday}
+                    onInactivityDetail={(id, name) => setInactivityDetail({ id, name })}
+                  />
+                ))}
+              </div>
+            </motion.section>
           )}
 
           {/* Jornada SIEMPRE arriba si hay activityRows — métrica de presencia
@@ -737,7 +822,7 @@ export default function ProductivityDashboard() {
               <p className="text-xs text-foreground/90">{jornadaWarn}</p>
             </div>
           )}
-          {jornadaOps.length > 0 && (
+          {DEAD_OLD_TABLES && jornadaOps.length > 0 && (
             <Section
               title="Jornada"
               tone="info"
@@ -1169,13 +1254,8 @@ export default function ProductivityDashboard() {
             </Section>
           )}
 
-          {/* Mezcla de trabajo por asesor (anti-descreme). Solo HOY: el hook no
-              consulta en 7d/30d (query pesada). Debajo de Jornada. */}
-          {isToday && jornadaOps.length > 0 && (
-            <div className="mt-3">
-              <MezclaTrabajoPanel mezcla={mezclaAsesor} loading={mezclaLoading} error={mezclaError} />
-            </div>
-          )}
+          {/* La mezcla difíciles/fáciles (anti-descreme) ahora vive en el
+              "Ver detalle" de cada tarjeta de asesor. */}
 
           {/* "Sin actividad" — solo cuando NI hay productividad NI hay jornada.
               Antes mostraba este mensaje con rows=0 aunque hubiera pings,
@@ -1188,49 +1268,8 @@ export default function ProductivityDashboard() {
             </div>
           )}
 
-          {/* Top performer callout */}
-          {leader && leader.confirmados > 0 && (
-            <motion.div
-              {...fadeUp(0.1)}
-              className="relative overflow-hidden rounded-2xl border border-accent/32 bg-accent/12 glow-accent shadow-card3d px-4 py-3 flex items-center gap-3"
-            >
-              <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-accent-gradient" aria-hidden="true" />
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-accent/30 bg-accent/20 glow-accent">
-                <Trophy size={17} className="text-accent" aria-hidden="true" strokeWidth={2.25} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="hud-label">
-                  Top operadora — {RANGE_LABELS[range].toLowerCase()}
-                </div>
-                {/* El nombre de la operadora es DATO, no rótulo: va sin hud-label
-                    (que mayusculiza). */}
-                <div className="text-sm font-bold text-foreground truncate mt-0.5">{leader.display_name}</div>
-              </div>
-              {/* La cifra manda: cuenta al entrar, como en el Dashboard. */}
-              <div className="shrink-0 text-right">
-                <div className="text-2xl font-bold leading-none text-accent num-glow-accent">
-                  <CountUp value={leader.confirmados} />
-                </div>
-                <div className="hud-label mt-1.5">confirmados</div>
-              </div>
-              {/* Segunda cifra = MISMO "% del día" de la tabla: lo que confirmó
-                  ÷ lo que trabajó (gestionados). Es el mismo criterio del aro del
-                  equipo, así el recuadro y la fila de la operadora coinciden. */}
-              <div
-                className="shrink-0 text-right border-l border-accent/25 pl-3"
-                title="De lo que esta operadora TRABAJÓ hoy (gestionó), qué parte confirmó. Es el mismo número que su fila en la tabla."
-              >
-                <div className="text-2xl font-bold leading-none text-foreground font-mono tabular-nums">
-                  {(() => {
-                    const at = Number(leader.total_atendidos) || 0;
-                    const t = at > 0 ? Math.min(100, Math.round((leader.confirmados / at) * 100)) : null;
-                    return t == null ? '—' : `${t}%`;
-                  })()}
-                </div>
-                <div className="hud-label mt-1.5">del día</div>
-              </div>
-            </motion.div>
-          )}
+          {/* El "top operadora" ya no va aparte: las tarjetas se ordenan por a
+              quién revisar, y el líder queda claro por sus cifras. */}
 
           {/* Las secciones de outcome (Confirmar / Seguimiento / Rescate /
               Novedades) se muestran SIEMPRE que haya alguien en el período.
@@ -1274,7 +1313,7 @@ export default function ProductivityDashboard() {
             </div>
           )}
 
-          {rows.length > 0 && <>
+          {DEAD_OLD_TABLES && rows.length > 0 && <>
 
           {/* Confirmar — el `note` muestra la COBERTURA DEL EQUIPO (cuánto del
               inflow del período alcanzó a resolver el equipo). La tasa POR

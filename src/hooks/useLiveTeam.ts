@@ -6,8 +6,8 @@ import { bogotaSecondsOfDay } from '@/lib/inactivityWindow';
 import { repartirPorHora } from '@/lib/ritmoEnVivo';
 
 /**
- * Datos de la franja "Ahora mismo" (TeamNowStrip, embebida en Productividad):
- * cómo va el equipo HOY, por operadora,
+ * Datos EN VIVO del equipo para las tarjetas de asesor de Productividad
+ * (AdvisorCard): cómo va el equipo HOY, por operadora,
  * en las tres colas (Confirmar / Seguimiento / Novedades) + qué está haciendo
  * cada una AHORA (última acción) + su estado (trabajando / presente sin marcar /
  * ausente) + el backlog compartido de la tienda. Todo store-scoped.

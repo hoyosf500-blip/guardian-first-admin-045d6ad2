@@ -9,7 +9,7 @@
 // prendido y desmotivar. Ésta es la que ve el DUEÑO — su listón es más alto. NO es
 // un bug ni una definición olvidada: son dos audiencias, dos varas, a pedido suyo.
 //
-// PURO y testeable. La UI (TeamNowStrip) solo dibuja lo que esto calcula.
+// PURO y testeable. La UI (AdvisorCard) solo dibuja lo que esto calcula.
 
 import { calcularRitmo, type Ritmo } from './ritmoTurno';
 
