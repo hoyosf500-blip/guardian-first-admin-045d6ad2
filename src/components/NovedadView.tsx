@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import FingerprintBadge from '@/components/FingerprintBadge';
 import { diasSinMovimiento } from '@/lib/segPulso';
+import ChatClienteCard from '@/components/chat/ChatClienteCard';
 
 interface Props {
   items: OrderData[];
@@ -355,6 +356,31 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
               <div className="text-xs text-foreground leading-relaxed">{o.novedad}</div>
             </div>
           </div>
+        )}
+
+        {/* El WhatsApp REAL del cliente, a la vista — la asesora ve qué dijo el
+            cliente sobre la novedad (dónde está, si quiere reprogramar) SIN salir
+            a ImporChat, y le responde desde acá mismo. Es la MISMA tarjeta de la
+            ficha y de Confirmar (no una copia). Se dibuja sola solo si este pedido
+            tiene conversación leída; si no, no existe (nada de una caja vacía). */}
+        {o.dbId && o.externalId && (
+          <ChatClienteCard
+            externalId={String(o.externalId)}
+            orderId={o.dbId}
+            nombre={o.nombre}
+            estado={o.estado}
+            datos={{
+              guia: o.guia,
+              transportadora: o.transportadora,
+              ciudad: o.ciudad,
+              producto: o.producto,
+              valor: o.valor ? formatCOP(o.valor) : null,
+            }}
+            modulo="WHATSAPP"
+            mostrarSenales
+            mostrarEscribir
+            altoClase="min-h-[140px] max-h-[280px]"
+          />
         )}
         </div>
 
