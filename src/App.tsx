@@ -18,6 +18,7 @@ const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
 const ConfirmarPage = lazy(() => import("@/pages/ConfirmarPage"));
 const SeguimientoPage = lazy(() => import("@/pages/SeguimientoPage"));
 const NovedadesPage = lazy(() => import("@/pages/NovedadesPage"));
+const InboxPage = lazy(() => import("@/pages/InboxPage"));
 const AdminPage = lazy(() => import("@/pages/AdminPage"));
 const OrderDetailPage = lazy(() => import("@/pages/OrderDetailPage"));
 const LogisticsPage = lazy(() => import("@/pages/LogisticsPage"));
@@ -80,6 +81,7 @@ const App = () => (
                   <Route path="/dashboard" element={route(<DashboardPage />)} />
                   <Route path="/confirmar" element={route(<ConfirmarPage />)} />
                   <Route path="/seguimiento" element={route(<SeguimientoPage />)} />
+                  <Route path="/inbox" element={route(<InboxPage />)} />
                   <Route path="/novedades" element={route(<NovedadesPage />)} />
                   <Route path="/admin" element={route(<AdminPage />)} />
                   <Route path="/logistica" element={route(<LogisticsPage />)} />
