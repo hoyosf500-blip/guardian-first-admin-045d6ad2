@@ -197,7 +197,9 @@ export default function TeamNowStrip() {
                         >
                           <Gauge size={12} aria-hidden="true" />
                           <span className="tabular-nums">{ritmo.porHora}/h</span>
-                          {ritmo.vaLento && <span>· lento</span>}
+                          {/* Cue NO-color (regla color-not-only): sin esto, ámbar y
+                              verde solo se distinguían por el color. */}
+                          {ritmo.vaLento ? <span>· lento</span> : ritmo.bajoOptimo ? <span>· sube</span> : null}
                         </span>
                       ) : (
                         <span className="text-muted-foreground inline-flex items-center gap-1">
