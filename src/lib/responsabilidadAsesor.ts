@@ -122,3 +122,24 @@ export function semaforoAsesor(s: AsesorScore): 'rojo' | 'ambar' | 'verde' | 'ne
   if (flojaMeta || flojaTasa || flojoRojo) return 'ambar';
   return 'verde';
 }
+
+/** Motivo LEGIBLE de por qué el semáforo está en rojo/ámbar, para mostrarlo en la
+ *  fila SIN que el dueño tenga que pasar el mouse por el punto (pedido del dueño:
+ *  "no me acuerdo qué es rojo"). Devuelve null en verde/neutro (nada que explicar).
+ *  Mismos umbrales que semaforoAsesor — si uno cambia, cambia el otro. */
+export function motivoSemaforo(s: AsesorScore): string | null {
+  const color = semaforoAsesor(s);
+  if (color === 'verde' || color === 'neutro') return null;
+  const baseSello = s.despachadosConSello >= 5;
+  const motivos: string[] = [];
+  if (color === 'rojo') {
+    if (s.nivelMeta === 'lento') motivos.push('va lento (bajo la meta)');
+    if (s.tasaDevolucion != null && s.tasaDevolucion >= 15) motivos.push('mucha devolución');
+    if (s.pctEnRojo != null && s.pctEnRojo >= 30 && baseSello) motivos.push('despacha a direcciones malas');
+  } else {
+    if (s.nivelMeta === 'aceptable') motivos.push('bajo el óptimo');
+    if (s.tasaDevolucion != null && s.tasaDevolucion >= 10) motivos.push('devolución al límite');
+    if (s.pctEnRojo != null && s.pctEnRojo >= 15 && baseSello) motivos.push('algunas direcciones malas');
+  }
+  return motivos.length ? motivos.join(' · ') : null;
+}

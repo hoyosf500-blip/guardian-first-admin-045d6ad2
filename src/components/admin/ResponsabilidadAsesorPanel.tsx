@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { Loader2, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { useResponsabilidadAsesor, type ProdRowLite } from '@/hooks/useResponsabilidadAsesor';
-import { semaforoAsesor, metaGestionesDelRango, META_GESTIONES_DIA } from '@/lib/responsabilidadAsesor';
+import { semaforoAsesor, motivoSemaforo, metaGestionesDelRango, META_GESTIONES_DIA } from '@/lib/responsabilidadAsesor';
 import { useActiveStoreId } from '@/contexts/StoreContext';
 import { useStoreSchedule } from '@/hooks/useStoreSchedule';
 import { scheduleFromMinutes, DEFAULT_SCHEDULE, bogotaSecondsOfDay } from '@/lib/inactivityWindow';
@@ -69,10 +69,27 @@ export default function ResponsabilidadAsesorPanel({
         <ShieldCheck size={17} className="text-accent" aria-hidden="true" strokeWidth={2.25} />
         <h3 className="text-base font-bold text-foreground">Responsabilidad por asesor</h3>
       </div>
-      <p className="text-xs text-muted-foreground mb-4">
-        Esfuerzo, devoluciones y disciplina de validación en una sola fila. El semáforo se prende
-        rojo si no llega a la meta, si tiene mucha devolución, o si despacha muchos en rojo.
+      <p className="text-xs text-muted-foreground mb-2.5">
+        Todo junto por asesor: cuánto trabajó, cuántas devoluciones dejó, y cuántos pedidos despachó
+        a una dirección mala (sin corregir). El punto de color te dice de un vistazo a quién revisar.
       </p>
+
+      {/* Leyenda VISIBLE de los colores — el dueño pidió no tener que acordarse de
+          qué significa cada uno. Antes solo estaba en el tooltip del punto. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mb-4 text-[11px]">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-2.5 h-2.5 rounded-full bg-success" />
+          <span className="text-muted-foreground"><b className="text-foreground">Verde</b> — bien</span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-2.5 h-2.5 rounded-full bg-warning" />
+          <span className="text-muted-foreground"><b className="text-foreground">Amarillo</b> — ojo, está en la banda de alerta</span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-2.5 h-2.5 rounded-full bg-danger" />
+          <span className="text-muted-foreground"><b className="text-foreground">Rojo</b> — revisar: va lento, mucha devolución, o despacha a direcciones malas</span>
+        </span>
+      </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-8">
@@ -93,14 +110,15 @@ export default function ResponsabilidadAsesorPanel({
                 <th className="text-right">Confirmó</th>
                 <th className="text-right" title="Devoluciones del período atribuidas a este asesor como confirmador.">Devol.</th>
                 <th className="text-right" title="Devoluciones ÷ confirmados. La medida justa: el conteo absoluto castiga al que más volumen mueve.">Tasa</th>
-                <th className="text-right" title="De los pedidos que confirmó y se despacharon CON sello, cuántos salieron con el semáforo en rojo/amarillo (confirmó rápido sin validar). El sello arrancó el 22-ago, así que aún hay poca base.">
-                  % en rojo
+                <th className="text-right" title="De los pedidos que este asesor confirmó y que YA se despacharon, qué porcentaje salió con la dirección en rojo/amarillo (mala, sin corregir). Alto = confirmó rápido sin arreglar la dirección → riesgo de devolución. El sello arrancó el 22-ago, así que aún hay poca base.">
+                  Direcciones malas
                 </th>
               </tr>
             </thead>
             <tbody>
               {scores.map((s) => {
                 const sem = semaforoAsesor(s);
+                const motivo = motivoSemaforo(s);
                 return (
                   <tr key={s.operatorId}>
                     <td>
@@ -110,7 +128,18 @@ export default function ResponsabilidadAsesorPanel({
                         aria-label={SEMAFORO_LABEL[sem]}
                       />
                     </td>
-                    <td className="font-semibold text-foreground">{s.name}</td>
+                    <td className="font-semibold text-foreground">
+                      <div className="leading-tight">
+                        <span>{s.name}</span>
+                        {/* El PORQUÉ del color, visible en la fila — no escondido en
+                            el tooltip del punto. Solo cuando hay algo que revisar. */}
+                        {motivo && (
+                          <span className={`block text-[10px] font-medium ${sem === 'rojo' ? 'text-danger' : 'text-warning'}`}>
+                            {motivo}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="text-right">
                       <div className="inline-flex flex-col items-end leading-tight">
                         <span className={`font-mono tabular-nums font-bold ${
@@ -176,8 +205,10 @@ export default function ResponsabilidadAsesorPanel({
       <p className="mt-3 text-[10px] text-muted-foreground">
         Óptimo {META_GESTIONES_DIA}/día laboral = 3 min/pedido (verde). Ámbar = aceptable pero bajo el óptimo;
         rojo = bajo la alerta (ritmo de +5 min/pedido). Orientativo — decime el número que querés y lo cambio.
-        Devoluciones por confirmador = match exacto por pedido; la tasa es devol ÷ confirmados. Es para
-        revisar con datos, no una condena automática.
+        Devoluciones por confirmador = match exacto por pedido; la tasa es devol ÷ confirmados.
+        <strong className="text-foreground/80"> «Direcciones malas»</strong> = de lo que confirmó y ya se
+        despachó, cuánto salió con la dirección en rojo/amarillo sin corregir (confirmó apurado sin arreglarla)
+        — alto = más riesgo de que se devuelva. Es para revisar con datos, no una condena automática.
       </p>
     </motion.section>
   );

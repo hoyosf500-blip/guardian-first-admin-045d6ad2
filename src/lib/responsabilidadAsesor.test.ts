@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  construirScores, semaforoAsesor, diasDelRango, metaGestionesDelRango, META_GESTIONES_DIA,
+  construirScores, semaforoAsesor, motivoSemaforo, diasDelRango, metaGestionesDelRango, META_GESTIONES_DIA,
   type AsesorScoreInput, type AsesorScore,
 } from './responsabilidadAsesor';
 
@@ -82,6 +82,31 @@ describe('semaforoAsesor', () => {
   });
   it('todo bien → verde', () => {
     expect(semaforoAsesor(mk({ tasaDevolucion: 3, pctEnRojo: 5, nivelMeta: 'optimo' }))).toBe('verde');
+  });
+});
+
+describe('motivoSemaforo', () => {
+  const mk = (over: Partial<AsesorScore>): AsesorScore =>
+    ({ ...construirScores([base], 90)[0], ...over });
+
+  it('verde → sin motivo (null)', () => {
+    expect(motivoSemaforo(mk({ tasaDevolucion: 3, pctEnRojo: 5, nivelMeta: 'optimo' }))).toBeNull();
+  });
+  it('neutro → sin motivo (null)', () => {
+    expect(motivoSemaforo(mk({ gestionados: 0, confirmados: 0 }))).toBeNull();
+  });
+  it('lento → dice que va lento', () => {
+    expect(motivoSemaforo(mk({ nivelMeta: 'lento' }))).toContain('va lento');
+  });
+  it('tasa alta → dice mucha devolución', () => {
+    expect(motivoSemaforo(mk({ tasaDevolucion: 20, nivelMeta: 'optimo', pctEnRojo: 5 }))).toContain('devolución');
+  });
+  it('% en rojo alto con base → dice direcciones malas', () => {
+    expect(motivoSemaforo(mk({ pctEnRojo: 40, despachadosConSello: 10, tasaDevolucion: 3, nivelMeta: 'optimo' })))
+      .toContain('direcciones malas');
+  });
+  it('ámbar por bajo el óptimo → lo dice', () => {
+    expect(motivoSemaforo(mk({ nivelMeta: 'aceptable', tasaDevolucion: 3, pctEnRojo: 5 }))).toContain('bajo el óptimo');
   });
 });
 
