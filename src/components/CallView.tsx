@@ -224,6 +224,11 @@ export default function CallView({ items, alerts }: Props) {
     // habilita "Confirmar sin llamar" — no puede decidirse con datos de otra
     // tienda.
     if (!o?.phone || !activeStoreId) { setVip(null); return; }
+    // Reset al cambiar de pedido: sin esto el VIP del pedido ANTERIOR queda
+    // pegado los ~100-400 ms que tarda la query, y el badge "CLIENTE VIP" +
+    // "Confirmar sin llamar" se dibuja sobre un cliente que quizá NO es VIP
+    // (dejándolo saltar la llamada). Null mientras carga = default seguro.
+    setVip(null);
     let cancelled = false;
     supabase
       .from('orders')

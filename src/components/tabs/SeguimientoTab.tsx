@@ -629,7 +629,16 @@ export default function SeguimientoTab() {
   // Fullscreen loading only on the very first fetch. On subsequent refreshes
   // the existing data stays on screen and the Actualizar button shows the
   // spinner instead — no flash, no lost state.
-  if (!segLoaded && segLoading) {
+  //
+  // ⛔ Guard `!segLoaded && segData.length===0`, NO `&& segLoading` (fix 26-ago):
+  // en el primer montaje (y en cada cambio de tienda, que resetea a
+  // segLoaded=false/segData=[]) hay una ventana donde segLoading TODAVÍA es false
+  // —el effect que llama loadSegData corre después del primer paint— y el tablero
+  // pintaba "Sin pedidos en seguimiento" por un frame antes del esqueleto: un cero
+  // falso, justo lo que la REGLA #2 prohíbe. La tienda VACÍA de verdad tiene
+  // segLoaded=true → cae al "Sin pedidos" correcto, no al esqueleto. En error, el
+  // loader ya reintenta a los 30s + toast, así que el esqueleto no se queda pegado.
+  if (!segLoaded && segData.length === 0) {
     return (
       <div className="max-w-7xl mx-auto" role="status" aria-live="polite">
         {/* Esqueleto de la estructura REAL (cabecera + hero + carpetas) en vez
@@ -1385,8 +1394,13 @@ export default function SeguimientoTab() {
                 demás filtros y no en una fila propia (21-ago-2026). Solo
                 aparece si hay algo asignado a quien mira: un chip en 0 que
                 nunca se puede prender es ruido.
-                No bloquea nada — la asignación es etiqueta, no candado. */}
-            {asig.soportado && misAsignadosHoy > 0 && (
+                No bloquea nada — la asignación es etiqueta, no candado.
+                ⛔ Pero si el filtro ya está PRENDIDO se muestra aunque el conteo
+                sea 0 (misma trampa que "Ver solo estos", 26-ago): al cambiar a
+                una tienda sin asignados —la key no es por tienda— o al cerrarse
+                mis pedidos, el chip desaparecía y `soloMias` seguía activo →
+                cola vacía sin forma de apagarlo. Así siempre queda el escape. */}
+            {asig.soportado && (misAsignadosHoy > 0 || soloMias) && (
               <button
                 type="button"
                 onClick={() => setSoloMias((v) => !v)}
@@ -1522,8 +1536,13 @@ export default function SeguimientoTab() {
           Tablero, así que en Lista la operadora no veía que un cliente escribió).
           Desde Lista lleva al Tablero ya filtrado, porque el filtro vive ahí.
           Un cero no se anuncia. Reforzado (pedido del dueño 25-ago): siempre en
-          rojo, no en gris tenue — es lo más urgente que puede pasar. */}
-      {esperandoRespuesta.size > 0 && (
+          rojo, no en gris tenue — es lo más urgente que puede pasar.
+          ⛔ El botón TAMBIÉN se dibuja si el filtro está prendido aunque el conteo
+          sea 0 (trampa hallada 26-ago): si respondés a todos, la cuenta cae a 0,
+          el botón desaparecía y `soloEsperando` seguía activo → tablero vacío
+          "Sin pedidos" SIN forma de salir (persistía al recargar/cambiar tienda).
+          Ahora siempre queda el escape "Ver todo". */}
+      {(esperandoRespuesta.size > 0 || (viewMode === 'board' && soloEsperando)) && (
         <button
           type="button"
           onClick={() => {
@@ -1542,7 +1561,9 @@ export default function SeguimientoTab() {
           <span className="w-2.5 h-2.5 rounded-full bg-danger glow-danger shrink-0" aria-hidden="true" />
           <span className="font-mono tabular-nums text-lg font-bold text-danger">{esperandoRespuesta.size}</span>
           <span className="text-sm min-w-0 flex-1 truncate font-medium">
-            {esperandoRespuesta.size === 1 ? 'cliente te escribió' : 'clientes te escribieron'} y nadie les contestó
+            {esperandoRespuesta.size === 0
+              ? 'Ya les respondiste a todos — quitá el filtro para ver el tablero'
+              : `${esperandoRespuesta.size === 1 ? 'cliente te escribió' : 'clientes te escribieron'} y nadie les contestó`}
           </span>
           <span className="text-[11px] font-bold shrink-0 rounded-lg bg-danger/20 text-danger px-2 py-1">
             {viewMode !== 'board' ? 'Ir a verlos' : soloEsperando ? 'Ver todo' : 'Ver solo estos'}

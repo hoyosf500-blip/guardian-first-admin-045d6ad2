@@ -108,7 +108,7 @@ export default function WorkList({ items, onOpenCall, notesIndex, riesgoIndex, a
 
         return (
           <div
-            key={`${o.phone}-${o.idx}`}
+            key={o.dbId || o.externalId || `${o.phone}-${o.idx}`}
             role="button"
             tabIndex={0}
             onClick={() => onOpenCall(i)}
@@ -267,7 +267,7 @@ export default function WorkList({ items, onOpenCall, notesIndex, riesgoIndex, a
                   compuesto): un pedido podía contar en el KPI "cancelar" y
                   mostrar "Alta" en la fila, y la asesora no encontraba cuáles
                   eran los que el contador le estaba señalando. */}
-              {dias >= 7 && (
+              {dias >= 7 && !o.result && (
                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border flex-shrink-0 bg-danger/15 text-danger border-danger/30">
                   CANCELAR
                 </span>
