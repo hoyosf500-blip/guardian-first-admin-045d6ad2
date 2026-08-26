@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, ChevronRight, Phone as PhoneIcon, MessageSquare,
@@ -17,6 +17,9 @@ import SegActionButtons from '@/components/SegActionButtons';
 import { useRecordGestion } from '@/hooks/useRecordGestion';
 import { ProductoTile } from '@/components/ProductoTile';
 import NotesPanel from '@/components/order-notes/NotesPanel';
+import ChatClienteCard from '@/components/chat/ChatClienteCard';
+import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDialog';
+import { useRiesgoChat } from '@/hooks/useRiesgoChat';
 // Guard de atajos compartido con Confirmar: UNA sola definición a propósito —
 // cuando estaba duplicado se arregló una copia y el bug siguió en la otra.
 import { hotkeysHabilitados } from '@/lib/hotkeys';
@@ -32,7 +35,6 @@ import { locationMatches } from '@/lib/locationGuard';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
-import { useWaChat } from '@/contexts/WaChatContext';
 import { supabase } from '@/integrations/supabase/client';
 
 // Validador-direcciones: guard fire-once-per-order-per-session — mismo
@@ -103,7 +105,6 @@ export default function CrmCallView({
 }: Props) {
   const { isAdmin } = useAuth();
   const { activeStore, activeStoreId } = useStore();
-  const { openChat, waEnabled } = useWaChat();
   const recordContacto = useRecordGestion();
   const countryCode = activeStore?.country_code;
   // Refresh on-demand desde la API de Dropi — la asesora no espera al cron
@@ -543,6 +544,20 @@ export default function CrmCallView({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
+  // ⛔ ARRIBA del early-return, con `oActual` OPCIONAL — mismas reglas de hooks
+  // que en CallView: si la cola se vacía y estos hooks quedan debajo del return,
+  // el componente corre menos hooks y la pantalla se cae (React #300/#310). El
+  // chat entrante NO depende de que haya pedido en pantalla.
+  const oActual = items.length ? items[Math.max(0, Math.min(derivedIdx, items.length - 1))] : undefined;
+  const [escribiendoWa, setEscribiendoWa] = useState(false);
+  const idsSenal = useMemo(() => (oActual?.dbId ? [oActual.dbId] : []), [oActual?.dbId]);
+  const senalChat = useRiesgoChat(activeStoreId, idsSenal);
+  const senales = useMemo(() => ({
+    hayConversacion: !!oActual?.dbId && senalChat.actividad.has(oActual.dbId),
+    actividad: oActual?.dbId ? senalChat.actividad.get(oActual.dbId) ?? null : null,
+    riesgo: oActual?.dbId ? senalChat.index.get(oActual.dbId) ?? null : null,
+  }), [oActual?.dbId, senalChat.actividad, senalChat.index]);
+
   if (!items.length) {
     // Sin pedido en pantalla no hay atajos (ver hotkeysRef arriba).
     hotkeysRef.current = null;
@@ -628,11 +643,11 @@ export default function CrmCallView({
       void recordContacto(o.phone, 'LLAMADA', 'llamó');
       window.location.href = 'tel:+' + getWhatsAppPhone(o.phone, countryCode);
     } else if (k === 'w' || k === 'W') {
-      // Solo con canal in-app configurado — es la única vía que esta vista
-      // renderiza (el fallback wa.me es de otras pantallas).
-      if (!waEnabled) return;
+      // Abre el chat de Guardian (mismo hilo de ImporChat) para ver la
+      // conversación y responder sin salir. Solo si el pedido existe.
+      if (!o.externalId) return;
       e.preventDefault();
-      void openChat({ phone: o.phone, name: o.nombre });
+      setEscribiendoWa(true);
     } else if (k === 'ArrowLeft') {
       e.preventDefault();
       navCall(-1);
@@ -796,10 +811,11 @@ export default function CrmCallView({
                 {/* Hint de atajo: oculto en <sm (táctil, sin teclado). */}
                 <kbd className="hidden sm:inline-block font-mono text-[10px] leading-none px-1.5 py-0.5 rounded-md border border-current/30 bg-current/10 opacity-80" aria-hidden="true">L</kbd>
               </a>
-              {waEnabled && (
+              {o.externalId && (
                 <button
                   type="button"
-                  onClick={() => void openChat({ phone: o.phone, name: o.nombre })}
+                  onClick={() => setEscribiendoWa(true)}
+                  title="Ver la conversación y escribirle sin salir de Guardian"
                   className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-xl bg-gradient-to-br from-success/25 to-success/10 text-success border border-success/30 glow-success hover:brightness-110 transition-all duration-200"
                 >
                   <MessageSquare size={12} aria-hidden="true" /> WhatsApp
@@ -1064,6 +1080,30 @@ export default function CrmCallView({
             <SegActionButtons variant="call" onAction={handleAction} estado={o.estado} />
           )}
 
+          {/* El WhatsApp REAL del cliente, a la vista — misma card de Confirmar,
+              Novedades y la ficha (no una copia). En Seguimiento la asesora ve si
+              el cliente respondió (dónde está, si va a recibir) y le contesta sin
+              salir a ImporChat. Se dibuja sola solo si el pedido tiene chat leído. */}
+          {o?.dbId && o.externalId && (
+            <ChatClienteCard
+              externalId={String(o.externalId)}
+              orderId={o.dbId}
+              nombre={o.nombre}
+              estado={o.estado}
+              datos={{
+                guia: o.guia,
+                transportadora: o.transportadora,
+                ciudad: o.ciudad,
+                producto: o.producto,
+                valor: o.valor ? formatCOP(o.valor) : null,
+              }}
+              senales={senales}
+              modulo="SEG"
+              mostrarSenales
+              altoClase="min-h-[140px] max-h-[280px]"
+            />
+          )}
+
           {/* Notas y recordatorios — mismo componente que Confirmar/OrderDetail.
               Compartido entre asesoras de la tienda (realtime). Útil acá para
               dejar notas tipo "cliente confirmó que recoge el viernes" sin
@@ -1073,6 +1113,25 @@ export default function CrmCallView({
           )}
         </motion.div>
       </AnimatePresence>
+
+      {escribiendoWa && o.externalId && (
+        <EscribirWhatsappDialog
+          open={escribiendoWa}
+          onOpenChange={setEscribiendoWa}
+          externalId={String(o.externalId)}
+          nombre={o.nombre}
+          estado={o.estado}
+          actividad={senales.actividad}
+          datos={{
+            guia: o.guia,
+            transportadora: o.transportadora,
+            ciudad: o.ciudad,
+            producto: o.producto,
+            valor: o.valor ? formatCOP(o.valor) : null,
+          }}
+          modulo="SEG"
+        />
+      )}
     </div>
   );
 }

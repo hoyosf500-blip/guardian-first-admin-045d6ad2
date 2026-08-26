@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { normalizarRiesgo, type NivelRiesgo } from '@/lib/riesgoChat';
 import type { ActividadChatOrden } from '@/lib/actividadChat';
@@ -112,15 +112,19 @@ export function useRiesgoChat(storeId: string | null, orderIds: string[]): Riesg
       if (!row.chat_leido_at) continue;
       const n = normalizarRiesgo(row.chat_riesgo);
       if (n) m.set(String(row.id), n);
-      if (conActividad) {
-        act.set(String(row.id), {
-          salienteAt: row.chat_saliente_at ? Date.parse(row.chat_saliente_at) : null,
-          salienteTipo: row.chat_saliente_tipo === 'plantilla' || row.chat_saliente_tipo === 'directo'
-            ? row.chat_saliente_tipo : null,
-          entranteAt: row.chat_entrante_at ? Date.parse(row.chat_entrante_at) : null,
-          leidoAt: Date.parse(row.chat_leido_at),
-        });
-      }
+      // SIEMPRE se agrega al mapa de actividad si el chat fue leído — aunque la
+      // migración de columnas nuevas (20260824230000) no haya corrido. `hayConversacion`
+      // se deriva de `actividad.has(orderId)`: si acá se saltara cuando falta esa
+      // migración, el chat quedaría INVISIBLE en TODA la app (la card retorna null)
+      // hasta que Lovable la aplique. Con `chat_leido_at` ya sabemos que hubo
+      // conversación; el detalle (quién escribió último) llega cuando la migración corra.
+      act.set(String(row.id), {
+        salienteAt: conActividad && row.chat_saliente_at ? Date.parse(row.chat_saliente_at) : null,
+        salienteTipo: conActividad && (row.chat_saliente_tipo === 'plantilla' || row.chat_saliente_tipo === 'directo')
+          ? row.chat_saliente_tipo : null,
+        entranteAt: conActividad && row.chat_entrante_at ? Date.parse(row.chat_entrante_at) : null,
+        leidoAt: Date.parse(row.chat_leido_at),
+      });
     }
     setIndex(m);
     setActividad(act);
@@ -128,6 +132,46 @@ export function useRiesgoChat(storeId: string | null, orderIds: string[]): Riesg
   }, [storeId, idsKey]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // ── INBOUND EN VIVO ────────────────────────────────────────────────────────
+  // Ahora la mayoría de clientes escriben inbound. Sin esto, cuando un cliente
+  // responde por WhatsApp (importchat-sync escribe chat_entrante_at) el chip "te
+  // escribió y nadie contestó" y la card NO aparecían hasta que la asesora
+  // recargaba o cambiaba la composición de la cola (idsKey es estable a
+  // propósito, así que el realtime de la cola no redisparaba esta query).
+  //
+  // Se suscribe a UPDATE de `orders` por tienda y se recarga —con debounce, para
+  // coalescer el lote del sync— solo si el pedido actualizado está en la cola
+  // visible. Nombre de canal ÚNICO por instancia del hook: un canal con nombre
+  // fijo montado dos veces (Confirmar + Seguimiento) tumba la pantalla.
+  const loadRef = useRef(load);
+  useEffect(() => { loadRef.current = load; }, [load]);
+  const idSetRef = useRef<Set<string>>(new Set());
+  useEffect(() => { idSetRef.current = new Set(idsKey ? idsKey.split(',') : []); }, [idsKey]);
+  // Id POR INSTANCIA (useId): este hook se monta en varias pantallas a la vez
+  // (Confirmar, Seguimiento…) y un canal con nombre fijo montado dos veces tumba
+  // la pantalla. Vigilado por canalRealtimeUnico.test.ts.
+  const instanciaId = useId();
+  useEffect(() => {
+    if (!storeId) return;
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const ch = supabase
+      .channel(`riesgo-chat-${instanciaId}-${storeId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'orders', filter: `store_id=eq.${storeId}` },
+        (payload) => {
+          const id = (payload.new as { id?: string })?.id;
+          // Solo si es un pedido de la cola visible: evita recargar por cualquier
+          // UPDATE de la tienda (el sync toca cientos de filas por corrida).
+          if (id && !idSetRef.current.has(id)) return;
+          if (t) clearTimeout(t);
+          t = setTimeout(() => { void loadRef.current(); }, 1500);
+        },
+      )
+      .subscribe();
+    return () => { if (t) clearTimeout(t); void supabase.removeChannel(ch); };
+  }, [storeId, instanciaId]);
 
   return useMemo(
     () => ({ index, status, leidos: index.size, actividad }),
