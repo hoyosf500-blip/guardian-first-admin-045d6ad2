@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { MessageCircle, Send, Clock, X } from 'lucide-react';
+import { MessageCircle, Send, Clock, X, Package } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useEnviarWhatsapp, type ModuloEnvio } from '@/hooks/useEnviarWhatsapp';
 import { useConversacion } from '@/hooks/useConversacion';
@@ -8,6 +8,8 @@ import ConversacionChat from '@/components/seguimiento/ConversacionChat';
 import PlantillasWhatsapp from '@/components/seguimiento/PlantillasWhatsapp';
 import { plantillasPara } from '@/lib/plantillasChat';
 import { classifySegEstado } from '@/lib/segStatus';
+import { componerEstadoPedido } from '@/lib/estadoPedidoRespuesta';
+import { getTrackingUrl } from '@/lib/orderUtils';
 import { ventanaWhatsapp, MOTIVO_VENTANA, type EstadoVentana } from '@/lib/ventanaWhatsapp';
 import type { DatosPedido } from '@/lib/plantillasMeta';
 import type { ActividadChatOrden } from '@/lib/actividadChat';
@@ -55,6 +57,22 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
     [datos, nombre],
   );
   const fase = useMemo(() => classifySegEstado(estado || ''), [estado]);
+
+  // Bot NO CIEGO (asistido): con la data que Guardian YA tiene arma la respuesta
+  // a "¿cuál es mi guía / cuándo llega?". La asesora la mete al cuadro de un clic
+  // y la revisa antes de enviar. `derivarAHumano` (cancelado / estado desconocido)
+  // = no hay respuesta buena para enlatar → el botón no se ofrece. El país lo
+  // resuelve getTrackingUrl solo (estado de módulo que setea StoreContext).
+  const respEstado = useMemo(
+    () => componerEstadoPedido({
+      nombre,
+      estado,
+      guia: datos?.guia,
+      transportadora: datos?.transportadora,
+      trackingUrl: getTrackingUrl(datos?.transportadora || '', datos?.guia || ''),
+    }),
+    [nombre, estado, datos?.transportadora, datos?.guia],
+  );
 
   const hilo = useConversacion(externalId, open);
 
@@ -159,6 +177,25 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
 
         {puedeEscribir && (
           <>
+            {/* El bot NO CIEGO, asistido: un clic mete la respuesta real de
+                estado del pedido (guía/transportadora/rastreo). Se destaca del
+                resto porque es lo que el cliente casi siempre viene a preguntar. */}
+            {!respEstado.derivarAHumano && respEstado.texto && (
+              <button
+                type="button"
+                onClick={() => setTexto(respEstado.texto)}
+                className={cn(
+                  'flex items-center gap-1.5 self-start rounded-lg border px-3 py-1.5 text-[11px] font-bold transition-colors',
+                  texto === respEstado.texto
+                    ? 'border-accent/60 bg-accent/20 text-accent'
+                    : 'border-accent/40 bg-accent/10 text-accent hover:bg-accent/20',
+                )}
+              >
+                <Package size={13} aria-hidden="true" />
+                Responder estado del pedido
+              </button>
+            )}
+
             <div className="flex flex-wrap gap-1.5">
               {plantillas.map((p) => (
                 <button
