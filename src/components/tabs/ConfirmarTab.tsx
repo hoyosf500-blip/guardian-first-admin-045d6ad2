@@ -30,9 +30,11 @@ import { confRateOficial, CONF_TARGET_PCT } from '@/lib/confirmationRate';
 import SiguienteColaBanner from '@/components/SiguienteColaBanner';
 import ShopifyPendingPanel from '@/components/confirmar/ShopifyPendingPanel';
 import DropiSyncFailuresPanel from '@/components/confirmar/DropiSyncFailuresPanel';
+import { useAutoPushHealth } from '@/hooks/useAutoPushHealth';
+import { useShopifyPending } from '@/hooks/useShopifyPending';
 import { MetricsUpdateBanner } from '@/components/MetricsUpdateBanner';
 import ClosingReportDialog from '@/components/ClosingReportDialog';
-import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, CalendarIcon, X, RotateCcw, Moon, CheckCircle2, XCircle, PhoneOff, ClipboardCheck } from 'lucide-react';
+import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, CalendarIcon, X, RotateCcw, Moon, CheckCircle2, XCircle, PhoneOff, ClipboardCheck, ShoppingBag, ChevronDown, ChevronUp } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { TiltCard, CountUp, StatTile, AuroraBackdrop } from '@/components/ui3d';
 import { format } from 'date-fns';
@@ -89,6 +91,16 @@ export default function ConfirmarTab({ profile }: Props) {
   const [syncing, setSyncing] = useState(false);
   const [autoLoading, setAutoLoading] = useState(false);
   const [closing, setClosing] = useState(false);
+  // Avisos de Shopify PLEGADOS por defecto (pedido del dueño 27-ago: "juntar en
+  // chips que se abren al tocarlos"). El panel NO se toca por dentro (1053 líneas
+  // de lógica de plata) — se envuelve. La salud del robot (ventas que NO se suben
+  // solas) es la señal crítica: viaja a la cabecera aunque esté plegado, para no
+  // esconder una fuga. Los dos hooks dedupean con la instancia del panel (React
+  // Query, mismo queryKey) → 0 requests extra; cuando está plegado el panel no se
+  // monta y solo corre esta instancia liviana.
+  const [avisosShopifyOpen, setAvisosShopifyOpen] = useSessionState<boolean>('confirmar:avisosShopify', false);
+  const { data: robotSalud } = useAutoPushHealth(activeStoreId);
+  const { data: shopifyPend } = useShopifyPending(activeStoreId);
   // Pedidos "progresados" (ya reales en Dropi) de los mismos teléfonos de la cola,
   // para detectar PENDIENTE CONFIRMACION duplicados/viejos y ocultarlos (ver abajo).
   const [progressedOrders, setProgressedOrders] = useState<ProgressedOrder[]>([]);
@@ -602,11 +614,51 @@ export default function ConfirmarTab({ profile }: Props) {
 
       <TasaMetaBanner />
 
-      {/* Contador anti-fuga: pedidos de Shopify que aún no llegaron a Dropi. */}
-      <ShopifyPendingPanel />
+      {/* Avisos de Shopify — PLEGADOS en una sección que se abre al tocarla
+          (pedido del dueño 27-ago). El panel (1053 líneas de lógica de plata) NO
+          se toca por dentro: se envuelve. La cabecera muestra EN ROJO si el robot
+          dejó ventas sin subir —una fuga que no se resuelve sola— aunque esté
+          plegado, para no esconderla. Si la tienda no tiene Shopify o hay error,
+          el panel se dibuja SUELTO (se auto-oculta / muestra su error). */}
+      {(!!shopifyPend && shopifyPend.configured !== false && shopifyPend.ok !== false) ? (
+        <div className="rounded-2xl border border-border bg-card/40 shadow-card3d overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setAvisosShopifyOpen(!avisosShopifyOpen)}
+            aria-expanded={avisosShopifyOpen}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-card/60 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            <span className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 border ${robotSalud?.bloqueado ? 'bg-danger/15 text-danger border-danger/30' : robotSalud?.mudo ? 'bg-warning/15 text-warning border-warning/30' : 'bg-foreground/5 text-muted-foreground border-border'}`} aria-hidden="true">
+              <ShoppingBag size={14} />
+            </span>
+            <span className="flex-1 min-w-0 text-sm">
+              {robotSalud?.bloqueado ? (
+                <span className="font-semibold text-danger">El robot no subió {robotSalud.cuantos} {robotSalud.cuantos === 1 ? 'pedido' : 'pedidos'} a Dropi · y más avisos de Shopify</span>
+              ) : robotSalud?.mudo ? (
+                <span className="font-semibold text-warning">El robot de Shopify no está reportando · revisá los avisos</span>
+              ) : (
+                <span className="font-medium text-muted-foreground">Avisos de Shopify</span>
+              )}
+            </span>
+            <span className="text-xs text-muted-foreground inline-flex items-center gap-1 flex-shrink-0">
+              {avisosShopifyOpen ? 'Ocultar' : 'Ver'}
+              {avisosShopifyOpen ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
+            </span>
+          </button>
+          {avisosShopifyOpen && (
+            <div className="border-t border-border pt-3">
+              <ShopifyPendingPanel />
+            </div>
+          )}
+        </div>
+      ) : (
+        <ShopifyPendingPanel />
+      )}
 
       {/* Gestiones (conf/canc) que quedaron en el CRM pero NO llegaron a Dropi
-          (order_results dropi_sync_status='failed') — visibles + reintento manual. */}
+          (order_results dropi_sync_status='failed') — visibles + reintento manual.
+          Se dejan SUELTAS (se auto-ocultan si no hay fallos): son de Dropi, no de
+          Shopify, y casi siempre están vacías. */}
       <DropiSyncFailuresPanel />
 
       <ClosingReportDialog open={closing} onClose={() => setClosing(false)} />
