@@ -967,10 +967,10 @@ export default function SeguimientoTab() {
             <div
               role="status"
               title="Las devoluciones aparecen en el chip «Se fue a devolución»; lo de oficina, en su columna."
-              className="flex items-center gap-2.5 rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-2"
+              className="inline-flex items-center gap-2 rounded-full border border-danger/30 bg-danger/10 px-3 py-1"
             >
-              <RotateCcw size={14} className="text-danger shrink-0" aria-hidden="true" />
-              <p className="text-xs text-foreground leading-snug flex-1 min-w-0 truncate">
+              <RotateCcw size={13} className="text-danger shrink-0" aria-hidden="true" />
+              <p className="text-xs text-foreground leading-snug min-w-0">
                 <strong className="font-semibold">{alertaCambios}</strong>
                 <span className="text-muted-foreground"> desde tu última revisión</span>
               </p>

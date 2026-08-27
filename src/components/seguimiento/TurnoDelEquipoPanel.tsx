@@ -44,7 +44,10 @@ export default function TurnoDelEquipoPanel({ resumen, nombreDe, onRepartir, rep
   return (
     <section className="rounded-2xl border border-border bg-card/40 shadow-card3d overflow-hidden">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3 border-b border-border/60">
-        <span className="hud-label inline-flex items-center gap-1.5">
+        <span
+          className="hud-label inline-flex items-center gap-1.5"
+          title="Cuenta la cola accionable de hoy. Un pedido atendido por otra asesora cuenta como gestionado: lo que se mide es si el trabajo se hizo. Los pedidos en tránsito no entran — se vigilan, no se gestionan."
+        >
           <Users size={12} aria-hidden="true" /> El turno de hoy
         </span>
         {/* El «X de N gestionados» global se quitó de acá (26-ago-2026): ya lo
@@ -141,11 +144,6 @@ export default function TurnoDelEquipoPanel({ resumen, nombreDe, onRepartir, rep
         </ul>
       )}
 
-      <p className="px-4 py-2 text-[10px] leading-snug text-muted-foreground/70 border-t border-border/60">
-        Cuenta la cola accionable de hoy. Un pedido atendido por otra asesora cuenta como
-        gestionado: lo que se mide es si el trabajo se hizo. Los pedidos en tránsito no entran —
-        se vigilan, no se gestionan.
-      </p>
     </section>
   );
 }
