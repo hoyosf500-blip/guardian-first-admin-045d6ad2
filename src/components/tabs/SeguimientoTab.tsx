@@ -1025,7 +1025,7 @@ export default function SeguimientoTab() {
           // sin glow en vez de inventar un token que no está definido.
           const faltanGlow = tone === 'success' ? 'num-glow-success' : tone === 'danger' ? 'num-glow-danger' : '';
           return (
-            <div className="space-y-3">
+            <div className="space-y-2">
             {/* Resumen en UNA línea. Es lo único que se ve por defecto: dice el
                 estado del día sin ocupar media pantalla. Los mismos números que
                 el hero, sin los aros ni las tarjetas. */}
@@ -1050,11 +1050,9 @@ export default function SeguimientoTab() {
                   No se pudo leer lo gestionado hoy — los pedidos ya trabajados pueden reaparecer.
                 </span>
               )}
-              {detenidos > 0 && (
-                <span className="text-[11px] text-danger font-semibold">
-                  <span className="font-mono tabular-nums">{detenidos}</span> detenidos
-                </span>
-              )}
+              {/* «N detenidos» se quitó de acá (27-ago-2026): el mismo número ya
+                  está en la pastilla clicable «Detenidos» de Listas de trabajo —
+                  salía dos veces y el dueño lo marcó como ruido. */}
               <span className="text-[11px] text-muted-foreground">
                 <span className="font-mono tabular-nums">{enRuta}</span> en ruta
               </span>
@@ -1371,11 +1369,12 @@ export default function SeguimientoTab() {
               {listaActiva ? '¿qué es esta lista?' : '¿qué significan?'}
             </button>
           </div>
-          {/* En mobile, las 8 listas apiladas (flex-wrap) ocupaban ~250px
-              verticales antes del dato. Ahora un carrusel horizontal con snap
-              (shrink-0 + overflow-x-auto + snap-x): 1 fila scrolleable
-              lateralmente. En sm+ vuelve a flex-wrap (espacio sobra). */}
-          <div className="flex gap-2 overflow-x-auto snap-x snap-mandatory pb-1 -mx-1 px-1 sm:overflow-visible sm:flex-wrap sm:mx-0 sm:px-0 sm:pb-0 [scrollbar-width:thin]">
+          {/* Una fila horizontal scrolleable en TODOS los tamaños (27-ago-2026).
+              Antes en sm+ envolvía a 2 filas y empujaba los pedidos hacia abajo;
+              el dueño pidió menos ruido, así que ahora también en desktop es un
+              solo renglón que se corre de lado. Ninguna lista se esconde: se
+              llega a todas scrolleando, y las más urgentes quedan a la izquierda. */}
+          <div className="flex gap-2 overflow-x-auto snap-x snap-mandatory pb-1 -mx-1 px-1 [scrollbar-width:thin]">
             <button
               type="button"
               onClick={() => setListaSlug(null)}

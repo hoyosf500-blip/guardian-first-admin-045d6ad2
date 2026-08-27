@@ -110,8 +110,8 @@ export default function SiguienteAccionBar() {
 
   if (accion.key === 'al_dia') {
     return (
-      <div className={cn('mb-3 flex items-center gap-2.5 rounded-2xl border px-4 py-2.5', t.caja)}>
-        <Check size={15} className={cn('flex-shrink-0', t.texto)} aria-hidden="true" />
+      <div className={cn('mb-2 flex items-center gap-2 rounded-xl border px-3 py-1.5', t.caja)}>
+        <Check size={14} className={cn('flex-shrink-0', t.texto)} aria-hidden="true" />
         <span className={cn('text-xs font-semibold', t.texto)}>Todo al día</span>
         <span className="text-[11px] text-muted-foreground min-w-0 truncate">{accion.porque}</span>
       </div>
@@ -120,22 +120,25 @@ export default function SiguienteAccionBar() {
 
   return (
     <div
-      className={cn('mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border px-4 py-3 shadow-card3d', t.caja)}
+      className={cn('mb-2 flex items-center gap-x-2 rounded-xl border px-3 py-1.5 shadow-card3d', t.caja)}
       // `status` y no `alert`: es información persistente del turno, no una
       // interrupción. Un `alert` haría que el lector de pantalla la anuncie
       // cada vez que cambia el conteo, que cambia con cada push de realtime.
+      // Adelgazada a UNA línea (27-ago-2026): px-4/py-3 → px-3/py-1.5 y sin
+      // flex-wrap. Es SOLO tamaño — la lógica de arriba (colas, realtime,
+      // escalón activo) NO se tocó. El `porque` trunca en vez de sumar alto.
       role="status"
     >
-      <Icono size={17} className={cn('flex-shrink-0', t.texto)} aria-hidden="true" />
+      <Icono size={15} className={cn('flex-shrink-0', t.texto)} aria-hidden="true" />
 
-      <div className="min-w-0 flex-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span className="text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground">
+      <div className="min-w-0 flex-1 flex items-baseline gap-x-2">
+        <span className="shrink-0 text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground">
           {mira ? 'La cola' : 'Lo que sigue'}
         </span>
-        <span className={cn('text-sm font-semibold', t.texto)}>
+        <span className={cn('shrink-0 text-sm font-semibold', t.texto)}>
           {mira ? accion.etiqueta : accion.titulo}
         </span>
-        <span className="text-[11px] text-muted-foreground">{accion.porque}</span>
+        <span className="min-w-0 truncate text-[11px] text-muted-foreground">{accion.porque}</span>
       </div>
 
       <button
