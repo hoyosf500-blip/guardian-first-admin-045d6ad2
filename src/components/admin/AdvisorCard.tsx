@@ -45,15 +45,26 @@ const hmMin = (min: number | null | undefined) =>
   min == null ? '—' : formatDurationHM(min * 60);
 
 /** Mini-stat con etiqueta en cristiano y guarda "—". */
-function Stat({ label, value, tone, sub }: { label: string; value: React.ReactNode; tone?: Tono; sub?: string }) {
+function Stat({ label, value, tone, sub, title }: { label: string; value: React.ReactNode; tone?: Tono; sub?: string; title?: string }) {
   return (
-    <div className="rounded-xl border border-border bg-card/40 px-2 py-2 text-center">
+    <div className="rounded-xl border border-border bg-card/40 px-2 py-2 text-center" title={title}>
       <span className={`block font-mono tabular-nums text-lg font-bold leading-none ${tone ? TXT[tone] : 'text-foreground'}`}>
         {value}
       </span>
       <span className="block text-[10px] uppercase tracking-[0.05em] text-muted-foreground mt-1.5">{label}</span>
       {sub && <span className="block text-[9px] text-muted-foreground/70 mt-0.5">{sub}</span>}
     </div>
+  );
+}
+
+/** Rótulo del carril. Solo aparece cuando hay más de una fila de cajas o cuando
+ *  la única fila NO es la de Confirmar: sin él, "trabajó 46" y "gestiones 46"
+ *  se leen igual y no se sabe cuál de los dos trabajos se está mirando. */
+function EtiquetaCarril({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="mb-1 block px-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">
+      {children}
+    </span>
   );
 }
 
@@ -271,24 +282,47 @@ export default function AdvisorCard({
         )}
       </div>
 
-      {/* Métricas de la cara — etiquetas en cristiano */}
-      <div className="grid grid-cols-4 gap-2">
-        <Stat label="trabajó" value={vm.trabajo} />
-        <Stat label="contestaron" value={vm.contestaron} tone={vm.contestaron > 0 ? 'good' : undefined} />
-        <Stat label="no contestó" value={vm.noContesto} tone={vm.noContesto > 0 ? 'warn' : undefined} />
-        <Stat label="devoluciones" value={vm.devoluciones == null ? '—' : vm.devoluciones} tone={vm.devoluciones && vm.devoluciones > 0 ? 'bad' : undefined} />
-      </div>
+      {/* Métricas de la cara — LAS CAJAS SE ADAPTAN AL CARRIL (28-ago-2026).
+          Antes las cuatro salían de `total_atendidos`/`confirmados`/`noresp`,
+          que filtran `module='confirmar'`: quien pasó el día en Seguimiento leía
+          "trabajó 0 · contestaron 0 · no contestó 0". Ver `Carril` en
+          advisorCardVM.ts. */}
+      {(vm.carril === 'confirmar' || vm.carril === 'ambos' || vm.carril === 'ninguno') && (
+        <div>
+          {vm.carril === 'ambos' && <EtiquetaCarril>Confirmar</EtiquetaCarril>}
+          <div className="grid grid-cols-4 gap-2">
+            <Stat label="trabajó" value={vm.trabajo} />
+            <Stat label="contestaron" value={vm.contestaron} tone={vm.contestaron > 0 ? 'good' : undefined} />
+            <Stat label="no contestó" value={vm.noContesto} tone={vm.noContesto > 0 ? 'warn' : undefined} />
+            <Stat label="devoluciones" value={vm.devoluciones == null ? '—' : vm.devoluciones} tone={vm.devoluciones && vm.devoluciones > 0 ? 'bad' : undefined}
+              title="Devoluciones de los pedidos que ESTA persona confirmó. Se atribuyen por quien marcó la confirmación, así que en Seguimiento no aplican." />
+          </div>
+        </div>
+      )}
 
-      {/* Seguimiento / Novedades en la CARA — el trabajo que Confirmar no cuenta */}
-      {(d.segAcciones > 0 || d.novResueltas > 0) && (
-        <div className="-mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 px-0.5 text-[11px] text-muted-foreground">
-          {d.segAcciones > 0 && (
-            <span>Seguimiento <b className="font-mono tabular-nums text-foreground">{d.segAcciones}</b>
-              {d.segTasa != null && <span className="text-muted-foreground/70"> · {d.segTasa}% resuelto</span>}</span>
-          )}
-          {d.novResueltas > 0 && (
-            <span>Novedades <b className="font-mono tabular-nums text-foreground">{d.novResueltas}</b> resueltas</span>
-          )}
+      {(vm.carril === 'seguimiento' || vm.carril === 'ambos') && (
+        <div>
+          <EtiquetaCarril>Seguimiento</EtiquetaCarril>
+          <div className="grid grid-cols-4 gap-2">
+            <Stat label="pedidos" value={vm.segPedidos == null ? '—' : vm.segPedidos}
+              title="Pedidos DISTINTOS que tocó en Seguimiento. Puede ser menor que las gestiones: al mismo pedido se lo toca varias veces." />
+            <Stat label="gestiones" value={d.segAcciones} tone={d.segAcciones > 0 ? 'good' : undefined}
+              title="Cada acción registrada en Seguimiento (avisos, llamadas, marcas de estado)." />
+            <Stat
+              label="resueltos"
+              value={d.segResueltos}
+              sub={d.segTasa != null ? `${d.segTasa}% de los que tocó` : undefined}
+              title={'Solo cuentan como "resuelto" cuatro marcas concretas. El aviso de agencia NO está entre ellas, así que este porcentaje sale bajo aunque el trabajo esté bien hecho: leelo como un piso, no como una nota.'}
+            />
+            <Stat label="novedades" value={d.novResueltas}
+              title="Novedades de transportadora que resolvió." />
+          </div>
+        </div>
+      )}
+
+      {d.rescateAcciones > 0 && (
+        <div className="-mt-1 px-0.5 text-[11px] text-muted-foreground">
+          Rescate <b className="font-mono tabular-nums text-foreground">{d.rescateAcciones}</b> gestiones
         </div>
       )}
 

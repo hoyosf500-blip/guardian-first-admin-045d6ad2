@@ -21,6 +21,24 @@ import { porcentajeDificiles, type MezclaAsesor } from './mezclaAsesor';
 export type Tono = 'good' | 'warn' | 'bad' | 'muted';
 export type Atencion = 'bad' | 'warn' | 'good' | 'idle';
 
+/**
+ * En qué carril trabajó la persona. Decide QUÉ cuatro cajas se le muestran.
+ *
+ * ── Por qué existe (28-ago-2026) ────────────────────────────────────────────
+ * Las cuatro cajas de la cara (`trabajó · contestaron · no contestó ·
+ * devoluciones`) salen todas de `total_atendidos` / `confirmados` / `noresp`,
+ * y esas tres columnas de la RPC filtran `module='confirmar'`. O sea que a quien
+ * pasó el día en Seguimiento le decían **0 · 0 · 0**.
+ *
+ * Es literal la queja del dueño: *"Roberto se ha dedicado a Seguimiento y la
+ * tabla no bajó para nada ni se contó en productividad"*. No era un cálculo
+ * malo: era que su trabajo no tenía por dónde entrar a esas cajas.
+ *
+ * `ninguno` cae en las cajas de Confirmar a propósito: una tarjeta sin actividad
+ * tiene que seguir viéndose como siempre.
+ */
+export type Carril = 'confirmar' | 'seguimiento' | 'ambos' | 'ninguno';
+
 /** Fila de productividad (subset que la tarjeta usa). */
 export interface AdvisorRow {
   operator_id: string;
@@ -146,6 +164,11 @@ export interface AdvisorVM {
   /** No tocó Confirmar pero SÍ trabajó. La cabecera muestra ese trabajo en vez
    *  de un cero que se lee como que no hizo nada. */
   soloOtroTrabajo: boolean;
+  /** Qué cuatro cajas mostrarle. Ver el comentario de `Carril`. */
+  carril: Carril;
+  /** Pedidos DISTINTOS que tocó en Seguimiento. `null` si la RPC desplegada
+   *  todavía no devuelve la columna — entonces se pinta "—", nunca 0. */
+  segPedidos: number | null;
   contestaron: number;          // conf + canc
   noContesto: number;           // noresp
   devoluciones: number | null;
@@ -194,6 +217,10 @@ export interface AdvisorDetalle {
   segResueltos: number;
   segTasa: number | null;
   novResueltas: number;
+  /** Acciones de rescate. Se surfacea porque entra en el carril: si alguien solo
+   *  hizo rescate, sin esto la fila de Seguimiento le mostraría ceros — el mismo
+   *  error que este cambio vino a corregir. */
+  rescateAcciones: number;
 }
 
 function iniciales(nombre: string): string {
@@ -453,6 +480,15 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
     // Nadie tocó Confirmar pero SÍ hubo trabajo: la cabecera tiene que contarlo
     // en vez de mostrar un cero que se lee como pereza.
     const soloOtroTrabajo = atendidos === 0 && r.confirmados === 0 && otroTrabajo > 0;
+    // Qué cajas mostrarle. `rescate_acciones` cuenta como Seguimiento: si no,
+    // quien solo hizo rescate caería en las cajas de Confirmar y volvería a ver
+    // ceros — exactamente el bug que esto corrige.
+    const huboConfirmar = atendidos > 0 || contestaron > 0 || r.noresp > 0;
+    const huboSeguimiento = otroTrabajo > 0;
+    const carril: Carril = huboConfirmar && huboSeguimiento ? 'ambos'
+      : huboSeguimiento ? 'seguimiento'
+      : huboConfirmar ? 'confirmar'
+      : 'ninguno';
     // `sinDato` = no hay NADA que mostrar. Con gestiones de Seguimiento sí hay:
     // sin este término la tarjeta caía en 'idle' ("sin datos") sobre alguien con
     // 40 gestiones hechas.
@@ -520,6 +556,8 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
       trabajo: atendidos,
       otroTrabajo,
       soloOtroTrabajo,
+      carril,
+      segPedidos: r.seg_pedidos ?? null,
       contestaron,
       noContesto: r.noresp,
       devoluciones,
@@ -538,6 +576,7 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
         dificiles, faciles, otrosMezcla, pctDificiles,
         segAcciones: r.seg_acciones, segResueltos: segRes, segTasa,
         novResueltas: r.novedades_resueltas,
+        rescateAcciones: r.rescate_acciones,
       },
     };
   });

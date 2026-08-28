@@ -149,3 +149,53 @@ describe('sortByAttention', () => {
     expect(out.map((v) => v.operatorId)).toEqual(['bad', 'warn', 'good2', 'good1', 'idle']);
   });
 });
+
+describe('carril — las cuatro cajas tienen que mostrar el trabajo que la persona hizo', () => {
+  // Queja del dueño (28-ago-2026): "Roberto se ha dedicado a Seguimiento y la
+  // tabla no bajó para nada ni se contó en productividad". Las cajas salían de
+  // columnas que filtran module='confirmar', así que le mostraban 0 · 0 · 0.
+
+  it('⛔ quien SOLO hizo Seguimiento NO cae en las cajas de Confirmar', () => {
+    const [vm] = buildAdvisorVMs(baseInput({
+      rows: [row({ seg_acciones: 51, seg_resueltos: 9, seg_pedidos: 46, seg_resueltos_dist: 8 })],
+    }));
+    expect(vm.carril).toBe('seguimiento');
+    // Su trabajo tiene que estar visible en alguna parte del VM.
+    expect(vm.detalle.segAcciones).toBe(51);
+    expect(vm.segPedidos).toBe(46);
+    // Y las cajas de Confirmar, que darían cero, NO son las suyas.
+    expect(vm.trabajo).toBe(0);
+    expect(vm.soloOtroTrabajo).toBe(true);
+  });
+
+  it('quien hizo los dos carriles los muestra ambos', () => {
+    const [vm] = buildAdvisorVMs(baseInput({
+      rows: [row({ confirmados: 30, cancelados: 5, noresp: 10, total_atendidos: 45, seg_acciones: 12 })],
+    }));
+    expect(vm.carril).toBe('ambos');
+  });
+
+  it('quien solo hizo Confirmar sigue como siempre', () => {
+    const [vm] = buildAdvisorVMs(baseInput({
+      rows: [row({ confirmados: 30, cancelados: 5, noresp: 10, total_atendidos: 45 })],
+    }));
+    expect(vm.carril).toBe('confirmar');
+  });
+
+  it('sin actividad cae en Confirmar: la tarjeta vacía se ve como siempre', () => {
+    expect(buildAdvisorVMs(baseInput())[0].carril).toBe('ninguno');
+  });
+
+  it('⛔ solo RESCATE también es carril de Seguimiento (si no, vuelve a ver ceros)', () => {
+    const [vm] = buildAdvisorVMs(baseInput({ rows: [row({ rescate_acciones: 7 })] }));
+    expect(vm.carril).toBe('seguimiento');
+    expect(vm.detalle.rescateAcciones).toBe(7);
+  });
+
+  it('sin la columna nueva de la RPC, "pedidos" queda en null → la UI pinta "—", nunca 0', () => {
+    // Lovable no auto-aplica migraciones: la RPC desplegada puede no devolver
+    // `seg_pedidos` todavía. Un 0 ahí sería una acusación inventada.
+    const [vm] = buildAdvisorVMs(baseInput({ rows: [row({ seg_acciones: 20 })] }));
+    expect(vm.segPedidos).toBeNull();
+  });
+});
