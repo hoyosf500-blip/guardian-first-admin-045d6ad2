@@ -45,6 +45,26 @@ const sbSuelto = supabase as unknown as {
   };
 };
 
+/**
+ * Quiénes dieron señal de vida HOY. `null` = no se pudo leer (y entonces el
+ * reparto NO excluye a nadie — ver el comentario en `repartir`).
+ *
+ * Se cuenta como presente quien tenga `first_action_at`: es la marca que deja el
+ * heartbeat al minuto de abrir el CRM, así que alguien que acaba de llegar y
+ * todavía no gestionó nada ya entra al reparto.
+ */
+async function presenciaDeHoy(): Promise<Set<string> | null> {
+  const { data, error } = await (supabase.rpc as unknown as (
+    fn: string, args: Record<string, unknown>,
+  ) => Promise<{ data: unknown; error: unknown }>)('operator_activity_stats', { p_range: 'today' });
+  if (error || !Array.isArray(data)) return null;
+  const s = new Set<string>();
+  for (const r of data as Array<{ operator_id?: string; first_action_at?: string | null }>) {
+    if (r.operator_id && r.first_action_at) s.add(String(r.operator_id));
+  }
+  return s;
+}
+
 /** Postgres: relación o función inexistente → la migración no corrió. */
 function faltaLaMigracion(err: { code?: string; message?: string } | null): boolean {
   if (!err) return false;
@@ -136,9 +156,31 @@ export function useSegAsignaciones() {
         const yaAsignados: AsignacionExistente[] = [...asignaciones.entries()]
           .map(([orderId, operatorId]) => ({ orderId, operatorId }));
 
+        // ⛔ Repartir entre QUIEN ESTÁ TRABAJANDO HOY, no entre el plantel.
+        // `operadores` sale de `store_members`: si María José está franca igual
+        // recibía un tercio de la cola, y ese tercio no lo trabajaba NADIE — es
+        // medio problema del sistema viejo de auto-asignación (pedidos con dueño
+        // y sin gestión).
+        //
+        // La presencia sale de `operator_activity_stats('today')`, que es la
+        // MISMA fuente de la Jornada del panel del dueño. Va acá y no en
+        // `cargar()` porque repartir corre una vez al día, no en cada render.
+        // Se lee por RPC y no de `operator_activity_daily` porque esa tabla está
+        // cerrada por RLS a la fila propia.
+        //
+        // FALLA ABIERTO, a propósito: si la lectura no responde, o nadie marcó
+        // todavía (el reparto de las 8 de la mañana, con el turno recién
+        // empezando), se reparte entre todas. Repartirle a alguien que no vino
+        // se corrige re-repartiendo; NO repartirle a quien sí vino la deja sin
+        // trabajo asignado todo el día.
+        const presentes = await presenciaDeHoy();
+        const destinatarios = presentes && presentes.size > 0
+          ? operadores.filter((id) => presentes.has(id))
+          : operadores;
+
         const plan = repartirCola({
           pedidos: orderIdsPorUrgencia.map((orderId) => ({ orderId })),
-          operadores,
+          operadores: destinatarios.length > 0 ? destinatarios : operadores,
           yaAsignados,
         });
 

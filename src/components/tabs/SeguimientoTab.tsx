@@ -17,7 +17,7 @@ import { useOpenIncidences } from '@/hooks/useOpenIncidences';
 import { precargarPlantillas } from '@/hooks/usePlantillasMeta';
 import { estadoConversacion } from '@/lib/actividadChat';
 import { tocaLlamar, HORAS_PARA_LLAMAR } from '@/lib/escalarLlamada';
-import { cicloContacto, enEspera, ESPERA_REINTENTO_MIN } from '@/lib/cicloContacto';
+import { cicloContacto, enEspera, ESPERA_REINTENTO_MIN, textoEspera } from '@/lib/cicloContacto';
 import { useRefreshVisibleOrders } from '@/hooks/useRefreshVisibleOrders';
 import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List, Search, User as UserIcon, Users, Moon, Eye, EyeOff, Phone } from 'lucide-react';
 import { toast } from 'sonner';
@@ -388,6 +388,37 @@ export default function SeguimientoTab() {
         + (r.ignorados > 0 ? ` ${r.ignorados} ya tenían dueño.` : ''),
     });
   }, [dedupedByDate, asig]);
+
+  // ⛔ EL REPARTO SE HACE SOLO (28-ago-2026). Medido en producción: `seg_asignaciones`
+  // tenía CERO filas — la herramienta existía, funcionaba y estaba probada, pero
+  // dependía de que alguien se acordara de apretar un botón todos los días, y
+  // nadie lo apretó nunca. Las tres asesoras miraban la misma pila de 605
+  // pedidos y cada una elegía por su cuenta.
+  //
+  // Corre UNA vez por día, la primera vez que un jefe abre Seguimiento con la
+  // cola ya cargada. Tres guardas para no repetirlo:
+  //   · `yaIntentadoRef` — no se dispara dos veces en la misma sesión aunque el
+  //     tablero se vuelva a renderizar.
+  //   · la llave de localStorage por tienda+día — no se repite al recargar (F5).
+  //   · `asignaciones.size === 0` — si ya hay reparto, no toca nada.
+  // La llave se sella ANTES de llamar: si el reparto falla, no se reintenta en
+  // bucle contra la base. El botón manual queda para eso y para re-repartir
+  // cuando entra alguien tarde.
+  const yaIntentadoRef = useRef(false);
+  useEffect(() => {
+    if (!isManagerOfActive || !asig.soportado || asig.cargando) return;
+    if (yaIntentadoRef.current || !activeStoreId) return;
+    // Sin cola cargada no se reparte: repartir una lista vacía sellaría el día
+    // sin haber asignado nada.
+    if (!segLoaded || dedupedByDate.length === 0) return;
+    if (asig.asignaciones.size > 0) return;
+    const hoy = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }))
+      .toISOString().slice(0, 10);
+    const llave = `guardian.repartoAuto:${activeStoreId}:${hoy}`;
+    try { if (localStorage.getItem(llave)) return; localStorage.setItem(llave, '1'); } catch { /* sin storage: se reparte igual, una vez por sesión */ }
+    yaIntentadoRef.current = true;
+    void repartirColaDeHoy();
+  }, [isManagerOfActive, asig.soportado, asig.cargando, asig.asignaciones, activeStoreId, segLoaded, dedupedByDate.length, repartirColaDeHoy]);
 
   // Vista de dueño (pieza D). Se calcula sobre la COLA ACCIONABLE, la misma
   // población que el hero y que el guard de inactividad — si midiera otra cosa,
@@ -1438,12 +1469,18 @@ export default function SeguimientoTab() {
             mías" bajó a la fila de chips, que es donde viven los filtros de la
             cola. Con eso desaparece una fila entera para la asesora, que no ve
             este panel. */}
-        {asig.soportado && isManagerOfActive && (
+        {/* ⛔ EL PANEL DEL TURNO ES PARA TODAS (28-ago-2026). Estaba envuelto en
+            `isManagerOfActive`, así que una asesora NUNCA veía en qué andaba el
+            equipo: ni quién tenía qué, ni cuánto faltaba, ni si alguien no había
+            arrancado. Se le pedía trabajo en equipo a gente sin la vista del
+            equipo. El gate se movió al BOTÓN: repartir sigue siendo de jefes
+            (`onRepartir` solo llega si es manager), mirar es de todas. */}
+        {asig.soportado && (
           <motion.div {...fadeUp(0.09)}>
             <TurnoDelEquipoPanel
               resumen={resumenTurno}
               nombreDe={nombreDeAsesora}
-              onRepartir={repartirColaDeHoy}
+              onRepartir={isManagerOfActive ? repartirColaDeHoy : undefined}
               repartiendo={asig.repartiendo}
             />
           </motion.div>
@@ -1521,7 +1558,7 @@ export default function SeguimientoTab() {
                 onClick={() => setOnlyUntouchedSeg(!onlyUntouchedSeg)}
                 aria-pressed={onlyUntouchedSeg}
                 title={onlyUntouchedSeg
-                  ? `El tablero esconde lo que se acaba de tocar. Cada pedido vuelve solo a la ${ESPERA_REINTENTO_MIN === 60 ? 'hora' : `${ESPERA_REINTENTO_MIN} min`} con la etiqueta de qué sigue — y antes si el cliente responde. Tocá para ver todo.`
+                  ? `El tablero esconde lo que se acaba de tocar. Cada pedido vuelve solo ${textoEspera(ESPERA_REINTENTO_MIN)} con la etiqueta de qué sigue — y antes si el cliente responde. Tocá para ver todo.`
                   : 'El tablero muestra TODO, tocado o no. Tocá para ver solo lo que te espera ahora.'}
                 className={cn(
                   "snap-start shrink-0 inline-flex items-center gap-2 rounded-xl border px-4 min-h-[44px] text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",

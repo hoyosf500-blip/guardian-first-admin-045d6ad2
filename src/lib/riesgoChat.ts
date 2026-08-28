@@ -43,7 +43,15 @@ export const RIESGO_INFO: Record<NivelRiesgo, RiesgoInfo> = {
     clase: 'bg-destructive/15 text-destructive border-destructive/30',
   },
   frio: {
-    etiqueta: 'No respondió',
+    // ⛔ Antes decía "No respondió" y CHOCABA de frente con la línea de abajo
+    // en la misma fila (28-ago-2026). Esta regla mira SOLO este pedido — si el
+    // cliente apretó o no el botón de confirmar —, mientras que "el cliente
+    // escribió y sigue sin respuesta" mira TODA la conversación. Las dos pueden
+    // ser ciertas a la vez, y juntas se leían como opuestas: una decía que el
+    // cliente no contestó y la otra que estaba esperando respuesta nuestra.
+    // La palabra nueva dice lo que la regla mide de verdad.
+    // La clave `frio` NO se toca: es el valor histórico guardado en la base.
+    etiqueta: 'No confirmó por el chat',
     que: 'Alguna vez habló por el chat, pero con este pedido no hizo nada.',
     tasa: '38% se cancela',
     queHacer: 'Escribile: ese cliente sí contesta, con este pedido todavía no.',

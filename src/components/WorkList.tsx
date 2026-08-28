@@ -289,6 +289,15 @@ export default function WorkList({ items, onOpenCall, notesIndex, riesgoIndex, a
               {(() => {
                 const r: NivelRiesgo | undefined = o.dbId ? riesgoIndex?.get(o.dbId) : undefined;
                 if (!r) return null;
+                // ⛔ `mudo` afirma "nunca escribió nada por WhatsApp, JAMÁS", y
+                // eso lo desmiente un entrante registrado. Las dos señales miran
+                // cosas distintas —`mudo` sale del botón de confirmar de ESTE
+                // pedido, el entrante de toda la conversación— pero puestas en
+                // la misma fila una niega a la otra en la cara de la asesora.
+                // Ante la duda no se afirma lo más fuerte: si hay constancia de
+                // que escribió, este chip se calla y manda la línea de abajo.
+                const escribioAlgunaVez = o.dbId ? actividadChat?.get(o.dbId)?.entranteAt != null : false;
+                if (r === 'mudo' && escribioAlgunaVez) return null;
                 const info = RIESGO_INFO[r];
                 return (
                   <span

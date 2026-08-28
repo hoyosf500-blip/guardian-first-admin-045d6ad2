@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight, Check, Eye, ListOrdered } from 'lucide-react';
 import { ESCALERA, NO_ES_TRABAJO } from '@/lib/siguienteAccion';
 import { SEG_LISTS } from '@/lib/segLists';
+import { etiquetasDe } from '@/lib/etiquetasTrabajo';
 import { cn } from '@/lib/utils';
 
 /**
@@ -148,6 +149,47 @@ export default function ComoSeTrabajaPage() {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* ── El glosario ───────────────────────────────────────────────────
+          Pedido del dueño (28-ago-2026): *"que puedan diferenciar y coincidir
+          en las etiquetas"*. Llamada y Seguimiento describen los mismos hechos
+          con palabras distintas, y una asesora que cambia de pantalla traducía
+          de memoria. Sale de `etiquetasTrabajo.ts`, que a su vez lee de
+          `RIESGO_INFO` — no hay copias de texto que se puedan desincronizar. */}
+      <section className="mt-8">
+        <h2 className="hud-label mb-1">Qué quiere decir cada etiqueta</h2>
+        <p className="text-xs text-muted-foreground mb-3">
+          Las mismas cosas se llaman distinto en Llamada y en Seguimiento. Acá está la
+          traducción, para que el equipo hable un solo idioma.
+        </p>
+        {(['llamada', 'seguimiento'] as const).map((p) => (
+          <div key={p} className="mb-4">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-2">
+              {p === 'llamada' ? 'En Confirmar (llamada)' : 'En Seguimiento'}
+            </h3>
+            <div className="space-y-2.5">
+              {etiquetasDe(p).map((e) => (
+                <div
+                  key={e.clave}
+                  id={`etiqueta-${e.clave}`}
+                  className="rounded-2xl border border-border bg-card/40 p-4 shadow-card3d scroll-mt-6"
+                >
+                  <h4 className="text-sm font-semibold">{e.etiqueta}</h4>
+                  <p className="text-[13px] mt-1.5 leading-relaxed">{e.que}</p>
+                  <p className="text-[13px] mt-1.5 leading-relaxed">
+                    <span className="text-muted-foreground">Qué se hace: </span>{e.queHacer}
+                  </p>
+                  <p className="text-[12px] mt-1.5 text-muted-foreground">
+                    {e.equivaleA
+                      ? <>En la otra pantalla es <strong className="text-foreground font-semibold">«{e.equivaleA}»</strong>.</>
+                      : 'No tiene equivalente en la otra pantalla: este dato solo se ve acá.'}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
       </section>
 
       <p className="text-[11px] text-muted-foreground/70 mt-8 leading-relaxed">

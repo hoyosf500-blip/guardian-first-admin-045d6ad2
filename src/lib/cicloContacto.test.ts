@@ -22,14 +22,16 @@ const c = (a: Partial<Parameters<typeof cicloContacto>[0]>) =>
 
 describe('el ciclo que pidió el dueño', () => {
   it('recién enviado → se enfría y dice CUÁNDO vuelve', () => {
-    const r = c({ actividad: act({ salienteAt: haceMin(10) }) });
+    // Los minutos van RELATIVOS a la ventana: con un 10 fijo, subirla de 60 a
+    // 240 puso roja esta prueba sin que ninguna regla hubiera cambiado.
+    const r = c({ actividad: act({ salienteAt: haceMin(ESPERA_REINTENTO_MIN - 50) }) });
     expect(r.estado).toBe('enfriando');
     expect(enEspera(r)).toBe(true);
     expect(r.vuelveEnMin).toBe(50);
     expect(r.etiqueta).toContain('vuelve en 50 min');
   });
 
-  it('a la hora vuelve a la cola con la etiqueta del segundo intento', () => {
+  it('pasada la espera vuelve a la cola con la etiqueta del segundo intento', () => {
     const r = c({
       actividad: act({ salienteAt: haceMin(ESPERA_REINTENTO_MIN + 1) }),
       gestion: ges({ intentos: 1, ultimoAt: new Date(haceMin(ESPERA_REINTENTO_MIN + 1)).toISOString() }),
@@ -40,11 +42,11 @@ describe('el ciclo que pidió el dueño', () => {
     expect(r.accion).toBe('insistir');
   });
 
-  it('justo en el minuto 60 ya volvió — el límite es inclusivo', () => {
+  it('justo al cumplirse la espera ya volvió — el límite es inclusivo', () => {
     expect(c({ actividad: act({ salienteAt: haceMin(ESPERA_REINTENTO_MIN) }) }).estado).toBe('reintento');
   });
 
-  it('si el cliente RESPONDE vuelve enseguida, sin esperar la hora', () => {
+  it('si el cliente RESPONDE vuelve enseguida, sin esperar', () => {
     // Es la mitad del pedido: "si el cliente responde que vuelva y aparezca
     // pero con una etiqueta para que el asesor lo atienda".
     const r = c({ actividad: act({ salienteAt: haceMin(20), entranteAt: haceMin(3) }) });
@@ -61,8 +63,8 @@ describe('el ciclo que pidió el dueño', () => {
 
   it('al tercer intento manda a llamar: con esa persona el chat no funciona', () => {
     const r = c({
-      actividad: act({ salienteAt: haceMin(120) }),
-      gestion: ges({ intentos: INTENTOS_ANTES_DE_LLAMAR, ultimoAt: new Date(haceMin(120)).toISOString() }),
+      actividad: act({ salienteAt: haceMin(ESPERA_REINTENTO_MIN + 60) }),
+      gestion: ges({ intentos: INTENTOS_ANTES_DE_LLAMAR, ultimoAt: new Date(haceMin(ESPERA_REINTENTO_MIN + 60)).toISOString() }),
     });
     expect(r.accion).toBe('llamar');
     expect(r.etiqueta).toContain('mejor llamá');
@@ -78,7 +80,7 @@ describe('el ciclo que pidió el dueño', () => {
   });
 
   it('sin saliente registrado pero con gestión de hoy, la cuenta la lleva la gestión', () => {
-    const r = c({ gestion: ges({ intentos: 2, ultimoAt: new Date(haceMin(90)).toISOString() }) });
+    const r = c({ gestion: ges({ intentos: 2, ultimoAt: new Date(haceMin(ESPERA_REINTENTO_MIN + 30)).toISOString() }) });
     expect(r.etiqueta).toContain('3º intento');
     expect(r.accion).toBe('llamar');
   });
@@ -101,9 +103,10 @@ describe('el ciclo que pidió el dueño', () => {
   it('⛔ un "No contestó" NO esconde el pedido todo el día', () => {
     // Era el bug del 31-jul: el "no contestó" de una asesora a las 9 a. m.
     // hacía desaparecer al cliente del tablero de TODO el equipo hasta el día
-    // siguiente. Ahora vuelve a la hora, con su etiqueta.
-    const hace90 = new Date(haceMin(90)).toISOString();
-    const r = c({ gestion: ges({ ultimoResult: 'No contestó', ultimoAt: hace90 }) });
+    // siguiente. Ahora vuelve pasada la espera (4 h desde el 28-ago-2026), con
+    // su etiqueta. La REGLA es "vuelve el mismo día", no un número de minutos.
+    const pasadaLaEspera = new Date(haceMin(ESPERA_REINTENTO_MIN + 30)).toISOString();
+    const r = c({ gestion: ges({ ultimoResult: 'No contestó', ultimoAt: pasadaLaEspera }) });
     expect(r.estado).toBe('reintento');
     expect(enEspera(r)).toBe(false);
   });
@@ -121,7 +124,7 @@ describe('el ciclo que pidió el dueño', () => {
 describe('rangoCiclo — el orden dentro de la columna', () => {
   it('quien respondió va arriba de todo; lo que se enfría, al fondo', () => {
     const respondio = c({ actividad: act({ salienteAt: haceMin(30), entranteAt: haceMin(2) }) });
-    const reintento = c({ actividad: act({ salienteAt: haceMin(200) }) });
+    const reintento = c({ actividad: act({ salienteAt: haceMin(ESPERA_REINTENTO_MIN + 60) }) });
     const sinTocar = c({});
     const enfriando = c({ actividad: act({ salienteAt: haceMin(5) }) });
     expect(rangoCiclo(respondio)).toBeLessThan(rangoCiclo(reintento));
@@ -131,7 +134,7 @@ describe('rangoCiclo — el orden dentro de la columna', () => {
   it('⛔ reintento y sin-tocar comparten rango, a propósito', () => {
     // Separarlos enterraría a uno de los dos grupos a medida que crece el otro:
     // con 127 pedidos sin avisar, ningún reintento se vería nunca.
-    const reintento = c({ actividad: act({ salienteAt: haceMin(200) }) });
+    const reintento = c({ actividad: act({ salienteAt: haceMin(ESPERA_REINTENTO_MIN + 60) }) });
     expect(rangoCiclo(reintento)).toBe(rangoCiclo(c({})));
   });
 });

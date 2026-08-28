@@ -91,8 +91,11 @@ export default function TurnoDelEquipoPanel({ resumen, nombreDe, onRepartir, rep
 
       {!hayCarga ? (
         <p className="px-4 py-3 text-[11px] text-muted-foreground">
-          Todavía nadie tiene pedidos asignados hoy. Apretá «Repartir la cola de hoy» para
-          repartirlos entre las asesoras.
+          {/* Desde que el panel lo ven TODAS, este texto no puede mandar a
+              apretar un botón que la asesora no tiene. */}
+          {onRepartir
+            ? 'Todavía nadie tiene pedidos asignados hoy. Apretá «Repartir la cola de hoy» para repartirlos entre las asesoras.'
+            : 'Todavía nadie tiene pedidos asignados hoy. Mientras tanto la cola es de todas: agarrá de arriba, que es lo más urgente.'}
         </p>
       ) : (
         <ul className="divide-y divide-border/60">

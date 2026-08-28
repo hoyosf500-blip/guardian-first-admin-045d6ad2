@@ -33,12 +33,39 @@ import type { GestionDelPedido } from './gestionPorPedido';
  * PURO y testeable: entra data, sale un veredicto. La UI solo dibuja.
  */
 
-/** Cuánto se enfría un pedido después de tocarlo, antes de volver a la cola. */
-export const ESPERA_REINTENTO_MIN = 60;
+/**
+ * Cuánto se enfría un pedido después de tocarlo, antes de volver a la cola.
+ *
+ * ── Por qué son 4 horas y no 1 (decisión del dueño, 28-ago-2026) ────────────
+ * Con 60 min, ROBERTO MORAN hizo **61 gestiones en 11 h 17 m** y el chip "En
+ * agencia sin retirar" bajó de **48 a 45**. La cuenta: a 5,4 gestiones por hora,
+ * en cualquier instante hay ~5 dentro de la ventana, así que el tablero descuenta
+ * cinco y vuelve a subir. El equipo trabajaba todo el día y la pantalla decía que
+ * no había pasado nada — *"la tabla no bajó para nada"*.
+ *
+ * Media jornada hace que lo tocado en la mañana no reaparezca antes del almuerzo,
+ * y el chip pasa a mostrar el trabajo del TURNO.
+ *
+ * ⛔ El costo, aceptado explícitamente: el salto a llamar también se demora.
+ * `INTENTOS_ANTES_DE_LLAMAR` cuenta los intentos que ocurren DESPUÉS de la
+ * espera, así que el segundo intento sale 4 h más tarde en vez de 1 h.
+ *
+ * Lo que NO cambia: si el cliente responde, la espera se rompe al instante —
+ * `respondio` se evalúa ANTES que `enfriando`.
+ */
+export const ESPERA_REINTENTO_MIN = 240;
 const ESPERA_MS = ESPERA_REINTENTO_MIN * 60_000;
 
 /** Al tercer intento el mensaje claramente no funciona con esta persona. */
 export const INTENTOS_ANTES_DE_LLAMAR = 2;
+
+/** "en 45 min" / "en 2 h" / "en 3 h 20". Se lee sin dividir de cabeza. */
+export function textoEspera(min: number): string {
+  if (min < 60) return `en ${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `en ${h} h` : `en ${h} h ${m}`;
+}
 
 export type EstadoCiclo =
   /** El cliente habló DESPUÉS de nuestro último mensaje. Hay alguien esperando. */
@@ -134,7 +161,9 @@ export function cicloContacto(args: {
       estado: 'enfriando',
       // Dice CUÁNDO vuelve, no solo que se fue. Es la lección de los "no
       // contestó" que se enfriaban y desaparecían sin decir cuándo volvían.
-      etiqueta: `Escrito ${haceTexto(ultimoNuestroMs, ahora)} · vuelve en ${vuelveEnMin} min`,
+      // En horas cuando pasa de una: con la espera en 4 h, "vuelve en 215 min"
+      // obliga a la asesora a dividir de cabeza en medio de la llamada.
+      etiqueta: `Escrito ${haceTexto(ultimoNuestroMs, ahora)} · vuelve ${textoEspera(vuelveEnMin)}`,
       accion: null,
       intentos, ultimoNuestroMs, respondioMs: null, vuelveEnMin,
     };
