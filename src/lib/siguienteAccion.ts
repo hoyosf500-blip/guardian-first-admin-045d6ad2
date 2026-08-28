@@ -238,6 +238,26 @@ export interface SiguienteAccionInput {
    * prioridad se muere. Ausente (default) = se cuenta todo, como antes.
    */
   avisosAgencia?: Map<string, number>;
+  /**
+   * Cuántas de esas novedades siguen ABIERTAS en Dropi.
+   *
+   * ⛔ **Medido el 28-ago-2026, tienda de Ecuador.** La barra anunciaba
+   * *"84 novedades abiertas"* mientras el panel de Dropi mostraba **14**. Las
+   * dos cifras eran ciertas y contaban cosas distintas: `novedadesQueue` son
+   * los pedidos parados en estado NOVEDAD (Dropi mismo reporta 85 en su lista
+   * de pedidos, o sea Guardian no infla nada) y el panel de Dropi lista las
+   * INCIDENCIAS abiertas. Las otras 70 las cerró o las dejó vencer la
+   * transportadora: Dropi **rechaza** resolverlas, así que no son trabajo.
+   *
+   * Anunciar 84 en rojo, arriba de todo, en el primer escalón de la escalera,
+   * manda al equipo a una cola donde 6 de cada 7 no tienen nada que hacer — y
+   * enseña a ignorar la barra, que es como muere una barra de prioridad.
+   *
+   * `null`/ausente = no se pudo leer (edge caída, sesión Dropi vencida) → se
+   * cuenta la cola entera, exactamente como antes. Cero nunca sustituye a "no
+   * se pudo medir", y la incertidumbre no puede esconder trabajo real.
+   */
+  novedadesAbiertas?: number | null;
 }
 
 /**
@@ -246,17 +266,23 @@ export interface SiguienteAccionInput {
  * más cómoda, y la más cómoda nunca es la que vence.
  */
 export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
-  const { workQueue, novedadesQueue, segData, segCargado = true, avisosAgencia } = input;
+  const { workQueue, novedadesQueue, segData, segCargado = true, avisosAgencia, novedadesAbiertas } = input;
 
   // ── 1. Novedades ──────────────────────────────────────────────────
-  const novedades = novedadesQueue.length;
+  // Solo las que Dropi todavía deja gestionar. Ver `novedadesAbiertas`.
+  const novedades = novedadesAbiertas ?? novedadesQueue.length;
+  const esperando = novedadesAbiertas == null ? 0 : Math.max(0, novedadesQueue.length - novedadesAbiertas);
   if (novedades > 0) {
     return {
       key: 'novedades',
       cuantos: novedades,
       titulo: novedades === 1 ? 'Resolvé la novedad abierta' : `Resolvé las ${novedades} novedades abiertas`,
       etiqueta: novedades === 1 ? '1 novedad abierta' : `${novedades} novedades abiertas`,
-      porque: doc('novedades').porque,
+      // Se nombra lo que NO es trabajo. Sin esta línea, el que ayer leyó "84" y
+      // hoy lee "14" va a creer que se perdieron pedidos.
+      porque: esperando > 0
+        ? `${doc('novedades').porque} (${esperando} más están en estado NOVEDAD pero la transportadora ya cerró la incidencia: no se pueden gestionar.)`
+        : doc('novedades').porque,
       ruta: '/novedades',
       tono: 'urgente',
     };

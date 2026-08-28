@@ -37,9 +37,10 @@ function BotonResponder({ onClick, disabled }: { onClick: () => void; disabled?:
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex-1 min-w-[130px] text-[11px] py-2.5 rounded-xl bg-success/16 border border-success/40 text-success font-semibold hover:border-success/70 inline-flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40"
+      title="Abre la conversación para leer qué dijo el cliente y contestarle"
+      className="flex-1 min-w-[130px] text-[11px] py-2.5 rounded-xl bg-danger/14 border border-danger/40 text-danger font-bold hover:border-danger/70 inline-flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40"
     >
-      <MessageSquare size={13} /> Responder por WhatsApp
+      <MessageSquare size={13} /> Leer y contestar
     </button>
   );
 }
@@ -167,7 +168,16 @@ export default function InboxPage() {
                     escribir, así que la ventana de 24 h está abierta y va texto
                     libre, sin plantilla. Si su fase no tiene acción obvia, cae
                     al botón de siempre — nunca se queda sin dónde responder. */}
-                {o.externalId ? (
+                {/* ⛔ ACÁ LEER VA PRIMERO, SIEMPRE (28-ago-2026).
+                    Esta pantalla es, por definición, la de los clientes que
+                    ESCRIBIERON y nadie contestó. Poner de primero el envío de
+                    un mensaje elegido por el ESTADO del pedido significaba
+                    contestarle a una persona sin leer lo que preguntó — y el
+                    "me estafaron, devuélvanlo" que en realidad es miedo se
+                    pierde exactamente así (ver `imporchat_miedo_no_es_rechazo`).
+                    El envío rápido no se saca: queda al lado. */}
+                <BotonResponder onClick={() => setAbierto(o)} disabled={!o.externalId} />
+                {o.externalId && (
                   <AccionPrincipal
                     externalId={String(o.externalId)}
                     phone={o.phone}
@@ -187,23 +197,9 @@ export default function InboxPage() {
                       valor: o.valor ? formatCOP(o.valor) : null,
                     }}
                     modulo="SEG"
-                    className="flex-1 min-w-[130px] justify-center py-2.5 text-[11px]"
-                    fallback={<BotonResponder onClick={() => setAbierto(o)} />}
+                    className="flex-1 min-w-[130px] justify-center py-2.5 text-[11px] opacity-80"
+                    fallback={null}
                   />
-                ) : (
-                  <BotonResponder onClick={() => setAbierto(o)} disabled />
-                )}
-                {/* Escribir otra cosa: el cuadro completo con todas las
-                    plantillas sigue a un toque. No se esconde nada — el botón
-                    de arriba propone, no decide por ella. */}
-                {o.externalId && (
-                  <button
-                    type="button"
-                    onClick={() => setAbierto(o)}
-                    className="text-[11px] py-2.5 px-3 rounded-xl bg-card/40 text-muted-foreground font-semibold hover:text-foreground hover:border-border-strong inline-flex items-center justify-center gap-1.5 border border-border transition-colors"
-                  >
-                    <MessageSquare size={13} /> Otro mensaje
-                  </button>
                 )}
                 <a
                   href={'tel:+' + getWhatsAppPhone(o.phone, cc)}

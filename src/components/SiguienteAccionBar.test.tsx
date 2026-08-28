@@ -20,6 +20,7 @@ const estado = {
 };
 
 const loadSegData = vi.fn(async () => {});
+const loadNovedades = vi.fn(async () => {});
 
 vi.mock('@/contexts/OrderContext', () => ({
   useOrders: () => ({
@@ -28,6 +29,7 @@ vi.mock('@/contexts/OrderContext', () => ({
     segLoaded: estado.segLoaded,
     novedadesQueue: estado.novedadesQueue,
     loadSegData,
+    loadNovedades,
   }),
 }));
 vi.mock('@/contexts/StoreContext', () => ({
@@ -62,6 +64,7 @@ const dibujar = (ruta = '/dashboard') =>
 
 beforeEach(() => {
   loadSegData.mockClear();
+  loadNovedades.mockClear();
   estado.workQueue = [];
   estado.segData = [];
   estado.segLoaded = true;
@@ -162,5 +165,17 @@ describe('GUARDIÁN: la barra pide la cola que necesita', () => {
     estado.novedadesQueue = [base];
     dibujar();
     expect(screen.getByText(/novedad/i)).toBeInTheDocument();
+  });
+});
+
+describe('GUARDIÁN: la barra pide TAMBIÉN la cola de novedades', () => {
+  // ⛔ 28-ago-2026. `loadNovedades()` lo llamaba SOLO NovedadesTab, así que el
+  // escalón #1 —el más urgente— no podía dispararse hasta que alguien entrara a
+  // /novedades. Verificado en pantalla: abriendo el CRM en /dashboard la barra
+  // mandaba al escalón 2 teniendo novedades abiertas. Mismo hueco que ya se
+  // arregló con `segData`; esta prueba impide que vuelva.
+  it('pide la cola de novedades al montarse', () => {
+    dibujar();
+    expect(loadNovedades).toHaveBeenCalled();
   });
 });

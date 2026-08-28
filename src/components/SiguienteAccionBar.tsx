@@ -7,6 +7,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { siguienteAccion, type AccionKey } from '@/lib/siguienteAccion';
 import { segVisiblesParaCola } from '@/lib/segVisibles';
 import { useSegTouchIndex } from '@/hooks/useSegTouchIndex';
+import { useOpenIncidences } from '@/hooks/useOpenIncidences';
+import { splitNovedades } from '@/lib/novedadesSplit';
 import { cn } from '@/lib/utils';
 
 /**
@@ -52,7 +54,7 @@ const TONO = {
 } as const;
 
 export default function SiguienteAccionBar() {
-  const { workQueue, segData, segLoaded, novedadesQueue, loadSegData } = useOrders();
+  const { workQueue, segData, segLoaded, novedadesQueue, loadSegData, loadNovedades } = useOrders();
   const { isManagerOfActive, activeStoreId } = useStore();
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
@@ -71,6 +73,16 @@ export default function SiguienteAccionBar() {
   // tablero, ya está cargada.
   useEffect(() => { void loadSegData(); }, [loadSegData]);
 
+  // ⛔ Y CARGA LAS NOVEDADES, por la misma razón (28-ago-2026).
+  //
+  // `loadNovedades()` lo llamaba SOLO `NovedadesTab`. O sea: el escalón #1 —el
+  // más urgente de la escalera— no podía dispararse hasta que alguien entrara a
+  // /novedades. Verificado en pantalla: abriendo el CRM en /dashboard la barra
+  // decía *"31 paquetes a punto de devolverse"* (escalón 2) teniendo novedades
+  // abiertas esperando. Es el MISMO hueco que ya se arregló con `segData`: una
+  // barra que dirige con una cola que nunca se leyó dirige mal.
+  useEffect(() => { void loadNovedades(); }, [loadNovedades]);
+
   // Memoizado por REFERENCIA de las colas, igual que InactivityGuard: este
   // componente vive bajo OrderProvider y se re-renderiza con cada cambio del
   // context (contadores, sets de cobertura, cada push de realtime). Sin memo,
@@ -80,6 +92,7 @@ export default function SiguienteAccionBar() {
   // a la que el equipo ya avisó, y una barra que pide trabajo hecho se aprende
   // a ignorar.
   const { closed, avisosAgencia } = useSegTouchIndex(activeStoreId);
+  const { openIds } = useOpenIncidences(activeStoreId);
 
   // La MISMA población que muestra la pantalla de Seguimiento (ventana 45d +
   // dedup + cierres del equipo). Con segData crudo la barra contaba trabajo
@@ -90,9 +103,17 @@ export default function SiguienteAccionBar() {
     [segData, closed],
   );
 
+  // Cuántas novedades siguen ABIERTAS en Dropi. Se reusa `splitNovedades` —la
+  // misma función que ya parte la cola en /novedades— para no tener DOS
+  // definiciones de "abierta" que se desincronicen. `conocido:false` (edge
+  // caída, o un set vacío con cola llena, que es la misma duda disfrazada de
+  // dato) devuelve `null` y la barra cuenta todo, como antes.
+  const split = useMemo(() => splitNovedades(novedadesQueue, openIds), [novedadesQueue, openIds]);
+  const novedadesAbiertas = split.conocido ? split.porGestionar.length : null;
+
   const accion = useMemo(
-    () => siguienteAccion({ workQueue, novedadesQueue, segData: segVisibles, segCargado: segLoaded, avisosAgencia }),
-    [workQueue, novedadesQueue, segVisibles, segLoaded, avisosAgencia],
+    () => siguienteAccion({ workQueue, novedadesQueue, segData: segVisibles, segCargado: segLoaded, avisosAgencia, novedadesAbiertas }),
+    [workQueue, novedadesQueue, segVisibles, segLoaded, avisosAgencia, novedadesAbiertas],
   );
 
   // Todavía no se leyó la cola: no se dibuja NADA. Un "Todo al día" en verde

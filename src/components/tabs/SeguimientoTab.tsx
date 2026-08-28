@@ -13,6 +13,7 @@ import TurnoDelEquipoPanel from '@/components/seguimiento/TurnoDelEquipoPanel';
 import CierreSeguimientoDialog from '@/components/seguimiento/CierreSeguimientoDialog';
 import { useSegTouchIndex } from '@/hooks/useSegTouchIndex';
 import { useRiesgoChat } from '@/hooks/useRiesgoChat';
+import { useOpenIncidences } from '@/hooks/useOpenIncidences';
 import { estadoConversacion } from '@/lib/actividadChat';
 import { tocaLlamar, HORAS_PARA_LLAMAR } from '@/lib/escalarLlamada';
 import { cicloContacto, enEspera, ESPERA_REINTENTO_MIN } from '@/lib/cicloContacto';
@@ -130,6 +131,11 @@ export default function SeguimientoTab() {
   // Pedidos que el equipo ya CERRÓ (Resuelto/Devolución) → salen para siempre de
   // Seguimiento. Team-wide (set de phones de la tienda activa). Ver hook.
   const { closed: segClosedPhones, avisosAgencia } = useSegTouchIndex(activeStoreId);
+  // Cuáles novedades siguen ABIERTAS en Dropi. Es el mismo dato (y el mismo
+  // cache módulo-level) que ya usa /novedades para partir su cola; el tablero
+  // era la única pantalla que no lo miraba y por eso su columna NOVEDAD decía
+  // 83 donde Dropi decía 14. Ver `incidenciasAbiertas` en SegBoard.
+  const { openIds: incidenciasAbiertas } = useOpenIncidences(activeStoreId);
   // Alerta de cambios (auditoría 14-ago-2026, artifact fa210631): el hook
   // existía COMPLETO desde F6 y nadie lo montaba — el aviso "N devoluciones
   // nuevas" era código muerto mientras el dueño reportaba "a veces no me
@@ -1783,6 +1789,7 @@ export default function SeguimientoTab() {
         <SegBoard
             avisosAgencia={avisosAgencia}
           actividadChat={chatActividad}
+          incidenciasAbiertas={incidenciasAbiertas}
           data={boardDataMostrado}
           countryCode={activeStore?.country_code}
           statusFilter={statusFilter}

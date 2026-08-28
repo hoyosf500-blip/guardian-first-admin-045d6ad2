@@ -332,3 +332,43 @@ describe('el escalon de aviso no pide trabajo ya hecho', () => {
     expect(r.key).not.toBe('agencia');
   });
 });
+
+describe('novedades: solo cuentan las que Dropi todavía deja gestionar', () => {
+  // ⛔ Medido el 28-ago-2026 en la tienda de Ecuador: la barra anunciaba
+  // "84 novedades abiertas" en rojo, arriba de todo, y el panel de Dropi
+  // mostraba 14. Las otras 70 las había cerrado la transportadora — Dropi
+  // rechaza resolverlas, o sea NO son trabajo. Un primer escalón donde 6 de
+  // cada 7 no tienen nada que hacer enseña a ignorar la barra.
+  const cola = Array.from({ length: 84 }, () => base);
+
+  it('cuenta las abiertas, no la cola entera', () => {
+    const r = siguienteAccion({ workQueue: [], novedadesQueue: cola, segData: [], novedadesAbiertas: 14 });
+    expect(r.key).toBe('novedades');
+    expect(r.cuantos).toBe(14);
+    expect(r.etiqueta).toBe('14 novedades abiertas');
+  });
+
+  it('nombra las que NO son trabajo, para que 84 → 14 no se lea como pérdida', () => {
+    const r = siguienteAccion({ workQueue: [], novedadesQueue: cola, segData: [], novedadesAbiertas: 14 });
+    expect(r.porque).toContain('70');
+    expect(r.porque).toMatch(/cerr/i);
+  });
+
+  it('cero abiertas con la cola llena: el escalón NO se dispara', () => {
+    // No hay nada que gestionar; la escalera tiene que seguir de largo en vez
+    // de mandar al equipo contra una pared.
+    const r = siguienteAccion({ workQueue: [], novedadesQueue: cola, segData: [], novedadesAbiertas: 0 });
+    expect(r.key).not.toBe('novedades');
+  });
+
+  it('⛔ sin el dato (edge caída) se cuenta TODO, como antes', () => {
+    // Cero nunca sustituye a "no se pudo medir": la duda no puede esconder
+    // trabajo real. Es la misma regla de `splitNovedades`.
+    for (const v of [null, undefined]) {
+      const r = siguienteAccion({ workQueue: [], novedadesQueue: cola, segData: [], novedadesAbiertas: v });
+      expect(r.key).toBe('novedades');
+      expect(r.cuantos).toBe(84);
+      expect(r.porque).not.toContain('cerró');
+    }
+  });
+});

@@ -29,6 +29,13 @@ const POLL_MS = 30 * 60 * 1000;
 // setTrackingCountry / los overrides del validador de direcciones).
 const cache = new Map<string, { ids: Set<string> | null; at: number }>();
 
+// ⛔ Vuelo en curso COMPARTIDO entre montajes (28-ago-2026). Desde que la barra
+// "Lo que sigue" también necesita este dato, el hook se monta DOS veces a la vez
+// (la barra y la pantalla). El `inFlight` de abajo es por instancia, así que en
+// el primer render las dos disparaban su propia llamada a Dropi — y la cuenta de
+// Ecuador throttlea (429). Con esto la segunda se cuelga de la primera.
+const enVuelo = new Map<string, Promise<Set<string> | null>>();
+
 export function useOpenIncidences(storeId: string | null) {
   const cached = storeId ? cache.get(storeId) : undefined;
   const [openIds, setOpenIds] = useState<Set<string> | null>(cached?.ids ?? null);
@@ -49,13 +56,18 @@ export function useOpenIncidences(storeId: string | null) {
     inFlight.current = true;
     setOpenLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('dropi-open-incidences', {
-        body: { store_id: storeId },
-      });
-      const d = (data as OpenIncidencesResp | null) ?? null;
-      const ids = !error && d?.ok && Array.isArray(d.ids)
-        ? new Set(d.ids.map(String))
-        : null;
+      let p = enVuelo.get(storeId);
+      if (!p) {
+        p = (async () => {
+          const { data, error } = await supabase.functions.invoke('dropi-open-incidences', {
+            body: { store_id: storeId },
+          });
+          const d = (data as OpenIncidencesResp | null) ?? null;
+          return !error && d?.ok && Array.isArray(d.ids) ? new Set(d.ids.map(String)) : null;
+        })().finally(() => { enVuelo.delete(storeId); });
+        enVuelo.set(storeId, p);
+      }
+      const ids = await p;
       cache.set(storeId, { ids, at: Date.now() });
       if (seq === reqSeq.current) setOpenIds(ids);
     } catch {

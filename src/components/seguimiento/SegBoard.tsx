@@ -5,7 +5,7 @@ import {
   Package, Tag, Truck, MapPin, AlertTriangle, CheckCircle, RotateCcw,
   DollarSign, Layers, ExternalLink, RefreshCw, MessageCircle, Phone,
   ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Maximize2, CheckCircle2, Send,
-  MessagesSquare,
+  MessagesSquare, Clock,
 } from 'lucide-react';
 import { OrderData, getTrackingUrl, getWhatsAppPhone, parseDate } from '@/lib/orderUtils';
 import { classifySegEstado, estadoDifiereDeFase, normalizaRotulo, type SegStatusKey } from '@/lib/segStatus';
@@ -266,7 +266,10 @@ const COLUMN_PAGE = 30;
  *  el pedido y no desde que entró a este estado. La cuenta sigue viva y con
  *  nombre propio en `segPulso` (`diasSinMovimiento`, `estaDetenido`). */
 
-const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, touchedTodayPhones, gestionEquipo, nombreDe, avisoMs, columnLabel, actividad, ahoraTick }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisoMs?: number | null; columnLabel?: string; actividad?: ActividadChatOrden | null;
+const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, touchedTodayPhones, gestionEquipo, nombreDe, avisoMs, columnLabel, actividad, ahoraTick, novedadCerrada }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisoMs?: number | null; columnLabel?: string; actividad?: ActividadChatOrden | null;
+  /** La novedad de este pedido ya la cerró (o dejó vencer) la transportadora:
+   *  Dropi rechaza resolverla. `undefined` = no se sabe → no se afirma nada. */
+  novedadCerrada?: boolean;
   /** Reloj compartido, en ms, que avanza cada minuto. Baja como PROP y no como
    *  `Date.now()` por tarjeta: el "vuelve en N min" tiene que avanzar solo, y
    *  montar un intervalo en cada una de las ~400 tarjetas del tablero sería
@@ -499,7 +502,25 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           se calcula con el dato de ImporChat, no con lo declarado; lo declarado
           solo puede adelantar el reloj. El detalle de las dos fuentes vive en el
           `title`, que es donde va el detalle y no en la cara de la tarjeta. */}
-      {ciclo.etiqueta && (
+      {/* ⛔ SIGUE SIENDO UNA SOLA ETIQUETA. Cuando la novedad ya la cerró la
+          transportadora, eso PISA al ciclo: la etiqueta del ciclo diría
+          "2º intento" y estaría mandando a insistir sobre una novedad que ya no
+          se puede gestionar.
+          La ÚNICA excepción es que el cliente haya respondido: ahí hay una
+          persona esperando una respuesta, y eso es trabajo pase lo que pase con
+          la incidencia.
+          (Primero se probó con `sin_tocar` y en pantalla NO se veía nunca: en
+          Ecuador casi todos los pedidos tienen conversación, así que el ciclo
+          siempre tenía algo que decir y ganaba siempre.) */}
+      {novedadCerrada && ciclo.estado !== 'respondio' ? (
+        <div
+          className="mt-2 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border border-border bg-card/40 text-muted-foreground"
+          title="La transportadora cerró o dejó vencer esta novedad. Dropi no deja resolverla: queda esperar el reintento o la devolución. No es trabajo pendiente."
+        >
+          <Clock size={10} aria-hidden="true" className="shrink-0" />
+          <span className="truncate">Esperando transportadora</span>
+        </div>
+      ) : ciclo.etiqueta ? (
         <div
           className={cn(
             'mt-2 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border',
@@ -514,7 +535,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
               : <MessageCircle size={10} aria-hidden="true" className="shrink-0" />}
           <span className="truncate">{ciclo.etiqueta}</span>
         </div>
-      )}
+      ) : null}
 
       {/* Identidad: el nombre es lo ÚNICO que la asesora necesita para saber a
           quién llama, así que sube de tamaño y peso. El externalId baja a
@@ -742,6 +763,26 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
                 className="w-full min-h-11 justify-center text-[12px]"
               />
             )}
+            {/* ⛔ SI EL CLIENTE ESCRIBIÓ, PRIMERO SE LEE (28-ago-2026).
+                Hasta hoy la acción principal se elegía SOLO por el estado del
+                pedido en Dropi: a alguien que acababa de preguntar algo se le
+                ofrecía igual el mensaje enlatado de su fase. Contestarle a una
+                persona con una plantilla que nadie leyó antes es peor que
+                tardar — y en esta operación el miedo del cliente se parece
+                mucho a un rechazo (ver `imporchat_miedo_no_es_rechazo`): esos
+                son justo los que hay que leer.
+                El de mandar no desaparece: baja a segundo. */}
+            {ciclo.estado === 'respondio' && actividad && o.externalId && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setEscribiendo(true); }}
+                title="Abre la conversación para leer qué dijo el cliente y contestarle"
+                className="w-full min-h-11 inline-flex items-center justify-center gap-1.5 rounded-lg border border-danger/40 bg-danger/12 px-2.5 py-1.5 text-[12px] font-bold text-danger hover:bg-danger/20 transition-colors"
+              >
+                <MessagesSquare size={13} aria-hidden="true" />
+                Leer y contestar
+              </button>
+            )}
             <AccionPrincipal
               externalId={String(o.externalId ?? '')}
               phone={o.phone}
@@ -763,7 +804,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
               }}
               className={cn(
                 'w-full min-h-11 justify-center text-[12px]',
-                debeLlamar && 'opacity-80',
+                (debeLlamar || ciclo.estado === 'respondio') && 'opacity-80',
               )}
               onEnviado={(g) => setGestionada(g)}
               fallback={metodosRapidos[0] ? (
@@ -856,7 +897,7 @@ function ColumnBody({ colKey, scrollRefs, children }: {
  * (botones + teclado) que recorre SOLO los pedidos de esa columna. Pensado para
  * que la operadora se concentre en una fase (ej. "En Reparto") y vaya uno por uno.
  */
-function FocusedColumn({ col, countryCode, touchedTodayPhones, gestionEquipo, nombreDe, avisosAgencia, actividadChat, onBack }: { col: ColumnDef & { orders: OrderData[] }; countryCode?: string | null; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisosAgencia?: Map<string, number>; actividadChat?: Map<string, ActividadChatOrden>; onBack: () => void }) {
+function FocusedColumn({ col, countryCode, touchedTodayPhones, gestionEquipo, nombreDe, avisosAgencia, actividadChat, incidenciasAbiertas, onBack }: { col: ColumnDef & { orders: OrderData[] }; countryCode?: string | null; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisosAgencia?: Map<string, number>; actividadChat?: Map<string, ActividadChatOrden>; incidenciasAbiertas?: Set<string> | null; onBack: () => void }) {
   const ahoraTick = useRelojMinuto();
   const navigate = useNavigate();
   const { activeStoreId } = useStore();
@@ -1007,6 +1048,7 @@ function FocusedColumn({ col, countryCode, touchedTodayPhones, gestionEquipo, no
                 avisoMs={o.phone ? avisosAgencia?.get(o.phone) ?? null : null}
                 actividad={o.dbId ? actividadChat?.get(String(o.dbId)) ?? null : null}
                 ahoraTick={ahoraTick}
+                novedadCerrada={incidenciasAbiertas && col.baseKey === 'novedad' ? !(o.externalId && incidenciasAbiertas.has(String(o.externalId))) : undefined}
                 onOpen={() => { focusByIndex(i); if (o.externalId) navigate(`/pedido/${o.externalId}`, { state: { siblingIds, storeId: activeStoreId } }); }}
               />
             ))}
@@ -1161,6 +1203,21 @@ interface SegBoardProps {
    * el padre ya calculaba `allManagedToday` para elegir los textos.
    */
   celebratory?: boolean;
+  /**
+   * `external_id`s con la incidencia todavía ABIERTA en Dropi.
+   *
+   * ⛔ La columna NOVEDAD decía **83** mientras el panel de Dropi mostraba
+   * **14** (medido el 28-ago-2026 en la tienda de Ecuador; la lista de pedidos
+   * de Dropi también dice 85, o sea el estado está bien sincronizado). Son dos
+   * cosas distintas: acá están los pedidos PARADOS en estado NOVEDAD, y Dropi
+   * lista las INCIDENCIAS abiertas. Las otras 69 las cerró o las dejó vencer la
+   * transportadora y Dropi **rechaza** resolverlas: mirarlas es tiempo perdido.
+   *
+   * `/novedades` ya partía la cola con este mismo dato; el tablero era la única
+   * pantalla que no lo sabía. `null` = no se pudo leer → no se parte nada y la
+   * columna se comporta como siempre.
+   */
+  incidenciasAbiertas?: Set<string> | null;
 }
 
 /**
@@ -1181,7 +1238,7 @@ function useRelojMinuto(): number {
   return ahora;
 }
 
-export default function SegBoard({ data, countryCode, statusFilter, touchedTodayPhones, gestionEquipo, avisosAgencia, actividadChat, celebratory = false, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
+export default function SegBoard({ data, countryCode, statusFilter, touchedTodayPhones, gestionEquipo, avisosAgencia, actividadChat, incidenciasAbiertas, celebratory = false, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
   const ahoraTick = useRelojMinuto();
   // Nombre de la asesora que gestionó: cache módulo-level compartido, una sola
   // lectura de profiles por sesión (no una por tarjeta).
@@ -1320,8 +1377,16 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
     //   3. Lo que se acaba de tocar, al fondo (vuelve solo a la hora).
     // Sin fecha de movimiento va al final de su grupo: no saber cuántos días
     // lleva no puede colarse arriba como si fueran cero.
-    for (const arr of groups.values()) {
+    for (const [key, arr] of groups.entries()) {
+      // En NOVEDAD manda otra cosa antes que el ciclo: si la incidencia sigue
+      // abierta en Dropi. Las cerradas por la transportadora no se pueden
+      // gestionar — que floten arriba es mandar a la asesora a una pared.
+      const partirPorIncidencia = key === 'novedad' && !!incidenciasAbiertas;
+      const cerrada = (o: OrderData) =>
+        partirPorIncidencia && !(o.externalId && incidenciasAbiertas!.has(String(o.externalId))) ? 1 : 0;
       arr.sort((a, b) => {
+        const inc = cerrada(a) - cerrada(b);
+        if (inc !== 0) return inc;
         const ca = cicloContacto({ actividad: actividadChat?.get(String(a.dbId ?? '')), gestion: gestionEquipo?.get(a.phone ?? ''), ahoraMs: ahoraTick });
         const cb = cicloContacto({ actividad: actividadChat?.get(String(b.dbId ?? '')), gestion: gestionEquipo?.get(b.phone ?? ''), ahoraMs: ahoraTick });
         const r = rangoCiclo(ca) - rangoCiclo(cb);
@@ -1335,7 +1400,7 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
       });
     }
     return groups;
-  }, [data, actividadChat, gestionEquipo, ahoraTick]);
+  }, [data, actividadChat, gestionEquipo, ahoraTick, incidenciasAbiertas]);
 
   // TODAS las columnas con pedidos, historia incluida. `columns` (más abajo) es
   // el subconjunto que se dibuja; el modo enfoque busca acá para que enfocar una
@@ -1387,6 +1452,20 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
     return m;
   }, [todasLasColumnas, actividadChat, gestionEquipo, ahoraTick]);
 
+  // Cuántas de las NOVEDAD de cada columna siguen abiertas en Dropi. Solo se
+  // calcula si el dato existe: sin él no se afirma ningún reparto.
+  const abiertasPorColumna = useMemo(() => {
+    if (!incidenciasAbiertas) return null;
+    const m = new Map<string, number>();
+    for (const c of todasLasColumnas) {
+      if (c.baseKey !== 'novedad') continue;
+      let n = 0;
+      for (const o of c.orders) if (o.externalId && incidenciasAbiertas.has(String(o.externalId))) n += 1;
+      m.set(c.key, n);
+    }
+    return m;
+  }, [todasLasColumnas, incidenciasAbiertas]);
+
   // Historia plegada: si la operadora PIDIÓ un estado explícitamente
   // (statusFilter), se le muestra aunque sea historia — pidió eso, no otra cosa.
   const mostrarHistoria = verHistoria || !!statusFilter;
@@ -1426,7 +1505,7 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
     // aunque el tablero las tenga plegadas.
     const focusedCol = todasLasColumnas.find((c) => c.key === focusedKey);
     if (focusedCol) {
-      return <FocusedColumn key={focusedKey} col={focusedCol} countryCode={countryCode} touchedTodayPhones={touchedTodayPhones} gestionEquipo={gestionEquipo} nombreDe={nombreDe} avisosAgencia={avisosAgencia} actividadChat={actividadChat} onBack={() => setFocusedKey(null)} />;
+      return <FocusedColumn key={focusedKey} col={focusedCol} countryCode={countryCode} touchedTodayPhones={touchedTodayPhones} gestionEquipo={gestionEquipo} nombreDe={nombreDe} avisosAgencia={avisosAgencia} actividadChat={actividadChat} incidenciasAbiertas={incidenciasAbiertas} onBack={() => setFocusedKey(null)} />;
     }
   }
 
@@ -1623,6 +1702,28 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
                     {col.faseLabel}
                   </span>
                 )}
+                {/* ⛔ El reparto REAL de la columna NOVEDAD (28-ago-2026). El
+                    dueño comparó: Dropi le mostraba 14 y acá decía 83. Las dos
+                    cifras eran ciertas — esta cuenta pedidos parados en estado
+                    NOVEDAD y el panel de Dropi cuenta incidencias abiertas — y
+                    sin decirlo la columna se leía como un reclamo falso.
+
+                    Va en DOS líneas cortas y no en una: la columna mide 188 px
+                    y en una sola el `truncate` se comía justo la mitad que
+                    explica el número ("…70 esperando transp…"). */}
+                {abiertasPorColumna?.has(col.key) && col.orders.length > 0 && (
+                  <span
+                    className="block text-[10px] font-semibold mt-1 leading-tight"
+                    title="Dropi solo deja gestionar las novedades con la incidencia abierta. Las demás las cerró o las dejó vencer la transportadora: no hay gestión posible, solo esperar el reintento o la devolución."
+                  >
+                    <span className="block truncate text-danger">{abiertasPorColumna.get(col.key)} por gestionar</span>
+                    {col.orders.length - (abiertasPorColumna.get(col.key) ?? 0) > 0 && (
+                      <span className="block truncate text-muted-foreground/70">
+                        {col.orders.length - (abiertasPorColumna.get(col.key) ?? 0)} sin gestión posible
+                      </span>
+                    )}
+                  </span>
+                )}
               </div>
               {/* Affordance de enfoque PERMANENTE: era un Maximize2 que solo
                   aparecía al hover, o sea invisible en móvil/táctil — que es
@@ -1643,6 +1744,13 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
                   avisoMs={o.phone ? avisosAgencia?.get(o.phone) ?? null : null}
                   actividad={o.dbId ? actividadChat?.get(String(o.dbId)) ?? null : null}
                   ahoraTick={ahoraTick}
+                  novedadCerrada={
+                    // `undefined` mientras no se sepa: sin el dato de Dropi no
+                    // se afirma que una novedad esté cerrada.
+                    incidenciasAbiertas && col.baseKey === 'novedad'
+                      ? !(o.externalId && incidenciasAbiertas.has(String(o.externalId)))
+                      : undefined
+                  }
                   onOpen={() => o.externalId && navigate(`/pedido/${o.externalId}`, { state: { siblingIds, storeId: activeStoreId } })}
                 />
               ))}
