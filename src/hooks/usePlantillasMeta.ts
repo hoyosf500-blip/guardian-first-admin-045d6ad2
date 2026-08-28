@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import { useAuth } from '@/contexts/AuthContext';
-import type { PlantillaMeta } from '@/lib/plantillasMeta';
+import { ordenarParaFase, type PlantillaMeta } from '@/lib/plantillasMeta';
 import { motivoEdge, cuerpoDelError } from '@/lib/errorEdge';
 import { emitirGestion } from '@/lib/eventosGestion';
 import type { ModuloEnvio, GestionDelEnvio } from '@/hooks/useEnviarWhatsapp';
@@ -43,6 +43,55 @@ async function motivoReal(error: unknown, porDefecto: string) {
 const CACHE_MS = 5 * 60_000;
 const cache = new Map<string, { at: number; plantillas: PlantillaMeta[] }>();
 
+// ⛔ Vuelo en curso COMPARTIDO. Al abrir el tablero se precarga y además la
+// asesora puede tocar un botón antes de que llegue: sin esto salían dos
+// llamadas a ImporChat para la misma lista.
+const enVuelo = new Map<string, Promise<PlantillaMeta[]>>();
+
+async function traer(storeId: string): Promise<PlantillaMeta[]> {
+  const guardado = cache.get(storeId);
+  if (guardado && Date.now() - guardado.at < CACHE_MS) return guardado.plantillas;
+  let p = enVuelo.get(storeId);
+  if (!p) {
+    p = (async () => {
+      // ⛔ SIN `fase`. El servidor devuelve SIEMPRE la misma lista y lo único
+      // que hace con la fase es ORDENARLA (`ordenarParaFase`, que es pura y ya
+      // vive en el cliente). Cachear por (tienda, fase) significaba UNA llamada
+      // de red a ImporChat POR CADA FASE del tablero —quince viajes para traer
+      // exactamente las mismas 43 plantillas— y la asesora esperaba en cada
+      // fase nueva que tocaba. Ahora es una sola por tienda y el orden se
+      // calcula acá, gratis.
+      const { data, error } = await supabase.functions.invoke('importchat-plantillas', {
+        body: { store_id: storeId, accion: 'listar' },
+      });
+      if (error) throw error;
+      const r = data as { ok?: boolean; plantillas?: PlantillaMeta[]; error?: string } | null;
+      if (!r?.ok) throw new Error(r?.error || 'No se pudieron leer las plantillas');
+      const lista = r.plantillas ?? [];
+      // Solo se cachea el ÉXITO. Guardar una lista vacía por un error dejaría
+      // "esta cuenta no tiene plantillas" pegado 5 minutos, que es una
+      // afirmación falsa sobre la cuenta del cliente.
+      cache.set(storeId, { at: Date.now(), plantillas: lista });
+      return lista;
+    })().finally(() => { enVuelo.delete(storeId); });
+    enVuelo.set(storeId, p);
+  }
+  return p;
+}
+
+/**
+ * Pide la lista ANTES de que nadie toque un botón.
+ *
+ * El tablero la llama al montarse: la llamada a ImporChat tarda lo que tarda,
+ * pero ocurre mientras la asesora todavía está leyendo la pantalla, no cuando
+ * ya apretó y está esperando. Nunca lanza — es una mejora de velocidad, no un
+ * camino del que dependa nada.
+ */
+export function precargarPlantillas(storeId: string | null | undefined): void {
+  if (!storeId) return;
+  void traer(storeId).catch(() => {});
+}
+
 /**
  * Trae las plantillas cuando `activo` se pone en true, ordenadas para la fase
  * del pedido. Se pide UNA vez por (tienda, fase): la lista de Meta no cambia
@@ -59,49 +108,33 @@ export function usePlantillasMeta(activo: boolean, fase?: string | null) {
 
   const cargar = useCallback(async (forzar = false) => {
     if (!activeStoreId) return;
-    const clave = `${activeStoreId}|${fase ?? ''}`;
-    const guardado = cache.get(clave);
+    // Lo cacheado se pinta SIN pasar por 'cargando': si ya está, la asesora no
+    // tiene por qué ver un spinner. Ese parpadeo era la mitad de la sensación
+    // de lentitud aunque la respuesta ya estuviera en memoria.
+    const guardado = cache.get(activeStoreId);
     if (!forzar && guardado && Date.now() - guardado.at < CACHE_MS) {
       turnoRef.current += 1;
-      setPlantillas(guardado.plantillas);
+      setPlantillas(ordenarParaFase(guardado.plantillas, fase));
       setEstado('ok');
       setError(undefined);
       return;
     }
+    if (forzar) cache.delete(activeStoreId);
     const turno = ++turnoRef.current;
     setEstado('cargando');
     setError(undefined);
     try {
-      const { data, error: err } = await supabase.functions.invoke('importchat-plantillas', {
-        body: { store_id: activeStoreId, accion: 'listar', fase: fase ?? null },
-      });
+      const lista = await traer(activeStoreId);
       if (turno !== turnoRef.current) return;
-      if (err) {
-        const { detalle, sinConfig } = await motivoReal(err, 'No se pudieron leer las plantillas');
-        if (turno !== turnoRef.current) return;
-        setEstado(sinConfig ? 'sin_config' : 'error');
-        setError(sinConfig ? undefined : detalle);
-        setPlantillas([]);
-        return;
-      }
-      const r = data as { ok?: boolean; plantillas?: PlantillaMeta[]; error?: string } | null;
-      if (!r?.ok) {
-        setEstado('error');
-        setError(r?.error || 'No se pudieron leer las plantillas');
-        setPlantillas([]);
-        return;
-      }
-      const lista = r.plantillas ?? [];
-      // Solo se cachea el ÉXITO. Guardar una lista vacía por un error dejaría
-      // "esta cuenta no tiene plantillas" pegado 5 minutos, que es una
-      // afirmación falsa sobre la cuenta del cliente.
-      cache.set(clave, { at: Date.now(), plantillas: lista });
-      setPlantillas(lista);
+      setPlantillas(ordenarParaFase(lista, fase));
       setEstado('ok');
     } catch (e) {
       if (turno !== turnoRef.current) return;
-      setEstado('error');
-      setError(e instanceof Error ? e.message : 'No se pudieron leer las plantillas');
+      const { detalle, sinConfig } = await motivoReal(e, 'No se pudieron leer las plantillas');
+      if (turno !== turnoRef.current) return;
+      setEstado(sinConfig ? 'sin_config' : 'error');
+      setError(sinConfig ? undefined : detalle);
+      setPlantillas([]);
     }
   }, [activeStoreId, fase]);
 

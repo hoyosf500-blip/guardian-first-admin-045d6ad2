@@ -41,6 +41,22 @@ interface Respuesta {
 const FALTA_LEER =
   'La lectura del chat todavía no está activada en el servidor. Abrí ImporChat para ver la conversación y avisá para que la activen.';
 
+/**
+ * Caché del hilo, compartido entre montajes.
+ *
+ * ⛔ Antes NO había ninguno: cada vez que la asesora abría el cuadro de un
+ * pedido salía un viaje entero a ImporChat, incluso reabriendo el MISMO chat
+ * que acababa de cerrar. Con la cola en la mano eso es abrir y cerrar decenas
+ * de veces por turno, y cada apertura empezaba en blanco.
+ *
+ * El TTL es corto a propósito y **nunca reemplaza a la lectura**: lo cacheado
+ * se pinta al instante para que el cuadro abra lleno, y en paralelo se revalida
+ * contra ImporChat. Si llegó un mensaje nuevo, aparece un segundo después; lo
+ * que se elimina es la pantalla vacía mientras tanto.
+ */
+const CHAT_TTL_MS = 60_000;
+const cacheHilo = new Map<string, { at: number; mensajes: MensajeConversacion[]; ventana: VentanaHilo | null }>();
+
 export function useConversacion(externalId: string | null | undefined, activo: boolean) {
   const { activeStoreId } = useStore();
   const [mensajes, setMensajes] = useState<MensajeConversacion[]>([]);
@@ -55,8 +71,18 @@ export function useConversacion(externalId: string | null | undefined, activo: b
   const cargar = useCallback(async () => {
     if (!activeStoreId || !externalId) return;
     const turno = ++turnoRef.current;
-    setEstado('cargando');
-    setError('');
+    // Lo último que se leyó de ESTE chat se pinta YA, y la lectura sigue por
+    // detrás. `'ok'` y no `'cargando'`: son mensajes reales, no un placeholder.
+    const guardado = cacheHilo.get(`${activeStoreId}|${externalId}`);
+    if (guardado && Date.now() - guardado.at < CHAT_TTL_MS) {
+      setMensajes(guardado.mensajes);
+      setVentana(guardado.ventana);
+      setEstado('ok');
+      setError('');
+    } else {
+      setEstado('cargando');
+      setError('');
+    }
     try {
       const { data, error: err } = await supabase.functions.invoke('importchat-chat', {
         body: { store_id: activeStoreId, external_id: externalId },
@@ -88,8 +114,11 @@ export function useConversacion(externalId: string | null | undefined, activo: b
         setError(r?.error || 'No se pudo leer la conversación');
         return;
       }
-      setMensajes(r.mensajes ?? []);
-      setVentana(r.ventana ?? null);
+      const msgs = r.mensajes ?? [];
+      const vent = r.ventana ?? null;
+      cacheHilo.set(`${activeStoreId}|${externalId}`, { at: Date.now(), mensajes: msgs, ventana: vent });
+      setMensajes(msgs);
+      setVentana(vent);
       setEstado('ok');
     } catch (e) {
       if (turno !== turnoRef.current) return;

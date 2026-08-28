@@ -9,6 +9,7 @@ import { haceCuantoMs } from '@/lib/actividadChat';
 import { getWhatsAppPhone, formatPhone } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
 import { useRecordGestion } from '@/hooks/useRecordGestion';
+import { precargarPlantillas } from '@/hooks/usePlantillasMeta';
 import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDialog';
 import AccionPrincipal from '@/components/seguimiento/AccionPrincipal';
 
@@ -50,6 +51,11 @@ export default function InboxPage() {
   const { items, status } = useInboxEsperando(activeStoreId);
   const salud = useImporchatSyncHealth(activeStoreId);
   const recordContacto = useRecordGestion();
+
+  // Las plantillas aprobadas se piden AL ENTRAR, no cuando la asesora ya apretó
+  // el botón y está esperando. La llamada a ImporChat tarda lo mismo; lo que
+  // cambia es que ocurre mientras todavía está leyendo la pantalla.
+  useEffect(() => { precargarPlantillas(activeStoreId); }, [activeStoreId]);
   const [abierto, setAbierto] = useState<InboxItem | null>(null);
   useMinuteTick();
 

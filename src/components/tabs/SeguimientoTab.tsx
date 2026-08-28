@@ -14,6 +14,7 @@ import CierreSeguimientoDialog from '@/components/seguimiento/CierreSeguimientoD
 import { useSegTouchIndex } from '@/hooks/useSegTouchIndex';
 import { useRiesgoChat } from '@/hooks/useRiesgoChat';
 import { useOpenIncidences } from '@/hooks/useOpenIncidences';
+import { precargarPlantillas } from '@/hooks/usePlantillasMeta';
 import { estadoConversacion } from '@/lib/actividadChat';
 import { tocaLlamar, HORAS_PARA_LLAMAR } from '@/lib/escalarLlamada';
 import { cicloContacto, enEspera, ESPERA_REINTENTO_MIN } from '@/lib/cicloContacto';
@@ -136,6 +137,11 @@ export default function SeguimientoTab() {
   // era la única pantalla que no lo miraba y por eso su columna NOVEDAD decía
   // 83 donde Dropi decía 14. Ver `incidenciasAbiertas` en SegBoard.
   const { openIds: incidenciasAbiertas } = useOpenIncidences(activeStoreId);
+
+  // Las plantillas aprobadas se piden AL ENTRAR, no cuando la asesora ya apretó
+  // el botón y está esperando. La llamada a ImporChat tarda lo mismo; lo que
+  // cambia es que ocurre mientras todavía está leyendo la pantalla.
+  useEffect(() => { precargarPlantillas(activeStoreId); }, [activeStoreId]);
   // Alerta de cambios (auditoría 14-ago-2026, artifact fa210631): el hook
   // existía COMPLETO desde F6 y nadie lo montaba — el aviso "N devoluciones
   // nuevas" era código muerto mientras el dueño reportaba "a veces no me
