@@ -395,7 +395,11 @@ export default function ConfirmarTab({ profile }: Props) {
   // (no va en ORDER_COLUMNS: una columna sin migrar tumba TODA pantalla que
   // cargue pedidos). Con la sincronización apagada el índice queda vacío y
   // nada de lo de abajo cambia. Ver `useRiesgoChat`.
-  const { index: riesgoIndex } = useRiesgoChat(activeStoreId, queueOrderIds);
+  // `actividad` es la otra mitad del pedido del dueño (28-ago-2026): la fila ya
+  // decía "quién lo llamó, hace cuánto y qué pasó", pero no si el CLIENTE
+  // escribió — que es lo que decide si alguien está esperando respuesta. Sale
+  // del mismo hook, sin una consulta más.
+  const { index: riesgoIndex, actividad: chatActividad } = useRiesgoChat(activeStoreId, queueOrderIds);
   // "Recordatorios para hoy/ahora": recordatorio que llega en ≤1h o ya vencido.
   // La constante vive en confirmarQueue para que el chip, este filtro y
   // `estaAplazado` usen el MISMO número (antes estaba duplicada en dos archivos).
@@ -1366,7 +1370,7 @@ export default function ConfirmarTab({ profile }: Props) {
           )}
 
           {view === 'list' ? (
-            <WorkList items={filteredItems} notesIndex={notesIndex} riesgoIndex={riesgoIndex} alerts={orderAlerts} gestionEquipo={gestionPorPedido} onOpenCall={(idx) => {
+            <WorkList items={filteredItems} notesIndex={notesIndex} riesgoIndex={riesgoIndex} actividadChat={chatActividad} alerts={orderAlerts} gestionEquipo={gestionPorPedido} onOpenCall={(idx) => {
               // Abrir EL pedido clickeado, no el primer pendiente. CallView lee el
               // pedido activo de sessionStorage['confirmar:callOrderId'] en su
               // inicializador de useState al montarse. useSessionState persiste en

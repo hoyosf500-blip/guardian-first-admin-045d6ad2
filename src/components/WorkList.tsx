@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { OrderData, formatPhone, parseDate } from '@/lib/orderUtils';
 import { formatCOP, bogotaToday } from '@/lib/utils';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
-import { CheckCircle2, XCircle, PhoneOff, RotateCcw, UserCog, MessageSquare, Bell, Copy, DollarSign, PhoneOutgoing } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, RotateCcw, UserCog, MessageSquare, Bell, Copy, DollarSign, PhoneOutgoing, MessagesSquare } from 'lucide-react';
 import { useOperatorNames } from '@/hooks/useOperatorNames';
 import { haceCuanto, etiquetaResultado, type GestionDelPedido } from '@/lib/gestionPorPedido';
 import { MAX_DAILY_ATTEMPTS } from '@/lib/confirmarQueue';
 import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
 import { RIESGO_INFO, type NivelRiesgo } from '@/lib/riesgoChat';
+import type { ActividadChatOrden } from '@/lib/actividadChat';
 import OrderEditorDialog from '@/components/confirmar/OrderEditorDialog';
 import { useRefreshOrderRow } from '@/hooks/useRefreshOrderRow';
 import type { NoteIndex } from '@/hooks/useOrderNotesIndex';
@@ -34,6 +35,9 @@ interface Props {
    *  Lo ven todos igual — dueño y asesoras — para no repetir la llamada ni
    *  tener que preguntar "¿ya llamaste estos?". */
   gestionEquipo?: Map<string, GestionDelPedido>;
+  /** Actividad del chat por `dbId` (de `useRiesgoChat`). Sin ella no se dibuja
+   *  nada: no saber si el cliente escribió NUNCA se pinta como "no escribió". */
+  actividadChat?: Map<string, ActividadChatOrden>;
 }
 
 function timeAgo(dias: number): string {
@@ -70,7 +74,7 @@ export function diasReales(o: OrderData): number {
   return Math.max(0, o.dias ?? 0);
 }
 
-export default function WorkList({ items, onOpenCall, notesIndex, riesgoIndex, alerts, gestionEquipo }: Props) {
+export default function WorkList({ items, onOpenCall, notesIndex, riesgoIndex, actividadChat, alerts, gestionEquipo }: Props) {
   const [visibleCount, setVisibleCount] = useState(50);
   // Cache módulo-level compartido: no dispara una consulta por fila.
   const { nameOf } = useOperatorNames();
@@ -159,6 +163,40 @@ export default function WorkList({ items, onOpenCall, notesIndex, riesgoIndex, a
                 Responde las tres preguntas que antes se hacían de viva voz —
                 quién, hace cuánto y qué pasó — sin abrir el pedido. El motivo
                 es LO QUE ESCRIBIÓ la asesora, no un resumen inventado. */}
+              {/* ⛔ ¿EL CLIENTE ESCRIBIÓ? (28-ago-2026) — la otra mitad del
+                  renglón de abajo. Esa línea ya decía quién llamó, hace cuánto y
+                  qué pasó, pero nada decía si HAY ALGUIEN ESPERANDO respuesta, y
+                  eso es lo que cambia a quién llamar primero.
+                  Sin actividad leída NO se dibuja: no saber si escribió jamás se
+                  pinta como "no escribió". Y el autor del último mensaje nuestro
+                  no está en el dato (el export de ImporChat no lo trae), así que
+                  no se afirma que haya contestado una persona. */}
+              {(() => {
+                const a = o.dbId ? actividadChat?.get(o.dbId) : undefined;
+                if (!a) return null;
+                const esperando = a.entranteAt != null && (a.salienteAt == null || a.entranteAt > a.salienteAt);
+                if (esperando) {
+                  return (
+                    <div className="mt-1.5 flex items-center gap-1.5 text-[11px] min-w-0">
+                      <MessagesSquare size={11} aria-hidden="true" className="flex-shrink-0 text-danger" />
+                      <span className="font-semibold text-danger truncate">
+                        El cliente escribió {haceCuanto(new Date(a.entranteAt).toISOString()) || 'hoy'} y sigue sin respuesta
+                      </span>
+                    </div>
+                  );
+                }
+                if (a.salienteAt == null) return null;
+                return (
+                  <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground min-w-0">
+                    <MessagesSquare size={11} aria-hidden="true" className="flex-shrink-0 opacity-70" />
+                    <span className="truncate">
+                      Le escribimos {haceCuanto(new Date(a.salienteAt).toISOString()) || 'hoy'}
+                      {a.salienteTipo ? ` · ${a.salienteTipo}` : ''}
+                      {a.entranteAt != null ? ' · no volvió a escribir' : ' · nunca contestó'}
+                    </span>
+                  </div>
+                );
+              })()}
               {(() => {
               const g = o.dbId ? gestionEquipo?.get(o.dbId) : undefined;
               if (!g) return null;
