@@ -4,18 +4,17 @@ import { toast } from 'sonner';
 import {
   Package, Tag, Truck, MapPin, AlertTriangle, CheckCircle, RotateCcw,
   DollarSign, Layers, ExternalLink, RefreshCw, MessageCircle, Phone,
-  ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Maximize2, CheckCircle2, Building2, Send,
+  ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Maximize2, CheckCircle2, Send,
   MessagesSquare,
 } from 'lucide-react';
-import { OrderData, getTrackingUrl, getWhatsAppPhone, calcBusinessDays, parseDate } from '@/lib/orderUtils';
+import { OrderData, getTrackingUrl, getWhatsAppPhone, parseDate } from '@/lib/orderUtils';
 import { classifySegEstado, estadoDifiereDeFase, normalizaRotulo, type SegStatusKey } from '@/lib/segStatus';
-import { estadoAvisoAgencia, diasDesdeAviso } from '@/lib/avisoAgencia';
-import { veredictoAviso, haceCuantoMs, estadoConversacion, type ActividadChatOrden } from '@/lib/actividadChat';
+import { haceCuantoMs, type ActividadChatOrden } from '@/lib/actividadChat';
+import { cicloContacto, enEspera, rangoCiclo } from '@/lib/cicloContacto';
 import { metodosRapidosParaEstado, esContactoEfectivo, faseConGestion } from '@/lib/segMetodosEstado';
 import { haceCuanto, type GestionDelPedido } from '@/lib/gestionPorPedido';
-import { FASES_VIVAS, HORAS_DETENIDO, horasSinMovimiento, contarGestionadosHoy } from '@/lib/segPulso';
+import { FASES_VIVAS, HORAS_DETENIDO, diasSinMovimiento, estaDetenido } from '@/lib/segPulso';
 import { useOperatorNames } from '@/hooks/useOperatorNames';
-import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { useRefreshOrder } from '@/hooks/useRefreshOrder';
 import { useRecordGestion } from '@/hooks/useRecordGestion';
 import { useStore } from '@/contexts/StoreContext';
@@ -219,6 +218,24 @@ export const HISTORIA_KEYS = new Set<SegStatusKey>(['entregado', 'cancelado', 'i
 // y el color/glow de la cifra cuando el conteo toma peso de KPI en el header.
 // `numGlow` solo se declara donde index.css define el token (accent/success/
 // danger); el resto va vacío en vez de inventar una clase inexistente.
+/**
+ * Los colores de la ÚNICA etiqueta de contacto de la tarjeta.
+ *
+ * ⛔ `sin_tocar` va NEUTRO a propósito, aunque sea el estado que más plata
+ * cuesta. Es el estado por DEFECTO: en la columna de agencia lo están casi los
+ * 127 pedidos, y 127 etiquetas rojas no comunican urgencia, comunican fondo de
+ * pantalla. Lo que tiene que saltar a la vista es lo POCO y accionable —quién
+ * respondió, a quién hay que llamar—, y su urgencia por tiempo ya la lleva el
+ * número D en rojo cuando lleva más de 3 días parado.
+ */
+const TONO_CICLO: Record<'respondio' | 'reintento' | 'llamar' | 'enfriando' | 'sin_tocar', string> = {
+  respondio: 'bg-accent/16 text-accent border-accent/40',
+  llamar:    'bg-danger/15 text-danger border-danger/35',
+  reintento: 'bg-warning/15 text-warning border-warning/35',
+  sin_tocar: 'bg-transparent text-muted-foreground border-muted-foreground/25',
+  enfriando: 'bg-transparent text-muted-foreground/70 border-muted-foreground/15',
+};
+
 const TONE: Record<Tone, { dot: string; headBar: string; count: string; num: string; numGlow: string }> = {
   neutral: { dot: 'bg-muted-foreground/50', headBar: 'border-t-muted-foreground/40', count: 'bg-muted/50 text-muted-foreground border border-border', num: 'text-foreground', numGlow: '' },
   info: { dot: 'bg-info glow-info', headBar: 'border-t-info', count: 'bg-info/14 text-info border border-info/30', num: 'text-info', numGlow: '' },
@@ -233,84 +250,29 @@ const TONE: Record<Tone, { dot: string; headBar: string; count: string; num: str
  * Tarjetas montadas de entrada por columna. El tablero es la vista POR DEFECTO
  * de /seguimiento y montaba de un saque todas las de la ventana de 45 días: con
  * ~700 pedidos activos son decenas de miles de nodos DOM (cada SegCard son ~40 +
- * sus hooks + calcPriority/calcBusinessDays en render) → segundos de pantalla
+ * sus hooks y sus cuentas en render) → segundos de pantalla
  * congelada al entrar en celular. La columna ya tiene scroll propio, así que 30
  * cubren de sobra lo visible; el resto entra con "Ver más".
  */
 const COLUMN_PAGE = 30;
 
-function statusAgeDays(o: OrderData): number {
-  const base = (o.fechaConf || o.fecha || '').trim();
-  if (base && base !== 'undefined') return calcBusinessDays(base);
-  return o.diasConf || o.dias || 0;
-}
-
-/** Horas desde el último movimiento real en Dropi (para el punto de frescura).
- *  Vive en `segPulso` desde el 1-ago-2026: lo comparte con el contador
- *  DETENIDOS de la tarjeta de arriba. Tener dos copias de esta cuenta es cómo
- *  los puntos y el número terminan diciendo cosas distintas. */
-const hoursSinceMovement = horasSinMovimiento;
-
-/**
- * Punto de frescura: hace cuánto se movió el pedido EN DROPI de verdad.
+/** Horas desde el último movimiento real en Dropi. Vive en `segPulso` desde el
+ *  1-ago-2026: lo comparte con el contador DETENIDOS de la tarjeta de arriba.
  *
- * CUATRO estados, y el cuarto es "no sé": sin `lastMovementAt` va GRIS, nunca
- * verde ni rojo. Esa distinción es la que impide que un pedido sin dato se lea
- * como un pedido sano — no se toca.
- *
- * Lo que cambia es el DIBUJO: era un punto de 2px que comunicaba una decisión
- * solo con color, algo que el lenguaje del Dashboard no hace en ningún lado.
- * Ahora es una pastilla tonal con anillo y glow (salvo el gris de "no sé", que
- * a propósito NO lleva glow: un estado desconocido no debe brillar como los
- * medidos). El texto sigue viajando íntegro en `title` + en el `sr-only`.
- */
-function freshnessDot(o: OrderData): { cls: string; ring: string; title: string; sinDato?: boolean } {
-  const h = hoursSinceMovement(o);
-  if (h == null) {
-    // ⛔ "No sé" NO es "está bien" (21-ago-2026). Medido en producción: 46 de
-    // los 228 pedidos vivos —uno de cada cinco— no tienen fecha de último
-    // movimiento. Ese pedido queda FUERA de todas las alarmas: `estaDetenido`
-    // devuelve false, no entra a ninguna lista de estancados y cae al fondo del
-    // orden. Es justo el pedido al que hay que ir a mirar y es el único que
-    // nadie ve. Hasta hoy solo lo delataba un punto gris cuyo texto vivía en el
-    // `title` — invisible en el celular, que es donde se trabaja.
-    const fase = classifySegEstado(o.estado || '');
-    const vivo = fase === 'otros' || FASES_VIVAS.has(fase);
-    return {
-      cls: 'bg-muted-foreground/40',
-      ring: 'ring-muted-foreground/20',
-      title: vivo
-        ? 'Sin fecha de último movimiento: Guardian no sabe hace cuánto está así. Refrescalo desde Dropi.'
-        : 'Sin fecha de último movimiento',
-      sinDato: vivo,
-    };
-  }
-  // Un pedido que YA llegó a su desenlace no está "detenido": está terminado.
-  // Pintarlo en rojo por llevar diez días quieto es una alarma falsa sobre algo
-  // que nadie tiene que ir a destrabar. Además descuadraba la pantalla: el
-  // contador DETENIDOS de arriba (que sí excluye los terminales) decía 23
-  // mientras abajo había 25 puntos rojos — dos de ellos en "Cancelado".
-  // Solo se declara "cerrado" lo que se SABE cerrado. Un estado que Dropi
-  // invente mañana cae en 'otros', que no está en FASES_VIVAS — y con el guard
-  // escrito al revés (todo lo que no es fase viva = cerrado) esas tarjetas se
-  // pintaban grises diciendo "Cerrado", o sea afirmando que el pedido terminó,
-  // cuando en realidad nadie sabe dónde está. Justo el caso de los 238 pedidos
-  // EC sin clasificar de julio. Ahora 'otros' sigue el camino normal y puede
-  // ponerse rojo: mejor una alarma sobre algo desconocido que un falso "ya está".
-  const fase = classifySegEstado(o.estado || '');
-  if (fase !== 'otros' && !FASES_VIVAS.has(fase)) {
-    return {
-      cls: 'bg-muted-foreground/40',
-      ring: 'ring-muted-foreground/20',
-      title: `Cerrado — último movimiento hace ${Math.floor(h / 24)} días`,
-    };
-  }
-  if (h < 24) return { cls: 'bg-success glow-success', ring: 'ring-success/25', title: 'Movido en las últimas 24 h' };
-  if (h < HORAS_DETENIDO) return { cls: 'bg-warning glow-warning', ring: 'ring-warning/25', title: `Sin moverse hace ${Math.floor(h / 24)}–${Math.ceil(h / 24)} días` };
-  return { cls: 'bg-danger glow-danger', ring: 'ring-danger/25', title: `Sin moverse hace ${Math.floor(h / 24)} días` };
-}
+ *  ⛔ El PUNTO de frescura que se dibujaba con esto se quitó el 28-ago-2026:
+ *  decía lo mismo que el número D de al lado —hace cuánto se movió— pero solo
+ *  con color y con el detalle escondido en un `title` que en el celular no
+ *  existe. Igual que `statusAgeDays`, que medía los días desde que se confirmó
+ *  el pedido y no desde que entró a este estado. La cuenta sigue viva y con
+ *  nombre propio en `segPulso` (`diasSinMovimiento`, `estaDetenido`). */
 
-const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, touchedTodayPhones, gestionEquipo, nombreDe, avisoMs, columnLabel, actividad }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisoMs?: number | null; columnLabel?: string; actividad?: ActividadChatOrden | null }) {
+const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, touchedTodayPhones, gestionEquipo, nombreDe, avisoMs, columnLabel, actividad, ahoraTick }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisoMs?: number | null; columnLabel?: string; actividad?: ActividadChatOrden | null;
+  /** Reloj compartido, en ms, que avanza cada minuto. Baja como PROP y no como
+   *  `Date.now()` por tarjeta: el "vuelve en N min" tiene que avanzar solo, y
+   *  montar un intervalo en cada una de las ~400 tarjetas del tablero sería
+   *  400 timers y 400 re-renders por minuto. Un solo reloj arriba, y `memo`
+   *  hace que solo se redibuje lo que de verdad cambió. */
+  ahoraTick: number }) {
   const navigate = useNavigate();
   const { refresh, isRefreshing } = useRefreshOrder();
   const { activeStoreId } = useStore();
@@ -385,12 +347,28 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   // llamada, no otro mensaje. Sin actividad de chat leída devuelve false: no
   // saber si contestó nunca se lee como "no contestó" (`escalarLlamada.ts`).
   const debeLlamar = tocaLlamar(actividad, o.estado);
-  const dias = statusAgeDays(o);
-  const priority = calcPriority(o);
-  const pLevel = getPriorityLevel(priority);
-  const pConfig = PRIORITY_CONFIG[pLevel];
-  const fresh = freshnessDot(o);
+  // Días EN ESTE ESTADO (no desde que nació el pedido) + el corte de "detenido"
+  // que ya existe (72 h). Ver el badge D más abajo.
+  const diasEstado = diasSinMovimiento(o, ahoraTick);
+  const detenido = estaDetenido(o, ahoraTick);
   const waPhone = o.phone ? getWhatsAppPhone(o.phone, countryCode) : '';
+
+  // El ciclo de contacto: qué pasó con lo último que le mandamos y qué toca
+  // ahora. Reemplaza cuatro familias de etiquetas — ver el bloque de la
+  // etiqueta más abajo y `cicloContacto.ts`.
+  const ciclo = cicloContacto({ actividad, gestion: gEquipo, ahoraMs: ahoraTick });
+  // El detalle SÍ se conserva, pero en el `title`: las dos fuentes (lo que
+  // ImporChat registró y lo que declaró la asesora) y quién lo tocó. Era lo que
+  // ocupaba cuatro renglones en la cara de la tarjeta.
+  const detalleCiclo = [
+    actividad?.salienteAt != null
+      ? `ImporChat: ${actividad.salienteTipo === 'directo' ? 'mensaje' : 'plantilla'} ${haceCuantoMs(actividad.salienteAt)}`
+      : actividad ? 'ImporChat: no registra ningún mensaje del negocio' : 'ImporChat: conversación sin leer',
+    actividad?.entranteAt != null ? `El cliente escribió ${haceCuantoMs(actividad.entranteAt)}` : null,
+    gEquipo
+      ? `${nombreDe ? nombreDe(gEquipo.ultimoPor) : 'Una asesora'}: ${gEquipo.ultimoResult} ${haceCuanto(gEquipo.ultimoAt) || 'hoy'}${gEquipo.intentos > 1 ? ` · ${gEquipo.intentos} gestiones hoy` : ''}`
+      : null,
+  ].filter(Boolean).join('\n');
 
   // El protocolo de la agencia, visible en el TABLERO (no solo en la Lista, que
   // es donde vivía y casi nadie abre). Un aviso cuenta solo si es POSTERIOR a
@@ -398,24 +376,12 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   // esa regla el aviso de un pedido anterior del mismo cliente saca a éste de
   // la cola sin que nadie lo haya llamado. Sin reloj de llegada no se dibuja
   // nada — no saber no es "sin avisar".
-  const esOficina = classifySegEstado(o.estado || '') === 'oficina';
-  const llegadaOficinaMs = o.lastMovementAt ? new Date(o.lastMovementAt).getTime() : null;
-  const avisoEstado = esOficina
-    ? estadoAvisoAgencia({ avisoMs, llegadaMs: llegadaOficinaMs })
-    : null;
-  const avisoDias = avisoEstado === 'avisado'
-    ? diasDesdeAviso({ avisoMs, llegadaMs: llegadaOficinaMs }, Date.now())
-    : null;
-  // Verificación CONTRA ImporChat, no contra la palabra de nadie (pedido del
-  // dueño, 24-ago-2026: "me dicen que ya les escribieron — ¿cómo verifico
-  // eso?"). El chip de arriba ("Avisado") sale del touchpoint que DECLARA la
-  // asesora; este sale de lo que ImporChat registró de verdad. `sin_dato` no
-  // dibuja nada: la conversación no se leyó y no se afirma.
-  const chatVeredicto = esOficina ? veredictoAviso(actividad, llegadaOficinaMs) : null;
-  // El estado de la CONVERSACIÓN va en TODAS las fases, no solo en oficina: un
-  // cliente que escribió y quedó sin respuesta es urgente esté donde esté el
-  // paquete. Es la mano levantada que hoy nadie ve.
-  const conversacion = estadoConversacion(actividad);
+  // ⛔ El aviso de agencia y el veredicto de ImporChat ya NO se calculan acá
+  // (28-ago-2026): los dos alimentaban etiquetas propias que ahora están
+  // fundidas en `cicloContacto`. La verificación no se perdió —el ciclo se
+  // calcula con `chat_saliente_at`, el mismo dato— y el detalle de las dos
+  // fuentes viaja en el `title` de la etiqueta. `estadoAvisoAgencia` y
+  // `veredictoAviso` siguen vivas: las usa la vista Lista.
   // ¿Se le puede escribir AHORA? (ventana de 24 h de WhatsApp). Se calcula acá
   // para que el botón y el cuadro digan lo mismo que después valida el servidor.
   const ventanaChat = ventanaWhatsapp(actividad?.entranteAt ?? null, !!actividad);
@@ -457,30 +423,42 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           este contador, e inventarle uno sería pintar un veredicto que nadie
           calculó. La frescura sí es semántica y ahí sí va el color. */}
       <div className="flex items-center gap-2">
-        <span
-          className={cn('h-2.5 w-2.5 rounded-full shrink-0 ring-2', fresh.cls, fresh.ring)}
-          title={fresh.title}
-          aria-hidden="true"
-        />
-        {/* El punto es decorativo (color solo) — el estado de frescura va en texto
-            para lector de pantalla, ya que en touch el `title` no se ve. */}
-        <span className="sr-only">{fresh.title}</span>
-        {/* Un pedido vivo del que no sabemos hace cuánto no se mueve tiene que
-            DECIRLO en la cara. El punto gris lo susurraba en un `title` que en
-            el celular no existe, y así se veía igual que un pedido sano. */}
-        {fresh.sinDato && (
+        {/* ⛔ El punto de frescura se quitó (28-ago-2026). Decía exactamente lo
+            mismo que el número de al lado —hace cuánto se movió en Dropi— pero
+            en color, sin cifra y con el detalle escondido en un `title` que en
+            el celular no existe. Dos formas de decir lo mismo es ruido, y el
+            pedido del dueño fue "que todo sea entendible con una sola mirada".
+            Lo único que el número NO puede decir —que no hay dato— sí se queda. */}
+        {diasEstado == null && (
           <span
             className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-md border border-muted-foreground/25 text-muted-foreground"
-            title={fresh.title}
+            title="Dropi no reporta cuándo se movió este pedido por última vez. No es que esté quieto: es que no sabemos."
           >
             sin dato
           </span>
         )}
+        {/* ⛔ Días EN ESTE ESTADO, no desde que nació el pedido (28-ago-2026).
+            Pedido del dueño: *"por orden de prioridad desde qué día está en
+            oficina, desde qué día está en novedad — no desde que nació el
+            pedido"*. Antes era `statusAgeDays` (días hábiles desde la
+            confirmación): una novedad abierta AYER sobre un pedido de 12 días
+            se leía "D12", y por un número así ya se regañó al equipo por una
+            demora que no existía.
+
+            El color NO es un umbral inventado: es `estaDetenido`, el mismo
+            corte de 72 h que ya usa el chip "Detenidos (+3 días sin moverse)"
+            del tope de la pantalla. */}
         <span
-          className="inline-flex items-baseline gap-0.5 text-[13px] font-mono tabular-nums font-bold text-foreground"
-          title="Días hábiles en este estado"
+          className={cn(
+            'inline-flex items-baseline gap-0.5 text-[13px] font-mono tabular-nums font-bold',
+            detenido ? 'text-danger' : 'text-foreground',
+          )}
+          title={diasEstado == null
+            ? 'Sin fecha de movimiento en Dropi'
+            : `Lleva ${diasEstado} ${diasEstado === 1 ? 'día' : 'días'} en «${o.estado || 'este estado'}»${detenido ? ' — sin moverse hace más de 3 días' : ''}`}
         >
-          <span className="text-[10px] font-semibold text-muted-foreground">D</span>{dias}
+          <span className={cn('text-[10px] font-semibold', detenido ? 'text-danger/70' : 'text-muted-foreground')}>D</span>
+          {diasEstado ?? '—'}
         </span>
         {/* ESTATUS CRUDO cuando difiere del título de la columna. Las columnas
             son FASES que agrupan varios estados ("Guía Generada" también junta
@@ -496,132 +474,45 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
             {o.estado}
           </span>
         )}
-        {pLevel !== 'low' && (
-          <span className={cn('ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-lg border shrink-0', pConfig.bgClass, pConfig.color)}>
-            {pConfig.label}
-          </span>
-        )}
+        {/* ⛔ El badge "Urgente / Alta" se quitó de la tarjeta (28-ago-2026).
+            `calcPriority` lo calcula con `diasConf`/`dias` — días desde que se
+            CONFIRMÓ el pedido— que es justo el reloj que el dueño dijo que no
+            le sirve. Y su otro ingrediente, la urgencia por fase, ya está dicho
+            por la COLUMNA en la que vive la tarjeta (oficina va primera). Era
+            el elemento más coloreado de la tarjeta diciendo algo redundante y
+            medido con el reloj equivocado.
+            La urgencia por tiempo la lleva ahora el número D, con el reloj
+            correcto. `calcPriority` sigue viva y sin tocar para CrmTable. */}
       </div>
 
-      {/* ETIQUETA DE UN VISTAZO. Va ARRIBA, antes del nombre, porque la pregunta
-          "¿esta ya la trabajó alguien?" se responde recorriendo la columna con
-          la vista — no leyendo el pie de cada tarjeta. El pie (el cartel verde)
-          sigue estando y da el detalle; esto es la señal.
-          Verde = alguien ya la trabajó hoy. La ausencia de etiqueta = nadie. */}
-      {gEquipo && (() => {
-        // Verde solo si SE HABLÓ con el cliente. "No contestó" y "Volver a
-        // llamar" en verde dirían "resuelto" cuando el pedido sigue abierto —
-        // la asesora lo saltaría creyendo que ya está.
-        const seHablo = esContactoEfectivo(gEquipo.ultimoResult);
-        return (
-          <div
-            className={cn(
-              'mt-2 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border',
-              seHablo
-                ? 'bg-success/15 text-success border-success/35'
-                : 'bg-warning/15 text-warning border-warning/35',
-            )}
-            title={`${nombreDe ? nombreDe(gEquipo.ultimoPor) : 'Una asesora'} · ${gEquipo.ultimoResult} · ${haceCuanto(gEquipo.ultimoAt) || 'hoy'}`}
-          >
-            <CheckCircle2 size={10} aria-hidden="true" className="shrink-0" />
-            <span className="truncate">{nombreDe ? nombreDe(gEquipo.ultimoPor) : 'Asesora'}</span>
-            <span className="opacity-70 shrink-0 font-semibold">{haceCuanto(gEquipo.ultimoAt)}</span>
-          </div>
-        );
-      })()}
+      {/* ══ UNA sola etiqueta de contacto (28-ago-2026) ══════════════════════
+          Acá había CUATRO familias de etiquetas apiladas, y las cuatro hablaban
+          de lo mismo por caminos distintos: la gestión declarada por la asesora,
+          el aviso de agencia, el estado de la conversación y el "WhatsApp real"
+          verificado contra ImporChat. Un mismo pedido llegaba a mostrar
+          *"Avisado hoy"* Y *"WhatsApp real: plantilla hace 16 h"* Y
+          *"Cliente respondió · hace 3 días"* a la vez. Ninguna mentía; juntas
+          eran ilegibles, y el pedido del dueño fue que se entienda de una mirada.
 
-      {/* El cliente sabe o no sabe que su paquete lo espera en la agencia.
-          Es la falla más cara medida (76 devoluciones en un mes en EC, $2.316)
-          y hasta hoy el dato estaba guardado y no se mostraba en ninguna parte. */}
-      {avisoEstado === 'sin_avisar' && (
-        <div className="mt-2 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border bg-danger/15 text-danger border-danger/35">
-          <Building2 size={10} aria-hidden="true" className="shrink-0" />
-          <span className="truncate">El cliente no sabe que llegó</span>
-        </div>
-      )}
-      {avisoEstado === 'avisado' && (
-        <div className="mt-2 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border bg-success/15 text-success border-success/35">
-          <Building2 size={10} aria-hidden="true" className="shrink-0" />
-          <span className="truncate">
-            {avisoDias === null || avisoDias === 0 ? 'Avisado hoy' : avisoDias === 1 ? 'Avisado ayer' : `Avisado hace ${avisoDias} días`}
-          </span>
-        </div>
-      )}
-
-      {/* ⬆ LA MANO LEVANTADA: el cliente escribió y nadie le contestó. Va
-          PRIMERO y en rojo porque es la única señal de esta tarjeta donde hay
-          una persona esperando del otro lado ahora mismo. */}
-      {conversacion === 'espera_respuesta' && actividad?.entranteAt != null && (
+          `cicloContacto` las funde en un veredicto: qué pasó con el último
+          contacto y qué toca ahora. **No se pierde la verificación** — el ciclo
+          se calcula con el dato de ImporChat, no con lo declarado; lo declarado
+          solo puede adelantar el reloj. El detalle de las dos fuentes vive en el
+          `title`, que es donde va el detalle y no en la cara de la tarjeta. */}
+      {ciclo.etiqueta && (
         <div
-          className="mt-2 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border bg-danger/15 text-danger border-danger/35"
-          title={`El cliente escribió ${haceCuantoMs(actividad.entranteAt)} y es el ÚLTIMO mensaje del chat: nadie le respondió.`}
+          className={cn(
+            'mt-2 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border',
+            TONO_CICLO[ciclo.estado === 'reintento' && ciclo.accion === 'llamar' ? 'llamar' : ciclo.estado],
+          )}
+          title={detalleCiclo}
         >
-          <MessageCircle size={10} aria-hidden="true" className="shrink-0" />
-          <span className="truncate">Te escribió y nadie contestó · {haceCuantoMs(actividad.entranteAt)}</span>
-        </div>
-      )}
-      {conversacion === 'conversado' && actividad?.entranteAt != null && (
-        <div
-          className="mt-2 inline-flex max-w-full items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-lg border bg-success/12 text-success border-success/30"
-          title={`El cliente respondió por WhatsApp (último mensaje suyo: ${haceCuantoMs(actividad.entranteAt)}).`}
-        >
-          <MessageCircle size={10} aria-hidden="true" className="shrink-0" />
-          <span className="truncate">Cliente respondió · {haceCuantoMs(actividad.entranteAt)}</span>
-        </div>
-      )}
-      {conversacion === 'sin_respuesta' && (
-        <div
-          className="mt-2 inline-flex max-w-full items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-lg border border-muted-foreground/25 text-muted-foreground"
-          title="Le escribimos por WhatsApp y el cliente no contestó nunca. Con esta persona el chat no funciona: teléfono."
-        >
-          <MessageCircle size={10} aria-hidden="true" className="shrink-0" />
-          <span className="truncate">No contesta el chat</span>
-        </div>
-      )}
-
-      {/* El VERIFICADO contra ImporChat: qué salió DE VERDAD por WhatsApp.
-          Convive a propósito con el chip declarado de arriba — cuando los dos
-          dicen lo mismo se refuerzan, y cuando se contradicen ("Avisado" pero
-          ImporChat no registra nada desde la llegada) el dueño ve exactamente
-          la mentira que quería poder detectar. */}
-      {chatVeredicto === 'escrito_despues' && actividad?.salienteAt != null && (
-        <div
-          className="mt-1.5 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border bg-success/15 text-success border-success/35"
-          title={`ImporChat registró un mensaje del negocio DESPUÉS de la llegada del paquete (${actividad.salienteTipo === 'directo' ? 'mensaje directo' : 'plantilla'}).`}
-        >
-          <MessageCircle size={10} aria-hidden="true" className="shrink-0" />
-          <span className="truncate">
-            WhatsApp real: {actividad.salienteTipo === 'directo' ? 'mensaje' : 'plantilla'} {haceCuantoMs(actividad.salienteAt)}
-          </span>
-        </div>
-      )}
-      {chatVeredicto === 'escrito_antes' && (
-        <div
-          className="mt-1.5 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border bg-danger/15 text-danger border-danger/35"
-          title={actividad?.salienteAt != null
-            ? `ImporChat NO registra ningún mensaje del negocio después de la llegada. El último fue ${haceCuantoMs(actividad.salienteAt)}.`
-            : 'ImporChat no registra mensajes del negocio después de la llegada.'}
-        >
-          <MessageCircle size={10} aria-hidden="true" className="shrink-0" />
-          <span className="truncate">WhatsApp real: nada desde que llegó</span>
-        </div>
-      )}
-      {chatVeredicto === 'nunca_escrito' && (
-        <div
-          className="mt-1.5 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border bg-danger/15 text-danger border-danger/35"
-          title="Se leyó la conversación completa de este cliente en ImporChat y no hay NI UN mensaje del negocio."
-        >
-          <MessageCircle size={10} aria-hidden="true" className="shrink-0" />
-          <span className="truncate">WhatsApp real: nunca se le escribió</span>
-        </div>
-      )}
-      {chatVeredicto === 'escrito_sin_reloj' && actividad?.salienteAt != null && (
-        <div
-          className="mt-1.5 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border border-muted-foreground/25 text-muted-foreground"
-          title="Hay mensajes del negocio en ImporChat, pero este pedido no tiene fecha de llegada para comparar."
-        >
-          <MessageCircle size={10} aria-hidden="true" className="shrink-0" />
-          <span className="truncate">WhatsApp real: escrito {haceCuantoMs(actividad.salienteAt)}</span>
+          {ciclo.estado === 'respondio'
+            ? <MessagesSquare size={10} aria-hidden="true" className="shrink-0" />
+            : ciclo.accion === 'llamar'
+              ? <Phone size={10} aria-hidden="true" className="shrink-0" />
+              : <MessageCircle size={10} aria-hidden="true" className="shrink-0" />}
+          <span className="truncate">{ciclo.etiqueta}</span>
         </div>
       )}
 
@@ -966,6 +857,7 @@ function ColumnBody({ colKey, scrollRefs, children }: {
  * que la operadora se concentre en una fase (ej. "En Reparto") y vaya uno por uno.
  */
 function FocusedColumn({ col, countryCode, touchedTodayPhones, gestionEquipo, nombreDe, avisosAgencia, actividadChat, onBack }: { col: ColumnDef & { orders: OrderData[] }; countryCode?: string | null; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisosAgencia?: Map<string, number>; actividadChat?: Map<string, ActividadChatOrden>; onBack: () => void }) {
+  const ahoraTick = useRelojMinuto();
   const navigate = useNavigate();
   const { activeStoreId } = useStore();
   const t = TONE[col.tone];
@@ -1114,6 +1006,7 @@ function FocusedColumn({ col, countryCode, touchedTodayPhones, gestionEquipo, no
                 nombreDe={nombreDe}
                 avisoMs={o.phone ? avisosAgencia?.get(o.phone) ?? null : null}
                 actividad={o.dbId ? actividadChat?.get(String(o.dbId)) ?? null : null}
+                ahoraTick={ahoraTick}
                 onOpen={() => { focusByIndex(i); if (o.externalId) navigate(`/pedido/${o.externalId}`, { state: { siblingIds, storeId: activeStoreId } }); }}
               />
             ))}
@@ -1270,7 +1163,26 @@ interface SegBoardProps {
   celebratory?: boolean;
 }
 
+/**
+ * Un solo reloj para todo el tablero, que avanza cada minuto.
+ *
+ * Las tarjetas dicen "vuelve en 42 min" y "D3": los dos números cambian solos
+ * con el paso del tiempo, sin que llegue ningún dato nuevo. Sin este latido, un
+ * pedido que se enfrió a las 9:05 seguiría diciendo "vuelve en 60 min" a las
+ * 10:30 para la asesora que dejó el CRM abierto — que es justo la que más lo
+ * usa.
+ */
+function useRelojMinuto(): number {
+  const [ahora, setAhora] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setAhora(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  return ahora;
+}
+
 export default function SegBoard({ data, countryCode, statusFilter, touchedTodayPhones, gestionEquipo, avisosAgencia, actividadChat, celebratory = false, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
+  const ahoraTick = useRelojMinuto();
   // Nombre de la asesora que gestionó: cache módulo-level compartido, una sola
   // lectura de profiles por sesión (no una por tarjeta).
   const { nameOf: nombreDe } = useOperatorNames();
@@ -1396,8 +1308,34 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
       const arr = groups.get(key);
       if (arr) arr.push(o); else groups.set(key, [o]);
     }
+    // ⛔ ORDEN DENTRO DE LA COLUMNA (28-ago-2026). Antes no había ninguno: las
+    // tarjetas salían en el orden en que vinieron de la base, así que trabajar
+    // "de arriba hacia abajo" no era trabajar por prioridad.
+    //
+    // Pedido del dueño: *"por orden de prioridad desde qué día está en oficina,
+    // desde qué día está en novedad — no desde que nació el pedido"*.
+    //   1. Quien RESPONDIÓ va arriba de todo: hay una persona esperando ahora.
+    //   2. Después, el que lleva MÁS días en ese estado — el más cerca de que la
+    //      transportadora lo devuelva.
+    //   3. Lo que se acaba de tocar, al fondo (vuelve solo a la hora).
+    // Sin fecha de movimiento va al final de su grupo: no saber cuántos días
+    // lleva no puede colarse arriba como si fueran cero.
+    for (const arr of groups.values()) {
+      arr.sort((a, b) => {
+        const ca = cicloContacto({ actividad: actividadChat?.get(String(a.dbId ?? '')), gestion: gestionEquipo?.get(a.phone ?? ''), ahoraMs: ahoraTick });
+        const cb = cicloContacto({ actividad: actividadChat?.get(String(b.dbId ?? '')), gestion: gestionEquipo?.get(b.phone ?? ''), ahoraMs: ahoraTick });
+        const r = rangoCiclo(ca) - rangoCiclo(cb);
+        if (r !== 0) return r;
+        const da = diasSinMovimiento(a, ahoraTick);
+        const db = diasSinMovimiento(b, ahoraTick);
+        if (da == null && db == null) return 0;
+        if (da == null) return 1;
+        if (db == null) return -1;
+        return db - da;
+      });
+    }
     return groups;
-  }, [data]);
+  }, [data, actividadChat, gestionEquipo, ahoraTick]);
 
   // TODAS las columnas con pedidos, historia incluida. `columns` (más abajo) es
   // el subconjunto que se dibuja; el modo enfoque busca acá para que enfocar una
@@ -1427,16 +1365,27 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
   // paquetes siguen en la agencia aunque ya se les avisó a todos, y esconderlo
   // sería el error opuesto.
   //
-  // Misma definición que el tablero usa para pintar la tarjeta y que el hero
-  // usa para el aro (`estaGestionadoHoy`): dos definiciones de "gestionado" en
-  // la misma pantalla fue el bug del contador clavado en 222.
+  // ⛔ Desde el 28-ago-2026 lo pendiente se mide con el CICLO, no con
+  // `estaGestionadoHoy`. Son dos preguntas distintas y mezclarlas fue lo que el
+  // dueño vino a corregir:
+  //   - `estaGestionadoHoy` → "¿alguien lo trabajó HOY?". Es la MÉTRICA (cierre
+  //     del día, productividad). Escondía el pedido hasta mañana.
+  //   - `enEspera` → "¿me toca AHORA?". Es la COLA. Vuelve a la hora.
+  // Pedido textual: *"que desaparezca, pero a la hora tiene que volver a
+  // aparecer"*. Con la definición vieja, un pedido tocado a las 9 a. m. no
+  // volvía nunca, aunque el cliente no hubiera contestado.
   const pendientesPorColumna = useMemo(() => {
     const m = new Map<string, number>();
     for (const c of todasLasColumnas) {
-      m.set(c.key, c.orders.length - contarGestionadosHoy(c.orders, touchedTodayPhones, gestionEquipo));
+      let enfriando = 0;
+      for (const o of c.orders) {
+        const ci = cicloContacto({ actividad: actividadChat?.get(String(o.dbId ?? '')), gestion: gestionEquipo?.get(o.phone ?? ''), ahoraMs: ahoraTick });
+        if (enEspera(ci)) enfriando += 1;
+      }
+      m.set(c.key, c.orders.length - enfriando);
     }
     return m;
-  }, [todasLasColumnas, touchedTodayPhones, gestionEquipo]);
+  }, [todasLasColumnas, actividadChat, gestionEquipo, ahoraTick]);
 
   // Historia plegada: si la operadora PIDIÓ un estado explícitamente
   // (statusFilter), se le muestra aunque sea historia — pidió eso, no otra cosa.
@@ -1693,6 +1642,7 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
                   nombreDe={nombreDe}
                   avisoMs={o.phone ? avisosAgencia?.get(o.phone) ?? null : null}
                   actividad={o.dbId ? actividadChat?.get(String(o.dbId)) ?? null : null}
+                  ahoraTick={ahoraTick}
                   onOpen={() => o.externalId && navigate(`/pedido/${o.externalId}`, { state: { siblingIds, storeId: activeStoreId } })}
                 />
               ))}

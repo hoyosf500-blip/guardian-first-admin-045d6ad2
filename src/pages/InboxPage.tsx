@@ -133,6 +133,17 @@ export default function InboxPage() {
                       <Clock size={10} aria-hidden="true" /> {haceCuantoMs(o.entranteAt)}
                     </span>
                     <span className="pill pill-neutral text-[10px] px-2 py-0.5 rounded-full font-semibold">{o.estado || '—'}</span>
+                    {/* Días EN ESE ESTADO, no desde que nació el pedido: es el
+                        reloj que dice qué tan cerca está de devolverse. `null`
+                        se dibuja "—", nunca 0. */}
+                    <span
+                      className="text-[10px] font-mono tabular-nums font-bold text-muted-foreground"
+                      title={o.diasEnEstado == null
+                        ? 'Dropi no reporta cuándo se movió por última vez'
+                        : `Lleva ${o.diasEnEstado} ${o.diasEnEstado === 1 ? 'día' : 'días'} en «${o.estado || 'este estado'}»`}
+                    >
+                      D{o.diasEnEstado ?? '—'}
+                    </span>
                   </div>
                   <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
                     <div className="font-mono tabular-nums">{formatPhone(o.phone)}</div>

@@ -35,6 +35,10 @@ export interface InboxItem {
    *  apaga — justo en la pantalla donde la ventana está abierta con seguridad. */
   salienteAt: number | null;
   leidoAt: number;
+  /** Días que lleva EN SU ESTADO ACTUAL (desde `last_movement_at`), no desde
+   *  que nació el pedido. `null` si Dropi no reporta el movimiento — y `null`
+   *  se dibuja "—", nunca 0: no saber cuántos días lleva no es "llegó hoy". */
+  diasEnEstado: number | null;
 }
 
 export type InboxStatus = 'cargando' | 'ok' | 'not_ready' | 'error';
@@ -61,7 +65,7 @@ export function useInboxEsperando(storeId: string | null) {
     const seq = ++seqRef.current;
     const { data, error } = await supabase
       .from('orders')
-      .select('id, external_id, nombre, phone, estado, ciudad, producto, valor, guia, transportadora, chat_entrante_at, chat_saliente_at, chat_leido_at')
+      .select('id, external_id, nombre, phone, estado, ciudad, producto, valor, guia, transportadora, last_movement_at, chat_entrante_at, chat_saliente_at, chat_leido_at')
       .eq('store_id', storeId)
       .not('chat_entrante_at', 'is', null)
       .order('chat_entrante_at', { ascending: false })
@@ -79,7 +83,7 @@ export function useInboxEsperando(storeId: string | null) {
     type Fila = {
       id: string; external_id: string | null; nombre: string | null; phone: string | null;
       estado: string | null; ciudad: string | null; producto: string | null; valor: number | null;
-      guia: string | null; transportadora: string | null;
+      guia: string | null; transportadora: string | null; last_movement_at: string | null;
       chat_entrante_at: string | null; chat_saliente_at: string | null; chat_leido_at: string | null;
     };
     const filas = (data ?? []) as unknown as Fila[];
@@ -106,6 +110,11 @@ export function useInboxEsperando(storeId: string | null) {
         entranteAt,
         salienteAt,
         leidoAt,
+        // floor: 20 h en el mismo estado son 0 días completos, no "1". Misma
+        // cuenta que `diasSinMovimiento` en `segPulso`.
+        diasEnEstado: r.last_movement_at
+          ? Math.max(0, Math.floor((Date.now() - Date.parse(r.last_movement_at)) / 86_400_000))
+          : null,
       });
     }
     // Quien lleva MÁS esperando, primero: es a quien más urge no dejar enfriar.

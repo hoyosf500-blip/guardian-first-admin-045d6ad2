@@ -15,6 +15,7 @@ import { useSegTouchIndex } from '@/hooks/useSegTouchIndex';
 import { useRiesgoChat } from '@/hooks/useRiesgoChat';
 import { estadoConversacion } from '@/lib/actividadChat';
 import { tocaLlamar, HORAS_PARA_LLAMAR } from '@/lib/escalarLlamada';
+import { cicloContacto, enEspera, ESPERA_REINTENTO_MIN } from '@/lib/cicloContacto';
 import { useRefreshVisibleOrders } from '@/hooks/useRefreshVisibleOrders';
 import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List, Search, User as UserIcon, Users, Moon, Eye, EyeOff, Phone } from 'lucide-react';
 import { toast } from 'sonner';
@@ -398,53 +399,65 @@ export default function SeguimientoTab() {
     [dedupedByDate, asig.asignaciones, asig.operadores, gestionSegPorTelefono, mySegTouchedToday, coverageSegError],
   );
 
-  const boardData = useMemo(() => {
-    const displayData = displayDataMias;
-    if (!onlyUntouchedSeg) return displayData;
-    // Si la lectura de "gestionados hoy" falló, el set viene vacío y filtrar
-    // con él fingiría que nada se gestionó (los pedidos YA gestionados
-    // reaparecerían como pendientes "medidos"). Se muestra todo explícitamente
-    // y el hero avisa que no se pudo leer — la operadora sabe que puede estar
-    // viendo pedidos que ya tocó, en vez de creer que el sistema los midió.
-    if (coverageSegError) return displayData;
-    // Esconde lo que gestionó CUALQUIERA, no solo yo. Antes miraba nada más
-    // `mySegTouchedToday` mientras la tarjeta YA se pintaba como gestionada si
-    // la trabajó una compañera: con "Ocultar gestionados" activo quedaba un
-    // montón de tarjetas verdes a la vista que el interruptor prometía
-    // esconder. El filtro tiene que usar la misma regla que la tarjeta.
-    // Del equipo solo esconde lo que fue CONTACTO REAL. Un "No contesto" de una
-    // companera deja la tarjeta a la vista: el pedido sigue necesitando trabajo
-    // y esconderlo lo volvia invisible para todas hasta el dia siguiente.
-    // Lo mio se sigue escondiendo igual que antes (ya lo trabaje).
-    return displayData.filter((o) => !estaGestionadoHoy(o.phone, mySegTouchedToday, gestionSegPorTelefono));
-  }, [displayDataMias, onlyUntouchedSeg, mySegTouchedToday, gestionSegPorTelefono, coverageSegError]);
-
-  // ¿El tablero quedó vacío SOLO porque ocultamos los gestionados de hoy? (hay
-  // pedidos en el feed pero todos están gestionados). Para mostrar un vacío
-  // celebratorio en vez de "Sin pedidos".
-  const allManagedToday = onlyUntouchedSeg && boardData.length === 0 && displayDataMias.length > 0;
-
   // Actividad de chat VERIFICADA contra ImporChat (la escribe importchat-sync
-  // en orders.chat_saliente_at). Alimenta el chip "WhatsApp real: …" de las
-  // tarjetas en Oficina — la respuesta a "me dicen que ya les escribieron,
-  // ¿cómo verifico eso?" (dueño, 24-ago-2026). Va por query aparte (no por
-  // ORDER_COLUMNS) para que una migración sin aplicar jamás tumbe la pantalla.
+  // en orders.chat_saliente_at). Es la fuente del CICLO de cada pedido.
+  //
+  // ⛔ Los ids salen de `displayDataMias` (la lista COMPLETA), no del tablero ya
+  // filtrado: si salieran de `boardData` y `boardData` filtrara por el ciclo, el
+  // filtro se estaría alimentando de su propio resultado — un pedido escondido
+  // dejaría de tener actividad leída y volvería a aparecer, en bucle.
   const { activeStoreId: storeIdChat } = useStore();
   const boardIds = useMemo(
-    () => boardData.map((o) => o.dbId).filter(Boolean) as string[],
-    [boardData],
+    () => displayDataMias.map((o) => o.dbId).filter(Boolean) as string[],
+    [displayDataMias],
   );
   const { actividad: chatActividad } = useRiesgoChat(storeIdChat, boardIds);
 
-  // Latido de un minuto. La cola de "toca llamar" se llena SOLA con el paso del
-  // tiempo (6 h desde el mensaje), no con un cambio de datos: sin esto el chip
-  // se quedaría congelado en el número que tenía al cargar la pantalla, y la
-  // asesora que deja el CRM abierto toda la mañana nunca vería entrar a nadie.
+  // Latido de un minuto. El ciclo avanza SOLO con el paso del tiempo (un pedido
+  // enfriado vuelve a la cola a la hora), no con un cambio de datos: sin esto el
+  // tablero se quedaría congelado para la asesora que deja el CRM abierto toda
+  // la mañana — que es la que más lo usa.
   const [minutoTick, setMinutoTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setMinutoTick((t) => t + 1), 60_000);
     return () => clearInterval(id);
   }, []);
+
+  /** El ciclo de un pedido, con las dos fuentes que ya tiene la pantalla. */
+  const cicloDe = useCallback(
+    (o: OrderData) => cicloContacto({
+      actividad: o.dbId ? chatActividad.get(String(o.dbId)) : null,
+      gestion: o.phone ? gestionSegPorTelefono.get(o.phone) : null,
+    }),
+    // `minutoTick` entra a propósito: el veredicto cambia con la hora.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [chatActividad, gestionSegPorTelefono, minutoTick],
+  );
+
+  const boardData = useMemo(() => {
+    const displayData = displayDataMias;
+    if (!onlyUntouchedSeg) return displayData;
+    // Si la lectura de gestiones falló, filtrar fingiría que nada se trabajó.
+    // Se muestra todo y el hero avisa que no se pudo leer: la operadora sabe
+    // que puede estar viendo pedidos ya tocados, en vez de creer que el sistema
+    // los midió.
+    if (coverageSegError) return displayData;
+    // ⛔ Esconde SOLO lo que se está enfriando (28-ago-2026), no lo gestionado
+    // del día. Pedido textual del dueño: *"que desaparezca, pero a la hora tiene
+    // que volver a aparecer"*, y *"si el cliente responde, que vuelva y aparezca
+    // con una etiqueta para que el asesor lo atienda"*.
+    //
+    // Con la regla vieja (`estaGestionadoHoy`) un pedido tocado a las 9 a. m. no
+    // volvía hasta el día siguiente aunque el cliente nunca contestara — y si
+    // contestaba, tampoco: la respuesta del cliente no lo devolvía a la cola.
+    // Seguimiento era una lista del día; ahora es una cola viva.
+    return displayData.filter((o) => !enEspera(cicloDe(o)));
+  }, [displayDataMias, onlyUntouchedSeg, coverageSegError, cicloDe]);
+
+  // ¿El tablero quedó vacío SOLO porque lo de hoy se está enfriando? (hay
+  // pedidos en el feed pero todos recién tocados). Para mostrar un vacío
+  // celebratorio en vez de "Sin pedidos".
+  const allManagedToday = onlyUntouchedSeg && boardData.length === 0 && displayDataMias.length > 0;
 
   // Clientes con la MANO LEVANTADA: escribieron por WhatsApp y el último
   // mensaje del chat sigue siendo suyo — nadie les respondió. Es la señal más
@@ -476,6 +489,9 @@ export default function SeguimientoTab() {
       if (tocaLlamar(chatActividad.get(String(o.dbId)), o.estado, ahora)) s.add(String(o.dbId));
     }
     return s;
+    // `minutoTick` entra a propósito aunque el linter no lo vea: el umbral es de
+    // TIEMPO, así que un pedido entra a esta cola sin que cambie ningún dato.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardData, chatActividad, minutoTick]);
   const [soloTocaLlamar, setSoloTocaLlamar] = useSessionState<boolean>('seg:soloTocaLlamar', false);
 
@@ -492,10 +508,10 @@ export default function SeguimientoTab() {
     let n = 0;
     for (const o of boardData) {
       if (!o.dbId || !tocaLlamarSet.has(String(o.dbId))) continue;
-      if (!estaGestionadoHoy(o.phone, mySegTouchedToday, gestionSegPorTelefono)) n += 1;
+      if (!enEspera(cicloDe(o))) n += 1;
     }
     return n;
-  }, [boardData, tocaLlamarSet, mySegTouchedToday, gestionSegPorTelefono, coverageSegError]);
+  }, [boardData, tocaLlamarSet, coverageSegError, cicloDe]);
 
   // ⛔ Los dos filtros son EXCLUYENTES: cruzarlos da siempre cero (uno pide que
   // el último mensaje sea del cliente y el otro que sea nuestro), y un tablero
@@ -578,13 +594,15 @@ export default function SeguimientoTab() {
       if (l.externalRoute) { counts[l.slug] = { pendientes: 0, total: 0 }; continue; }
       const dela = chipsBase.filter(l.matches);
       const total = dela.length;
-      const gestionados = coverageSegError
-        ? 0
-        : contarGestionadosHoy(dela, mySegTouchedToday, gestionSegPorTelefono);
-      counts[l.slug] = { pendientes: Math.max(0, total - gestionados), total };
+      // Lo que falta AHORA: se descuenta solo lo que se está enfriando (vuelve
+      // a la hora), no lo trabajado en todo el día. Misma regla que el tablero
+      // — dos definiciones de "pendiente" en la misma pantalla fue el bug del
+      // contador clavado en 222.
+      const enfriando = coverageSegError ? 0 : dela.reduce((n, o) => n + (enEspera(cicloDe(o)) ? 1 : 0), 0);
+      counts[l.slug] = { pendientes: Math.max(0, total - enfriando), total };
     }
     return counts;
-  }, [chipsBase, mySegTouchedToday, gestionSegPorTelefono, coverageSegError]);
+  }, [chipsBase, coverageSegError, cicloDe]);
 
   // "Sugerido": la lista NO-vacía de mayor urgencia (danger > warning > resto),
   // desempatando por el orden de SEG_LISTS (ya priorizado). Guía hacia dónde
@@ -633,7 +651,15 @@ export default function SeguimientoTab() {
     // dos definiciones de "gestionado" en la misma pantalla fue justamente lo
     // que causó el bug del contador clavado en 222.
     const gestionados = contarGestionadosHoy(feedBase, mySegTouchedToday, gestionSegPorTelefono);
-    const faltan = Math.max(0, total - gestionados);
+    // ⛔ Lo que FALTA es la cola VIVA, no "total − trabajados hoy" (28-ago-2026).
+    // Son dos preguntas y el hero mezclaba una en la otra:
+    //   - `gestionados` → "¿cuánto trabajó el equipo HOY?" (métrica del día;
+    //     alimenta el aro y el cierre, y no se toca).
+    //   - `faltan` → "¿cuántos me esperan AHORA?" — y un pedido tocado hace tres
+    //     horas al que el cliente nunca contestó vuelve a esperar.
+    // Por eso ya no se restan entre sí, y la línea de abajo dice "trabajados
+    // hoy" en vez de "N de M": invitar a restarlos daría un número falso.
+    const faltan = feedBase.reduce((n, o) => n + (enEspera(cicloDe(o)) ? 0 : 1), 0);
     // Detenidos y asesoras se miden sobre feedBase —la misma población del
     // hero— y no sobre todo lo cargado: las tarjetas son vecinas y con
     // alcances distintos se leían como la misma métrica que "no cuadraba".
@@ -660,7 +686,7 @@ export default function SeguimientoTab() {
       enRuta, total, gestionados, faltan, detenidos, asesorasHoy, pct,
       colaCierre, gestionadosCierre, heroVisible: counterSource.length > 0,
     };
-  }, [viewMode, chipsBase, dedupedByDate, listaActiva, mySegTouchedToday, gestionSegPorTelefono]);
+  }, [viewMode, chipsBase, dedupedByDate, listaActiva, mySegTouchedToday, gestionSegPorTelefono, cicloDe]);
 
   /**
    * Unified stat tone system — same 5 tones as CrmTable so the app reads as one
@@ -1115,13 +1141,16 @@ export default function SeguimientoTab() {
               {heroVisible && !coverageSegError && (
                 <span className="flex items-baseline gap-1.5">
                   <span className={cn('text-lg font-mono tabular-nums font-bold leading-none', faltanTone)}>{faltan}</span>
-                  <span className="text-[11px] text-muted-foreground">por gestionar hoy</span>
+                  <span className="text-[11px] text-muted-foreground">te esperan ahora</span>
                 </span>
               )}
               {heroVisible && !coverageSegError && (
-                <span className="text-[11px] text-muted-foreground">
-                  <span className="font-mono tabular-nums font-semibold text-foreground">{gestionados}</span> de{' '}
-                  <span className="font-mono tabular-nums">{total}</span> gestionados
+                <span
+                  className="text-[11px] text-muted-foreground"
+                  title="Pedidos que el equipo tocó en algún momento del día. No se resta del número de al lado: uno tocado hace tres horas al que el cliente no contestó ya volvió a la cola."
+                >
+                  <span className="font-mono tabular-nums font-semibold text-foreground">{gestionados}</span> trabajados hoy
+                  {' '}<span className="opacity-60">de {total}</span>
                 </span>
               )}
               {heroVisible && coverageSegError && (
@@ -1480,8 +1509,8 @@ export default function SeguimientoTab() {
                 onClick={() => setOnlyUntouchedSeg(!onlyUntouchedSeg)}
                 aria-pressed={onlyUntouchedSeg}
                 title={onlyUntouchedSeg
-                  ? 'El tablero está escondiendo lo que ya se gestionó hoy. Tocá para ver todo.'
-                  : 'El tablero muestra TODO, gestionado o no. Tocá para ver solo lo que falta.'}
+                  ? `El tablero esconde lo que se acaba de tocar. Cada pedido vuelve solo a la ${ESPERA_REINTENTO_MIN === 60 ? 'hora' : `${ESPERA_REINTENTO_MIN} min`} con la etiqueta de qué sigue — y antes si el cliente responde. Tocá para ver todo.`
+                  : 'El tablero muestra TODO, tocado o no. Tocá para ver solo lo que te espera ahora.'}
                 className={cn(
                   "snap-start shrink-0 inline-flex items-center gap-2 rounded-xl border px-4 min-h-[44px] text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                   onlyUntouchedSeg
