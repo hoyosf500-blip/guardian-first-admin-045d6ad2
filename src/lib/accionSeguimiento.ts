@@ -184,6 +184,9 @@ export interface PlantillaOrdenable {
    *  con enlace variable). Las bloqueadas nunca se recomiendan. */
   noSoportada?: string | null;
   categoria?: string;
+  /** Los huecos `{{n}}` de la plantilla. Solo se usa la CANTIDAD, para desempatar
+   *  entre dos que sirven igual — ver `partirPlantillas`. */
+  variables?: readonly unknown[];
 }
 
 export const MAX_RECOMENDADAS = 3;
@@ -219,11 +222,25 @@ export function partirPlantillas<T extends PlantillaOrdenable>(
     // situación más específica (el aviso de llegada antes que el recordatorio
     // de vencimiento).
     for (const patron of accion.plantillas) {
-      for (const p of plantillas) {
+      const candidatas = plantillas.filter((p) =>
+        !usadas.has(p.nombre) && !p.noSoportada
+        && !(soloCompletables && completable && !completable(p))
+        && patron.test(sinTildes(p.nombre)));
+      // ⛔ Dentro del MISMO patrón desempata la que usa más datos del pedido
+      // (visto en producción el 27-ago-2026). Antes ganaba la primera que
+      // llegara, o sea el orden alfabético de Meta, y para "en agencia" eso
+      // daba `retiro_agencia_k1`:
+      //   "Estimado Cliente: Servientrega le notifica que su pedido esta listo
+      //    para ser retirado en agencia: SERVIENTREGA"
+      // — sin nombre, sin producto, y con el hueco de la agencia relleno con la
+      // TRANSPORTADORA, así que ni siquiera le dice al cliente dónde ir.
+      // Al lado estaba `retiro_agencia_v1` (nombre + producto + la urgencia de
+      // que la agencia lo devuelve), que es la que evita la devolución.
+      // Más huecos llenados con datos reales = mensaje más personalizado.
+      for (const p of [...candidatas].sort((a, b) => (b.variables?.length ?? 0) - (a.variables?.length ?? 0))) {
         if (recomendadas.length >= MAX_RECOMENDADAS) return;
-        if (usadas.has(p.nombre) || p.noSoportada) continue;
-        if (soloCompletables && completable && !completable(p)) continue;
-        if (patron.test(sinTildes(p.nombre))) { recomendadas.push(p); usadas.add(p.nombre); }
+        recomendadas.push(p);
+        usadas.add(p.nombre);
       }
     }
   };

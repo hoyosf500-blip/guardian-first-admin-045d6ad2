@@ -202,4 +202,44 @@ describe('plantillaParaAccion', () => {
       expect(plantillaParaAccion(CUENTA_EC, 'EN OFICINA', () => false)).toBeNull();
     });
   });
+
+  // ── El segundo hallazgo de producción, mirando lo que le llegaba al cliente ──
+  // Entre dos que se pueden mandar ganaba la primera del orden alfabético de
+  // Meta. Para "en agencia" eso daba `retiro_agencia_k1` (1 hueco):
+  //   "Estimado Cliente: Servientrega le notifica que su pedido esta listo para
+  //    ser retirado en agencia: SERVIENTREGA"
+  // — sin nombre, sin producto, y con el hueco de la agencia relleno con la
+  // TRANSPORTADORA, así que no le dice al cliente ni dónde ir. Al lado estaba
+  // `retiro_agencia_v1` (nombre + producto + la urgencia de la devolución).
+  describe('⛔ entre dos que sirven, gana la que usa más datos del pedido', () => {
+    const CON_HUECOS = [
+      { nombre: 'retiro_agencia_k1', variables: [{ indice: 1 }] },
+      { nombre: 'retiro_agencia_v1', variables: [{ indice: 1 }, { indice: 2 }] },
+    ];
+
+    it('elige la más personalizada, no la primera alfabéticamente', () => {
+      const elegida = plantillaParaAccion(CON_HUECOS, 'EN OFICINA', () => true);
+      expect(elegida!.nombre).toBe('retiro_agencia_v1');
+    });
+
+    it('el desempate NO pisa la prioridad de patrón', () => {
+      // Un recordatorio con 4 huecos no puede ganarle al primer aviso: son
+      // situaciones distintas, y mandar "se lo devolvemos" cuando recién llegó
+      // asusta al cliente en vez de traerlo.
+      const mezcla = [
+        { nombre: 'retiro_agencia_recordatorio_k2', variables: [1, 2, 3, 4] },
+        { nombre: 'retiro_agencia_disponible_k1', variables: [1, 2] },
+      ];
+      expect(plantillaParaAccion(mezcla, 'EN OFICINA', () => true)!.nombre)
+        .toBe('retiro_agencia_disponible_k1');
+    });
+
+    it('sin el dato de huecos no rompe (una plantilla puede no traerlo)', () => {
+      const elegida = plantillaParaAccion(
+        [{ nombre: 'retiro_agencia_k1' }, { nombre: 'retiro_agencia_v1' }],
+        'EN OFICINA', () => true,
+      );
+      expect(elegida).not.toBeNull();
+    });
+  });
 });
