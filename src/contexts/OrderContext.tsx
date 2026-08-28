@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef, us
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
 import { useStore } from './StoreContext';
-import { OrderData, dbToOrderData, isPendiente, isDespachado, isConfirmado } from '@/lib/orderUtils';
+import { OrderData, dbToOrderData, isPendiente, isDespachado, isConfirmado, type DbOrderRow } from '@/lib/orderUtils';
 import { compareConfirmar, cooldownHoursForAttempt, MAX_DAILY_ATTEMPTS, resumenSinRespuestaHoy, mismoResumen, type ResumenSinRespuesta, type FilaResultado } from '@/lib/confirmarQueue';
 import { pollWhenVisible } from '@/lib/pollWhenVisible';
 import { bogotaToday } from '@/lib/utils';
@@ -24,6 +24,16 @@ import { fetchPendientesDeConfirmar } from '@/lib/fetchPendientes';
 import { computeDailyCounter, computeDailyCounterByOperator, type ResumenAsesora } from '@/lib/computeDailyCounter';
 import { buildGestionPorPedido, buildGestionSegPorTelefono, aplicarGestionEnVivo, mismaGestion, type GestionDelPedido } from '@/lib/gestionPorPedido';
 import { onGestion } from '@/lib/eventosGestion';
+import { aplicarPedidosTocados } from '@/lib/aplicarPedidosTocados';
+
+/** Cuánto se juntan los avisos de realtime antes de ir a buscar. 5 s no se
+ *  notan en el tablero y convierten una ráfaga del cron en UNA consulta. */
+const VENTANA_PARCHE_MS = 5_000;
+/** Más que esto en una sola ventana ya no es "un pedido se movió", es una
+ *  barrida del cron: ahí conviene recargar de una. */
+const MAX_IDS_PARCHE = 60;
+/** Piso duro entre recargas completas. El peor caso pasa a ser una cada 90 s. */
+const PISO_REFRESCO_TOTAL_MS = 90_000;
 
 interface Counter { conf: number; canc: number; noresp: number; }
 
@@ -366,11 +376,72 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const debouncedRefreshAll = useCallback(() => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     refreshTimerRef.current = setTimeout(() => {
+      ultimoRefrescoTotalRef.current = Date.now();
       void refreshFnsRef.current.loadNovedades(true);
       void refreshFnsRef.current.loadSegData(true);
       void refreshFnsRef.current.loadWorkQueue();
       refreshTimerRef.current = null;
     }, 800);
+  }, []);
+
+  // ── EL BUCLE QUE HACÍA PESADO AL CRM (cortado 28-ago-2026) ─────────────────
+  //
+  // Medido en producción con `/seguimiento` abierto y NADIE tocando nada:
+  // **112 peticiones a la base en 60 segundos** — 65 a `orders`, y 53 de ellas
+  // con `offset=`, o sea páginas de la descarga COMPLETA del tablero. Motivo:
+  // cualquier UPDATE de `orders` llamaba a `debouncedRefreshAll`, que relanza
+  // las ~20 páginas de `loadSegData` + novedades + la cola de Confirmar. El cron
+  // de Dropi mueve pedidos sin parar, así que eso corría todo el día.
+  //
+  // Y se mordía la cola: abrir un pedido dispara `dropi-refresh-order` e
+  // `importchat-chat`, que **escriben en `orders`** → otra recarga completa. La
+  // ficha competía por el mismo pool del que dependía para cargar. De ahí los
+  // "casi 2 minutos" para abrir un pedido.
+  //
+  // Ahora un UPDATE dice QUÉ pedido cambió y solo se va a buscar ese.
+  const idsTocadosRef = useRef<Set<string>>(new Set());
+  const flushTocadosRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ultimoRefrescoTotalRef = useRef(0);
+
+  const traerPedidosTocados = useCallback(async (ids: string[]) => {
+    if (!user || !activeStoreId || ids.length === 0) return;
+    const { data, error } = await supabase
+      .from('orders')
+      .select(ORDER_COLUMNS)
+      .eq('store_id', activeStoreId)
+      .in('id', ids);
+    // ⛔ Si falla, NO se toca nada: ni se quitan filas, ni se marca la cola como
+    // fresca. Un parche fallido nunca puede convertirse en un vacío en pantalla.
+    if (error || !Array.isArray(data)) return;
+    const frescos = (data as unknown as DbOrderRow[]).map((r, i) => dbToOrderData(r, i));
+    dataLoader.setSegData((prev) => aplicarPedidosTocados(prev, frescos));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, activeStoreId]);
+
+  const handleOrderTouched = useCallback((id: string) => {
+    idsTocadosRef.current.add(id);
+    // Throttle TRAILING, no debounce: con el cron escribiendo sin parar, un
+    // debounce que se reinicia dispara en huecos aleatorios y nunca se calma.
+    // Así se junta todo lo que pase en la ventana y sale UNA sola consulta.
+    if (flushTocadosRef.current) return;
+    flushTocadosRef.current = setTimeout(() => {
+      flushTocadosRef.current = null;
+      const ids = [...idsTocadosRef.current];
+      idsTocadosRef.current.clear();
+      if (!ids.length) return;
+      // Barrida grande del cron: ahí sí conviene recargar de una — pero con un
+      // piso duro, para que el peor caso sea una recarga cada 90 s en vez de
+      // una docena por minuto.
+      if (ids.length > MAX_IDS_PARCHE) {
+        if (Date.now() - ultimoRefrescoTotalRef.current > PISO_REFRESCO_TOTAL_MS) debouncedRefreshAll();
+        return;
+      }
+      void traerPedidosTocados(ids);
+    }, VENTANA_PARCHE_MS);
+  }, [traerPedidosTocados, debouncedRefreshAll]);
+
+  useEffect(() => () => {
+    if (flushTocadosRef.current) clearTimeout(flushTocadosRef.current);
   }, []);
 
   // COST-2: auto-sync deshabilitado. Admin usa botón manual o cron server-side.
@@ -410,8 +481,15 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   // order_result, todos los caches se refrescan vía el mismo timer
   // debounced para evitar el ráfaga de fetches duplicados.
   useRealtimeOrders(user, {
+    // INSERT/DELETE: hay que traer un pedido que NO está en memoria → recarga.
     onOrderChange: debouncedRefreshAll,
-    onResultChange: debouncedRefreshAll,
+    // UPDATE: se parchea solo ese pedido. Ver el bloque de arriba.
+    onOrderTouched: handleOrderTouched,
+    // ⛔ Un `order_result` nuevo NO puede cambiar la población de Seguimiento ni
+    // la de Novedades: es una gestión sobre un pedido que ya está en la cola. Lo
+    // único que hay que recomputar es el `result`/`retryCount` de Confirmar. Con
+    // `debouncedRefreshAll` cada confirmación costaba las tres cargas completas.
+    onResultChange: () => { void refreshFnsRef.current.loadWorkQueue(); },
     // Hallazgo 6: al volver la pestaña visible, los eventos que se descartaron
     // mientras estaba oculta se recuperan con un catch-up explícito (mismo
     // refresh debounced que usan orders/results).

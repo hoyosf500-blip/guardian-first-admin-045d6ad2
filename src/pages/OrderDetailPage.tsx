@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
+import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { useRefreshOrder } from '@/hooks/useRefreshOrder';
 import { dbToOrderData, OrderData, getTrackingUrl, isPendiente, isNovedad, getErrorMessage, getWhatsAppPhone } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
@@ -129,7 +130,7 @@ export default function OrderDetailPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
-  const { activeStoreId, activeStore } = useStore();
+  const { activeStoreId, activeStore, loading: storeLoading } = useStore();
   const countryCode = activeStore?.country_code;
   const { refresh: refreshOrder } = useRefreshOrder();
 
@@ -163,6 +164,9 @@ export default function OrderDetailPage() {
   // Distingue "la consulta falló" de "el pedido no existe": sin esto, un error
   // de red/RLS se mostraba como el veredicto "Pedido no encontrado".
   const [loadError, setLoadError] = useState<string | null>(null);
+  // El historial (gestiones/notas/estados) se lee después de pintar la ficha.
+  // Mientras sea false, una lista vacía NO significa "no hay nada".
+  const [historialCargado, setHistorialCargado] = useState(false);
   const [touchpoints, setTouchpoints] = useState<Touchpoint[]>([]);
   const [orderResults, setOrderResults] = useState<OrderResultRow[]>([]);
   const [statusChanges, setStatusChanges] = useState<TimelineStatusChange[]>([]);
@@ -190,7 +194,29 @@ export default function OrderDetailPage() {
   const { ask: askAi, get: getAi } = useAiInsight();
 
   useEffect(() => {
-    if (!externalId || !activeStoreId) return;
+    // ⛔ ACÁ SE COLGABA "Cargando pedido…" PARA SIEMPRE (28-ago-2026).
+    //
+    // `loading` arranca en `true` y este guard salía sin apagarlo: si
+    // `activeStoreId` llegaba null —o se volvía null un instante al cambiar de
+    // tienda— la pantalla quedaba con el spinner y nada podía sacarla de ahí.
+    // Sin timeout, sin error, sin botón. Es la explicación más simple de los
+    // "casi 2 minutos" que reportó el dueño.
+    //
+    // Ahora cada caso dice qué pasa. `StoreContext` solo pone `loading=true` en
+    // la PRIMERA carga, así que la rama de "todavía cargando la tienda" es
+    // finita y se resuelve sola.
+    if (!externalId) {
+      setLoading(false);
+      setLoadError('El link no trae número de pedido.');
+      return;
+    }
+    if (!activeStoreId) {
+      if (!storeLoading) {
+        setLoading(false);
+        setLoadError('No hay tienda activa. Elegí una tienda para ver este pedido.');
+      }
+      return;
+    }
     setLoading(true);
     setLoadError(null);
     // Reset SIEMPRE al cambiar de pedido: si la carga nueva falla o no trae
@@ -223,7 +249,8 @@ export default function OrderDetailPage() {
       // gestiones se escribían con el store_id equivocado.
       const { data: orders, error } = await supabase
         .from('orders')
-        .select('*')
+        // Lista explícita en vez de `*`: eran 66 columnas para pintar una ficha.
+        .select(ORDER_COLUMNS)
         .eq('external_id', externalId)
         .eq('store_id', activeStoreId)
         .limit(1);
@@ -241,8 +268,14 @@ export default function OrderDetailPage() {
         return;
       }
 
-      const o = orders[0] as OrderRow;
+      const o = orders[0] as unknown as OrderRow;
       setOrder(o);
+      // ⛔ EL SPINNER SE VA ACÁ, no tres viajes después. Antes la ficha no
+      // pintaba NADA hasta terminar `orders` → cuatro consultas → `profiles`,
+      // todo en serie. Ese último viaje solo sirve para poner nombres en el
+      // historial: un dato cosmético bloqueaba la pantalla entera.
+      // Los paneles de abajo dicen "cargando" por su cuenta (ver `historialCargado`).
+      setLoading(false);
 
       // Load touchpoints, notes, order_results & status history in parallel.
       // order_status_history aún no está en los tipos generados → cast puntual.
@@ -263,6 +296,10 @@ export default function OrderDetailPage() {
       if (notesRes.data) setNotes(notesRes.data as NoteRow[]);
       if (orRes.data) setOrderResults(orRes.data as OrderResultRow[]);
       if (statusRes.data) setStatusChanges(statusRes.data as TimelineStatusChange[]);
+      // El historial ya se leyó: recién ahora una lista vacía significa "no hay
+      // nada", y no "todavía no llegó". Sin esto, adelantar el `setLoading(false)`
+      // dejaba el Timeline en blanco afirmando que nunca se gestionó el pedido.
+      setHistorialCargado(true);
 
       // Solo los perfiles de quienes aparecen en el historial de ESTE pedido:
       // bajar la tabla `profiles` completa dependía solo de la RLS y en el
@@ -276,16 +313,16 @@ export default function OrderDetailPage() {
         ].filter(Boolean),
       ));
       if (operatorIds.length) {
-        const profilesRes = await supabase
+        // Sin `await`: los nombres del historial aparecen cuando llegan. Nadie
+        // espera mirando un spinner por una etiqueta.
+        void supabase
           .from('profiles')
           .select('user_id, display_name')
-          .in('user_id', operatorIds);
-        if (cancelled) return;
-        if (profilesRes.data) setProfiles(profilesRes.data as Profile[]);
+          .in('user_id', operatorIds)
+          .then(({ data }) => { if (!cancelled && data) setProfiles(data as Profile[]); });
       } else {
         setProfiles([]);
       }
-      setLoading(false);
     };
 
     load();
@@ -1058,7 +1095,14 @@ export default function OrderDetailPage() {
             </span>
             Historial del pedido
           </h3>
-          <Timeline events={timelineEvents} emptyText="Sin eventos registrados todavía" />
+          {/* ⛔ "Sin eventos" solo cuando SE LEYÓ y no había. Al adelantar el
+              `setLoading(false)`, el historial llega unos instantes después que
+              la ficha: sin este guard, la pantalla afirmaba que el pedido nunca
+              se gestionó justo en esa ventana. */}
+          <Timeline
+            events={timelineEvents}
+            emptyText={historialCargado ? 'Sin eventos registrados todavía' : 'Leyendo el historial…'}
+          />
         </div>
 
         <CommunicationLog events={timelineEvents} />

@@ -21,6 +21,25 @@ interface RealtimeCallbacks {
    *  (notificación + badge en el título) que llegó un pedido y hay que llamar
    *  ahora, mientras la intención de compra está caliente. */
   onOrderInsert?: (row: Record<string, unknown>) => void;
+  /**
+   * Fires en cada UPDATE de `orders`, con **la fila ya actualizada**.
+   *
+   * ⛔ Existe para dejar de recargar la cola entera por el cambio de estado de
+   * UN pedido (28-ago-2026). Medido en producción con `/seguimiento` abierto y
+   * nadie tocando nada: **112 peticiones en 60 s**, 53 de ellas páginas de la
+   * descarga completa. El cron de Dropi mueve pedidos sin parar y cada
+   * movimiento relanzaba las ~20 páginas de `loadSegData`; la consulta de la
+   * asesora quedaba haciendo fila detrás de todo eso.
+   *
+   * Recibe **solo el id**. ⛔ A propósito NO se pasa `payload.new`: en
+   * replicación lógica, el tuple de un UPDATE **no incluye los valores TOAST
+   * que no cambiaron**, y `orders` tiene tres jsonb (`productos_detalle`,
+   * `address_parsed`, `missing_fields`) más textos largos. Aplicar esa fila
+   * dejaría `productosDetalle: []` en memoria y la tarjeta diría que el pedido
+   * no tiene talla ni color — un cero afirmado sobre un dato que nunca vino.
+   * El consumidor junta ids y pide UNA consulta dirigida.
+   */
+  onOrderTouched?: (id: string) => void;
 }
 
 /**
@@ -37,17 +56,19 @@ interface RealtimeCallbacks {
  */
 export function useRealtimeOrders(
   user: User | null,
-  { onOrderChange, onResultChange, onVisibleCatchUp, onOrderInsert }: RealtimeCallbacks,
+  { onOrderChange, onResultChange, onVisibleCatchUp, onOrderInsert, onOrderTouched }: RealtimeCallbacks,
   storeId?: string | null,
 ) {
   const orderCb = useRef(onOrderChange);
   const resultCb = useRef(onResultChange);
   const catchUpCb = useRef(onVisibleCatchUp);
   const insertCb = useRef(onOrderInsert);
+  const touchedCb = useRef(onOrderTouched);
   orderCb.current = onOrderChange;
   resultCb.current = onResultChange;
   catchUpCb.current = onVisibleCatchUp;
   insertCb.current = onOrderInsert;
+  touchedCb.current = onOrderTouched;
 
   // FIX "se reinicia al volver de la pestaña": mientras la pestaña está oculta,
   // los cambios (sobre todo del cron cada 5 min) se encolan y al volver disparan
@@ -113,7 +134,19 @@ export function useRealtimeOrders(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'orders', filter: `store_id=eq.${storeId}` },
           (payload) => {
-            fireOrder();
+            // ⛔ UN UPDATE NO RECARGA LAS COLAS ENTERAS (28-ago-2026). Se avisa
+            // qué pedido cambió y el consumidor lo va a buscar solo a él. El
+            // `fireOrder()` —que relanza la descarga completa— queda para
+            // INSERT y DELETE, los únicos casos en los que hace falta traer un
+            // pedido que NO está en memoria.
+            const idTocado = payload.eventType === 'UPDATE'
+              ? (payload.new as { id?: unknown } | null)?.id
+              : null;
+            if (idTocado != null && touchedCb.current) {
+              touchedCb.current(String(idTocado));
+            } else {
+              fireOrder();
+            }
             // Hallazgo 7: en INSERT de un pedido nuevo, avisamos SIEMPRE (aunque
             // la pestaña esté oculta — ese es el punto: traer de vuelta a la
             // operadora). El consumer filtra por estado PENDIENTE CONFIRMACION.

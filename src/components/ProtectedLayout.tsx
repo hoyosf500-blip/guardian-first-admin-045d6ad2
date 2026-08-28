@@ -551,7 +551,20 @@ function ProtectedLayoutInner() {
                     de los banners de salud (si el sync está roto, eso manda) y
                     ARRIBA del contador y del contenido: es lo primero que se
                     lee al entrar a cualquier pantalla. */}
-                <SiguienteAccionBar />
+                {/* ⛔ NO se monta dentro de un pedido (28-ago-2026).
+                    La barra CARGA las colas de Seguimiento y Novedades, más el
+                    índice de 90 días de touchpoints y una llamada a Dropi. En
+                    `/pedido/:id` eso competía con la ficha por el mismo pool de
+                    conexiones — el pedido que la asesora quiere ver quedaba
+                    haciendo fila detrás de la descarga del tablero entero.
+                    Y ni siquiera se dibujaba: sin colas leídas `siguienteAccion`
+                    devuelve `'cargando'` y la barra renderiza `null`. O sea que
+                    pagaba tres cargas para no mostrar nada.
+                    No puede volver el bug del 21-ago ("Todo al día" con trabajo
+                    pendiente): `al_dia` exige `segCargado === true`; sin datos la
+                    barra queda MUDA, nunca equivocada. Y `/pedido/:id` no es una
+                    pantalla de dirección: ahí la persona ya está en una tarea. */}
+                {!activePath.startsWith('/pedido/') && <SiguienteAccionBar />}
                 {/* La franja "EQUIPO HOY" (CounterBar) se fundió DENTRO del hero
                     de Confirmar: mostraba los mismos conf/canc/noresp del equipo
                     que las StatTiles del hero, más la barra de cobertura — que

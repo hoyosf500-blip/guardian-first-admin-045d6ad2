@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, WifiOff, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
@@ -90,39 +90,22 @@ export default function SyncFreshness({ onAuditClick }: Props) {
     return () => clearInterval(id);
   }, []);
 
-  // Frescura al día SIN parpadeo: un canal liviano escucha cambios de `orders`
-  // de la tienda activa y, con debounce, recarga los sync_logs para que el
-  // "hace X min · N pedidos" quede al día. NO anima nada (el dueño reportó que
-  // los parpadeos molestaban y reseteaban el trabajo): solo actualiza el texto
-  // en silencio. Es independiente del realtime de OrderContext (que mueve las
-  // colas) y no toca el tablero. Debounce para no recargar en cada fila del burst.
-  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (!activeStoreId) return;
-    let cancelled = false;
-    let channel: ReturnType<typeof supabase.channel> | null = null;
-    (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (cancelled) return;
-      if (session?.access_token) await supabase.realtime.setAuth(session.access_token);
-      channel = supabase
-        .channel(`sync-freshness-${activeStoreId}`)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'orders', filter: `store_id=eq.${activeStoreId}` },
-          () => {
-            if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
-            reloadTimerRef.current = setTimeout(() => { void load(); }, 1500);
-          },
-        )
-        .subscribe();
-    })();
-    return () => {
-      cancelled = true;
-      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
-      if (channel) void supabase.removeChannel(channel);
-    };
-  }, [activeStoreId, load]);
+  // ⛔ ACÁ VIVÍA UN CUARTO BUCLE (quitado 28-ago-2026).
+  //
+  // Este banner montaba su PROPIO canal de realtime sobre `orders` y, con
+  // debounce de 1,5 s, recargaba `sync_logs`. Como vive en el layout, corría en
+  // TODAS las pantallas — y el cron de Dropi escribe en `orders` sin parar, así
+  // que recargaba cada segundo y medio, para siempre. Medido con la pantalla
+  // quieta: **11 peticiones a `sync_logs` por minuto** que no las pedía nadie.
+  //
+  // Escuchaba además la tabla equivocada: se suscribía a `orders` para
+  // enterarse de algo de `sync_logs`, que ni siquiera está publicada en
+  // realtime. Era un proxy, no una señal.
+  //
+  // El poll de 2 min de arriba y el reloj local de 30 s alcanzan: el número
+  // puede quedar hasta 2 minutos viejo, pero el texto va FECHADO ("hace X min"),
+  // así que nunca afirma una frescura que no tiene. Se pierde inmediatez en un
+  // rótulo; se gana que la base deje de trabajar para nadie.
 
   const handleRetry = async () => {
     if (retrying || !activeStoreId) return;
