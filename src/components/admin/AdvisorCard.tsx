@@ -78,6 +78,48 @@ function Barritas({ serie }: { serie: { hora: number; cantidad: number }[] }) {
   );
 }
 
+/**
+ * Una línea de ritmo: el número grande, su etiqueta y la cuenta que lo produce.
+ *
+ * Existe para que los dos carriles (Confirmar y Seguimiento) se dibujen con el
+ * mismo molde y no se confundan. La frase "marcó N en Xh — el N es POR HORA, no
+ * pedidos sueltos" se conserva porque el dueño ya se confundió con eso: leía el
+ * "19" como diecinueve pedidos.
+ */
+function RitmoLinea({ carril, porHora, tono, tag, count, elapsedMin, sufijoTiempo, barritas, title }: {
+  carril: string | null;
+  porHora: number | null;
+  tono: Tono;
+  tag: string | null;
+  count: number | null;
+  elapsedMin: number | null;
+  sufijoTiempo: string;
+  barritas?: React.ReactNode;
+  title: string;
+}) {
+  return (
+    <>
+      <span className={`inline-flex items-baseline gap-1 font-semibold ${TXT[tono]}`} title={title}>
+        <Gauge size={13} className="self-center" aria-hidden="true" />
+        {carril && (
+          <span className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground font-semibold">{carril}</span>
+        )}
+        <span className="font-mono tabular-nums text-lg leading-none">{porHora == null ? '—' : porHora}</span>
+        <span className="text-[11px] text-muted-foreground font-normal">por hora</span>
+        {tag && <span className="text-[11px] font-semibold">· {tag}</span>}
+      </span>
+      {barritas && <span className="ml-auto">{barritas}</span>}
+      {count != null && (
+        <span className="w-full text-[11px] text-muted-foreground">
+          marcó <b className="font-mono tabular-nums font-semibold text-foreground">{count}</b> {count === 1 ? 'gestión' : 'gestiones'}
+          {elapsedMin != null && <> en <b className="font-semibold text-foreground">{hmMin(elapsedMin)}</b>{sufijoTiempo}</>}
+          {' '}— el {porHora == null ? 'ritmo' : `${porHora}`} es <b className="font-semibold text-foreground">por hora</b>, no pedidos sueltos
+        </span>
+      )}
+    </>
+  );
+}
+
 export default function AdvisorCard({
   vm, isToday, onInactivityDetail,
 }: {
@@ -189,22 +231,36 @@ export default function AdvisorCard({
         </div>
       </div>
 
-      {/* Ritmo en vivo + entrada + barritas por hora */}
+      {/* Ritmo por CARRIL + entrada + barritas por hora.
+          Dos varas a propósito (28-ago-2026): Confirmar es telefónico y se mide
+          a 25/h; Seguimiento es tocar un botón y se mide a 40/h. Con una sola
+          vara, quien pasó la mañana avisando clientes en agencia salía "3,7 por
+          hora · lento" con 51 gestiones hechas. */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-border bg-card/40 px-3 py-2">
-        <span className={`inline-flex items-baseline gap-1 font-semibold ${TXT[vm.ritmoTono]}`}
-          title={`Velocidad ${isToday ? 'ahora' : 'del rango'} (gestiones por hora).${isToday ? ' Óptimo 25/h · rojo bajo 15/h.' : ''}`}>
-          <Gauge size={13} className="self-center" aria-hidden="true" />
-          <span className="font-mono tabular-nums text-lg leading-none">{vm.ritmoPorHora == null ? '—' : vm.ritmoPorHora}</span>
-          <span className="text-[11px] text-muted-foreground font-normal">por hora</span>
-          {vm.ritmoTag && <span className="text-[11px] font-semibold">· {vm.ritmoTag}</span>}
-        </span>
-        {isToday && serie.length > 0 && <span className="ml-auto"><Barritas serie={serie} /></span>}
-        {vm.ritmoCount != null && (
-          <span className="w-full text-[11px] text-muted-foreground">
-            marcó <b className="font-mono tabular-nums font-semibold text-foreground">{vm.ritmoCount}</b> {vm.ritmoCount === 1 ? 'gestión' : 'gestiones'}
-            {vm.ritmoElapsedMin != null && <> en <b className="font-semibold text-foreground">{hmMin(vm.ritmoElapsedMin)}</b>{isToday ? '' : ' de trabajo'}</>}
-            {' '}— el {vm.ritmoPorHora == null ? 'ritmo' : `${vm.ritmoPorHora}`} es <b className="font-semibold text-foreground">por hora</b>, no pedidos sueltos
-          </span>
+        <RitmoLinea
+          carril={isToday ? 'Confirmar' : null}
+          porHora={vm.ritmoPorHora}
+          tono={vm.ritmoTono}
+          tag={vm.ritmoTag}
+          count={vm.ritmoCount}
+          elapsedMin={vm.ritmoElapsedMin}
+          sufijoTiempo={isToday ? '' : ' de trabajo'}
+          barritas={isToday && serie.length > 0 ? <Barritas serie={serie} /> : null}
+          title={`Llamadas de confirmación${isToday ? ' · óptimo 25/h, rojo bajo 15/h' : ' (gestiones por hora sobre horas trabajadas)'}`}
+        />
+        {/* Seguimiento SIEMPRE en la cara cuando hay dato del día, aunque sea 0:
+            "a todos necesito ver el rendimiento en Seguimiento cuando marquen". */}
+        {isToday && vm.segHoy != null && (
+          <RitmoLinea
+            carril="Seguimiento"
+            porHora={vm.ritmoSegPorHora}
+            tono={vm.ritmoSegTono}
+            tag={vm.ritmoSegTag}
+            count={vm.segHoy}
+            elapsedMin={vm.ritmoSegElapsedMin}
+            sufijoTiempo=""
+            title="Seguimiento y novedades · óptimo 40/h, rojo bajo 25/h. Es más exigente que Confirmar porque es tocar un botón, no llamar."
+          />
         )}
         {isToday && vm.entroHora && (
           <span className={`inline-flex w-full items-center gap-1.5 text-[11px] ${vm.tardeMin ? 'text-danger font-semibold' : 'text-muted-foreground'}`}>

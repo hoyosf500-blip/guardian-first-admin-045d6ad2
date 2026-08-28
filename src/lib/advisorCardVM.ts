@@ -14,6 +14,7 @@ import { bogotaSecondsOfDay, type WorkSchedule } from './inactivityWindow';
 import { minutosSinGestion, mayorHuecoEntreBloques, UMBRAL_SIN_GESTION_MIN } from './huecosGestion';
 import { gestionesPorHora, ritmoTone, MIN_INTENTOS_POR_HORA } from './operatorThroughput';
 import { ritmoVivo, RITMO_VIVO_META } from './ritmoEnVivo';
+import { ritmoSeguimiento, RITMO_SEG_META } from './ritmoSeguimiento';
 import { semaforoAsesor, motivoSemaforo, type AsesorScore } from './responsabilidadAsesor';
 import { porcentajeDificiles, type MezclaAsesor } from './mezclaAsesor';
 
@@ -53,6 +54,14 @@ export interface LiveLite {
   firstSignalMs: number | null;
   hourly: { hora: number; cantidad: number }[];
   total: number;
+  /** Gestiones de HOY por carril + el reloj de cada uno. Opcionales para que un
+   *  llamador viejo (o un test) siga compilando: sin ellos no hay ritmo de
+   *  Seguimiento, y no haberlo es honesto — inventarlo no. */
+  confirmar?: number;
+  seguimiento?: number;
+  novedades?: number;
+  firstConfirmarMs?: number | null;
+  firstSegMs?: number | null;
 }
 
 export interface BuildAdvisorsInput {
@@ -110,6 +119,20 @@ export interface AdvisorVM {
   ritmoTag: string | null;      // "al ritmo" / "sube" / "lento" / "sin medir"
   ritmoCount: number | null;    // cuántas gestiones producen ese ritmo (el "19" no es pedidos, es el RITMO)
   ritmoElapsedMin: number | null; // en cuánto tiempo (hoy: desde la 1ª señal; rango: horas trabajadas)
+  /**
+   * Ritmo de SEGUIMIENTO (seguimiento + novedades) con su propia vara 40/25.
+   * Solo HOY: en 7d/30d no hay primera marca por carril y partir el ritmo sin
+   * ese dato sería inventarlo. `null` también cuando la lectura de marcas quedó
+   * truncada — un ritmo calculado con un reloj incompleto sale INFLADO, y decir
+   * "al ritmo" de alguien que va lento es tan falso como lo contrario.
+   */
+  ritmoSegPorHora: number | null;
+  ritmoSegTono: Tono;
+  ritmoSegTag: string | null;
+  /** Gestiones de Seguimiento + Novedades de HOY. Va en la cara de TODA tarjeta
+   *  (antes vivía en una línea de 11px condicional a `> 0`). */
+  segHoy: number | null;
+  ritmoSegElapsedMin: number | null;
   // Entrada
   entroHora: string | null;     // ISO de la primera señal (la UI formatea)
   tardeMin: number | null;      // minutos tarde (>0) o null
@@ -223,11 +246,23 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
     let ritmoCount: number | null = null;
     let ritmoElapsedMin: number | null = null;
     if (isToday && live) {
-      const rv = ritmoVivo({ gestionados: live.total, desdeMs: live.firstSignalMs, nowMs, faltan: 0 });
+      // ⛔ HOY el ritmo grande es el de CONFIRMAR, no el de todo junto
+      // (28-ago-2026). Antes se calculaba sobre `live.total` —confirmar + seg +
+      // novedades— con la vara telefónica 25/15, y por eso ROBERTO MORAN salía
+      // **"3,7 por hora · lento"** con 51 gestiones de agencia hechas: se le
+      // medía tocar un botón como si estuviera marcando y esperando el tono.
+      // Seguimiento ahora se mide aparte, abajo, con su vara 40/25.
+      //
+      // Se cae a `live.total` solo si el llamador no manda los carriles: para
+      // quien únicamente trabaja Confirmar los dos números son el mismo, así que
+      // no cambia nada para ellos.
+      const confHoy = live.confirmar ?? live.total;
+      const desdeConf = live.confirmar != null ? (live.firstConfirmarMs ?? null) : live.firstSignalMs;
+      const rv = ritmoVivo({ gestionados: confHoy, desdeMs: desdeConf, nowMs, faltan: 0 });
       ritmoPorHora = rv.porHora;
-      ritmoCount = live.total;
-      ritmoElapsedMin = live.firstSignalMs != null
-        ? Math.max(0, Math.round((nowMs - live.firstSignalMs) / 60000))
+      ritmoCount = confHoy;
+      ritmoElapsedMin = desdeConf != null
+        ? Math.max(0, Math.round((nowMs - desdeConf) / 60000))
         : null;
       if (rv.porHora == null) { ritmoTono = 'muted'; ritmoTag = 'midiendo'; }
       else if (rv.vaLento) { ritmoTono = 'bad'; ritmoTag = 'lento'; }
@@ -245,6 +280,42 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
         const t = ritmoTone(iph, MIN_INTENTOS_POR_HORA);
         ritmoTono = t === 'muted' ? 'muted' : (t as Tono);
         ritmoTag = null;
+      }
+    }
+
+    // ── Ritmo de SEGUIMIENTO, con su propia vara (28-ago-2026) ────────────────
+    // Pedido del dueño: *"a todos necesito ver el rendimiento en Seguimiento
+    // cuando marquen"* y *"como es presionar un botón tienen que trabajar más
+    // rápido"*. Por eso es un ritmo aparte y con umbrales más altos (40/25):
+    // avisar por WhatsApp no cuesta lo que cuesta una llamada.
+    let ritmoSegPorHora: number | null = null;
+    let ritmoSegTono: Tono = 'muted';
+    let ritmoSegTag: string | null = null;
+    let ritmoSegElapsedMin: number | null = null;
+    let segHoy: number | null = null;
+    if (isToday && live && live.seguimiento != null) {
+      segHoy = (live.seguimiento ?? 0) + (live.novedades ?? 0);
+      const desdeSeg = live.firstSegMs ?? null;
+      // ⛔ Con la lectura truncada NO se calcula. El conteo viene entero de la
+      // RPC pero la primera marca sale del barrido de 400 filas: si se cortó,
+      // el reloj arranca más tarde de lo real y el ritmo sale INFLADO. Decirle
+      // "al ritmo" a quien va lento es tan falso como el "3,7 · lento" que
+      // originó todo esto — al revés, pero igual de inventado.
+      const medible = input.workEventsOk !== false;
+      const rs = medible
+        ? ritmoSeguimiento({ gestionados: segHoy, desdeMs: desdeSeg, nowMs, faltan: 0 })
+        : null;
+      ritmoSegElapsedMin = medible && desdeSeg != null
+        ? Math.max(0, Math.round((nowMs - desdeSeg) / 60000))
+        : null;
+      if (!rs || rs.porHora == null) {
+        ritmoSegTono = 'muted';
+        ritmoSegTag = !medible ? 'no se pudo medir' : segHoy > 0 ? 'midiendo' : null;
+      } else {
+        ritmoSegPorHora = rs.porHora;
+        if (rs.vaLento) { ritmoSegTono = 'bad'; ritmoSegTag = 'lento'; }
+        else if (rs.bajoOptimo) { ritmoSegTono = 'warn'; ritmoSegTag = `sube (óptimo ${RITMO_SEG_META})`; }
+        else { ritmoSegTono = 'good'; ritmoSegTag = 'al ritmo'; }
       }
     }
 
@@ -386,11 +457,18 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
     // sin este término la tarjeta caía en 'idle' ("sin datos") sobre alguien con
     // 40 gestiones hechas.
     const sinDato = atendidos === 0 && r.confirmados === 0 && otroTrabajo === 0 && (!live || live.estado === 'ausente');
+    // ⛔ Cada carril se juzga con SU vara, y basta con que uno esté en rojo
+    // (28-ago-2026). Antes había un solo `ritmoTono`, calculado sobre todo el
+    // trabajo junto con la vara telefónica: quien solo hacía Seguimiento entraba
+    // en rojo por una vara que no era la suya. Ahora el que no tocó Confirmar
+    // tiene `ritmoTono = 'muted'` y se lo mide por `ritmoSegTono`.
+    const ritmoMalo = ritmoTono === 'bad' || ritmoSegTono === 'bad';
+    const ritmoTibio = ritmoTono === 'warn' || ritmoSegTono === 'warn';
     if (sinDato) {
       atencion = 'idle';
-    } else if (semaforo === 'rojo' || (ritmoTono === 'bad') || (marcasMedidas && sinGestionMin != null && sinGestionMin >= UMBRAL_SIN_GESTION_MIN) || (tardeMin != null && tardeMin >= 30)) {
+    } else if (semaforo === 'rojo' || ritmoMalo || (marcasMedidas && sinGestionMin != null && sinGestionMin >= UMBRAL_SIN_GESTION_MIN) || (tardeMin != null && tardeMin >= 30)) {
       atencion = 'bad';
-    } else if (semaforo === 'ambar' || ritmoTono === 'warn' || motivos.length > 0) {
+    } else if (semaforo === 'ambar' || ritmoTibio || motivos.length > 0) {
       atencion = 'warn';
     } else {
       atencion = 'good';
@@ -431,6 +509,11 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
       ritmoTag,
       ritmoCount,
       ritmoElapsedMin,
+      ritmoSegPorHora,
+      ritmoSegTono,
+      ritmoSegTag,
+      ritmoSegElapsedMin,
+      segHoy,
       entroHora: isToday ? turnoStart : null,
       tardeMin,
       hourly: live?.hourly ?? [],

@@ -14,8 +14,9 @@ import CierreSeguimientoDialog from '@/components/seguimiento/CierreSeguimientoD
 import { useSegTouchIndex } from '@/hooks/useSegTouchIndex';
 import { useRiesgoChat } from '@/hooks/useRiesgoChat';
 import { estadoConversacion } from '@/lib/actividadChat';
+import { tocaLlamar, HORAS_PARA_LLAMAR } from '@/lib/escalarLlamada';
 import { useRefreshVisibleOrders } from '@/hooks/useRefreshVisibleOrders';
-import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List, Search, User as UserIcon, Users, Moon, Eye, EyeOff } from 'lucide-react';
+import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List, Search, User as UserIcon, Users, Moon, Eye, EyeOff, Phone } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
@@ -435,6 +436,16 @@ export default function SeguimientoTab() {
   );
   const { actividad: chatActividad } = useRiesgoChat(storeIdChat, boardIds);
 
+  // Latido de un minuto. La cola de "toca llamar" se llena SOLA con el paso del
+  // tiempo (6 h desde el mensaje), no con un cambio de datos: sin esto el chip
+  // se quedaría congelado en el número que tenía al cargar la pantalla, y la
+  // asesora que deja el CRM abierto toda la mañana nunca vería entrar a nadie.
+  const [minutoTick, setMinutoTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setMinutoTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   // Clientes con la MANO LEVANTADA: escribieron por WhatsApp y el último
   // mensaje del chat sigue siendo suyo — nadie les respondió. Es la señal más
   // accionable que trajo ImporChat y no vivía en ninguna pantalla.
@@ -447,13 +458,58 @@ export default function SeguimientoTab() {
     return s;
   }, [boardData, chatActividad]);
   const [soloEsperando, setSoloEsperando] = useSessionState<boolean>('seg:soloEsperando', false);
+
+  // ── "Le escribimos y no contestó: toca LLAMAR" (28-ago-2026) ───────────────
+  // Pedido del dueño: *"si mandan la plantilla y no contesta entonces necesito
+  // que llamen"*. Hasta hoy el mensaje salía y ahí moría el trabajo: nadie
+  // volvía a mirar ese pedido hasta que la transportadora lo devolvía.
+  //
+  // Se calcula con la MISMA función que decide el botón de la tarjeta
+  // (`tocaLlamar`), para que el chip y la tarjeta nunca digan cosas distintas.
+  // `minutoTick` lo refresca solo: el umbral es de tiempo, así que un pedido
+  // entra a esta cola sin que nadie toque nada.
+  const tocaLlamarSet = useMemo(() => {
+    const s = new Set<string>();
+    const ahora = Date.now();
+    for (const o of boardData) {
+      if (!o.dbId) continue;
+      if (tocaLlamar(chatActividad.get(String(o.dbId)), o.estado, ahora)) s.add(String(o.dbId));
+    }
+    return s;
+  }, [boardData, chatActividad, minutoTick]);
+  const [soloTocaLlamar, setSoloTocaLlamar] = useSessionState<boolean>('seg:soloTocaLlamar', false);
+
+  // Cuántos de esos SIGUEN sin trabajarse hoy. El chip muestra los dos números
+  // ("12 de 265") por la misma razón que los de las listas SLA: el total es un
+  // hecho —265 clientes que quedaron mudos y cuyo pedido no avanza sin ellos— y
+  // esconderlo cambiaría un problema por otro. Lo que tiene que bajar mientras
+  // el equipo trabaja es el de la izquierda.
+  //
+  // Si la lectura de gestiones falló, NO se descuenta nada: un número que baja
+  // por un dato que no existe le promete al dueño un trabajo que nadie hizo.
+  const tocaLlamarPendientes = useMemo(() => {
+    if (coverageSegError) return tocaLlamarSet.size;
+    let n = 0;
+    for (const o of boardData) {
+      if (!o.dbId || !tocaLlamarSet.has(String(o.dbId))) continue;
+      if (!estaGestionadoHoy(o.phone, mySegTouchedToday, gestionSegPorTelefono)) n += 1;
+    }
+    return n;
+  }, [boardData, tocaLlamarSet, mySegTouchedToday, gestionSegPorTelefono, coverageSegError]);
+
+  // ⛔ Los dos filtros son EXCLUYENTES: cruzarlos da siempre cero (uno pide que
+  // el último mensaje sea del cliente y el otro que sea nuestro), y un tablero
+  // vacío se lee como "no hay trabajo". Prender uno apaga el otro.
+  const verSoloEsperando = soloEsperando && !soloTocaLlamar;
+
   // El filtro se aplica al DIBUJO, no a `boardData`: los ids que alimentan la
   // consulta de actividad salen de la lista completa, así que encender el
   // filtro no puede vaciar su propia fuente de datos.
-  const boardDataMostrado = useMemo(
-    () => (soloEsperando ? boardData.filter((o) => o.dbId && esperandoRespuesta.has(String(o.dbId))) : boardData),
-    [boardData, soloEsperando, esperandoRespuesta],
-  );
+  const boardDataMostrado = useMemo(() => {
+    if (soloTocaLlamar) return boardData.filter((o) => o.dbId && tocaLlamarSet.has(String(o.dbId)));
+    if (verSoloEsperando) return boardData.filter((o) => o.dbId && esperandoRespuesta.has(String(o.dbId)));
+    return boardData;
+  }, [boardData, verSoloEsperando, esperandoRespuesta, soloTocaLlamar, tocaLlamarSet]);
 
   const stats = useMemo(() => {
     const s = {
@@ -1618,21 +1674,23 @@ export default function SeguimientoTab() {
           el botón desaparecía y `soloEsperando` seguía activo → tablero vacío
           "Sin pedidos" SIN forma de salir (persistía al recargar/cambiar tienda).
           Ahora siempre queda el escape "Ver todo". */}
-      {(esperandoRespuesta.size > 0 || (viewMode === 'board' && soloEsperando)) && (
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+      {(esperandoRespuesta.size > 0 || (viewMode === 'board' && verSoloEsperando)) && (
         <button
           type="button"
           onClick={() => {
+            setSoloTocaLlamar(false);
             if (viewMode !== 'board') { setViewMode('board'); setSoloEsperando(true); return; }
             setSoloEsperando((v) => !v);
           }}
-          aria-pressed={viewMode === 'board' && soloEsperando}
+          aria-pressed={viewMode === 'board' && verSoloEsperando}
           title="Un cliente escribió por WhatsApp y su mensaje es el último del chat: nadie le respondió. Tocá para verlos."
           className={cn(
             // Chip compacto (26-ago-2026): era un banner de ancho completo con
             // border-2 y padding grande — el mayor foco de ruido rojo del tope.
             // Mismos tokens rojos, ahora inline y fino. Handlers/condición intactos.
-            'mb-3 inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-left transition-colors',
-            viewMode === 'board' && soloEsperando
+            'inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-left transition-colors',
+            viewMode === 'board' && verSoloEsperando
               ? 'bg-danger/20 border-danger/60 text-danger'
               : 'bg-danger/10 border-danger/40 text-foreground hover:bg-danger/15 hover:border-danger/60',
           )}
@@ -1645,10 +1703,52 @@ export default function SeguimientoTab() {
               : `${esperandoRespuesta.size === 1 ? 'cliente te escribió' : 'clientes te escribieron'} y nadie les contestó`}
           </span>
           <span className="text-[11px] font-bold shrink-0 rounded-lg bg-danger/20 text-danger px-2 py-1">
-            {viewMode !== 'board' ? 'Ir a verlos' : soloEsperando ? 'Ver todo' : 'Ver solo estos'}
+            {viewMode !== 'board' ? 'Ir a verlos' : verSoloEsperando ? 'Ver todo' : 'Ver solo estos'}
           </span>
         </button>
       )}
+
+      {/* ── "Le escribimos y no contestó · toca llamar" (28-ago-2026) ──────────
+          El otro lado del chip de arriba: allá el cliente habló último, acá
+          hablamos nosotros y quedó en visto hace +6 h. Mismo molde a propósito,
+          incluido el escape "Ver todo" cuando el filtro está prendido y la
+          cuenta cae a 0 — sin él, vaciar la cola dejaba el tablero en blanco
+          sin forma de salir (trampa hallada el 26-ago). */}
+      {(tocaLlamarSet.size > 0 || (viewMode === 'board' && soloTocaLlamar)) && (
+        <button
+          type="button"
+          onClick={() => {
+            setSoloEsperando(false);
+            if (viewMode !== 'board') { setViewMode('board'); setSoloTocaLlamar(true); return; }
+            setSoloTocaLlamar((v) => !v);
+          }}
+          aria-pressed={viewMode === 'board' && soloTocaLlamar}
+          title={`Le escribimos por WhatsApp y el cliente no contestó en ${HORAS_PARA_LLAMAR} h. El siguiente intento es una llamada, no otro mensaje.`}
+          className={cn(
+            'inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-left transition-colors',
+            viewMode === 'board' && soloTocaLlamar
+              ? 'bg-warning/20 border-warning/60 text-warning'
+              : 'bg-warning/10 border-warning/40 text-foreground hover:bg-warning/15 hover:border-warning/60',
+          )}
+        >
+          <Phone size={13} className="text-warning shrink-0" aria-hidden="true" />
+          <span className="font-mono tabular-nums text-sm font-bold text-warning">{tocaLlamarPendientes}</span>
+          {tocaLlamarSet.size > tocaLlamarPendientes && (
+            <span className="font-mono tabular-nums text-[11px] text-muted-foreground">de {tocaLlamarSet.size}</span>
+          )}
+          <span className="text-xs min-w-0 truncate font-medium">
+            {tocaLlamarSet.size === 0
+              ? 'Ya los llamaste a todos — quitá el filtro para ver el tablero'
+              : tocaLlamarPendientes === 0
+                ? 'ya los trabajaste a todos hoy'
+                : `${tocaLlamarPendientes === 1 ? 'no contestó' : 'no contestaron'} el mensaje · toca llamar`}
+          </span>
+          <span className="text-[11px] font-bold shrink-0 rounded-lg bg-warning/20 text-warning px-2 py-1">
+            {viewMode !== 'board' ? 'Ir a verlos' : soloTocaLlamar ? 'Ver todo' : 'Ver solo estos'}
+          </span>
+        </button>
+      )}
+      </div>
 
       {viewMode === 'board' ? (
         <SegBoard

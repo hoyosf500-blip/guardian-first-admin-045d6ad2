@@ -8,6 +8,7 @@ import {
   type PlantillaMeta, type DatosPedido,
 } from '@/lib/plantillasMeta';
 import { partirPlantillas, etiquetaPlantilla } from '@/lib/accionSeguimiento';
+import { conRastreo } from '@/lib/datosPlantilla';
 import { cn } from '@/lib/utils';
 
 /**
@@ -118,7 +119,10 @@ export default function PlantillasWhatsapp({ externalId, fase, estadoPedido, pho
   // memoizar.
   const claveDatos = JSON.stringify(datos ?? {});
   useEffect(() => {
-    if (elegida) setValores(sugerirValores(elegida, JSON.parse(claveDatos) as DatosPedido));
+    // `conRastreo` arma el link de rastreo cuando la transportadora lo permite;
+    // sin él, el hueco del link se llenaba con el NÚMERO de guía y el cliente
+    // recibía "seguí tu envío aquí 👉 V123456789" (ver `datosPlantilla.ts`).
+    if (elegida) setValores(sugerirValores(elegida, conRastreo(JSON.parse(claveDatos) as DatosPedido)));
   }, [elegida, claveDatos]);
 
   const huecos = useMemo(() => (elegida ? faltantes(elegida, valores) : []), [elegida, valores]);

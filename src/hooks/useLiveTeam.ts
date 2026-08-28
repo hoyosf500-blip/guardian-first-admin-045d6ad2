@@ -53,6 +53,21 @@ export interface LiveOperator {
   /** Instante (ms) de la PRIMERA señal del día (mouse o trabajo, la más temprana).
    *  Base de "entró a las HH:MM (tarde)" y del ritmo en vivo. null si ninguna. */
   firstSignalMs: number | null;
+  /**
+   * Primera marca del día EN CADA CARRIL, para poder medir cada uno con su vara.
+   *
+   * ⛔ Sin esto no se puede partir el ritmo (28-ago-2026). El ritmo se calcula
+   * gestiones ÷ tiempo, y si se dividen las gestiones pero se comparte el reloj,
+   * el número sale inventado: las 51 gestiones de agencia que alguien hizo entre
+   * las 14:00 y las 16:10 se medirían contra el reloj que arrancó cuando abrió
+   * Confirmar a las 8:00 → "3,7 por hora · lento" sobre alguien que iba rápido.
+   * Ése es exactamente el reclamo que originó todo este trabajo.
+   *
+   * `firstConfirmarMs` sale de `order_results`; `firstSegMs` de `touchpoints`
+   * (que es, justamente, todo el trabajo que NO es Confirmar).
+   */
+  firstConfirmarMs: number | null;
+  firstSegMs: number | null;
   /** Gestiones por hora del día (Bogotá) para las barritas del turno. OJO: puede
    *  estar CAPADA a las ~400 marcas más recientes (EVENT_SCAN_LIMIT) — en equipos
    *  chicos cubre el día entero; en uno grande, las horas más viejas subcontarían. */
@@ -157,12 +172,20 @@ export function useLiveTeam(): LiveTeam {
     // se recorre TODA marca, no solo la primera vista.
     const firstWorkByOp = new Map<string, number>();
     const horasByOp = new Map<string, number[]>();
-    const noteEvento = (opId: string | null, iso: string) => {
+    // Primera marca POR CARRIL: cada ritmo se mide con su propio reloj (ver
+    // `firstConfirmarMs` / `firstSegMs` en LiveOperator).
+    const firstConfByOp = new Map<string, number>();
+    const firstSegByOp = new Map<string, number>();
+    const masTemprano = (m: Map<string, number>, opId: string, ms: number) => {
+      const prev = m.get(opId);
+      if (prev == null || ms < prev) m.set(opId, ms);
+    };
+    const noteEvento = (opId: string | null, iso: string, carril: 'confirmar' | 'seg') => {
       if (!opId) return;
       const ms = Date.parse(iso);
       if (!Number.isFinite(ms)) return;
-      const prev = firstWorkByOp.get(opId);
-      if (prev == null || ms < prev) firstWorkByOp.set(opId, ms);
+      masTemprano(firstWorkByOp, opId, ms);
+      masTemprano(carril === 'confirmar' ? firstConfByOp : firstSegByOp, opId, ms);
       const hora = Math.floor(bogotaSecondsOfDay(new Date(ms)) / 3600);
       const arr = horasByOp.get(opId) ?? [];
       arr.push(hora);
@@ -170,11 +193,11 @@ export function useLiveTeam(): LiveTeam {
     };
     if (!results.error) for (const r of (results.data as { operator_id: string | null; result: string; created_at: string }[] ?? [])) {
       noteWork(r.operator_id, r.created_at, accionResultado(r.result));
-      noteEvento(r.operator_id, r.created_at);
+      noteEvento(r.operator_id, r.created_at, 'confirmar');
     }
     if (!tps.error) for (const t of (tps.data as { operator_id: string | null; action: string; created_at: string }[] ?? [])) {
       noteWork(t.operator_id, t.created_at, accionTouchpoint(t.action));
-      noteEvento(t.operator_id, t.created_at);
+      noteEvento(t.operator_id, t.created_at, 'seg');
     }
 
     const minsSince = (ms: number | null | undefined) =>
@@ -229,6 +252,11 @@ export function useLiveTeam(): LiveTeam {
         ultimaAccion: work?.label ?? null,
         enLinea, estado,
         firstSignalMs, hourly,
+        // El reloj de cada carril sale SOLO de su propia fuente. Nunca cae al
+        // mouse ni a `firstSignalMs`: si no marcó nada en ese carril no hay
+        // ritmo que calcular, y rellenarlo daría un cero con cara de dato.
+        firstConfirmarMs: firstConfByOp.get(id) ?? null,
+        firstSegMs: firstSegByOp.get(id) ?? null,
       };
     })
     // Trabajando primero, luego presente, luego por trabajo del día.

@@ -76,7 +76,15 @@ const ACCION_POR_FASE: Partial<Record<SegStatusKey, AccionFase>> = {
   transito: {
     etiqueta: 'Avisarle que va en camino',
     gestion: 'Avisé que va en camino',
-    plantillas: [/en_transito|transito/, /en_camino_hoy/, /zona_entrega/],
+    // ⛔ NO lleva `en_camino_hoy` (28-ago-2026). EN TRÁNSITO significa que el
+    // paquete viaja, no que llega hoy — y la cuenta de Ecuador no tiene todavía
+    // una plantilla de tránsito que Guardian pueda completar (`en_transito_v2`
+    // pide el n° de orden y la ciudad, que no sabe llenar). Con el patrón puesto,
+    // la fase caía a *"¡hoy es el día! su pedido sale a entrega"*: una promesa
+    // falsa, y prometer una entrega que no llega es la vía corta a que el
+    // cliente cancele. Sin plantilla el botón se esconde y queda la botonera
+    // declarativa — mejor sin botón que un botón que miente.
+    plantillas: [/en_transito|transito/, /zona_entrega/],
   },
   novedad: {
     etiqueta: 'Preguntarle la dirección',
@@ -187,6 +195,9 @@ export interface PlantillaOrdenable {
   /** Los huecos `{{n}}` de la plantilla. Solo se usa la CANTIDAD, para desempatar
    *  entre dos que sirven igual — ver `partirPlantillas`. */
   variables?: readonly unknown[];
+  /** Los botones de respuesta rápida. Solo se usa si HAY o no, para desempatar:
+   *  un botón es un toque, y el objetivo del dueño es que contesten. */
+  botones?: readonly unknown[];
 }
 
 export const MAX_RECOMENDADAS = 3;
@@ -226,18 +237,32 @@ export function partirPlantillas<T extends PlantillaOrdenable>(
         !usadas.has(p.nombre) && !p.noSoportada
         && !(soloCompletables && completable && !completable(p))
         && patron.test(sinTildes(p.nombre)));
-      // ⛔ Dentro del MISMO patrón desempata la que usa más datos del pedido
-      // (visto en producción el 27-ago-2026). Antes ganaba la primera que
-      // llegara, o sea el orden alfabético de Meta, y para "en agencia" eso
-      // daba `retiro_agencia_k1`:
-      //   "Estimado Cliente: Servientrega le notifica que su pedido esta listo
-      //    para ser retirado en agencia: SERVIENTREGA"
-      // — sin nombre, sin producto, y con el hueco de la agencia relleno con la
-      // TRANSPORTADORA, así que ni siquiera le dice al cliente dónde ir.
-      // Al lado estaba `retiro_agencia_v1` (nombre + producto + la urgencia de
-      // que la agencia lo devuelve), que es la que evita la devolución.
-      // Más huecos llenados con datos reales = mensaje más personalizado.
-      for (const p of [...candidatas].sort((a, b) => (b.variables?.length ?? 0) - (a.variables?.length ?? 0))) {
+      // ⛔ Dentro del MISMO patrón hay DOS desempates, en este orden:
+      //
+      // 1. **La que tiene BOTÓN de respuesta rápida** (28-ago-2026). El objetivo
+      //    del dueño es *"que nos contesten y no nos dejen en visto"*, y un botón
+      //    es UN toque contra escribir un mensaje. Efecto medido en la cuenta de
+      //    Ecuador: `reparto` pasa de `en_camino_hoy_v1` (avisa y se despide) a
+      //    `_v2`, que termina en *"¿Estará disponible hoy para recibirlo?"* con
+      //    "Sí, estaré pendiente" / "Coordinar otra hora". La misma noticia, pero
+      //    con una respuesta posible.
+      //
+      // 2. **La que usa más datos del pedido** (visto en producción el
+      //    27-ago-2026). Antes ganaba la primera que llegara, o sea el orden
+      //    alfabético de Meta, y para "en agencia" eso daba `retiro_agencia_k1`:
+      //      "Estimado Cliente: Servientrega le notifica que su pedido esta listo
+      //       para ser retirado en agencia: SERVIENTREGA"
+      //    — sin nombre, sin producto, y con el hueco de la agencia relleno con
+      //    la TRANSPORTADORA, así que ni siquiera le dice al cliente dónde ir.
+      //    Al lado estaba `retiro_agencia_v1` (nombre + producto + la urgencia de
+      //    que la agencia lo devuelve), que es la que evita la devolución.
+      //
+      // Ninguno de los dos pisa la prioridad de PATRÓN: un recordatorio de
+      // vencimiento con botones no puede ganarle al primer aviso de llegada.
+      const conBoton = (p: T) => ((p.botones?.length ?? 0) > 0 ? 1 : 0);
+      for (const p of [...candidatas].sort((a, b) =>
+        conBoton(b) - conBoton(a)
+        || (b.variables?.length ?? 0) - (a.variables?.length ?? 0))) {
         if (recomendadas.length >= MAX_RECOMENDADAS) return;
         recomendadas.push(p);
         usadas.add(p.nombre);

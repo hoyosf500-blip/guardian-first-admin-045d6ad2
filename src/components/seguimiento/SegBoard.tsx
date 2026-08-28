@@ -24,6 +24,8 @@ import { useSessionState } from '@/hooks/useSessionState';
 import { TiltCard } from '@/components/ui3d';
 import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDialog';
 import AccionPrincipal from '@/components/seguimiento/AccionPrincipal';
+import BotonLlamar from '@/components/seguimiento/BotonLlamar';
+import { tocaLlamar } from '@/lib/escalarLlamada';
 import { ventanaWhatsapp, MOTIVO_VENTANA } from '@/lib/ventanaWhatsapp';
 import { cn, formatCOP } from '@/lib/utils';
 
@@ -379,6 +381,10 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
 
   const trackUrl = getTrackingUrl(o.transportadora, o.guia, countryCode);
   const carrierHome = getTrackingUrl(o.transportadora, '', countryCode);
+  // Le escribimos, no contestó y ya pasaron 6 h → el siguiente intento es una
+  // llamada, no otro mensaje. Sin actividad de chat leída devuelve false: no
+  // saber si contestó nunca se lee como "no contestó" (`escalarLlamada.ts`).
+  const debeLlamar = tocaLlamar(actividad, o.estado);
   const dias = statusAgeDays(o);
   const priority = calcPriority(o);
   const pLevel = getPriorityLevel(priority);
@@ -829,7 +835,22 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
                 botón declarativo de siempre — la decisión vive dentro de
                 `AccionPrincipal`, que es el único que sabe si va a poder.
                 Las otras dos son los desenlaces del TELÉFONO: eso no lo puede
-                medir nadie más que quien hizo la llamada. */}
+                medir nadie más que quien hizo la llamada.
+
+                ⛔ Salvo que YA se le haya escrito y no conteste hace 6 h: ahí
+                manda LLAMAR (`escalarLlamada.ts`, pedido del dueño 28-ago-2026).
+                Mandarle un segundo WhatsApp a quien dejó el primero en visto es
+                repetir el intento que ya falló. El de mandar NO desaparece —baja
+                a secundario— porque a veces sí se quiere insistir por escrito. */}
+            {debeLlamar && (
+              <BotonLlamar
+                phone={o.phone}
+                countryCode={countryCode}
+                actividad={actividad}
+                estado={o.estado}
+                className="w-full min-h-11 justify-center text-[12px]"
+              />
+            )}
             <AccionPrincipal
               externalId={String(o.externalId ?? '')}
               phone={o.phone}
@@ -842,8 +863,17 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
                 ciudad: o.ciudad,
                 producto: o.producto,
                 valor: o.valor ? formatCOP(o.valor) : null,
+                // El link de rastreo NO se pasa acá: lo arma `conRastreo`
+                // (`datosPlantilla.ts`) para las siete pantallas a la vez, con
+                // el guard de que la URL lleve la guía adentro. `trackUrl` de
+                // esta tarjeta puede ser la PORTADA de la transportadora, que
+                // sirve para el botón "rastrear" pero no para mandársela a un
+                // cliente diciéndole "seguí tu envío aquí".
               }}
-              className="w-full min-h-11 justify-center text-[12px]"
+              className={cn(
+                'w-full min-h-11 justify-center text-[12px]',
+                debeLlamar && 'opacity-80',
+              )}
               onEnviado={(g) => setGestionada(g)}
               fallback={metodosRapidos[0] ? (
                 <button

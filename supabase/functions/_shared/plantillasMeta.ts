@@ -72,6 +72,10 @@ export interface DatosPedido {
   ciudad?: string | null;
   producto?: string | null;
   valor?: string | null;
+  /** El link de rastreo YA ARMADO (`getTrackingUrl` en `orderUtils.ts`, que sabe
+   *  la URL de cada transportadora por país). Va aparte de `guia` a propósito:
+   *  son dos cosas distintas y confundirlas fue un bug real — ver `esUrl`. */
+  rastreoUrl?: string | null;
 }
 
 const texto = (v: unknown) => String(v ?? "").trim();
@@ -234,6 +238,71 @@ export function construirPayloadMeta(
 
 const sinTildes = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
+/**
+ * ¿El ejemplo de Meta para este hueco es una URL? Entonces el hueco ES un link.
+ *
+ * ⛔ Esto NO es una precaución: es la reproducción de un bug que estuvo saliendo
+ * a clientes reales (medido el 28-ago-2026 sobre la cuenta de Ecuador).
+ * `guia_generada_v1` dice *"Puede seguir su envío en todo momento aquí 👉 {{3}}"*.
+ * Ese hueco no lleva etiqueta (el texto no termina en dos puntos), así que la
+ * sugerencia caía al EJEMPLO — que es
+ * `https://www.servientrega.com.ec/Tracking/?...` — y esa URL **contiene la
+ * palabra `tracking`**, que matchea la regla de guía. Al cliente le llegaba:
+ *
+ *     Puede seguir su envío en todo momento aquí 👉 V123456789
+ *
+ * Un número donde va un link. `zona_entrega_k1` era peor: en su hueco de link
+ * ponía el NOMBRE DE LA TRANSPORTADORA (su URL de ejemplo trae "laarcourier",
+ * que matchea la regla de agencia/courier).
+ *
+ * Se decide por el EJEMPLO, que es un hecho del dato, y no por la etiqueta
+ * "tracking"/"rastreo"/"seguimiento": esas palabras sirven igual para el número
+ * de guía, y adivinar cuál de las dos quiere el hueco es justo lo que rompió.
+ */
+const esUrl = (s: string) => /^https?:\/\//i.test(texto(s));
+
+/**
+ * Lo que el CUERPO dice justo antes del hueco, cuando no hay etiqueta.
+ *
+ * ── Por qué hizo falta (28-ago-2026) ────────────────────────────────────────
+ * Medido sobre la cuenta de Ecuador: `retiro_agencia_v1` —la buena, la que
+ * nombra al cliente y su producto y avisa que la agencia lo devuelve— **no se
+ * podía mandar NUNCA**. Sus dos huecos salían vacíos:
+ *
+ *   "Estimado/a {{1}}, su {{2}} ya está esperándolo/a en la agencia…"
+ *
+ * `{{1}}` no lo agarraba el caso especial del saludo porque estaba escrito
+ * `\{\{1\}\}` justo después de "Estimado/**a** " y la expresión pedía el hueco
+ * pegado al saludo. Y `{{2}}` se probaba contra el EJEMPLO de Meta —"Gafas
+ * Inteligentes G58"—, que es el VALOR de un producto y no la palabra
+ * "producto", así que no matcheaba la regla de producto.
+ *
+ * Consecuencia: quedaba la única completable, `retiro_agencia_k1`, que le
+ * escribe *"Estimado Cliente… retirado en agencia: SERVIENTREGA"* — sin nombre,
+ * sin producto y sin decir a qué agencia ir. El desempate que se agregó el 27
+ * de agosto para preferir la buena nunca llegó a aplicarse: sólo compite entre
+ * las que se pueden completar, y la buena no lo era.
+ *
+ * ── Qué lee, y por qué no es adivinar ───────────────────────────────────────
+ * Dos construcciones del español, sobre el texto REAL de la plantilla — la
+ * misma idea que `etiquetaDe`, que lee lo que precede al hueco:
+ *   - saludo + hueco  ("Hola {{1}}", "Estimado/a {{1}}")   → es el nombre
+ *   - posesivo + hueco ("su {{2}}", "tu pedido de {{2}}")   → es el producto
+ *
+ * Y lo que NO cubre es tan importante: "tu orden {{2}}" (`en_transito_v2`) no
+ * matchea, porque ahí `{{2}}` es el número de orden interno. Si el texto no lo
+ * dice, se deja vacío.
+ */
+function pistaDelTexto(cuerpo: string, indice: number): "nombre" | "producto" | null {
+  const pos = cuerpo.indexOf(`{{${indice}}}`);
+  if (pos < 0) return null;
+  const antes = cuerpo.slice(Math.max(0, pos - 40), pos);
+  if (/(hola|estimad[\p{L}/]*|apreciad[\p{L}/]*|buen[oa]s(\s+\p{L}+)?)[\s,¡!]*$/iu.test(antes)) return "nombre";
+  if (/\b(su|tu|sus|tus)\s*$/iu.test(antes)) return "producto";
+  if (/\b(pedido|orden|compra)\s+de\s*$/iu.test(antes)) return "producto";
+  return null;
+}
+
 interface Regla { prueba: RegExp; campo: (d: DatosPedido) => string }
 
 const REGLAS: Regla[] = [
@@ -251,25 +320,44 @@ const REGLAS: Regla[] = [
  * Es una SUGERENCIA, no un veredicto: lo que no se puede deducir queda vacío y
  * la asesora lo escribe. Devuelve solo lo que pudo resolver.
  */
+function porReglas(contra: string, d: DatosPedido): string {
+  if (!contra) return "";
+  for (const r of REGLAS) if (r.prueba.test(contra)) return r.campo(d);
+  return "";
+}
+
 export function sugerirValores(p: PlantillaMeta, d: DatosPedido): Record<number, string> {
   const out: Record<number, string> = {};
   for (const v of p.variables) {
-    // Caso especial y muy común: el primer hueco de un saludo ("Hola {{1}},")
-    // es el nombre. No lleva dos puntos, así que ninguna etiqueta lo cubre.
-    if (v.indice === 1 && !v.etiqueta && /(hola|estimad|buen[oa]s?)\s*\{\{1\}\}/i.test(sinTildes(p.cuerpo))) {
-      const n = primerNombre(d.nombre);
-      if (n) out[1] = n;
+    // ── En orden de qué tan confiable es la señal ───────────────────────────
+    // 1. Hueco de LINK: se llena con el link, o con nada. Va PRIMERO porque una
+    //    URL de rastreo contiene "tracking" y "courier", y cualquiera de esas
+    //    dos se lo roba. Sin link real queda vacío: la plantilla no se puede
+    //    completar y el botón la salta — que es lo correcto. Mandar la guía
+    //    suelta ahí es peor que no mandar el mensaje.
+    if (esUrl(v.ejemplo || "") || /\b(link|enlace|url)\b/.test(sinTildes(v.etiqueta || ""))) {
+      const u = texto(d.rastreoUrl);
+      if (u) out[v.indice] = u;
       continue;
     }
-    const contra = sinTildes(v.etiqueta || v.ejemplo || "");
-    if (!contra) continue;
-    for (const r of REGLAS) {
-      if (r.prueba.test(contra)) {
-        const val = r.campo(d);
-        if (val) out[v.indice] = val;
-        break;
-      }
+    // 2. Etiqueta con dos puntos ("Agencia: {{2}}"): el cuerpo NOMBRA el hueco.
+    //    Es lo más fuerte que hay, y por eso gana antes que cualquier pista.
+    if (v.etiqueta) {
+      const val = porReglas(sinTildes(v.etiqueta), d);
+      if (val) out[v.indice] = val;
+      continue;
     }
+    // 3. Lo que dice el texto justo antes ("Hola {{1}}", "su {{2}}").
+    const pista = pistaDelTexto(p.cuerpo, v.indice);
+    if (pista) {
+      const val = pista === "nombre" ? primerNombre(d.nombre) : texto(d.producto);
+      if (val) out[v.indice] = val;
+      continue;
+    }
+    // 4. Último recurso: el ejemplo que guardó Meta. Es el más débil —es un
+    //    VALOR, no el nombre del campo— y por eso quedó al final.
+    const val = porReglas(sinTildes(v.ejemplo || ""), d);
+    if (val) out[v.indice] = val;
   }
   return out;
 }

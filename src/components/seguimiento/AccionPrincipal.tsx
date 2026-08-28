@@ -7,6 +7,7 @@ import { usePlantillasMeta, useEnviarPlantilla } from '@/hooks/usePlantillasMeta
 import { accionPrincipal, plantillaParaAccion } from '@/lib/accionSeguimiento';
 import { plantillasPara } from '@/lib/plantillasChat';
 import { renderizar, faltantes, sugerirValores, type DatosPedido } from '@/lib/plantillasMeta';
+import { conRastreo } from '@/lib/datosPlantilla';
 import { ventanaWhatsapp } from '@/lib/ventanaWhatsapp';
 import { classifySegEstado } from '@/lib/segStatus';
 import type { ActividadChatOrden } from '@/lib/actividadChat';
@@ -86,7 +87,10 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
   // del tablero.
   const claveDatos = JSON.stringify(datos ?? {});
   const datosPedido = useMemo<DatosPedido>(
-    () => ({ ...(JSON.parse(claveDatos) as DatosPedido), nombre: datos?.nombre ?? nombre ?? null }),
+    // `conRastreo` arma el link de rastreo si la transportadora lo permite. Sin
+    // él, la plantilla que dice "seguí tu envío aquí 👉 {{3}}" recibía el NÚMERO
+    // de guía y le llegaba rota al cliente (ver `datosPlantilla.ts`).
+    () => conRastreo({ ...(JSON.parse(claveDatos) as DatosPedido), nombre: datos?.nombre ?? nombre ?? null }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [claveDatos, nombre],
   );

@@ -10,6 +10,7 @@ import { getWhatsAppPhone, formatPhone } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
 import { useRecordGestion } from '@/hooks/useRecordGestion';
 import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDialog';
+import AccionPrincipal from '@/components/seguimiento/AccionPrincipal';
 
 // Re-render cada 60s para que "hace 2 h" suba solo, sin re-fetch.
 function useMinuteTick(): void {
@@ -26,6 +27,21 @@ function tono(entranteAt: number): { chip: string; dot: string } {
   if (h >= 3) return { chip: 'bg-danger/14 border-danger/30 text-danger', dot: 'bg-danger' };
   if (h >= 1) return { chip: 'bg-warning/14 border-warning/30 text-warning', dot: 'bg-warning' };
   return { chip: 'bg-success/14 border-success/30 text-success', dot: 'bg-success' };
+}
+
+/** El botón de siempre: abre el cuadro completo con todas las plantillas. Es el
+ *  fallback cuando la fase del pedido no tiene una acción obvia. */
+function BotonResponder({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex-1 min-w-[130px] text-[11px] py-2.5 rounded-xl bg-success/16 border border-success/40 text-success font-semibold hover:border-success/70 inline-flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40"
+    >
+      <MessageSquare size={13} /> Responder por WhatsApp
+    </button>
+  );
 }
 
 export default function InboxPage() {
@@ -132,14 +148,52 @@ export default function InboxPage() {
               </div>
 
               <div className="flex gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => setAbierto(o)}
-                  disabled={!o.externalId}
-                  className="flex-1 min-w-[130px] text-[11px] py-2.5 rounded-xl bg-success/16 border border-success/40 text-success font-semibold hover:border-success/70 inline-flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40"
-                >
-                  <MessageSquare size={13} /> Responder por WhatsApp
-                </button>
+                {/* El MISMO botón del tablero (28-ago-2026, *"y lo mismo en
+                    bandeja"*): dice qué mensaje le va a llegar al cliente según
+                    el estado de SU pedido, en vez de abrir una grilla de 40
+                    plantillas con nombres crudos de Meta.
+                    Acá además sale gratis y natural: el cliente acaba de
+                    escribir, así que la ventana de 24 h está abierta y va texto
+                    libre, sin plantilla. Si su fase no tiene acción obvia, cae
+                    al botón de siempre — nunca se queda sin dónde responder. */}
+                {o.externalId ? (
+                  <AccionPrincipal
+                    externalId={String(o.externalId)}
+                    phone={o.phone}
+                    estado={o.estado}
+                    nombre={o.nombre}
+                    actividad={{
+                      salienteAt: o.salienteAt,
+                      salienteTipo: null,
+                      entranteAt: o.entranteAt,
+                      leidoAt: o.leidoAt,
+                    }}
+                    datos={{
+                      guia: o.guia,
+                      transportadora: o.transportadora,
+                      ciudad: o.ciudad,
+                      producto: o.producto,
+                      valor: o.valor ? formatCOP(o.valor) : null,
+                    }}
+                    modulo="SEG"
+                    className="flex-1 min-w-[130px] justify-center py-2.5 text-[11px]"
+                    fallback={<BotonResponder onClick={() => setAbierto(o)} />}
+                  />
+                ) : (
+                  <BotonResponder onClick={() => setAbierto(o)} disabled />
+                )}
+                {/* Escribir otra cosa: el cuadro completo con todas las
+                    plantillas sigue a un toque. No se esconde nada — el botón
+                    de arriba propone, no decide por ella. */}
+                {o.externalId && (
+                  <button
+                    type="button"
+                    onClick={() => setAbierto(o)}
+                    className="text-[11px] py-2.5 px-3 rounded-xl bg-card/40 text-muted-foreground font-semibold hover:text-foreground hover:border-border-strong inline-flex items-center justify-center gap-1.5 border border-border transition-colors"
+                  >
+                    <MessageSquare size={13} /> Otro mensaje
+                  </button>
+                )}
                 <a
                   href={'tel:+' + getWhatsAppPhone(o.phone, cc)}
                   onClick={() => void recordContacto(o.phone, 'LLAMADA', 'llamó')}

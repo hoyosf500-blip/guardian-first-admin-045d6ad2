@@ -29,6 +29,12 @@ export interface InboxItem {
   transportadora: string | null;
   /** ms epoch del último mensaje del cliente (por eso está esperando). */
   entranteAt: number;
+  /** ms epoch del último mensaje NUESTRO, y cuándo se leyó la conversación.
+   *  Van juntos para poder armar el `ActividadChatOrden` que necesita el botón
+   *  de acción: sin ellos, la ventana de 24 h queda en `sin_dato` y el botón se
+   *  apaga — justo en la pantalla donde la ventana está abierta con seguridad. */
+  salienteAt: number | null;
+  leidoAt: number;
 }
 
 export type InboxStatus = 'cargando' | 'ok' | 'not_ready' | 'error';
@@ -81,12 +87,9 @@ export function useInboxEsperando(storeId: string | null) {
     for (const r of filas) {
       const entranteAt = r.chat_entrante_at ? Date.parse(r.chat_entrante_at) : null;
       if (entranteAt == null) continue;
-      const estado = estadoConversacion({
-        salienteAt: r.chat_saliente_at ? Date.parse(r.chat_saliente_at) : null,
-        salienteTipo: null,
-        entranteAt,
-        leidoAt: r.chat_leido_at ? Date.parse(r.chat_leido_at) : Date.now(),
-      });
+      const salienteAt = r.chat_saliente_at ? Date.parse(r.chat_saliente_at) : null;
+      const leidoAt = r.chat_leido_at ? Date.parse(r.chat_leido_at) : Date.now();
+      const estado = estadoConversacion({ salienteAt, salienteTipo: null, entranteAt, leidoAt });
       if (estado !== 'espera_respuesta') continue;
       if (TERMINALES.has((r.estado || '').toUpperCase().trim())) continue;
       out.push({
@@ -101,6 +104,8 @@ export function useInboxEsperando(storeId: string | null) {
         guia: r.guia,
         transportadora: r.transportadora,
         entranteAt,
+        salienteAt,
+        leidoAt,
       });
     }
     // Quien lleva MÁS esperando, primero: es a quien más urge no dejar enfriar.
