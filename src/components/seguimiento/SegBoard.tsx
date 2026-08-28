@@ -5,7 +5,7 @@ import {
   Package, Tag, Truck, MapPin, AlertTriangle, CheckCircle, RotateCcw,
   DollarSign, Layers, ExternalLink, RefreshCw, MessageCircle, Phone,
   ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Maximize2, CheckCircle2, Send,
-  MessagesSquare, Clock,
+  MessagesSquare, Clock, History, Copy,
 } from 'lucide-react';
 import { OrderData, getTrackingUrl, getWhatsAppPhone, parseDate } from '@/lib/orderUtils';
 import { classifySegEstado, estadoDifiereDeFase, normalizaRotulo, type SegStatusKey } from '@/lib/segStatus';
@@ -552,8 +552,30 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
         >
           {o.nombre || 'Sin nombre'}
         </span>
+        {/* El número, COPIABLE de un clic (pedido del equipo, 28-ago-2026: lo
+            necesitan para pegarlo en Dropi). Antes era texto suelto dentro de
+            una tarjeta clicable: seleccionarlo con el mouse abría el pedido, así
+            que en la práctica no se podía copiar. `stopPropagation` obligatorio
+            por lo mismo. Sin `navigator.clipboard` (contexto no seguro) no se
+            finge: avisa que no se pudo. */}
         {o.externalId
-          ? <span className="text-[11px] text-muted-foreground font-mono tabular-nums mt-1 block truncate">{o.externalId}</span>
+          ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const n = String(o.externalId);
+                navigator.clipboard?.writeText(n)
+                  .then(() => toast.success(`Copiado: ${n}`))
+                  .catch(() => toast.error('No se pudo copiar. Anotalo a mano.'));
+              }}
+              title={`Copiar el número ${o.externalId}`}
+              className="group/copy mt-1 flex max-w-full items-center gap-1 text-[11px] text-muted-foreground font-mono tabular-nums hover:text-foreground transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded"
+            >
+              <span className="truncate">{o.externalId}</span>
+              <Copy size={10} aria-hidden="true" className="shrink-0 opacity-0 group-hover/copy:opacity-70 transition-opacity" />
+            </button>
+          )
           : <span className="text-[11px] text-muted-foreground font-mono mt-1 block">Sin ID</span>}
       </div>
 
@@ -741,6 +763,30 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
             </div>
           </div>
         ) : (
+          <>
+            {/* ⛔ QUIÉN YA LO INTENTÓ — informar no es bloquear (28-ago-2026).
+                El cartel verde de arriba solo sale con `yaGestionada`, y una
+                gestión del equipo solo cuenta ahí si el contacto fue EFECTIVO.
+                O sea que un "No contestó" de una compañera dejaba la tarjeta
+                exactamente igual que una intacta: la siguiente asesora volvía a
+                llamar al mismo cliente sin saberlo, y el dueño lo reportó como
+                *"no hay etiquetas de si tocaron ese pedido"*.
+                Que NO bloquee es a propósito y no se toca —el pedido sigue
+                necesitando trabajo—; lo que faltaba era decirlo. */}
+            {gEquipo && (
+              <div
+                className="mt-2.5 flex items-center gap-1.5 rounded-lg border border-border bg-card/40 px-2 py-1 text-[11px] text-muted-foreground"
+                title={`${nombreDe ? nombreDe(gEquipo.ultimoPor) : 'Una asesora'} ya lo trabajó hoy: ${gEquipo.ultimoResult}. Sigue en la cola porque no se pudo hablar con el cliente.`}
+              >
+                <History size={10} aria-hidden="true" className="shrink-0" />
+                <span className="truncate">
+                  <b className="font-semibold text-foreground">{nombreDe ? nombreDe(gEquipo.ultimoPor) : 'Una asesora'}</b>
+                  {` · ${gEquipo.ultimoResult}`}
+                  {haceCuanto(gEquipo.ultimoAt) ? ` · ${haceCuanto(gEquipo.ultimoAt)}` : ''}
+                  {gEquipo.intentos > 1 ? ` · ${gEquipo.intentos} intentos hoy` : ''}
+                </span>
+              </div>
+            )}
           <div className="mt-2.5 flex flex-wrap gap-1.5">
             {/* La PRIMERA acción MANDA el mensaje; solo si no se puede (fase sin
                 acción, tienda sin ImporChat, ninguna plantilla que sirva) cae al
@@ -833,11 +879,16 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
               </button>
             ))}
           </div>
+          </>
         )
       )}
 
-      {/* El cuadro para escribir. Se monta solo cuando se abre (Radix lo lleva
-          a un portal, así que sus clicks no navegan a la ficha del pedido). */}
+      {/* El cuadro para escribir. Se monta solo cuando se abre.
+          ⛔ Radix lo lleva a un PORTAL, pero eso NO alcanza para que sus clicks
+          no naveguen: React burbujea por su árbol, no por el DOM, y ahí el padre
+          sigue siendo esta tarjeta. (Este comentario afirmaba lo contrario y por
+          eso cerrar el chat con la X metía a la asesora en la ficha del pedido.)
+          El corte está en `DialogContent`, dentro de EscribirWhatsappDialog. */}
       {escribiendo && o.externalId && (
         <EscribirWhatsappDialog
           open={escribiendo}

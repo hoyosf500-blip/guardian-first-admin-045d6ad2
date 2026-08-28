@@ -167,9 +167,14 @@ export default function AdvisorCard({
     );
   }
 
-  const rt = ringTone(vm.tasaDia);
+  const rt = ringTone(vm.anilloPct);
   const d = vm.detalle;
   const serie = isToday ? vm.hourly : [];
+  // Una sola serie, y va colgada del carril donde está el trabajo (ver el
+  // comentario del bloque de ritmo).
+  const hayBarritas = isToday && serie.length > 0;
+  const barritasConfirmar = hayBarritas && vm.carril !== 'seguimiento' ? <Barritas serie={serie} /> : null;
+  const barritasSeguimiento = hayBarritas && vm.carril === 'seguimiento' ? <Barritas serie={serie} /> : null;
 
   return (
     <article className={`relative flex flex-col gap-3.5 overflow-hidden rounded-2xl border ${CARD_RING[vm.atencion]} bg-card/40 shadow-card3d hairline-top p-4`}>
@@ -225,19 +230,30 @@ export default function AdvisorCard({
             </>
           )}
         </div>
-        <div className="relative shrink-0" style={{ width: 76, height: 76 }} title={vm.tasaDia == null ? 'Sin pedidos trabajados aún.' : `Confirmó ${vm.confirmados} de ${vm.trabajo} que trabajó`}>
+        {/* El aro sigue al CARRIL (28-ago-2026). Antes salía siempre de
+            `tasaDia`, que es confirmar-only: a quien trabajó Seguimiento le
+            quedaba un aro vacío con "—" al lado de una tarjeta llena de
+            trabajo. */}
+        <div className="relative shrink-0" style={{ width: 76, height: 76 }}
+          title={
+            vm.anilloPct == null
+              ? 'Sin pedidos trabajados aún.'
+              : vm.carril === 'seguimiento'
+                ? `Resolvió ${vm.detalle.segResueltos} de los ${vm.segPedidos ?? '—'} pedidos que tocó. Ojo: solo cuentan como "resuelto" cuatro marcas concretas y el aviso de agencia no está entre ellas, así que este número es un piso.`
+                : `Confirmó ${vm.confirmados} de ${vm.trabajo} que trabajó`
+          }>
           <svg viewBox="0 0 36 36" className="h-full w-full -rotate-90">
             <circle cx="18" cy="18" r="15.5" fill="none" stroke="hsl(var(--foreground) / 0.1)" strokeWidth="3.2" />
-            {vm.tasaDia != null && (
+            {vm.anilloPct != null && (
               <circle cx="18" cy="18" r="15.5" fill="none" stroke={RING_HSL[rt]} strokeWidth="3.2"
-                strokeDasharray={`${vm.tasaDia} 100`} pathLength={100} strokeLinecap="round" />
+                strokeDasharray={`${vm.anilloPct} 100`} pathLength={100} strokeLinecap="round" />
             )}
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className={`font-mono tabular-nums text-lg font-bold leading-none ${vm.tasaDia == null ? 'text-muted-foreground' : TXT[rt]}`}>
-              {vm.tasaDia == null ? '—' : `${vm.tasaDia}%`}
+            <span className={`font-mono tabular-nums text-lg font-bold leading-none ${vm.anilloPct == null ? 'text-muted-foreground' : TXT[rt]}`}>
+              {vm.anilloPct == null ? '—' : `${vm.anilloPct}%`}
             </span>
-            <span className="text-[8px] uppercase tracking-[0.08em] text-muted-foreground mt-0.5">del día</span>
+            <span className="text-[8px] uppercase tracking-[0.08em] text-muted-foreground mt-0.5">{vm.anilloEtiqueta}</span>
           </div>
         </div>
       </div>
@@ -246,7 +262,12 @@ export default function AdvisorCard({
           Dos varas a propósito (28-ago-2026): Confirmar es telefónico y se mide
           a 25/h; Seguimiento es tocar un botón y se mide a 40/h. Con una sola
           vara, quien pasó la mañana avisando clientes en agencia salía "3,7 por
-          hora · lento" con 51 gestiones hechas. */}
+          hora · lento" con 51 gestiones hechas.
+
+          Las barritas son de TODAS las gestiones de la hora. Colgadas siempre de
+          la línea de Confirmar, a un asesor de Seguimiento le quedaban barras
+          llenas al lado de un "marcó 0 gestiones" — dos cosas que se contradicen
+          en la misma línea. Van al carril donde está el trabajo. */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-border bg-card/40 px-3 py-2">
         <RitmoLinea
           carril={isToday ? 'Confirmar' : null}
@@ -256,7 +277,7 @@ export default function AdvisorCard({
           count={vm.ritmoCount}
           elapsedMin={vm.ritmoElapsedMin}
           sufijoTiempo={isToday ? '' : ' de trabajo'}
-          barritas={isToday && serie.length > 0 ? <Barritas serie={serie} /> : null}
+          barritas={barritasConfirmar}
           title={`Llamadas de confirmación${isToday ? ' · óptimo 25/h, rojo bajo 15/h' : ' (gestiones por hora sobre horas trabajadas)'}`}
         />
         {/* Seguimiento SIEMPRE en la cara cuando hay dato del día, aunque sea 0:
@@ -270,6 +291,7 @@ export default function AdvisorCard({
             count={vm.segHoy}
             elapsedMin={vm.ritmoSegElapsedMin}
             sufijoTiempo=""
+            barritas={barritasSeguimiento}
             title="Seguimiento y novedades · óptimo 40/h, rojo bajo 25/h. Es más exigente que Confirmar porque es tocar un botón, no llamar."
           />
         )}

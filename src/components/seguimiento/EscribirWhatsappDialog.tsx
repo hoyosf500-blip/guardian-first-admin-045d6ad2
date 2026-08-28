@@ -119,7 +119,16 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
+      {/* ⛔ El clic NO puede salir de acá (28-ago-2026, reportado por el dueño:
+          *"le doy en la X para salirme y lo que hace es entrar al pedido"*).
+          Radix dibuja esto en un PORTAL, así que en el DOM cuelga del <body> —
+          pero React burbujea por su propio árbol, y ahí el padre sigue siendo la
+          tarjeta, que tiene onClick para abrir el pedido. Cerrar el chat te
+          metía en la ficha.
+          Va en el diálogo y no en cada tarjeta porque lo abren SEIS pantallas
+          (SegBoard, CrmTable, CallView, CrmCallView, NovedadView y la card de
+          chat) y varias de ellas también son filas clicables. */}
+      <DialogContent className="max-w-xl" onClick={(e) => e.stopPropagation()}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <MessageCircle size={16} className="text-success" aria-hidden="true" />

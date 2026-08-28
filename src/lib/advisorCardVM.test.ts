@@ -199,3 +199,29 @@ describe('carril — las cuatro cajas tienen que mostrar el trabajo que la perso
     expect(vm.segPedidos).toBeNull();
   });
 });
+
+describe('el aro grande también sigue al carril', () => {
+  // "ya marca pero la barra no se mueve como Estefano" (dueño, 28-ago-2026):
+  // el aro salía de tasaDia, que es confirmar-only, así que a Roberto le quedaba
+  // vacío al lado de una tarjeta con 61 gestiones.
+
+  it('Seguimiento: el aro muestra resueltos ÷ pedidos, no un "—"', () => {
+    const [vm] = buildAdvisorVMs(baseInput({
+      rows: [row({ seg_acciones: 61, seg_resueltos: 7, seg_pedidos: 43, seg_resueltos_dist: 7 })],
+    }));
+    expect(vm.anilloPct).toBe(16);            // 7/43
+    expect(vm.anilloEtiqueta).toBe('resueltos');
+  });
+
+  it('Confirmar: el aro no cambia', () => {
+    const [vm] = buildAdvisorVMs(baseInput({
+      rows: [row({ confirmados: 37, cancelados: 4, noresp: 24, total_atendidos: 65 })],
+    }));
+    expect(vm.anilloPct).toBe(vm.tasaDia);
+    expect(vm.anilloEtiqueta).toBe('del día');
+  });
+
+  it('sin nada que medir sigue en null → la tarjeta pinta "—"', () => {
+    expect(buildAdvisorVMs(baseInput())[0].anilloPct).toBeNull();
+  });
+});

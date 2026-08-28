@@ -129,8 +129,18 @@ export interface AdvisorVM {
   soloApertura: boolean;
   // Cabecera
   confirmados: number;
-  tasaDia: number | null;       // % del día = conf ÷ atendidos
+  tasaDia: number | null;       // % del día = conf ÷ atendidos (SOLO Confirmar)
   atendidos: number;
+  /**
+   * El aro grande, POR CARRIL. `tasaDia` es confirmar-only, así que a quien
+   * trabajó Seguimiento el aro le quedaba vacío con un "—" al lado de una
+   * tarjeta llena de trabajo — el dueño lo reportó como *"ya marca pero la
+   * barra no se mueve como Estefano"*. Para ese carril el aro muestra los
+   * resueltos sobre los pedidos que tocó.
+   */
+  anilloPct: number | null;
+  /** Qué mide el aro: "del día" (Confirmar) o "resueltos" (Seguimiento). */
+  anilloEtiqueta: string;
   // Ritmo en vivo (hoy: ritmoVivo 25/15; rango: pedidos/hora sobre horas trabajadas)
   ritmoPorHora: number | null;
   ritmoTono: Tono;
@@ -539,6 +549,11 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
       soloApertura,
       confirmados: r.confirmados,
       tasaDia,
+      // El aro sigue al carril. Ojo: el % de Seguimiento tiene techo por cómo se
+      // cuenta "resuelto" en la RPC (cuatro marcas literales, y el aviso de
+      // agencia no está entre ellas) — la tarjeta lo aclara en el globo.
+      anilloPct: carril === 'seguimiento' ? segTasa : tasaDia,
+      anilloEtiqueta: carril === 'seguimiento' ? 'resueltos' : 'del día',
       atendidos,
       ritmoPorHora,
       ritmoTono,
