@@ -289,9 +289,14 @@ Deno.serve(async (req) => {
     // hora en UTC. `tienda` ya se leyó arriba para el destinatario.
     const { fecha: tpFecha, hora: tpHora } = fechaHoraLocal(tienda?.country_code);
     const modulo = body?.modulo === "WHATSAPP" ? "WHATSAPP" : "SEG";
+    // Igual que en `importchat-send`: si el cliente dice QUÉ gestión es
+    // ("Avisé: en oficina"), la bitácora lo dice. Sin `gestion` queda el nombre
+    // crudo de la plantilla, que es lo que hacía antes.
+    const gestion = String(body?.gestion ?? "").trim().slice(0, 60)
+      || `Mandé la plantilla ${elegida.nombre}`;
     const { error: tpErr } = await sb.from("touchpoints").insert({
       phone: pedido.phone,
-      action: `${modulo}: Mandé la plantilla ${elegida.nombre}`,
+      action: `${modulo}: ${gestion}`,
       operator_id: u.user.id,
       store_id: storeId,
       action_date: tpFecha,

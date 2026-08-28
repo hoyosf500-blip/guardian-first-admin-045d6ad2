@@ -5,7 +5,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useInactivityGuard } from '@/hooks/useInactivityGuard';
 import { useSinGestionNudge } from '@/hooks/useSinGestionNudge';
 import { useSegTouchIndex } from '@/hooks/useSegTouchIndex';
+import { usePausaTrabajo } from '@/hooks/usePausaTrabajo';
 import InactivityWarningModal from '@/components/InactivityWarningModal';
+import BotonPausaTrabajo from '@/components/BotonPausaTrabajo';
 import { hasSeguimientoWork } from '@/lib/segLists';
 import { segVisiblesParaCola } from '@/lib/segVisibles';
 
@@ -44,13 +46,35 @@ export default function InactivityGuard() {
     [workQueue, novedadesQueue, segData, closed],
   );
 
-  const { warning, acknowledge } = useInactivityGuard({ hasPendingWork });
+  // Mismo universo que el guard: solo operadora pura. A un dueño no se le
+  // ofrece declarar pausas porque a él nadie lo mide.
+  const esOperadora = !isAdmin && !isManagerOfActive;
+  const pausaT = usePausaTrabajo(esOperadora);
+
+  const { warning, acknowledge } = useInactivityGuard({ hasPendingWork, enPausa: pausaT.vigente });
 
   // Aviso SUAVE por huecos sin gestionar (no bloquea, no cuenta falta). Mismo
   // universo que el guard duro: solo operadora pura (ni admin, ni dueño, ni
   // supervisor) — a un manager este recordatorio le mentiría.
-  useSinGestionNudge({ hasPendingWork, enabled: !isAdmin && !isManagerOfActive });
+  useSinGestionNudge({ hasPendingWork, enabled: esOperadora && !pausaT.vigente });
 
-  if (!warning) return null;
-  return <InactivityWarningModal warning={warning} onAcknowledge={acknowledge} />;
+  return (
+    <>
+      {/* `disponible === false` = la migración de `operator_pausas` no está
+          aplicada (Lovable no las aplica solas). No se dibuja el botón: uno que
+          existe y falla al tocarlo es peor que ninguno — el asesor creería que
+          declaró su pausa y el sistema lo acusaría igual. */}
+      {esOperadora && pausaT.disponible && (
+        <BotonPausaTrabajo
+          pausa={pausaT.pausa}
+          vigente={pausaT.vigente}
+          trabajando={pausaT.trabajando}
+          ahora={pausaT.ahora}
+          onIniciar={pausaT.iniciar}
+          onTerminar={pausaT.terminar}
+        />
+      )}
+      {warning && <InactivityWarningModal warning={warning} onAcknowledge={acknowledge} />}
+    </>
+  );
 }

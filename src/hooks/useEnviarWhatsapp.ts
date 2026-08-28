@@ -1,6 +1,8 @@
 import { useCallback, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { emitirGestion } from '@/lib/eventosGestion';
 import type { MensajeConversacion } from '@/lib/conversacion';
 import { motivoEdge, cuerpoDelError } from '@/lib/errorEdge';
 
@@ -41,18 +43,41 @@ export interface ResultadoEnvio {
 export const FALTA_DESPLEGAR =
   'El envío desde Guardian todavía no está activado en el servidor. Escribile desde ImporChat y avisá para que lo activen.';
 
+/**
+ * Datos para que la gestión que el SERVIDOR registra se vea en la pantalla al
+ * instante y con el nombre correcto.
+ *
+ * ⛔ Sin esto vuelve el bug del contador: el touchpoint lo inserta la edge
+ * function, así que `useRecordGestion` no corre y nadie avisa a `OrderContext`
+ * — el pedido quedaba gestionado en la base y pendiente en la pantalla hasta
+ * recargar, que es exactamente lo que le pasaba al asesor que marcaba y no
+ * veía bajar el número.
+ */
+export interface GestionDelEnvio {
+  /** La clave con la que Seguimiento cruza las gestiones. */
+  phone?: string | null;
+  /** Qué se hizo, en el idioma de la botonera ("Avisé: en oficina"). Viaja al
+   *  servidor para que la bitácora no quede llena de "Escribí por WhatsApp",
+   *  que no dice cuál de las seis gestiones fue. */
+  accion?: string;
+}
+
 export function useEnviarWhatsapp() {
   const { activeStoreId } = useStore();
+  const { user } = useAuth();
   const [enviando, setEnviando] = useState(false);
 
-  const enviar = useCallback(async (externalId: string, mensaje: string, modulo?: ModuloEnvio): Promise<ResultadoEnvio> => {
+  const enviar = useCallback(async (externalId: string, mensaje: string, modulo?: ModuloEnvio, gestion?: GestionDelEnvio): Promise<ResultadoEnvio> => {
     if (!activeStoreId) return { ok: false, error: 'No hay tienda activa' };
     const texto = mensaje.trim();
     if (!texto) return { ok: false, error: 'Escribí un mensaje' };
     setEnviando(true);
     try {
       const { data, error } = await supabase.functions.invoke('importchat-send', {
-        body: { store_id: activeStoreId, external_id: externalId, mensaje: texto, modulo },
+        // `accion` es ADITIVO: un servidor viejo (Lovable no redespliega edge
+        // functions con un push) lo ignora y escribe el texto genérico de
+        // siempre. Sigue contando como gestión; solo se pierde el detalle.
+        body: { store_id: activeStoreId, external_id: externalId, mensaje: texto, modulo, accion: gestion?.accion },
       });
       if (error) {
         // El cuerpo del error trae el motivo REAL (ventana vencida, sin chat
@@ -65,13 +90,25 @@ export function useEnviarWhatsapp() {
       }
       const r = data as { ok?: boolean; error?: string; mensajes?: MensajeConversacion[] } | null;
       if (!r?.ok) return { ok: false, error: r?.error || 'No se pudo confirmar el envío' };
+      // Recién con el envío CONFIRMADO por el servidor. El prefijo tiene que
+      // ser el mismo que arma la edge function (`SEG` salvo desde Confirmar),
+      // porque solo `SEG:` cuenta como gestión de Seguimiento.
+      if (gestion?.phone) {
+        emitirGestion({
+          phone: gestion.phone,
+          modulo: modulo === 'WHATSAPP' ? 'WHATSAPP' : 'SEG',
+          accion: gestion.accion || 'Escribí por WhatsApp',
+          operatorId: user?.id ?? null,
+          at: new Date().toISOString(),
+        });
+      }
       return { ok: true, mensajes: r.mensajes };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : 'No se pudo enviar' };
     } finally {
       setEnviando(false);
     }
-  }, [activeStoreId]);
+  }, [activeStoreId, user]);
 
   return { enviar, enviando };
 }

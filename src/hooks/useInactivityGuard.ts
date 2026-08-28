@@ -12,6 +12,7 @@ import {
   type WorkSchedule,
 } from '@/lib/inactivityWindow';
 import { useStoreSchedule } from '@/hooks/useStoreSchedule';
+import { onGestion } from '@/lib/eventosGestion';
 
 /**
  * Alertas de inactividad (presión psicológica de no perder tiempo).
@@ -53,7 +54,7 @@ function lockKey(storeId: string): string {
   return `guardian.inactivityLock:${storeId}`;
 }
 
-export function useInactivityGuard({ hasPendingWork }: { hasPendingWork: boolean }) {
+export function useInactivityGuard({ hasPendingWork, enPausa = false }: { hasPendingWork: boolean; enPausa?: boolean }) {
   const { user, isAdmin, loading: authLoading } = useAuth();
   const { activeStoreId, isManagerOfActive } = useStore();
   // Horario laboral de la tienda (configurable). Default 9–17 si no está cargado
@@ -71,6 +72,11 @@ export function useInactivityGuard({ hasPendingWork }: { hasPendingWork: boolean
   // del render) para decidir si penalizar. Se actualiza en cada render.
   const hasWorkRef = useRef(hasPendingWork);
   hasWorkRef.current = hasPendingWork;
+  // Pausa declarada ("estoy en la agencia"). Mismo tratamiento que "no hay
+  // trabajo": no se penaliza y el tick va reseteando el reloj, así que al
+  // volver no hay una hora acumulada esperándola. Ver `pausaTrabajo.ts`.
+  const enPausaRef = useRef(enPausa);
+  enPausaRef.current = enPausa;
   // Horario en un ref (el handler/tick corren fuera del render). Se actualiza en
   // cada render con el último dato del hook.
   const scheduleRef = useRef<WorkSchedule>(DEFAULT_SCHEDULE);
@@ -127,6 +133,7 @@ export function useInactivityGuard({ hasPendingWork }: { hasPendingWork: boolean
       lastActivityRef.current = now;
       if (last === null) return;                 // primer evento de la sesión
       if (!hasWorkRef.current) return;           // sin trabajo → no penalizar
+      if (enPausaRef.current) return;            // dijo dónde estaba → no se le acusa
       const nowDate = new Date(now);
       if (!isWithinAlertWindow(nowDate, scheduleRef.current)) return; // fuera de horario / almuerzo
       const lost = workingSecondsLost(new Date(last), nowDate, scheduleRef.current);
@@ -157,17 +164,40 @@ export function useInactivityGuard({ hasPendingWork }: { hasPendingWork: boolean
     // Tick: mientras NO hay trabajo (y no hay modal abierto), "excusamos" la
     // inactividad reseteando el reloj — el tiempo muerto sin nada que hacer NO
     // se acumula. Apenas aparece trabajo, el reloj corre normal desde ahí.
+    //
+    // Una pausa declarada se trata igual. Y tiene que ser acá, en el tick, no
+    // solo en `handle()`: si solo se filtrara al volver, los 45 minutos en la
+    // agencia quedarían ACUMULADOS y el primer movimiento de mouse después de
+    // cerrar la pausa dispararía el castigo por el tiempo ya justificado.
     const tickId = window.setInterval(() => {
-      if (!pendingRef.current && !hasWorkRef.current) {
+      if (!pendingRef.current && (!hasWorkRef.current || enPausaRef.current)) {
         lastActivityRef.current = Date.now();
       }
     }, TICK_MS);
+
+    // ⛔ Una gestión registrada NO pasa por `handle()`: solo pone el reloj en
+    // cero (27-ago-2026).
+    //
+    // La diferencia importa. `handle()` es "volvió después de estar ausente" y
+    // puede acusar; esto es "acaba de hacer un trabajo REAL", que es la señal
+    // más fuerte que existe de que la persona está laburando — más fuerte que
+    // mover el mouse, que es lo único que este guard miraba. Pasarla por
+    // `handle()` sería absurdo: marcar un pedido después de una llamada larga
+    // dispararía el castigo justo por trabajar.
+    //
+    // Esto NO tapa el caso de Estefano (una hora en la web de Servientrega, sin
+    // tocar Guardian): para eso está el botón "Estoy en otra cosa". Tapa el
+    // caso de quien SÍ está marcando y aun así aparecía "quieto" porque no
+    // movía el mouse entre marca y marca.
+    const enCero = () => { if (!pendingRef.current) lastActivityRef.current = Date.now(); };
 
     window.addEventListener('mousemove', onMousemove, { passive: true });
     window.addEventListener('keydown', handle);
     window.addEventListener('click', handle);
     window.addEventListener('wheel', handle, { passive: true });
     window.addEventListener('touchstart', handle, { passive: true });
+    window.addEventListener('guardian:mi-gestion', enCero);
+    const offGestion = onGestion(enCero);
 
     return () => {
       window.clearInterval(tickId);
@@ -176,6 +206,8 @@ export function useInactivityGuard({ hasPendingWork }: { hasPendingWork: boolean
       window.removeEventListener('click', handle);
       window.removeEventListener('wheel', handle);
       window.removeEventListener('touchstart', handle);
+      window.removeEventListener('guardian:mi-gestion', enCero);
+      offGestion();
     };
   }, [enabled]);
 

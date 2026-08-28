@@ -570,6 +570,10 @@ export default function ProductivityDashboard() {
         rows: cardRows, workedByOp, activityByOp, inactivityByOp,
         closingByOp, closingError, mezcla: mezclaAsesor, scoresByOp,
         liveByOp, rosterByOp, schedule, nowMs, entrantes, isToday, confTarget: CONF_TARGET_PCT,
+        // Si la lectura de marcas se cortó (error o tope de filas), la tarjeta
+        // NO puede decir "presente sin marcar": sería acusar por un hueco de
+        // lectura. Ver `useLiveTeam.workEventsOk`.
+        workEventsOk: liveTeam.workEventsOk,
       })
     : [];
   const trabajandoAhora = liveTeam.operators.filter((o) => o.estado === 'trabajando').length;

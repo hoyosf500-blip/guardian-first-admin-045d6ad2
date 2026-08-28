@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { debeAvisarSinGestion, minutosSinGestion } from '@/lib/huecosGestion';
+import { onGestion } from '@/lib/eventosGestion';
 
 /**
  * Aviso SUAVE a la operadora cuando lleva un rato sin MARCAR un pedido.
@@ -28,12 +29,25 @@ export function useSinGestionNudge({ hasPendingWork, enabled }: { hasPendingWork
   const workRef = useRef(hasPendingWork);
   workRef.current = hasPendingWork;
 
-  // Cada gestión propia reinicia el reloj. El evento lo despacha markResult.
+  // Cada gestión propia reinicia el reloj — venga de DONDE venga.
+  //
+  // ⛔ Hasta el 27-ago-2026 escuchaba SOLO `guardian:mi-gestion`, que despacha
+  // `markResult` (OrderContext) y que existe únicamente en Confirmar. Una
+  // asesora que trabajaba Seguimiento entero —marcando en el tablero, avisando
+  // a clientes de agencia, llamando— recibía "Llevás 20 min sin marcar un
+  // pedido" CADA 20 MINUTOS, para siempre, por mucho que marcara. El dueño leyó
+  // esa señal y le reclamó por WhatsApp a alguien que estaba trabajando.
+  // `EVENTO_GESTION` lo emite `useRecordGestion`, que es por donde pasan TODAS
+  // las gestiones de Seguimiento, Novedades y rescate.
   useEffect(() => {
     if (!enabled) return;
     const onMark = () => { lastMarkRef.current = Date.now(); };
     window.addEventListener('guardian:mi-gestion', onMark);
-    return () => window.removeEventListener('guardian:mi-gestion', onMark);
+    const offGestion = onGestion(onMark);
+    return () => {
+      window.removeEventListener('guardian:mi-gestion', onMark);
+      offGestion();
+    };
   }, [enabled]);
 
   useEffect(() => {

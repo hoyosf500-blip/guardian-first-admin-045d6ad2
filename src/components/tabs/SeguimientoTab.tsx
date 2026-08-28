@@ -15,7 +15,7 @@ import { useSegTouchIndex } from '@/hooks/useSegTouchIndex';
 import { useRiesgoChat } from '@/hooks/useRiesgoChat';
 import { estadoConversacion } from '@/lib/actividadChat';
 import { useRefreshVisibleOrders } from '@/hooks/useRefreshVisibleOrders';
-import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List, Search, User as UserIcon, Users, Moon } from 'lucide-react';
+import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List, Search, User as UserIcon, Users, Moon, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
@@ -501,13 +501,34 @@ export default function SeguimientoTab() {
   // Alimenta los chips de listas — la forma principal de priorizar. Las
   // listas con externalRoute (ej. confirmación) no se cuentan acá: viven en
   // otra ruta.
+  //
+  // ⛔ El chip DESCUENTA lo gestionado hoy (27-ago-2026). Antes era
+  // `filter(l.matches).length` a secas, y como los predicados de `segLists`
+  // solo leen `estado` + fechas (`matches: (o: OrderData) => boolean`), el
+  // número era **matemáticamente inmune** a la gestión: la asesora marcaba los
+  // 83 pedidos de la agencia uno por uno y el chip seguía diciendo 83. Nadie
+  // podía "dejarlo en cero", que es la regla del turno.
+  //
+  // Se guardan los DOS números a propósito. `total` es un hecho físico —83
+  // paquetes esperando en agencias— y esconderlo cambiaría un problema por
+  // otro: el chip diría 0 con 83 clientes sin su pedido. Se muestra lo que
+  // falta hoy en grande y el total al lado, chiquito.
+  //
+  // Si la lectura de gestiones falló, NO se descuenta nada: un chip que baja
+  // por un dato que no existe le promete al equipo un trabajo que nadie hizo.
   const listCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
+    const counts: Record<string, { pendientes: number; total: number }> = {};
     for (const l of SEG_LISTS) {
-      counts[l.slug] = l.externalRoute ? 0 : chipsBase.filter(l.matches).length;
+      if (l.externalRoute) { counts[l.slug] = { pendientes: 0, total: 0 }; continue; }
+      const dela = chipsBase.filter(l.matches);
+      const total = dela.length;
+      const gestionados = coverageSegError
+        ? 0
+        : contarGestionadosHoy(dela, mySegTouchedToday, gestionSegPorTelefono);
+      counts[l.slug] = { pendientes: Math.max(0, total - gestionados), total };
     }
     return counts;
-  }, [chipsBase]);
+  }, [chipsBase, mySegTouchedToday, gestionSegPorTelefono, coverageSegError]);
 
   // "Sugerido": la lista NO-vacía de mayor urgencia (danger > warning > resto),
   // desempatando por el orden de SEG_LISTS (ya priorizado). Guía hacia dónde
@@ -516,7 +537,9 @@ export default function SeguimientoTab() {
     const toneRank: Record<string, number> = { danger: 3, warning: 2, info: 1, success: 0, neutral: 0 };
     let best: { slug: SegListSlug; rank: number } | null = null;
     SEG_LISTS.forEach((l, i) => {
-      if (l.externalRoute || (listCounts[l.slug] ?? 0) === 0) return;
+      // Sobre PENDIENTES, no sobre el total: una lista con todo gestionado ya
+      // no es "hacia dónde empezar".
+      if (l.externalRoute || (listCounts[l.slug]?.pendientes ?? 0) === 0) return;
       // -i para que, a igual tono, gane el de menor índice (más prioritario).
       const rank = (toneRank[l.tone] ?? 0) * 1000 - i;
       if (!best || rank > best.rank) best = { slug: l.slug, rank };
@@ -1158,17 +1181,12 @@ export default function SeguimientoTab() {
                       <div className="h-1.5 w-full rounded-full bg-foreground/10 overflow-hidden" aria-hidden="true">
                         <div className={`h-full rounded-full ${barTone} transition-all duration-300`} style={{ width: `${pct}%` }} />
                       </div>
-                      {viewMode === 'board' && (
-                        <label className="inline-flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none pt-0.5">
-                          <input
-                            type="checkbox"
-                            checked={onlyUntouchedSeg}
-                            onChange={(e) => setOnlyUntouchedSeg(e.target.checked)}
-                            className="h-3.5 w-3.5 rounded border-border accent-accent cursor-pointer"
-                          />
-                          Ocultar gestionados
-                        </label>
-                      )}
+                      {/* "Ocultar gestionados" se mudó a la barra de listas
+                          (27-ago-2026). Vivía acá dentro, y el hero arranca
+                          PLEGADO: el interruptor que decide si el tablero
+                          esconde lo ya trabajado era invisible para el equipo.
+                          Un control que cambia lo que se ve no puede vivir
+                          detrás de un panel que nadie abre. */}
                     </div>
                   </div>
                 </TiltCard>
@@ -1395,6 +1413,31 @@ export default function SeguimientoTab() {
               )}>{chipsBase.length}</span>
             </button>
 
+            {/* ⛔ "Ocultar gestionados" vivía DENTRO del hero, que arranca
+                plegado (27-ago-2026): el interruptor que decide si el tablero
+                esconde lo ya trabajado no lo veía nadie del equipo. Acá está a
+                la vista, al lado de los filtros que sí se usan. Solo en Tablero:
+                la vista Lista tiene su propio ocultado (isHiddenFromTodayList). */}
+            {viewMode === 'board' && (
+              <button
+                type="button"
+                onClick={() => setOnlyUntouchedSeg(!onlyUntouchedSeg)}
+                aria-pressed={onlyUntouchedSeg}
+                title={onlyUntouchedSeg
+                  ? 'El tablero está escondiendo lo que ya se gestionó hoy. Tocá para ver todo.'
+                  : 'El tablero muestra TODO, gestionado o no. Tocá para ver solo lo que falta.'}
+                className={cn(
+                  "snap-start shrink-0 inline-flex items-center gap-2 rounded-xl border px-4 min-h-[44px] text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                  onlyUntouchedSeg
+                    ? "font-semibold bg-accent/16 border-accent/40 text-accent shadow-glow3d"
+                    : "font-medium bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong",
+                )}
+              >
+                {onlyUntouchedSeg ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}
+                {onlyUntouchedSeg ? 'Solo lo que falta' : 'Viendo todo'}
+              </button>
+            )}
+
             {/* "Solo las mías" es un FILTRO de la cola, así que vive con los
                 demás filtros y no en una fila propia (21-ago-2026). Solo
                 aparece si hay algo asignado a quien mira: un chip en 0 que
@@ -1434,10 +1477,15 @@ export default function SeguimientoTab() {
               // qué está vencido y qué lleva días sin moverse. La lógica de las
               // ocultas sigue viva — la usa el guard de inactividad.
               .filter(seMuestraComoChip)
-              .filter((l) => l.externalRoute || (listCounts[l.slug] ?? 0) > 0)
+              // El chip vive mientras la lista TENGA pedidos, aunque estén todos
+              // gestionados: verlo en 0 es la señal de "esto ya está hecho".
+              // Si desapareciera al gestionar el último, la asesora perdería de
+              // vista que la lista existe y que mañana vuelve.
+              .filter((l) => l.externalRoute || (listCounts[l.slug]?.total ?? 0) > 0)
               .map((l) => {
                 const active = listaSlug === l.slug;
-                const count = listCounts[l.slug] ?? 0;
+                const { pendientes: count, total: totalLista } = listCounts[l.slug] ?? { pendientes: 0, total: 0 };
+                const listo = !l.externalRoute && totalLista > 0 && count === 0;
                 const suggested = l.slug === suggestedSlug;
                 // Tinte completo por urgencia: el chip ENTERO habla, no un punto
                 // de 1.5px. Las listas ya vienen ordenadas por prioridad de
@@ -1454,21 +1502,44 @@ export default function SeguimientoTab() {
                       "snap-start shrink-0 inline-flex items-center gap-2.5 rounded-xl border px-4 min-h-[44px] text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                       active
                         ? "font-semibold bg-accent/16 border-accent/40 text-accent shadow-glow3d"
+                        // Lista terminada: se apaga en vez de gritar. Sigue a la
+                        // vista (el trabajo hecho también es información) pero
+                        // deja de competir con lo que falta.
+                        : listo
+                        ? "font-medium border-border/50 bg-card/20 text-muted-foreground"
                         : cn("font-medium", lt.idle),
                     )}
                   >
                     {l.externalRoute
                       ? <ExternalLink size={13} aria-hidden="true" />
-                      : <span className={cn("w-2 h-2 rounded-full shrink-0", active ? "bg-accent glow-accent" : LIST_TONE_DOT[l.tone])} aria-hidden="true" />}
+                      : <span className={cn(
+                          "w-2 h-2 rounded-full shrink-0",
+                          active ? "bg-accent glow-accent" : listo ? "bg-success/50" : LIST_TONE_DOT[l.tone],
+                        )} aria-hidden="true" />}
                     <span className="truncate max-w-[15rem]">{l.label}</span>
                     {/* El conteo SOLO se pinta en listas que se cuentan acá. Las
                         que viven en otra ruta (confirmación) tienen count 0 por
-                        construcción: mostrarlo sería un 0 mentiroso. */}
+                        construcción: mostrarlo sería un 0 mentiroso.
+                        Se muestran los DOS números: lo que FALTA hoy en grande, y
+                        el total al lado. El total es un hecho físico (los paquetes
+                        siguen en la agencia aunque ya se avisó) — descontarlo sin
+                        decirlo sería cambiar un chip que no bajaba nunca por uno
+                        que esconde clientes. */}
                     {!l.externalRoute && (
-                      <span className={cn(
-                        "font-mono tabular-nums text-[13px] font-bold",
-                        active ? "text-accent num-glow-accent" : cn(lt.count, lt.numGlow),
-                      )}>{count}</span>
+                      <span className="inline-flex items-baseline gap-1">
+                        <span className={cn(
+                          "font-mono tabular-nums text-[13px] font-bold",
+                          active ? "text-accent num-glow-accent" : listo ? "text-success" : cn(lt.count, lt.numGlow),
+                        )}>{count}</span>
+                        {totalLista > count && (
+                          <span
+                            className="font-mono tabular-nums text-[10px] font-semibold opacity-55"
+                            title={`${totalLista - count} de ${totalLista} ya gestionados hoy`}
+                          >
+                            de {totalLista}
+                          </span>
+                        )}
+                      </span>
                     )}
                     {suggested && !active && (
                       <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-accent/14 border border-accent/30 text-accent glow-accent shrink-0">

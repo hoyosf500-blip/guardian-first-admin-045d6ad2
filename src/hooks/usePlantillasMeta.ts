@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
+import { useAuth } from '@/contexts/AuthContext';
 import type { PlantillaMeta } from '@/lib/plantillasMeta';
 import { motivoEdge, cuerpoDelError } from '@/lib/errorEdge';
-import type { ModuloEnvio } from '@/hooks/useEnviarWhatsapp';
+import { emitirGestion } from '@/lib/eventosGestion';
+import type { ModuloEnvio, GestionDelEnvio } from '@/hooks/useEnviarWhatsapp';
 
 /**
  * Las plantillas aprobadas por Meta, para cuando la ventana de 24 h ya venció.
@@ -27,9 +29,24 @@ async function motivoReal(error: unknown, porDefecto: string) {
 }
 
 /**
+ * Caché por (tienda, fase), compartido entre TODAS las instancias del hook.
+ *
+ * ⛔ Sin esto, el botón de acción de cada tarjeta pide la lista por su cuenta:
+ * un tablero con 83 pedidos en agencia son 83 llamadas a ImporChat para traer
+ * exactamente las mismas 40 plantillas. Lento, caro, y el camino más corto a un
+ * throttle de la API. Con el caché son una por fase.
+ *
+ * TTL corto porque una plantilla recién aprobada en Meta tiene que poder
+ * aparecer sin recargar la pestaña. `recargar()` lo saltea siempre: cuando la
+ * asesora toca "probar de nuevo" quiere el dato fresco, no el que falló.
+ */
+const CACHE_MS = 5 * 60_000;
+const cache = new Map<string, { at: number; plantillas: PlantillaMeta[] }>();
+
+/**
  * Trae las plantillas cuando `activo` se pone en true, ordenadas para la fase
- * del pedido. Se pide UNA vez por apertura: la lista de Meta no cambia entre
- * dos clics, y son 31 plantillas por llamada.
+ * del pedido. Se pide UNA vez por (tienda, fase): la lista de Meta no cambia
+ * entre dos clics, y son ~40 plantillas por llamada.
  */
 export function usePlantillasMeta(activo: boolean, fase?: string | null) {
   const { activeStoreId } = useStore();
@@ -40,8 +57,17 @@ export function usePlantillasMeta(activo: boolean, fase?: string | null) {
   // la respuesta vieja NO puede pintar la lista del nuevo.
   const turnoRef = useRef(0);
 
-  const cargar = useCallback(async () => {
+  const cargar = useCallback(async (forzar = false) => {
     if (!activeStoreId) return;
+    const clave = `${activeStoreId}|${fase ?? ''}`;
+    const guardado = cache.get(clave);
+    if (!forzar && guardado && Date.now() - guardado.at < CACHE_MS) {
+      turnoRef.current += 1;
+      setPlantillas(guardado.plantillas);
+      setEstado('ok');
+      setError(undefined);
+      return;
+    }
     const turno = ++turnoRef.current;
     setEstado('cargando');
     setError(undefined);
@@ -65,7 +91,12 @@ export function usePlantillasMeta(activo: boolean, fase?: string | null) {
         setPlantillas([]);
         return;
       }
-      setPlantillas(r.plantillas ?? []);
+      const lista = r.plantillas ?? [];
+      // Solo se cachea el ÉXITO. Guardar una lista vacía por un error dejaría
+      // "esta cuenta no tiene plantillas" pegado 5 minutos, que es una
+      // afirmación falsa sobre la cuenta del cliente.
+      cache.set(clave, { at: Date.now(), plantillas: lista });
+      setPlantillas(lista);
       setEstado('ok');
     } catch (e) {
       if (turno !== turnoRef.current) return;
@@ -78,7 +109,7 @@ export function usePlantillasMeta(activo: boolean, fase?: string | null) {
     if (activo && estado === 'inicial') void cargar();
   }, [activo, estado, cargar]);
 
-  return { plantillas, estado, error, recargar: cargar };
+  return { plantillas, estado, error, recargar: () => cargar(true) };
 }
 
 export interface ResultadoPlantilla {
@@ -90,6 +121,7 @@ export interface ResultadoPlantilla {
 
 export function useEnviarPlantilla() {
   const { activeStoreId } = useStore();
+  const { user } = useAuth();
   const [enviando, setEnviando] = useState(false);
 
   const enviarPlantilla = useCallback(async (
@@ -97,26 +129,46 @@ export function useEnviarPlantilla() {
     nombre: string,
     valores: Record<number, string>,
     modulo?: ModuloEnvio,
+    gestion?: GestionDelEnvio,
   ): Promise<ResultadoPlantilla> => {
     if (!activeStoreId) return { ok: false, error: 'No hay tienda activa' };
     setEnviando(true);
     try {
       const { data, error } = await supabase.functions.invoke('importchat-plantillas', {
-        body: { store_id: activeStoreId, accion: 'enviar', external_id: externalId, nombre, valores, modulo },
+        // `gestion` es ADITIVO: un servidor sin redesplegar lo ignora y escribe
+        // "Mandé la plantilla X" como siempre. Ver `useEnviarWhatsapp`.
+        body: { store_id: activeStoreId, accion: 'enviar', external_id: externalId, nombre, valores, modulo, gestion: gestion?.accion },
       });
       if (error) {
         const { detalle } = await motivoReal(error, 'No se pudo enviar la plantilla');
         return { ok: false, error: detalle };
       }
-      const r = data as { ok?: boolean; error?: string; faltantes?: number[] } | null;
+      const r = data as { ok?: boolean; error?: string; faltantes?: number[]; ya_enviado?: boolean } | null;
       if (!r?.ok) return { ok: false, error: r?.error || 'No se pudo confirmar el envío', faltantes: r?.faltantes };
+      // El touchpoint lo escribe el servidor: sin este aviso el contador de la
+      // pantalla no se entera hasta recargar (mismo bug que se acaba de
+      // arreglar en `useRecordGestion`).
+      //
+      // ⛔ `ya_enviado` = la idempotencia diaria frenó el reenvío y el servidor
+      // NO insertó un segundo touchpoint. Emitirlo igual sumaría un intento que
+      // no existe en la base, y la tarjeta diría "gestionado" por un mensaje
+      // que ya se había mandado antes.
+      if (gestion?.phone && !r.ya_enviado) {
+        emitirGestion({
+          phone: gestion.phone,
+          modulo: modulo === 'WHATSAPP' ? 'WHATSAPP' : 'SEG',
+          accion: gestion.accion || `Mandé la plantilla ${nombre}`,
+          operatorId: user?.id ?? null,
+          at: new Date().toISOString(),
+        });
+      }
       return { ok: true };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : 'No se pudo enviar la plantilla' };
     } finally {
       setEnviando(false);
     }
-  }, [activeStoreId]);
+  }, [activeStoreId, user]);
 
   return { enviarPlantilla, enviando };
 }

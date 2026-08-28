@@ -32,12 +32,15 @@ import { cn } from '@/lib/utils';
  * chat (ver `importchat-send`). Un "listo" sin confirmar sería peor que un
  * error: la asesora tacharía el pedido de su lista.
  */
-export default function EscribirWhatsappDialog({ open, onOpenChange, externalId, nombre, estado, actividad, datos, modulo, onEnviado }: {
+export default function EscribirWhatsappDialog({ open, onOpenChange, externalId, nombre, estado, phone, actividad, datos, modulo, onEnviado }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   externalId: string;
   nombre?: string | null;
   estado?: string | null;
+  /** Opcional: si viene, el contador de Seguimiento baja apenas se envía, sin
+   *  esperar a que alguien recargue. Ver `eventosGestion.ts`. */
+  phone?: string | null;
   actividad?: ActividadChatOrden | null;
   /** Guía, transportadora, ciudad… con lo que se rellenan los huecos de una
    *  plantilla aprobada. Sin esto la plantilla igual se puede mandar: la
@@ -101,7 +104,7 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
   }, [open, plantillas]);
 
   const mandar = async () => {
-    const r = await enviar(externalId, texto, modulo);
+    const r = await enviar(externalId, texto, modulo, { phone });
     if (r.ok) {
       toast.success('Mensaje enviado y confirmado en el chat');
       // El servidor ya releyó el chat para verificar: se pinta lo que devolvió
@@ -169,6 +172,8 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
           <PlantillasWhatsapp
             externalId={externalId}
             fase={fase}
+            estadoPedido={estado}
+            phone={phone}
             datos={datosPedido}
             modulo={modulo}
             onEnviado={() => { onEnviado?.(); hilo.recargar(); }}

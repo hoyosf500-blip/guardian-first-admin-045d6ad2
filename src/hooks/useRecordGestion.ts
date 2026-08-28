@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { bogotaToday } from '@/lib/utils';
+import { emitirGestion } from '@/lib/eventosGestion';
 
 // SEG/RESCUE/NOVEDAD son GESTIONES (cuentan como trabajo resuelto/tocado).
 // LLAMADA/WHATSAPP son INTENTOS DE CONTACTO — se registran para que el trabajo
@@ -49,7 +50,20 @@ export function useRecordGestion() {
       };
       const { data, error } = await supabase.from('touchpoints').insert(tp).select();
       if (error) return null;
-      return data?.[0] ?? null;
+      const fila = data?.[0] ?? null;
+      // Recién ACÁ, con la fila confirmada por la base, se avisa a la pantalla.
+      // Es lo que hace que el contador baje en el acto en vez de esperar un
+      // realtime que sobre `touchpoints` no existía (ver `eventosGestion.ts`).
+      // Emitirlo antes del INSERT descontaría un pedido que quizá no quedó
+      // registrado — el error opuesto y peor.
+      emitirGestion({
+        phone,
+        modulo: module,
+        accion: action,
+        operatorId: user.id,
+        at: (fila as { created_at?: string } | null)?.created_at || now.toISOString(),
+      });
+      return fila;
     },
     [user, activeStoreId],
   );

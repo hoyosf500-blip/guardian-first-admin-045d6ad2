@@ -279,6 +279,14 @@ export function sugerirValores(p: PlantillaMeta, d: DatosPedido): Record<number,
 // orden que las devuelve Meta es lo mismo que no ordenarlas. Se suben las que
 // hablan de la situación EN LA QUE ESTÁ el paquete.
 
+// ⛔ Las claves son valores de `SegStatusKey` (src/lib/segStatus.ts). Una clave
+// que no exista ahí NO falla: simplemente nunca dispara, en silencio.
+//
+// Pasó con `pendiente` (arreglado 27-ago-2026): no es una fase — un
+// `PENDIENTE CONFIRMACION` clasifica como `procesamiento`, y lo que no encaja
+// en ninguna cae en `otros`. Durante meses las plantillas de confirmación y
+// remarketing nunca se subieron por fase, y nadie se enteró porque la lista
+// igual se mostraba entera, solo que mal ordenada.
 const POR_FASE: Record<string, RegExp> = {
   oficina: /retiro_agencia|retiro|agencia/,
   novedad: /novedad/,
@@ -286,9 +294,11 @@ const POR_FASE: Record<string, RegExp> = {
   reparto: /zona_entrega|en_transito|transito|reparto/,
   transito: /en_transito|transito|zona_entrega/,
   guia: /guia_generada|antes_generar_guia|ecommerce/,
-  pendiente: /confirmacion|reconfirmacion|direccion_incompleta|remarketing/,
-  devolucion: /remarketing|novedad/,
-  devolucion_transito: /remarketing|novedad/,
+  bodega_trans: /guia_generada|en_transito|transito/,
+  procesamiento: /confirmacion|reconfirmacion|direccion_incompleta|antes_generar_guia/,
+  rechazado: /rescate|ultima_oportunidad|novedad/,
+  devolucion: /rescate|seguimiento_reactivar|remarketing|novedad/,
+  devolucion_transito: /rescate|seguimiento_reactivar|remarketing|novedad/,
 };
 
 /**

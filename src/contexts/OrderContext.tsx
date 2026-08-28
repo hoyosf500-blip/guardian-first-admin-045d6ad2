@@ -23,6 +23,7 @@ import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { fetchPendientesDeConfirmar } from '@/lib/fetchPendientes';
 import { computeDailyCounter, computeDailyCounterByOperator, type ResumenAsesora } from '@/lib/computeDailyCounter';
 import { buildGestionPorPedido, buildGestionSegPorTelefono, aplicarGestionEnVivo, mismaGestion, type GestionDelPedido } from '@/lib/gestionPorPedido';
+import { onGestion } from '@/lib/eventosGestion';
 
 interface Counter { conf: number; canc: number; noresp: number; }
 
@@ -697,12 +698,43 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       )
       .subscribe();
 
+    // ⛔ Lo PROPIO no espera al realtime (bug del 27-ago-2026).
+    //
+    // El handler de `touchpoints` de arriba estaba escrito y correcto, pero la
+    // tabla NUNCA se agregó a la publicación `supabase_realtime`: los INSERT no
+    // llegaban y estos dos sets no crecían nunca. La asesora marcaba "Avisé: en
+    // oficina" y el contador se quedaba clavado — *"sí le pongo pero no baja el
+    // número"*. Se lo tomó por falta de trabajo.
+    //
+    // `useRecordGestion` emite este evento DESPUÉS de que la base confirmó la
+    // fila, así que acá se aplica exactamente lo mismo que aplicaría el
+    // realtime, sin depender de él. Cuando el realtime también llegue, el
+    // segundo pase es inocuo: los dos caminos son idempotentes (el Set no
+    // duplica y `aplicarGestionEnVivo` deduplica por `at`).
+    const desuscribirGestion = onGestion((d) => {
+      if (d.modulo !== 'SEG' || !d.phone) return;
+      rolloverIfNeeded();
+      setGestionSegPorTelefono(prev => aplicarGestionEnVivo(prev, d.phone, {
+        at: d.at,
+        por: d.operatorId,
+        result: d.accion,
+      }));
+      if (d.operatorId !== user.id) return;
+      setMySegTouchedToday(prev => {
+        if (prev.has(d.phone)) return prev;
+        const next = new Set(prev);
+        next.add(d.phone);
+        return next;
+      });
+    });
+
     // Pestaña ociosa que cruza medianoche sin eventos: el chequeo periódico
     // vacía los sets al cambiar de día para que el chip no muestre lo de ayer.
     const dayCheck = setInterval(() => { rolloverIfNeeded(); }, 60 * 1000);
 
     return () => {
       clearInterval(dayCheck);
+      desuscribirGestion();
       void supabase.removeChannel(channel);
     };
   }, [user, activeStoreId, loadSegCoverage]);

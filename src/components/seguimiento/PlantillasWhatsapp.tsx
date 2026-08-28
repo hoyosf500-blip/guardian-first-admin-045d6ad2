@@ -7,6 +7,7 @@ import {
   renderizar, faltantes, sugerirValores,
   type PlantillaMeta, type DatosPedido,
 } from '@/lib/plantillasMeta';
+import { partirPlantillas, etiquetaPlantilla } from '@/lib/accionSeguimiento';
 import { cn } from '@/lib/utils';
 
 /**
@@ -29,9 +30,61 @@ import { cn } from '@/lib/utils';
  *    video, imagen o botón-con-enlace aparecen bloqueadas y con el motivo: si
  *    desaparecieran, la asesora creería que no existen.
  */
-export default function PlantillasWhatsapp({ externalId, fase, datos, modulo, onEnviado }: {
+/**
+ * Un botón de plantilla. Muestra el nombre HUMANO cuando lo reconocemos
+ * (`retiro_agencia_k1` → "Avisarle que llegó a la agencia") y el crudo cuando
+ * no: inventarle un rótulo genérico a una desconocida haría que dos plantillas
+ * distintas se vieran iguales, y la asesora mandaría la equivocada.
+ *
+ * El nombre técnico no se pierde — va en el `title` junto al cuerpo, para quien
+ * necesite saber exactamente cuál es.
+ */
+function BotonPlantilla({ p, activa, destacada, onClick }: {
+  p: PlantillaMeta;
+  activa: boolean;
+  destacada?: boolean;
+  onClick: () => void;
+}) {
+  const bloqueada = !!p.noSoportada;
+  const humano = etiquetaPlantilla(p.nombre);
+  return (
+    <button
+      type="button"
+      disabled={bloqueada}
+      title={p.noSoportada ?? `${p.nombre}\n\n${p.cuerpo.slice(0, 160)}`}
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-lg border font-semibold transition-colors',
+        destacada ? 'px-3 py-2 text-xs text-left' : 'px-2.5 py-1 text-[11px]',
+        bloqueada
+          ? 'border-border/60 bg-card/20 text-muted-foreground/50 cursor-not-allowed'
+          : activa
+          ? 'border-accent/50 bg-accent/15 text-accent'
+          : destacada
+          ? 'border-accent/30 bg-accent/8 text-foreground hover:bg-accent/15 hover:border-accent/50'
+          : 'border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong',
+      )}
+    >
+      {bloqueada && <Lock size={10} className="shrink-0" aria-hidden="true" />}
+      <span className={destacada ? 'flex-1 min-w-0' : undefined}>{humano ?? p.nombre.replace(/_/g, ' ')}</span>
+      {p.categoria === 'MARKETING' && !bloqueada && (
+        <span className="text-[9px] font-bold opacity-60 shrink-0" title="Plantilla de promoción: Meta la cobra más caro y la restringe más que una de logística.">PROMO</span>
+      )}
+    </button>
+  );
+}
+
+export default function PlantillasWhatsapp({ externalId, fase, estadoPedido, phone, datos, modulo, onEnviado }: {
   externalId: string;
   fase?: string | null;
+  /** El estado CRUDO de Dropi ("PARA RETIRO EN AGENCIA SERVIENTREGA"). Es lo que
+   *  `partirPlantillas` necesita para saber cuáles sirven acá. Va aparte de
+   *  `fase` —que ya viene clasificada y la usa el servidor para ordenar— porque
+   *  clasificar dos veces no funciona. */
+  estadoPedido?: string | null;
+  /** Para que el contador baje al instante tras enviar (el touchpoint lo
+   *  escribe el servidor; ver `eventosGestion.ts`). */
+  phone?: string | null;
   datos: DatosPedido;
   modulo?: ModuloEnvio;
   onEnviado?: () => void;
@@ -40,6 +93,19 @@ export default function PlantillasWhatsapp({ externalId, fase, datos, modulo, on
   const { enviarPlantilla, enviando } = useEnviarPlantilla();
   const [elegida, setElegida] = useState<PlantillaMeta | null>(null);
   const [valores, setValores] = useState<Record<number, string>>({});
+  const [verTodas, setVerTodas] = useState(false);
+
+  // ⛔ 40 botones con el nombre CRUDO de Meta (`retiro_agencia_k1`,
+  // `remarketin3 ecomm`) no es una lista, es un volcado de identificadores —
+  // *"mis colaboradores no entienden y no saben trabajar, hay muchos botones"*.
+  // Arriba van las 2-3 que sirven para ESTE pedido, con nombre en español; el
+  // resto queda a un clic. NINGUNA se esconde: la regla de este archivo sigue
+  // siendo que esconder una plantilla aprobada es decidir por la asesora con
+  // una regexp.
+  const { recomendadas, resto } = useMemo(
+    () => partirPlantillas(plantillas, estadoPedido),
+    [plantillas, estadoPedido],
+  );
 
   // ⛔ La dependencia es el CONTENIDO de `datos`, no su identidad.
   //
@@ -63,7 +129,10 @@ export default function PlantillasWhatsapp({ externalId, fase, datos, modulo, on
 
   const mandar = async () => {
     if (!elegida) return;
-    const r = await enviarPlantilla(externalId, elegida.nombre, valores, modulo);
+    // El `phone` va para que el contador de la pantalla baje al instante: el
+    // touchpoint lo escribe el servidor y sin este aviso nadie se entera hasta
+    // recargar (ver `eventosGestion.ts`).
+    const r = await enviarPlantilla(externalId, elegida.nombre, valores, modulo, { phone });
     if (r.ok) {
       toast.success('Plantilla enviada al cliente');
       setElegida(null);
@@ -110,35 +179,46 @@ export default function PlantillasWhatsapp({ externalId, fase, datos, modulo, on
         </p>
       ) : (
         <>
-          <div className="flex flex-wrap gap-1.5">
-            {plantillas.map((p) => {
-              const activa = elegida?.nombre === p.nombre;
-              const bloqueada = !!p.noSoportada;
-              return (
-                <button
+          {/* Las que sirven para ESTE pedido: grandes, en fila propia y con el
+              nombre en español. Es lo que la asesora va a tocar el 90% de las
+              veces. */}
+          {recomendadas.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              {recomendadas.map((p) => (
+                <BotonPlantilla
                   key={p.nombre}
-                  type="button"
-                  disabled={bloqueada}
-                  title={p.noSoportada ?? p.cuerpo.slice(0, 160)}
-                  onClick={() => setElegida(activa ? null : p)}
-                  className={cn(
-                    'inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors',
-                    bloqueada
-                      ? 'border-border/60 bg-card/20 text-muted-foreground/50 cursor-not-allowed'
-                      : activa
-                      ? 'border-accent/50 bg-accent/15 text-accent'
-                      : 'border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong',
-                  )}
-                >
-                  {bloqueada && <Lock size={10} aria-hidden="true" />}
-                  {p.nombre.replace(/_/g, ' ')}
-                  {p.categoria === 'MARKETING' && !bloqueada && (
-                    <span className="text-[9px] font-bold opacity-60" title="Plantilla de promoción: Meta la cobra más caro y la restringe más que una de logística.">PROMO</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+                  p={p}
+                  activa={elegida?.nombre === p.nombre}
+                  destacada
+                  onClick={() => setElegida(elegida?.nombre === p.nombre ? null : p)}
+                />
+              ))}
+            </div>
+          )}
+
+          {resto.length > 0 && (recomendadas.length === 0 || verTodas ? (
+            <div className="flex flex-wrap gap-1.5">
+              {resto.map((p) => (
+                <BotonPlantilla
+                  key={p.nombre}
+                  p={p}
+                  activa={elegida?.nombre === p.nombre}
+                  onClick={() => setElegida(elegida?.nombre === p.nombre ? null : p)}
+                />
+              ))}
+            </div>
+          ) : (
+            // El resto NO desaparece: queda a un clic. Si se borrara, una
+            // asesora con un caso raro (un reclamo, un rescate) se quedaría sin
+            // la plantilla que necesita y sin saber que existe.
+            <button
+              type="button"
+              onClick={() => setVerTodas(true)}
+              className="text-[11px] font-semibold text-muted-foreground hover:text-foreground underline hover:no-underline"
+            >
+              Ver las otras {resto.length}
+            </button>
+          ))}
 
           {elegida?.noSoportada && (
             <p className="text-[11px] text-warning">{elegida.noSoportada}</p>

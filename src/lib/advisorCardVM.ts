@@ -67,6 +67,11 @@ export interface BuildAdvisorsInput {
   mezcla: ReadonlyMap<string, MezclaAsesor>;
   scoresByOp: ReadonlyMap<string, AsesorScore>;
   liveByOp: ReadonlyMap<string, LiveLite>;
+  /** ¿La lectura de "última marca" del día está COMPLETA? `false` = falló o se
+   *  cortó por el tope de filas de `useLiveTeam`. Con false, "sin marcar" NO se
+   *  puede afirmar: es un hueco de lectura, no un cero. Default true para no
+   *  cambiar el comportamiento de quien todavía no lo pasa. */
+  workEventsOk?: boolean;
   /** Roster completo (para mostrar inactivos con su "última vez"). Opcional: sin
    *  él, un asesor sin actividad simplemente no trae días de inactividad. */
   rosterByOp?: ReadonlyMap<string, RosterLite>;
@@ -110,7 +115,14 @@ export interface AdvisorVM {
   tardeMin: number | null;      // minutos tarde (>0) o null
   hourly: { hora: number; cantidad: number }[];
   // Métricas de la cara (etiquetas en cristiano)
-  trabajo: number;              // = atendidos
+  trabajo: number;              // = atendidos (SOLO Confirmar)
+  /** Gestiones fuera de Confirmar: seguimiento + novedades + rescate. Existe
+   *  porque la cara de la tarjeta era confirmar-only y quien trabajaba
+   *  Seguimiento se leía "0". */
+  otroTrabajo: number;
+  /** No tocó Confirmar pero SÍ trabajó. La cabecera muestra ese trabajo en vez
+   *  de un cero que se lee como que no hizo nada. */
+  soloOtroTrabajo: boolean;
   contestaron: number;          // conf + canc
   noContesto: number;           // noresp
   devoluciones: number | null;
@@ -324,11 +336,20 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
       const m = motivoSemaforo(score);
       if (m) motivos.push(m);
     }
+    // ⛔ Sin lectura completa NO se acusa a nadie (27-ago-2026).
+    //
+    // `presente pero sin marcar` es la frase que hizo que el dueño le reclamara
+    // por WhatsApp a un asesor que estaba trabajando. Puede ser un hecho o
+    // puede ser un hueco de lectura —la consulta de `useLiveTeam` trae 400
+    // filas y en un día movido las viejas quedan afuera—, y esos dos casos se
+    // veían EXACTAMENTE IGUAL. Cero nunca sustituye a "no se pudo medir": con
+    // el dato incompleto se calla en vez de afirmar.
+    const marcasMedidas = input.workEventsOk !== false;
     // Señales EN VIVO que la tabla vieja no juntaba en un solo lugar:
     if (isToday) {
       if (tardeMin != null && tardeMin > 0) motivos.push(`entró ${tardeMin >= 60 ? `${Math.floor(tardeMin / 60)} h ${tardeMin % 60} min` : `${tardeMin} min`} tarde`);
-      if (sinGestionMin != null && sinGestionMin >= UMBRAL_SIN_GESTION_MIN) motivos.push(`sin marcar hace ${sinGestionMin} min`);
-      if (live && live.estado === 'presente_sin_marcar') motivos.push('presente pero sin marcar');
+      if (marcasMedidas && sinGestionMin != null && sinGestionMin >= UMBRAL_SIN_GESTION_MIN) motivos.push(`sin marcar hace ${sinGestionMin} min`);
+      if (marcasMedidas && live && live.estado === 'presente_sin_marcar') motivos.push('presente pero sin marcar');
     }
     // ── Inactivo (dejó de trabajar) vs apertura (se activó, aún sin marcar) ────
     // Sin NINGUNA gestión en el rango (confirmar + seg + nov + rescate).
@@ -351,10 +372,23 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
     }
 
     const inflowSuelto = isToday && entrantes > 0;
-    const sinDato = atendidos === 0 && r.confirmados === 0 && (!live || live.estado === 'ausente');
+    // ⛔ Trabajo que NO es Confirmar (27-ago-2026). La cara de esta tarjeta era
+    // confirmar-only: `total_atendidos` filtra `module='confirmar'`, así que un
+    // asesor que pasó la mañana avisando clientes en agencia se leía
+    // **"0 · trabajó 0"** — y así es como el dueño terminó reclamándole a
+    // alguien que sí había trabajado. El dato ya venía en la RPC desde abril
+    // (`seg_acciones`), pero salía en una línea de 11px condicional a `> 0`.
+    const otroTrabajo = r.seg_acciones + r.novedades_resueltas + r.rescate_acciones;
+    // Nadie tocó Confirmar pero SÍ hubo trabajo: la cabecera tiene que contarlo
+    // en vez de mostrar un cero que se lee como pereza.
+    const soloOtroTrabajo = atendidos === 0 && r.confirmados === 0 && otroTrabajo > 0;
+    // `sinDato` = no hay NADA que mostrar. Con gestiones de Seguimiento sí hay:
+    // sin este término la tarjeta caía en 'idle' ("sin datos") sobre alguien con
+    // 40 gestiones hechas.
+    const sinDato = atendidos === 0 && r.confirmados === 0 && otroTrabajo === 0 && (!live || live.estado === 'ausente');
     if (sinDato) {
       atencion = 'idle';
-    } else if (semaforo === 'rojo' || (ritmoTono === 'bad') || (sinGestionMin != null && sinGestionMin >= UMBRAL_SIN_GESTION_MIN) || (tardeMin != null && tardeMin >= 30)) {
+    } else if (semaforo === 'rojo' || (ritmoTono === 'bad') || (marcasMedidas && sinGestionMin != null && sinGestionMin >= UMBRAL_SIN_GESTION_MIN) || (tardeMin != null && tardeMin >= 30)) {
       atencion = 'bad';
     } else if (semaforo === 'ambar' || ritmoTono === 'warn' || motivos.length > 0) {
       atencion = 'warn';
@@ -369,7 +403,13 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
     // Texto de estado (hoy): "Trabajando · marcó hace 1 min"
     let estadoTexto: string | null = null;
     if (isToday && live) {
-      const h = live.ultimaAccion ? `${live.ultimaAccion} ${haceTexto(live.lastWorkMin)}` : (live.estado === 'ausente' ? 'sin señal hoy' : 'sin marcar aún');
+      const h = live.ultimaAccion
+        ? `${live.ultimaAccion} ${haceTexto(live.lastWorkMin)}`
+        // "sin marcar aún" es una afirmación; con la lectura truncada no la
+        // podemos hacer. Se dice lo único cierto: que no se pudo medir.
+        : !marcasMedidas ? 'no se pudo medir'
+        : live.estado === 'ausente' ? 'sin señal hoy'
+        : 'sin marcar aún';
       estadoTexto = `${ESTADO_TXT[live.estado]} · ${h}`;
     }
 
@@ -395,6 +435,8 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
       tardeMin,
       hourly: live?.hourly ?? [],
       trabajo: atendidos,
+      otroTrabajo,
+      soloOtroTrabajo,
       contestaron,
       noContesto: r.noresp,
       devoluciones,

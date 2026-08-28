@@ -286,9 +286,15 @@ Deno.serve(async (req) => {
     if (pedido.phone) {
       const { fecha, hora } = fechaHoraLocal(cc);
       const modulo = body?.modulo === "WHATSAPP" ? "WHATSAPP" : "SEG";
+      // QUÉ se hizo, no solo que se escribió. El botón de acción principal
+      // manda "Avisé: en oficina" / "Envié la guía" —los mismos textos de la
+      // botonera— para que la bitácora diga cuál de las seis gestiones fue.
+      // Sin `accion` queda el texto de siempre: un cliente viejo se comporta
+      // igual. Se acota para que nadie meta un párrafo en la bitácora.
+      const accion = String(body?.accion ?? "").trim().slice(0, 60) || "Escribí por WhatsApp";
       await sb.from("touchpoints").insert({
         phone: pedido.phone,
-        action: `${modulo}: Escribí por WhatsApp`,
+        action: `${modulo}: ${accion}`,
         operator_id: u.user.id,
         store_id: storeId,
         action_date: fecha,

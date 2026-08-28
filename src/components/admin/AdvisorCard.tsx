@@ -140,14 +140,37 @@ export default function AdvisorCard({
         </div>
       </div>
 
-      {/* Cabecera: confirmó (grande) + % del día (aro) */}
+      {/* Cabecera: confirmó (grande) + % del día (aro).
+          ⛔ Si NO tocó Confirmar pero sí trabajó (una mañana entera avisando
+          clientes en agencia), la cifra grande cuenta ESE trabajo. Antes decía
+          "0 · trabajó 0" sobre alguien que había hecho 40 gestiones — y así es
+          como el dueño terminó reclamándole por WhatsApp a un asesor que
+          estaba trabajando. */}
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-end gap-1.5">
-            <span className="font-mono tabular-nums text-4xl font-bold leading-none text-foreground">{vm.confirmados}</span>
+            <span className="font-mono tabular-nums text-4xl font-bold leading-none text-foreground">
+              {vm.soloOtroTrabajo ? vm.otroTrabajo : vm.confirmados}
+            </span>
           </div>
-          <span className="block text-xs text-muted-foreground mt-1">confirmó {isToday ? 'hoy' : 'en el rango'}</span>
-          <span className="block text-[11px] text-muted-foreground/70">de {vm.trabajo} pedidos que trabajó</span>
+          {vm.soloOtroTrabajo ? (
+            <>
+              <span className="block text-xs text-muted-foreground mt-1">
+                gestiones {isToday ? 'hoy' : 'en el rango'}
+              </span>
+              <span className="block text-[11px] text-muted-foreground/70">
+                seguimiento y novedades — no tomó llamadas de confirmación
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="block text-xs text-muted-foreground mt-1">confirmó {isToday ? 'hoy' : 'en el rango'}</span>
+              <span className="block text-[11px] text-muted-foreground/70">
+                de {vm.trabajo} pedidos que trabajó
+                {vm.otroTrabajo > 0 && ` · + ${vm.otroTrabajo} de seguimiento`}
+              </span>
+            </>
+          )}
         </div>
         <div className="relative shrink-0" style={{ width: 76, height: 76 }} title={vm.tasaDia == null ? 'Sin pedidos trabajados aún.' : `Confirmó ${vm.confirmados} de ${vm.trabajo} que trabajó`}>
           <svg viewBox="0 0 36 36" className="h-full w-full -rotate-90">

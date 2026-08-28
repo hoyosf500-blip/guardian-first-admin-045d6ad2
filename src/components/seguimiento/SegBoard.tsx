@@ -13,7 +13,7 @@ import { estadoAvisoAgencia, diasDesdeAviso } from '@/lib/avisoAgencia';
 import { veredictoAviso, haceCuantoMs, estadoConversacion, type ActividadChatOrden } from '@/lib/actividadChat';
 import { metodosRapidosParaEstado, esContactoEfectivo, faseConGestion } from '@/lib/segMetodosEstado';
 import { haceCuanto, type GestionDelPedido } from '@/lib/gestionPorPedido';
-import { FASES_VIVAS, HORAS_DETENIDO, horasSinMovimiento } from '@/lib/segPulso';
+import { FASES_VIVAS, HORAS_DETENIDO, horasSinMovimiento, contarGestionadosHoy } from '@/lib/segPulso';
 import { useOperatorNames } from '@/hooks/useOperatorNames';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { useRefreshOrder } from '@/hooks/useRefreshOrder';
@@ -23,6 +23,7 @@ import { useWaChat } from '@/contexts/WaChatContext';
 import { useSessionState } from '@/hooks/useSessionState';
 import { TiltCard } from '@/components/ui3d';
 import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDialog';
+import AccionPrincipal from '@/components/seguimiento/AccionPrincipal';
 import { ventanaWhatsapp, MOTIVO_VENTANA } from '@/lib/ventanaWhatsapp';
 import { cn, formatCOP } from '@/lib/utils';
 
@@ -349,6 +350,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   // tocar el boton insertaria un touchpoint duplicado.
   const gEquipoEfectiva = !!gEquipo && esContactoEfectivo(gEquipo.ultimoResult);
   const yaGestionada = !!gestionada || gEquipoEfectiva || (!!o.phone && !!touchedTodayPhones?.has(o.phone));
+  const metodosRapidos = metodosRapidosParaEstado(o.estado);
 
   // Acciones del tablero: registran el touchpoint (SEG: <acción>) para que el
   // contador se mueva y —con "ocultar gestionados"— la tarjeta desaparezca vía
@@ -822,23 +824,49 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           </div>
         ) : (
           <div className="mt-2.5 flex flex-wrap gap-1.5">
-            {metodosRapidosParaEstado(o.estado).map((m, i) => (
+            {/* La PRIMERA acción MANDA el mensaje; solo si no se puede (fase sin
+                acción, tienda sin ImporChat, ninguna plantilla que sirva) cae al
+                botón declarativo de siempre — la decisión vive dentro de
+                `AccionPrincipal`, que es el único que sabe si va a poder.
+                Las otras dos son los desenlaces del TELÉFONO: eso no lo puede
+                medir nadie más que quien hizo la llamada. */}
+            <AccionPrincipal
+              externalId={String(o.externalId ?? '')}
+              phone={o.phone}
+              estado={o.estado}
+              nombre={o.nombre}
+              actividad={actividad}
+              datos={{
+                guia: o.guia,
+                transportadora: o.transportadora,
+                ciudad: o.ciudad,
+                producto: o.producto,
+                valor: o.valor ? formatCOP(o.valor) : null,
+              }}
+              className="w-full min-h-11 justify-center text-[12px]"
+              onEnviado={(g) => setGestionada(g)}
+              fallback={metodosRapidos[0] ? (
+                <button
+                  type="button"
+                  onClick={(e) => { void gestionar(e, metodosRapidos[0]); }}
+                  disabled={gestionando}
+                  title={`Registrar: ${metodosRapidos[0]}`}
+                  className="w-full min-h-11 inline-flex items-center justify-center gap-1.5 rounded-xl font-bold text-[12px] px-2 bg-accent text-accent-foreground hover:bg-accent/90 active:scale-[0.99] transition-colors disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+                >
+                  <CheckCircle2 size={14} aria-hidden="true" />
+                  <span className="truncate">{gestionando ? '…' : metodosRapidos[0]}</span>
+                </button>
+              ) : null}
+            />
+            {metodosRapidos.slice(1).map((m) => (
               <button
                 key={m}
                 type="button"
                 onClick={(e) => { void gestionar(e, m); }}
                 disabled={gestionando}
                 title={`Registrar: ${m}`}
-                className={cn(
-                  // La primera ocupa la fila entera (es la acción de la fase);
-                  // las otras dos se reparten la de abajo.
-                  'min-h-11 inline-flex items-center justify-center gap-1.5 rounded-xl font-bold text-[12px] px-2 transition-colors disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
-                  i === 0
-                    ? 'w-full bg-accent text-accent-foreground hover:bg-accent/90 active:scale-[0.99]'
-                    : 'flex-1 min-w-[calc(50%-0.375rem)] bg-card/60 border border-border text-foreground hover:border-accent/50 hover:text-accent',
-                )}
+                className="min-h-11 inline-flex items-center justify-center gap-1.5 rounded-xl font-bold text-[12px] px-2 transition-colors disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none flex-1 min-w-[calc(50%-0.375rem)] bg-card/60 border border-border text-foreground hover:border-accent/50 hover:text-accent"
               >
-                {i === 0 && <CheckCircle2 size={14} aria-hidden="true" />}
                 <span className="truncate">{gestionando ? '…' : m}</span>
               </button>
             ))}
@@ -855,6 +883,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           externalId={String(o.externalId)}
           nombre={o.nombre}
           estado={o.estado}
+          phone={o.phone}
           actividad={actividad}
           datos={{
             guia: o.guia,
@@ -1359,6 +1388,26 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
     [byColumn, statusFilter],
   );
 
+  // Lo que FALTA por columna, no lo que hay (27-ago-2026).
+  //
+  // La cabecera decía `col.orders.length` — un número que no se movía por más
+  // que la asesora marcara, porque las columnas se arman por ESTADO y una
+  // gestión no cambia el estado del pedido. "Sí le pongo pero no baja el
+  // número". Ahora el grande es lo pendiente y el total va al lado: los 83
+  // paquetes siguen en la agencia aunque ya se les avisó a todos, y esconderlo
+  // sería el error opuesto.
+  //
+  // Misma definición que el tablero usa para pintar la tarjeta y que el hero
+  // usa para el aro (`estaGestionadoHoy`): dos definiciones de "gestionado" en
+  // la misma pantalla fue el bug del contador clavado en 222.
+  const pendientesPorColumna = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of todasLasColumnas) {
+      m.set(c.key, c.orders.length - contarGestionadosHoy(c.orders, touchedTodayPhones, gestionEquipo));
+    }
+    return m;
+  }, [todasLasColumnas, touchedTodayPhones, gestionEquipo]);
+
   // Historia plegada: si la operadora PIDIÓ un estado explícitamente
   // (statusFilter), se le muestra aunque sea historia — pidió eso, no otra cosa.
   const mostrarHistoria = verHistoria || !!statusFilter;
@@ -1565,11 +1614,22 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
                 {col.icon}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span className={cn('h-2 w-2 rounded-full shrink-0', t.dot)} aria-hidden="true" />
+                <div className="flex items-baseline gap-1.5">
+                  <span className={cn('h-2 w-2 rounded-full shrink-0 self-center', t.dot)} aria-hidden="true" />
+                  {/* Lo que FALTA en grande; el total al lado. Ver
+                      `pendientesPorColumna`: este número tiene que bajar cuando
+                      la asesora marca, o "dejar la columna en cero" no existe. */}
                   <span className={cn('text-[22px] font-mono tabular-nums font-bold leading-none', t.num, t.numGlow)}>
-                    {col.orders.length}
+                    {pendientesPorColumna.get(col.key) ?? col.orders.length}
                   </span>
+                  {(pendientesPorColumna.get(col.key) ?? col.orders.length) < col.orders.length && (
+                    <span
+                      className="text-[11px] font-mono tabular-nums font-semibold text-muted-foreground/70 leading-none"
+                      title={`${col.orders.length - (pendientesPorColumna.get(col.key) ?? 0)} de ${col.orders.length} ya gestionados hoy`}
+                    >
+                      de {col.orders.length}
+                    </span>
+                  )}
                 </div>
                 {/* `title`: los estados crudos de EC son largos ("PARA RETIRO EN
                     AGENCIA SERVIENTREGA") y el truncate los cortaba sin forma

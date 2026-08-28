@@ -242,7 +242,19 @@ export function useLiveTeam(): LiveTeam {
       pendingConfirmar: confPend.error ? null : (confPend.count ?? 0),
       pendingNovedades: novPend.error ? null : (novPend.count ?? 0),
       presenceMouseOk: !actErr,
-      workEventsOk: !results.error && !tps.error,
+      // ⛔ El corte por LÍMITE cuenta como "no se pudo leer" (27-ago-2026).
+      //
+      // Las dos consultas traen las 400 filas más recientes DE TODA LA TIENDA.
+      // Si el equipo marcó más que eso hoy, las marcas viejas quedan afuera y
+      // `lastWork` no encuentra a quien empezó temprano y no volvió a marcar
+      // hace rato: su tarjeta decía **"presente sin marcar · sin marcar aún"**
+      // —la frase exacta que hizo que el dueño le reclamara a un asesor que sí
+      // estaba trabajando— sin ninguna señal de que el dato estaba truncado.
+      // `workEventsOk` solo cubría el error de red; un tope alcanzado es
+      // igual de ciego y hasta más engañoso, porque no falla nada.
+      workEventsOk: !results.error && !tps.error
+        && (results.data?.length ?? 0) < EVENT_SCAN_LIMIT
+        && (tps.data?.length ?? 0) < EVENT_SCAN_LIMIT,
       status: 'ok',
       updatedAt: nowMs,
     });
