@@ -871,6 +871,47 @@ export type Database = {
           },
         ]
       }
+      operator_pausas: {
+        Row: {
+          created_at: string
+          fin: string | null
+          id: string
+          inicio: string
+          motivo: string
+          nota: string | null
+          operator_id: string
+          store_id: string
+        }
+        Insert: {
+          created_at?: string
+          fin?: string | null
+          id?: string
+          inicio?: string
+          motivo: string
+          nota?: string | null
+          operator_id: string
+          store_id: string
+        }
+        Update: {
+          created_at?: string
+          fin?: string | null
+          id?: string
+          inicio?: string
+          motivo?: string
+          nota?: string | null
+          operator_id?: string
+          store_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operator_pausas_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       operator_pool: {
         Row: {
           active: boolean
