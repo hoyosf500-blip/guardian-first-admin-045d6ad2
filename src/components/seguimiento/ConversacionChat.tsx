@@ -52,10 +52,31 @@ const dia = (ms: number | null) => {
 /** Tipos de ImporChat que se pueden PINTAR. Los demás (audio, pdf) se ofrecen
  *  como enlace: mejor un "abrir" que un cuadro vacío. */
 const SE_VE = new Set(['image', 'sticker', 'photo']);
+const SE_ESCUCHA = new Set(['audio', 'ptt', 'voice']);
 
 function Adjunto({ url, tipo }: { url: string; tipo: string | null }) {
   const [fallo, setFallo] = useState(false);
-  const pintable = SE_VE.has(String(tipo ?? '').toLowerCase()) || /\.(jpe?g|png|webp|gif)$/i.test(url);
+  const t = String(tipo ?? '').toLowerCase();
+
+  // ⛔ LA NOTA DE VOZ SE ESCUCHA ACÁ (28-ago-2026). Medido sobre 18
+  // conversaciones reales de Ecuador: 14 traían audio — el cliente responde
+  // hablando mucho más de lo que escribe. Hasta hoy la tarjeta decía
+  // "🎧 Nota de voz" y no había forma de oírla sin abrir ImporChat aparte.
+  // Verificado en producción: el archivo se sirve sin credenciales y la CSP de
+  // la app no lo bloquea.
+  if (!fallo && (SE_ESCUCHA.has(t) || /\.(ogg|mp3|m4a|opus|wav)$/i.test(url))) {
+    return (
+      <audio
+        src={url}
+        controls
+        preload="none"
+        onError={() => setFallo(true)}
+        className="w-full max-w-[260px] h-8 mb-1"
+      />
+    );
+  }
+
+  const pintable = SE_VE.has(t) || /\.(jpe?g|png|webp|gif)$/i.test(url);
 
   // No se pudo cargar, o no es una imagen: se ofrece abrirlo. Es información
   // real (hay un archivo) sin fingir que se puede ver acá.

@@ -85,6 +85,14 @@ const ARCHIVOS_BASE = "https://chat.imporfactory.app";
 export function urlDeArchivo(ruta: string | null | undefined): string | null {
   const r = String(ruta ?? "").trim();
   if (!r) return null;
+  // ⛔ `ruta_archivo` NO SIEMPRE ES UN ARCHIVO. Medido en 18 conversaciones
+  // reales de Ecuador el 28-ago-2026: en los mensajes `template` y `text`
+  // ImporChat mete ahí un **JSON con los datos del pedido** (nombre, dirección,
+  // celular del cliente) — 68 de 98 casos. Tratarlo como ruta armaba un enlace
+  // roto y, peor, metía datos personales del cliente dentro de una URL.
+  // Los adjuntos DE VERDAD (image/audio/video) vienen absolutos y limpios.
+  if (/^[[{]/.test(r)) return null;
+  if (/[\s"'<>\\]/.test(r)) return null;
   if (/^https?:\/\//i.test(r)) return r;
   // `//host/x` es protocolo-relativo; `///x` o `//uploads/x` NO son un host,
   // son una ruta con barras de más. Se exige que lo de después parezca dominio.

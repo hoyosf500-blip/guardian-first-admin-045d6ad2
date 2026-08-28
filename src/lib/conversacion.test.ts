@@ -249,3 +249,42 @@ describe('adjuntos: la foto del cliente llega a la pantalla', () => {
     expect(urlDeArchivo('   ')).toBeNull();
   });
 });
+
+describe('⛔ ruta_archivo NO siempre es un archivo (casos REALES de producción)', () => {
+  // Medido el 28-ago-2026 con la cuenta de Ecuador, 18 conversaciones seguidas.
+  // De 98 valores de `ruta_archivo`: 68 eran un JSON con los datos del pedido
+  // (mensajes `template` y `text`), no una ruta. Tratarlos como ruta armaba un
+  // enlace roto Y metía el nombre, la dirección y el celular del cliente dentro
+  // de una URL. Los adjuntos de verdad vienen absolutos y limpios.
+  const JSON_DE_PLANTILLA = '{"nombre":"Javier Ordóñez","direccion":"Av. Los molinos","celular":"593985474905"}';
+
+  it('un JSON de datos del pedido NO es un adjunto', () => {
+    expect(urlDeArchivo(JSON_DE_PLANTILLA)).toBeNull();
+    expect(urlDeArchivo('[{"a":1}]')).toBeNull();
+  });
+
+  it('nada con espacios o comillas se convierte en URL', () => {
+    expect(urlDeArchivo('Av. Los molinos')).toBeNull();
+    expect(urlDeArchivo('archivo con espacio.png')).toBeNull();
+  });
+
+  it('el mensaje de plantilla queda SIN adjunto, con su marcador', () => {
+    const [m] = normalizarConversacion([
+      { id: 9, rol_mensaje: 1, tipo_mensaje: 'template', ruta_archivo: JSON_DE_PLANTILLA, created_at: '2026-08-28T10:00:00Z' },
+    ]);
+    expect(m.archivoUrl).toBeNull();
+  });
+
+  // Los tres formatos que SÍ manda ImporChat, copiados tal cual de producción.
+  it('la imagen de CloudFront pasa entera', () => {
+    const u = 'https://d39ru7awumhhs2.cloudfront.net/ecuador/products/134062/1773678992PORTADA%20PRODUCTOS%20%20(62).png';
+    expect(urlDeArchivo(u)).toBe(u);
+  });
+
+  it('el audio y el video de ImporChat pasan enteros', () => {
+    const a = 'https://chat.imporfactory.app/uploads/webhook_whatsapp/recibidos/audios/1516786623553726.ogg';
+    const v = 'https://chat.imporfactory.app/uploads/webhook_whatsapp/recibidos/videos/1565733068581714.mp4';
+    expect(urlDeArchivo(a)).toBe(a);
+    expect(urlDeArchivo(v)).toBe(v);
+  });
+});
