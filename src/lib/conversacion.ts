@@ -13,6 +13,7 @@ export {
   ultimoEntranteMs,
   ultimoSaliente,
   ultimoAutorNegocio,
+  urlDeArchivo,
   type MensajeConversacion,
   type MensajeIC,
   type QuienEscribe,

@@ -9,6 +9,7 @@ import { plantillasPara } from '@/lib/plantillasChat';
 import { renderizar, faltantes, sugerirValores, type DatosPedido } from '@/lib/plantillasMeta';
 import { conRastreo } from '@/lib/datosPlantilla';
 import { ventanaWhatsapp } from '@/lib/ventanaWhatsapp';
+import { useConversacion } from '@/hooks/useConversacion';
 import { classifySegEstado } from '@/lib/segStatus';
 import type { ActividadChatOrden } from '@/lib/actividadChat';
 import { cn } from '@/lib/utils';
@@ -61,14 +62,43 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
   const accion = accionPrincipal(estado);
   const fase = useMemo(() => classifySegEstado(estado || ''), [estado]);
 
-  // La ventana decide TODO lo de abajo. Se calcula con lo sincronizado (lo que
-  // ya tiene la tarjeta): abrir el hilo por cada una de las 83 tarjetas para
-  // afinar media hora de precisión no vale la pena. El diálogo completo sí lo
-  // relee, y el servidor la revalida antes de mandar nada.
-  const v = useMemo(
+  // La ventana decide TODO lo de abajo. Se calcula PRIMERO con lo sincronizado
+  // (lo que ya tiene la tarjeta): abrir el hilo por cada una de las 83 tarjetas
+  // del tablero no vale la pena. Cuando ese dato dice que NO se puede escribir,
+  // se relee — ver el bloque de abajo. Y el servidor revalida igual antes de
+  // mandar nada.
+  const vSync = useMemo(
     () => ventanaWhatsapp(actividad?.entranteAt ?? null, !!actividad),
     [actividad],
   );
+
+  // ⛔ "VENCIDA" NO SE AFIRMA CON DATO VIEJO (28-ago-2026).
+  //
+  // Reportado por el dueño: *"el chat está abierto y no han pasado las 24, pero
+  // en el CRM sale que sí"*. La tarjeta calcula la ventana con `chat_entrante_at`,
+  // que lo escribe el sync de ImporChat y por lo tanto **va atrasado**: si el
+  // cliente escribió después de la última corrida, acá seguía figurando el
+  // mensaje viejo y Guardian daba por cerrada una ventana que está abierta.
+  //
+  // La asimetría es la clave y por eso solo se relee en un sentido:
+  //  · "abierta" con dato viejo NUNCA es un falso positivo — que el cliente
+  //    haya escrito no se borra, y si escribió DESPUÉS la ventana está aún más
+  //    abierta. No hace falta preguntar.
+  //  · "vencida" / "nunca escribió" SÍ pueden ser mentira del atraso. Ahí se
+  //    relee el hilo (que devuelve la ventana fresca del servidor) antes de
+  //    decidir. Cuesta una lectura —cacheada 60 s, la misma que usa el cuadro
+  //    grande— y a cambio la asesora escribe gratis en vez de gastar una
+  //    plantilla, o directamente deja de creer que no puede escribir.
+  const dudoso = vSync.estado === 'vencida' || vSync.estado === 'nunca_escribio';
+  const hilo = useConversacion(externalId, abierto && dudoso);
+  const vFresca = hilo.estado === 'ok' && hilo.ventana
+    ? { estado: hilo.ventana.estado as typeof vSync.estado, restanteMs: hilo.ventana.restanteMs }
+    : null;
+  const v = vFresca ?? vSync;
+  // Mientras la relectura está en curso no se decide nada: es exactamente el
+  // momento en que el dato viejo mentiría.
+  const revalidando = abierto && dudoso && !vFresca
+    && (hilo.estado === 'inicial' || hilo.estado === 'cargando');
   const conPlantilla = v.estado === 'vencida' || v.estado === 'nunca_escribio';
 
   // Solo se piden al ABRIR: son 40 plantillas por llamada y en el tablero hay
@@ -124,7 +154,7 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
   // de nombre solo. Ese es exactamente el tipo de silencio que este trabajo
   // vino a sacar. Ahora se dice qué pasó y qué le queda por hacer.
   useEffect(() => {
-    if (!abierto || !conPlantilla) return;
+    if (!abierto || !conPlantilla || revalidando) return;
     const falla =
       estadoPl === 'sin_config' ? 'Esta tienda no tiene WhatsApp conectado. Registrá la gestión y escribile por fuera.'
       : estadoPl === 'error' ? 'No se pudieron leer las plantillas aprobadas. Probá abriendo el chat, o llamalo.'
@@ -137,7 +167,7 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
     if (!falla) return;
     setAbierto(false);
     toast.error('No se pudo preparar el mensaje', { description: falla });
-  }, [abierto, conPlantilla, estadoPl, plantilla]);
+  }, [abierto, conPlantilla, estadoPl, plantilla, revalidando]);
 
   // La previa ES el mensaje: se arma con la misma función que usa el servidor
   // para hablarle a Meta, así lo que se lee acá es lo que le llega al cliente.
@@ -152,10 +182,14 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
   // propósito: ofrecer el camino caro —la plantilla— por las dudas sería
   // hacerle pagar de más al dueño. El diálogo completo sí lo averigua releyendo
   // el hilo, y ahí se decide con el dato en la mano.
+  // ⛔ `!revalidando`: mientras se relee la ventana, el botón NO puede
+  // convertirse en el declarativo y hacer desaparecer el panel que la asesora
+  // acaba de abrir. Se decide con el dato fresco, no con el que está por
+  // cambiar.
   const sinCamino = !accion || !phone
     || v.estado === 'sin_dato'
-    || (conPlantilla && (estadoPl === 'sin_config' || estadoPl === 'error'))
-    || (conPlantilla && estadoPl === 'ok' && (!plantilla || huecos.length > 0));
+    || (!revalidando && conPlantilla && (estadoPl === 'sin_config' || estadoPl === 'error'))
+    || (!revalidando && conPlantilla && estadoPl === 'ok' && (!plantilla || huecos.length > 0));
   if (sinCamino) return <>{fallback}</>;
 
   const listo = conPlantilla ? !!plantilla && huecos.length === 0 : !!textoLibre;
@@ -202,7 +236,7 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
           </span>
         </div>
 
-        {conPlantilla && (estadoPl === 'inicial' || estadoPl === 'cargando') ? (
+        {revalidando || (conPlantilla && (estadoPl === 'inicial' || estadoPl === 'cargando')) ? (
           // ⛔ Acá NO puede decir "no hay plantilla": todavía no se sabe. Un
           // vacío que se lee como veredicto es el error que ya costó dos veces.
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground py-2">

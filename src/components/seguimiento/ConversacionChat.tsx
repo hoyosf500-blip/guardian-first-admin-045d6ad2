@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, AlertTriangle, MessagesSquare } from 'lucide-react';
 import type { MensajeConversacion } from '@/lib/conversacion';
 import type { EstadoHilo } from '@/hooks/useConversacion';
@@ -48,6 +48,41 @@ const dia = (ms: number | null) => {
   if (d.toDateString() === ayer.toDateString()) return 'Ayer';
   return d.toLocaleDateString('es', { day: '2-digit', month: 'short' });
 };
+
+/** Tipos de ImporChat que se pueden PINTAR. Los demás (audio, pdf) se ofrecen
+ *  como enlace: mejor un "abrir" que un cuadro vacío. */
+const SE_VE = new Set(['image', 'sticker', 'photo']);
+
+function Adjunto({ url, tipo }: { url: string; tipo: string | null }) {
+  const [fallo, setFallo] = useState(false);
+  const pintable = SE_VE.has(String(tipo ?? '').toLowerCase()) || /\.(jpe?g|png|webp|gif)$/i.test(url);
+
+  // No se pudo cargar, o no es una imagen: se ofrece abrirlo. Es información
+  // real (hay un archivo) sin fingir que se puede ver acá.
+  if (!pintable || fallo) {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="block text-[11px] font-semibold text-accent hover:underline mb-0.5"
+      >
+        Abrir el archivo →
+      </a>
+    );
+  }
+  return (
+    <a href={url} target="_blank" rel="noreferrer noopener" className="block mb-1">
+      <img
+        src={url}
+        alt="Adjunto del chat"
+        loading="lazy"
+        onError={() => setFallo(true)}
+        className="max-h-52 w-auto max-w-full rounded-lg border border-border object-contain bg-card/40"
+      />
+    </a>
+  );
+}
 
 export default function ConversacionChat({ mensajes, estado, error, onRecargar, className, mostrarEncabezado = true, altoClase = 'min-h-[120px] max-h-[260px]' }: Props) {
   const finRef = useRef<HTMLDivElement>(null);
@@ -153,6 +188,15 @@ export default function ConversacionChat({ mensajes, estado, error, onRecargar, 
                         {m.autor ?? <span className="text-muted-foreground font-normal italic">sin nombre registrado</span>}
                       </p>
                     )}
+                    {/* El adjunto, cuando lo hay. ImporChat siempre mandó la
+                        ruta y Guardian la tiraba: la foto del comprobante o del
+                        producto equivocado es, muchas veces, la conversación
+                        entera. Ver `archivoUrl` en `conversacion.ts`.
+
+                        ⛔ Degrada solo: si la imagen no carga (ruta que exige
+                        sesión, archivo borrado) se esconde y queda el marcador
+                        de texto de siempre. Nunca un cuadro roto. */}
+                    {m.archivoUrl && <Adjunto url={m.archivoUrl} tipo={m.tipo} />}
                     <p className={cn('text-xs leading-snug whitespace-pre-wrap break-words', m.esMarcador && 'italic text-muted-foreground')}>
                       {m.texto}
                     </p>

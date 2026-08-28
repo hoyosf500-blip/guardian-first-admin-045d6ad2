@@ -62,6 +62,34 @@ export interface MensajeConversacion {
   tipo: string | null;
   /** `texto` es un marcador que armamos nosotros (audio, foto), no lo escrito. */
   esMarcador: boolean;
+  /**
+   * URL del adjunto (la foto que mandó el cliente, el comprobante, el audio).
+   *
+   * ⛔ ImporChat SIEMPRE mandó esto en `ruta_archivo` y acá se TIRABA: solo se
+   * miraba para elegir un marcador de texto ("🖼️ Imagen") y la ruta nunca
+   * llegaba a la pantalla. Por eso "los chats no cargan las imágenes" — no es
+   * que fallaran, es que nunca se pidieron. Y el comprobante de pago que manda
+   * un cliente por WhatsApp es, muchas veces, la conversación entera.
+   *
+   * Absoluta siempre: si viene relativa se le antepone el host de ImporChat.
+   * `null` = el mensaje no traía adjunto.
+   */
+  archivoUrl: string | null;
+}
+
+/** Host de los adjuntos de ImporChat. `ruta_archivo` puede venir absoluta
+ *  ("https://…/x.jpg") o relativa ("/uploads/x.jpg"); esto normaliza las dos
+ *  sin inventar nada: lo que no parece ruta usable queda en `null`. */
+const ARCHIVOS_BASE = "https://chat.imporfactory.app";
+
+export function urlDeArchivo(ruta: string | null | undefined): string | null {
+  const r = String(ruta ?? "").trim();
+  if (!r) return null;
+  if (/^https?:\/\//i.test(r)) return r;
+  // `//host/x` es protocolo-relativo; `///x` o `//uploads/x` NO son un host,
+  // son una ruta con barras de más. Se exige que lo de después parezca dominio.
+  if (/^\/\/[^/]+\.[^/]+\//.test(r)) return `https:${r}`;
+  return `${ARCHIVOS_BASE}/${r.replace(/^\/+/, "")}`;
 }
 
 /**
@@ -155,6 +183,7 @@ export function normalizarConversacion(mensajes: MensajeIC[] | null | undefined)
         autor: autor || null,
         tipo: m.tipo_mensaje ? String(m.tipo_mensaje).toLowerCase() : null,
         esMarcador,
+        archivoUrl: urlDeArchivo(m.ruta_archivo),
       },
     });
   }

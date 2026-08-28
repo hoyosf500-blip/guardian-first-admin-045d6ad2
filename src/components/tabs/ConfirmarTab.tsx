@@ -98,9 +98,23 @@ export default function ConfirmarTab({ profile }: Props) {
   // esconder una fuga. Los dos hooks dedupean con la instancia del panel (React
   // Query, mismo queryKey) → 0 requests extra; cuando está plegado el panel no se
   // monta y solo corre esta instancia liviana.
-  const [avisosShopifyOpen, setAvisosShopifyOpen] = useSessionState<boolean>('confirmar:avisosShopify', false);
+  // ⛔ PLEGADO SÍ, ESCONDIDO NO (corregido 28-ago-2026).
+  //
+  // Se plegó el 27-ago y el efecto real fue que la asesora dejó de VER los
+  // pedidos de Shopify que todavía no llegaron a Dropi — que no son un aviso,
+  // son la cola de trabajo, y cada uno es una venta que se cae si nadie la
+  // sube. Dicho por el dueño: *"lo de Shopify no lo escondas; ocultá las
+  // alertas rojas"*.
+  //
+  // `null` = la persona todavía no decidió → se abre SOLO si hay pedidos
+  // esperando. Si lo cierra a mano queda cerrado (y `useSessionState` es por
+  // sesión, así que mañana vuelve a abrirse si hay trabajo).
+  const [avisosShopifyPref, setAvisosShopifyPref] = useSessionState<boolean | null>('confirmar:avisosShopify:v2', null);
   const { data: robotSalud } = useAutoPushHealth(activeStoreId);
   const { data: shopifyPend } = useShopifyPending(activeStoreId);
+  const shopifyPorSubir = shopifyPend?.pendingCount ?? 0;
+  const avisosShopifyOpen = avisosShopifyPref ?? shopifyPorSubir > 0;
+  const setAvisosShopifyOpen = (v: boolean) => setAvisosShopifyPref(v);
   // Pedidos "progresados" (ya reales en Dropi) de los mismos teléfonos de la cola,
   // para detectar PENDIENTE CONFIRMACION duplicados/viejos y ocultarlos (ver abajo).
   const [progressedOrders, setProgressedOrders] = useState<ProgressedOrder[]>([]);
@@ -636,6 +650,11 @@ export default function ConfirmarTab({ profile }: Props) {
                 <span className="font-semibold text-danger">El robot no subió {robotSalud.cuantos} {robotSalud.cuantos === 1 ? 'pedido' : 'pedidos'} a Dropi · y más avisos de Shopify</span>
               ) : robotSalud?.mudo ? (
                 <span className="font-semibold text-warning">El robot de Shopify no está reportando · revisá los avisos</span>
+              ) : shopifyPorSubir > 0 ? (
+                /* Trabajo, no aviso: se nombra y se cuenta aunque esté plegado. */
+                <span className="font-semibold text-foreground">
+                  {shopifyPorSubir} {shopifyPorSubir === 1 ? 'pedido de Shopify' : 'pedidos de Shopify'} sin subir a Dropi
+                </span>
               ) : (
                 <span className="font-medium text-muted-foreground">Avisos de Shopify</span>
               )}

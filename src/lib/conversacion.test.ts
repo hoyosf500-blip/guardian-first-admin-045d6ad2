@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizarConversacion, ultimoEntranteMs, ultimoSaliente, ultimoAutorNegocio, type MensajeIC } from './conversacion';
+import { normalizarConversacion, ultimoEntranteMs, ultimoSaliente, ultimoAutorNegocio, type MensajeIC, urlDeArchivo } from './conversacion';
 
 /**
  * El hilo de WhatsApp que ve la asesora dentro de Guardian.
@@ -211,5 +211,41 @@ describe('ultimoAutorNegocio', () => {
 
   it('hilo vacío devuelve null', () => {
     expect(ultimoAutorNegocio([])).toBeNull();
+  });
+});
+
+describe('adjuntos: la foto del cliente llega a la pantalla', () => {
+  // ⛔ 28-ago-2026, reportado por el dueño: "los chats no cargan las imágenes".
+  // No fallaban: ImporChat SIEMPRE mandó `ruta_archivo` y `normalizarConversacion`
+  // la tiraba — solo la miraba para elegir el marcador "🖼️ Imagen". El
+  // comprobante de pago que manda un cliente por WhatsApp es, muchas veces, la
+  // conversación entera.
+  it('la ruta del adjunto viaja en el mensaje', () => {
+    const [m] = normalizarConversacion([
+      { id: 1, rol_mensaje: 0, tipo_mensaje: 'image', ruta_archivo: '/uploads/comprobante.jpg', created_at: '2026-08-28T10:00:00Z' },
+    ]);
+    expect(m.archivoUrl).toBe('https://chat.imporfactory.app/uploads/comprobante.jpg');
+    // El marcador NO se pierde: si la imagen no carga, queda el texto.
+    expect(m.texto).toContain('Imagen');
+  });
+
+  it('un mensaje sin adjunto no inventa una URL', () => {
+    const [m] = normalizarConversacion([
+      { id: 2, rol_mensaje: 0, texto_mensaje: 'hola', created_at: '2026-08-28T10:00:00Z' },
+    ]);
+    expect(m.archivoUrl).toBeNull();
+  });
+
+  it('urlDeArchivo acepta absoluta, relativa y protocolo implícito', () => {
+    expect(urlDeArchivo('https://cdn.otro.com/a.png')).toBe('https://cdn.otro.com/a.png');
+    expect(urlDeArchivo('//cdn.otro.com/a.png')).toBe('https://cdn.otro.com/a.png');
+    expect(urlDeArchivo('uploads/a.png')).toBe('https://chat.imporfactory.app/uploads/a.png');
+    expect(urlDeArchivo('///uploads/a.png')).toBe('https://chat.imporfactory.app/uploads/a.png');
+  });
+
+  it('vacío o nulo → null, nunca una URL rota', () => {
+    expect(urlDeArchivo(null)).toBeNull();
+    expect(urlDeArchivo(undefined)).toBeNull();
+    expect(urlDeArchivo('   ')).toBeNull();
   });
 });
