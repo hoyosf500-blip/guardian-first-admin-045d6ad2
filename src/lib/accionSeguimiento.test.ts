@@ -144,17 +144,62 @@ describe('partirPlantillas', () => {
 });
 
 describe('plantillaParaAccion', () => {
+  // Todo se puede llenar: el orden es puro criterio de especificidad.
+  const todoOk = () => true;
+
   it('es la misma que la primera recomendada — una sola decisión', () => {
     // El botón grande y la lista tienen que ofrecer LO MISMO: si divergen, la
     // asesora manda una cosa creyendo que manda otra.
     for (const estado of ['EN OFICINA', 'GUIA GENERADA', 'EN REPARTO', 'NOVEDAD']) {
-      const { recomendadas } = partirPlantillas(CUENTA_EC, estado);
-      expect(plantillaParaAccion(CUENTA_EC, estado)?.nombre).toBe(recomendadas[0]?.nombre);
+      const { recomendadas } = partirPlantillas(CUENTA_EC, estado, todoOk);
+      expect(plantillaParaAccion(CUENTA_EC, estado, todoOk)?.nombre).toBe(recomendadas[0]?.nombre);
     }
   });
 
   it('sin plantilla que sirva devuelve null (el botón cae al declarativo)', () => {
-    expect(plantillaParaAccion([{ nombre: 'promo_navidad' }], 'EN OFICINA')).toBeNull();
-    expect(plantillaParaAccion(CUENTA_EC, 'ENTREGADO')).toBeNull();
+    expect(plantillaParaAccion([{ nombre: 'promo_navidad' }], 'EN OFICINA', todoOk)).toBeNull();
+    expect(plantillaParaAccion(CUENTA_EC, 'ENTREGADO', todoOk)).toBeNull();
+  });
+
+  // ── El bug que se vio EN PRODUCCIÓN el 27-ago-2026 ────────────────────────
+  // El botón elegía `retiro_agencia_disponible_k1` porque es la más específica,
+  // pero pide "Plazo para retirar: {{4}} días" — un dato que Guardian tiene
+  // PROHIBIDO inventar. Resultado: cargaba, se daba cuenta de que no podía, y
+  // el panel se apagaba solo delante de la asesora.
+  describe('⛔ elige la que se PUEDE mandar, no la que suena mejor', () => {
+    // Los huecos reales medidos en la cuenta de Ecuador.
+    const HUECOS: Record<string, number> = {
+      retiro_agencia_disponible_k1: 4, // nombre + agencia + guía + PLAZO EN DÍAS
+      retiro_agencia_recordatorio_k2: 4,
+      retiro_agencia_recordatorio_k3: 4,
+      retiro_agencia_v1: 2,            // nombre + producto → los dos los tenemos
+      retiro_agencia_k1: 1,            // agencia
+    };
+    // Guardian llena nombre, agencia, guía, ciudad, producto y valor; el PLAZO
+    // no (`plantillasMeta.ts` no tiene regla para "días", a propósito).
+    const sePuede = (p: { nombre: string }) => (HUECOS[p.nombre] ?? 0) <= 2;
+
+    it('no devuelve la que pide un dato que no tenemos', () => {
+      const elegida = plantillaParaAccion(CUENTA_EC, 'EN OFICINA', sePuede);
+      expect(elegida).not.toBeNull();
+      expect(elegida!.nombre).not.toBe('retiro_agencia_disponible_k1');
+      expect(sePuede(elegida!)).toBe(true);
+    });
+
+    it('las completables suben al frente de las recomendadas', () => {
+      const { recomendadas } = partirPlantillas(CUENTA_EC, 'EN OFICINA', sePuede);
+      expect(sePuede(recomendadas[0])).toBe(true);
+    });
+
+    it('pero las NO completables siguen en la lista — la asesora las llena a mano', () => {
+      const { recomendadas, resto } = partirPlantillas(CUENTA_EC, 'EN OFICINA', sePuede);
+      const todas = [...recomendadas, ...resto].map((p) => p.nombre);
+      expect(todas).toContain('retiro_agencia_disponible_k1');
+      expect(todas.length).toBe(CUENTA_EC.length);
+    });
+
+    it('si NINGUNA se puede completar devuelve null y el botón cae al declarativo', () => {
+      expect(plantillaParaAccion(CUENTA_EC, 'EN OFICINA', () => false)).toBeNull();
+    });
   });
 });

@@ -82,9 +82,15 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
     [datos, nombre],
   );
 
+  // Se elige la que Guardian puede COMPLETAR con los datos del pedido, no la
+  // que suena mejor: la más específica de agencia pide un "plazo en días" que
+  // tenemos prohibido inventar, y el botón quedaba inservible. Ver
+  // `plantillaParaAccion`.
   const plantilla = useMemo(
-    () => (conPlantilla ? plantillaParaAccion(plantillas, estado) : null),
-    [conPlantilla, plantillas, estado],
+    () => (conPlantilla
+      ? plantillaParaAccion(plantillas, estado, (p) => faltantes(p, sugerirValores(p, datosPedido)).length === 0)
+      : null),
+    [conPlantilla, plantillas, estado, datosPedido],
   );
   const valores = useMemo(
     () => (plantilla ? sugerirValores(plantilla, datosPedido) : {}),
@@ -106,14 +112,19 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
   // vino a sacar. Ahora se dice qué pasó y qué le queda por hacer.
   useEffect(() => {
     if (!abierto || !conPlantilla) return;
-    if (estadoPl !== 'error' && estadoPl !== 'sin_config') return;
+    const falla =
+      estadoPl === 'sin_config' ? 'Esta tienda no tiene WhatsApp conectado. Registrá la gestión y escribile por fuera.'
+      : estadoPl === 'error' ? 'No se pudieron leer las plantillas aprobadas. Probá abriendo el chat, o llamalo.'
+      // Cargó bien pero ninguna se puede mandar entera con los datos del
+      // pedido. Es un caso REAL y frecuente —las plantillas que piden el plazo
+      // en días nunca se completan solas— y hasta el 27-ago-2026 hacía que el
+      // panel se evaporara sin una palabra.
+      : estadoPl === 'ok' && !plantilla ? 'Ninguna plantilla se puede completar con los datos de este pedido. Abrí el chat y escribile el dato que falta.'
+      : null;
+    if (!falla) return;
     setAbierto(false);
-    toast.error('No se pudo preparar el mensaje', {
-      description: estadoPl === 'sin_config'
-        ? 'Esta tienda no tiene WhatsApp conectado. Registrá la gestión y escribile por fuera.'
-        : 'No se pudieron leer las plantillas aprobadas. Probá abriendo el chat, o llamalo.',
-    });
-  }, [abierto, conPlantilla, estadoPl]);
+    toast.error('No se pudo preparar el mensaje', { description: falla });
+  }, [abierto, conPlantilla, estadoPl, plantilla]);
 
   // La previa ES el mensaje: se arma con la misma función que usa el servidor
   // para hablarle a Meta, así lo que se lee acá es lo que le llega al cliente.

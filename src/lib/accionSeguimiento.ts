@@ -205,31 +205,57 @@ export const MAX_RECOMENDADAS = 3;
 export function partirPlantillas<T extends PlantillaOrdenable>(
   plantillas: readonly T[],
   estado: string | null | undefined,
+  /** ¿Guardian puede llenarle TODOS los huecos con los datos del pedido? Las
+   *  que sí se suben primero. Ver `plantillaParaAccion` para el porqué. */
+  completable?: (p: T) => boolean,
 ): { recomendadas: T[]; resto: T[] } {
   const accion = accionPrincipal(estado);
   if (!accion) return { recomendadas: [], resto: [...plantillas] };
 
   const recomendadas: T[] = [];
   const usadas = new Set<string>();
-  // Por patrón y en orden: así la primera recomendada es la de la situación más
-  // específica (el aviso de llegada antes que el recordatorio de vencimiento).
-  for (const patron of accion.plantillas) {
-    for (const p of plantillas) {
-      if (recomendadas.length >= MAX_RECOMENDADAS) break;
-      if (usadas.has(p.nombre) || p.noSoportada) continue;
-      if (patron.test(sinTildes(p.nombre))) { recomendadas.push(p); usadas.add(p.nombre); }
+  const agregar = (soloCompletables: boolean) => {
+    // Por patrón y en orden: así la primera de cada pasada es la de la
+    // situación más específica (el aviso de llegada antes que el recordatorio
+    // de vencimiento).
+    for (const patron of accion.plantillas) {
+      for (const p of plantillas) {
+        if (recomendadas.length >= MAX_RECOMENDADAS) return;
+        if (usadas.has(p.nombre) || p.noSoportada) continue;
+        if (soloCompletables && completable && !completable(p)) continue;
+        if (patron.test(sinTildes(p.nombre))) { recomendadas.push(p); usadas.add(p.nombre); }
+      }
     }
-    if (recomendadas.length >= MAX_RECOMENDADAS) break;
-  }
+  };
+  // Dos pasadas: primero lo que se puede mandar de una, después el resto. Las
+  // que necesitan que la asesora escriba un dato NO se descartan —en el diálogo
+  // puede llenarlo a mano— pero van detrás.
+  if (completable) agregar(true);
+  agregar(false);
   return { recomendadas, resto: plantillas.filter((p) => !usadas.has(p.nombre)) };
 }
 
-/** La plantilla que usaría el botón de acción principal, o null si la cuenta no
- *  tiene ninguna que sirva. Es la primera recomendada — misma decisión, un solo
- *  lugar, para que el botón y la lista nunca ofrezcan cosas distintas. */
+/**
+ * La plantilla que usa el botón de acción principal, o null si ninguna se puede
+ * mandar sin intervención.
+ *
+ * ⛔ **`completable` no es opcional acá, y esa es la lección** (visto en
+ * producción el 27-ago-2026). La primera versión devolvía la más específica sin
+ * mirar si se podía llenar: para "en agencia" elegía
+ * `retiro_agencia_disponible_k1`, que pide *"Plazo para retirar: {{4}} días"*.
+ * Ese dato Guardian **tiene prohibido inventarlo** (depende de la
+ * transportadora y del acuerdo — regla vieja de `plantillasMeta.ts`), así que
+ * el botón NUNCA podía mandarla: cargaba, se daba cuenta, y se apagaba solo.
+ *
+ * La cuenta tenía al lado `retiro_agencia_v1` (nombre + producto) que se
+ * completa entera con datos reales. Entre dos plantillas que sirven, la que se
+ * puede mandar gana a la que suena mejor.
+ */
 export function plantillaParaAccion<T extends PlantillaOrdenable>(
   plantillas: readonly T[],
   estado: string | null | undefined,
+  completable: (p: T) => boolean,
 ): T | null {
-  return partirPlantillas(plantillas, estado).recomendadas[0] ?? null;
+  const { recomendadas } = partirPlantillas(plantillas, estado, completable);
+  return recomendadas.find(completable) ?? null;
 }
