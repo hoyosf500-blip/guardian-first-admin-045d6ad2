@@ -99,7 +99,11 @@ export function useEnviarWhatsapp() {
           modulo: modulo === 'WHATSAPP' ? 'WHATSAPP' : 'SEG',
           accion: gestion.accion || 'Escribí por WhatsApp',
           operatorId: user?.id ?? null,
+          // Hora del navegador: la fila la inserta la edge function y no vuelve.
+          // `optimista` evita que el intento se cuente dos veces cuando llegue
+          // el mismo touchpoint por realtime. Ver `eventosGestion.ts`.
           at: new Date().toISOString(),
+          optimista: true,
         });
       }
       return { ok: true, mensajes: r.mensajes };

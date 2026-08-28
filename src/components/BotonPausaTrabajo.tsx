@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { Coffee, X } from 'lucide-react';
 import { MOTIVOS_PAUSA, minutosDePausa, etiquetaMotivo, type Pausa } from '@/lib/pausaTrabajo';
 import { cn } from '@/lib/utils';
@@ -15,12 +16,36 @@ import { cn } from '@/lib/utils';
  * no tenerlo. Discreto mientras no hay pausa; visible mientras corre, porque
  * una pausa que se olvidó prendida es exactamente lo que no queremos.
  */
+/**
+ * ⛔ Dónde se ancla, y por qué NO es `bottom-4 left-4 z-40` (auditoría del
+ * 27-ago-2026, antes de que lo viera nadie).
+ *
+ * Este botón vive en TODAS las pantallas, así que tiene que convivir con lo que
+ * ya estaba fijo — y lo que ya estaba es la herramienta principal del trabajo:
+ *
+ *  · En CELULAR, `CallView` ancla la botonera de despacho abajo, a lo ancho
+ *    (`fixed bottom-0 inset-x-0 z-30`). Un botón en `bottom-4` con z-40 se le
+ *    monta ENCIMA y le tapa el borde izquierdo justo cuando está confirmando un
+ *    pedido. Por eso en móvil sube (`bottom-24`).
+ *  · En ESCRITORIO el rail de iconos ocupa 80px a la izquierda (`w-20`, y es
+ *    `relative`, no fixed): `left-4` cae dentro del rail. Por eso `sm:left-24`.
+ *  · `z-30` y no z-40: el overlay del menú móvil es z-40 y el sidebar z-50.
+ *    Cuando la asesora abre el menú, este botón tiene que quedar DEBAJO — un
+ *    botón flotando sobre un menú abierto se toca sin querer.
+ *
+ * Nadie del equipo del dueño lo habría reportado: él es admin y el gate
+ * `!isAdmin` hace que en su pantalla este botón no exista.
+ */
+const ANCLA = 'fixed z-30 bottom-24 left-4 sm:bottom-4 sm:left-24';
+
 export default function BotonPausaTrabajo({ pausa, vigente, trabajando, ahora, onIniciar, onTerminar }: {
   pausa: Pausa | null;
   vigente: boolean;
   trabajando: boolean;
   ahora: number;
-  onIniciar: (motivo: string) => void | Promise<unknown>;
+  /** Devuelve false si NO se pudo registrar: entonces el panel no se cierra y
+   *  se avisa. Ver el `onClick` de los motivos. */
+  onIniciar: (motivo: string) => Promise<boolean> | boolean;
   onTerminar: () => void | Promise<unknown>;
 }) {
   const [abierto, setAbierto] = useState(false);
@@ -28,7 +53,7 @@ export default function BotonPausaTrabajo({ pausa, vigente, trabajando, ahora, o
   if (vigente && pausa) {
     const min = minutosDePausa(pausa, ahora);
     return (
-      <div className="fixed bottom-4 left-4 z-40 flex items-center gap-2 rounded-2xl border border-warning/40 bg-warning/15 px-3.5 py-2.5 shadow-card3d backdrop-blur-0">
+      <div className={cn(ANCLA, 'flex items-center gap-2 rounded-2xl border border-warning/40 bg-warning/15 px-3.5 py-2.5 shadow-card3d')}>
         <Coffee size={15} className="text-warning shrink-0" aria-hidden="true" />
         <div className="min-w-0">
           <p className="text-xs font-bold text-warning leading-tight truncate max-w-[13rem]">
@@ -53,7 +78,7 @@ export default function BotonPausaTrabajo({ pausa, vigente, trabajando, ahora, o
   }
 
   return (
-    <div className="fixed bottom-4 left-4 z-40">
+    <div className={ANCLA}>
       {abierto && (
         <div className="mb-2 w-64 rounded-2xl border border-border bg-card p-2 shadow-card3d">
           <div className="flex items-center justify-between px-1.5 pb-1.5">
@@ -75,7 +100,20 @@ export default function BotonPausaTrabajo({ pausa, vigente, trabajando, ahora, o
                 key={m.value}
                 type="button"
                 disabled={trabajando}
-                onClick={async () => { await onIniciar(m.value); setAbierto(false); }}
+                // ⛔ El panel se cierra SOLO si quedó registrada. Cerrarlo pase
+                // lo que pase es el peor final posible: la asesora se va a la
+                // agencia creyendo que avisó, el guard no se entera y la
+                // castiga igual — justo lo que este botón vino a evitar.
+                onClick={async () => {
+                  const ok = await onIniciar(m.value);
+                  if (ok === false) {
+                    toast.error('No se pudo registrar la pausa', {
+                      description: 'Probá de nuevo. Si sigue fallando, avisá — mientras tanto el sistema no sabe que estás en esto.',
+                    });
+                    return;
+                  }
+                  setAbierto(false);
+                }}
                 className="rounded-xl px-2.5 py-2 text-left text-xs font-medium text-foreground hover:bg-accent/12 hover:text-accent transition-colors disabled:opacity-50"
               >
                 {m.label}

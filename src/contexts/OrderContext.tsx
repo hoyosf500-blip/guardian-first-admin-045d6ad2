@@ -709,16 +709,27 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     // `useRecordGestion` emite este evento DESPUÉS de que la base confirmó la
     // fila, así que acá se aplica exactamente lo mismo que aplicaría el
     // realtime, sin depender de él. Cuando el realtime también llegue, el
-    // segundo pase es inocuo: los dos caminos son idempotentes (el Set no
-    // duplica y `aplicarGestionEnVivo` deduplica por `at`).
+    // segundo pase es inocuo: `aplicarGestionEnVivo` deduplica por `at`, que en
+    // ese camino es el `created_at` REAL devuelto por el INSERT.
+    //
+    // ⛔ Salvo cuando el aviso es `optimista` (lo emiten los envíos de WhatsApp,
+    // donde el touchpoint lo inserta la edge function y no vuelve la fila): ahí
+    // el `at` es la hora del navegador y NO va a coincidir con el que traiga el
+    // realtime, así que el intento se contaría dos veces — "2 gestiones" por un
+    // solo mensaje, un dato inflado sobre el trabajo de alguien. En ese caso se
+    // aplica solo el Set, que es idempotente por naturaleza y es lo que hace
+    // bajar el contador; el conteo de intentos lo pone el realtime con el dato
+    // bueno.
     const desuscribirGestion = onGestion((d) => {
       if (d.modulo !== 'SEG' || !d.phone) return;
       rolloverIfNeeded();
-      setGestionSegPorTelefono(prev => aplicarGestionEnVivo(prev, d.phone, {
-        at: d.at,
-        por: d.operatorId,
-        result: d.accion,
-      }));
+      if (!d.optimista) {
+        setGestionSegPorTelefono(prev => aplicarGestionEnVivo(prev, d.phone, {
+          at: d.at,
+          por: d.operatorId,
+          result: d.accion,
+        }));
+      }
       if (d.operatorId !== user.id) return;
       setMySegTouchedToday(prev => {
         if (prev.has(d.phone)) return prev;

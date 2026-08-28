@@ -159,7 +159,11 @@ export function useEnviarPlantilla() {
           modulo: modulo === 'WHATSAPP' ? 'WHATSAPP' : 'SEG',
           accion: gestion.accion || `Mandé la plantilla ${nombre}`,
           operatorId: user?.id ?? null,
+          // Igual que en `useEnviarWhatsapp`: la fila la inserta el servidor, así
+          // que este `at` es del navegador y no sirve para deduplicar contra el
+          // realtime. Ver `eventosGestion.ts`.
           at: new Date().toISOString(),
+          optimista: true,
         });
       }
       return { ok: true };

@@ -77,9 +77,18 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
   const { enviarPlantilla, enviando: enviandoPl } = useEnviarPlantilla();
   const enviando = enviandoTexto || enviandoPl;
 
+  // ⛔ La dependencia es el CONTENIDO de `datos`, no su identidad — misma
+  // trampa que ya documenta `PlantillasWhatsapp`. Quien llama arma el objeto
+  // inline (`datos={{ guia: o.guia, … }}`), así que es uno nuevo en cada
+  // render: depender de la referencia haría que la cadena de abajo (elegir
+  // plantilla → sugerir valores → calcular huecos, con sus regex sobre 42
+  // plantillas) se recalcule en cada render de cada una de las ~200 tarjetas
+  // del tablero.
+  const claveDatos = JSON.stringify(datos ?? {});
   const datosPedido = useMemo<DatosPedido>(
-    () => ({ ...datos, nombre: datos?.nombre ?? nombre ?? null }),
-    [datos, nombre],
+    () => ({ ...(JSON.parse(claveDatos) as DatosPedido), nombre: datos?.nombre ?? nombre ?? null }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [claveDatos, nombre],
   );
 
   // Se elige la que Guardian puede COMPLETAR con los datos del pedido, no la

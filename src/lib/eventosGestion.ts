@@ -48,6 +48,24 @@ export interface DetalleGestion {
   operatorId: string | null;
   /** ISO de cuándo quedó registrada, tal como lo devolvió la base. */
   at: string;
+  /**
+   * ⛔ `true` = el `at` NO viene de la base, es la hora del navegador.
+   *
+   * Pasa cuando el touchpoint lo inserta una edge function (mandar un WhatsApp
+   * o una plantilla): el envío se confirma pero la fila no vuelve, así que no
+   * hay `created_at` real que emitir.
+   *
+   * Importa porque `aplicarGestionEnVivo` deduplica **comparando el `at`**. Con
+   * una hora inventada, cuando llegue el mismo touchpoint por realtime —con su
+   * `created_at` de verdad— los dos no coinciden y el intento se cuenta DOS
+   * VECES: la tarjeta diría "2 gestiones" por un solo mensaje, y eso es un dato
+   * inflado sobre el trabajo de una persona.
+   *
+   * Con esta marca, `OrderContext` aplica solo lo idempotente (el Set de "ya lo
+   * toqué hoy", que es lo que hace bajar el contador) y deja el conteo de
+   * intentos para el realtime, que sí trae el dato bueno.
+   */
+  optimista?: boolean;
 }
 
 export function emitirGestion(detalle: DetalleGestion): void {
