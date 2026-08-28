@@ -87,9 +87,18 @@ async function traer(storeId: string): Promise<PlantillaMeta[]> {
  * ya apretó y está esperando. Nunca lanza — es una mejora de velocidad, no un
  * camino del que dependa nada.
  */
+const falloReciente = new Map<string, number>();
+const REINTENTO_MS = 60_000;
+
 export function precargarPlantillas(storeId: string | null | undefined): void {
   if (!storeId) return;
-  void traer(storeId).catch(() => {});
+  // ⛔ El fallo se recuerda un minuto. En una tienda SIN ImporChat (Colombia)
+  // esta llamada falla siempre, y sin esto cada ida y vuelta entre pantallas
+  // disparaba otro intento: el caché solo guarda el éxito, a propósito. Es solo
+  // para la PREcarga — cuando la asesora toca el botón, se intenta igual.
+  const ultimo = falloReciente.get(storeId);
+  if (ultimo && Date.now() - ultimo < REINTENTO_MS) return;
+  void traer(storeId).catch(() => { falloReciente.set(storeId, Date.now()); });
 }
 
 /**
