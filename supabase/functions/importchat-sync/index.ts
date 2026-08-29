@@ -85,6 +85,19 @@ import {
 } from "../_shared/xlsxMensajes.ts";
 
 const SOURCE = "importchat-sync";
+/**
+ * ⛔ MARCA DE LA VERSIÓN DESPLEGADA. Subirla en todo cambio que importe.
+ *
+ * Existe porque el 28-ago-2026 se perdieron DOS rondas enteras sin poder
+ * contestar "¿el código que está corriendo es el nuevo o el viejo?". Lovable no
+ * redespliega edge functions solas, la respuesta no trae ninguna pista de
+ * versión y las cabeceras no dicen nada. Se adivinaba comparando tiempos —o
+ * sea, no se sabía.
+ *
+ * `{"ping":true}` la devuelve SIN tocar ImporChat, sin leer la base y sin
+ * escribir en sync_logs. Un `curl` y se sabe.
+ */
+const VERSION = "2026-08-29.3-flujo+solo-chats-del-turno";
 const PAGE_SIZE = 200;
 const MAX_PAGES = 15;
 const DIAS_DEFAULT = 10;
@@ -221,6 +234,7 @@ function unir(trozos: Uint8Array[]): Uint8Array {
  */
 async function leerExportEnFlujo(
   base: string, token: string, idConf: number, vencimiento: number,
+  soloEstosChats: ReadonlySet<string>,
 ): Promise<ResultadoHoja> {
   const restante = vencimiento - Date.now();
   // ⛔ Sin señal de aborto, si ImporChat tarda en generar el archivo la función
@@ -262,7 +276,7 @@ async function leerExportEnFlujo(
   // y si algún día la trajera después, `sharedFaltante` lo grita en vez de
   // devolver todo en blanco en silencio.
   const shared: string[] = [];
-  const lector = crearLectorHoja(shared, { vencimiento });
+  const lector = crearLectorHoja(shared, { vencimiento, soloEstosChats });
   const ssTrozos: Uint8Array[] = [];
   let vioHoja = false;
 
@@ -304,6 +318,9 @@ async function leerExportEnFlujo(
 
 async function traerMensajes(
   base: string, token: string, idConf: number, vencimiento: number,
+  /** Los chats de los pedidos de esta corrida. El export trae la historia
+   *  ENTERA de la cuenta y el resto no se consulta nunca — ver `soloEstosChats`. */
+  chatsDelTurno: ReadonlySet<string>,
 ): Promise<Map<string, MensajeChat[]>> {
   // El parser vive en `_shared/xlsxMensajes.ts` y se prueba desde
   // `src/lib/xlsxMensajes.test.ts`: es la pieza que ya mató dos veces a esta
@@ -311,13 +328,14 @@ async function traerMensajes(
   // (48 MB, 48.000 filas × 18 columnas): 2.305 ms → 583 ms, **4× menos CPU**,
   // con salida idéntica en los 6.000 chats, por leer solo las 6 columnas que
   // alguien usa en vez de las 18.
-  const { porChat, filas, sharedFaltante } = await leerExportEnFlujo(base, token, idConf, vencimiento);
+  const { porChat, filas, chatsVistos, sharedFaltante } =
+    await leerExportEnFlujo(base, token, idConf, vencimiento, chatsDelTurno);
   if (sharedFaltante) {
     // Fail-loud: el export cambió de formato y los valores saldrían en blanco.
     // Una corrida "success" con toda la señal vacía es el peor final posible.
     throw new Error("El XLSX trae celdas compartidas pero sin tabla de textos: cambió el formato del export");
   }
-  console.log(`[${SOURCE}] XLSX: ${filas} filas → ${porChat.size} chats`);
+  console.log(`[${SOURCE}] XLSX: ${filas} filas · ${chatsVistos} chats en el archivo → ${porChat.size} guardados`);
   return porChat;
 }
 
@@ -409,6 +427,10 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
+    // Antes que nada y sin credenciales: "¿qué versión está desplegada?". No
+    // toca ImporChat, no lee la base y no deja fila en sync_logs. Es lo único
+    // que contesta esa pregunta desde afuera — ver VERSION.
+    if (body?.ping === true) return json({ ok: true, version: VERSION });
     const dryRun = body?.dry_run === true;
     const dias = Math.min(Math.max(Number(body?.dias) || DIAS_DEFAULT, 1), 60);
 
@@ -555,7 +577,11 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const chats = await traerMensajes(base, token, Number(cfg.id_configuracion), vencimiento);
+      // Solo se guardan las conversaciones de ESTOS pedidos: abajo el único
+      // acceso al mapa es `chats.get(p.chatId)`, así que el resto del archivo
+      // (~4.600 chats de 5.918 medidos en EC) era memoria cargada para nada.
+      const chatsDelTurno = new Set(pedidos.map((p) => p.chatId).filter(Boolean));
+      const chats = await traerMensajes(base, token, Number(cfg.id_configuracion), vencimiento, chatsDelTurno);
       console.log(`[${SOURCE}] ${storeId}: ${chats.size} chats a los ${Date.now() - t0} ms`);
       await traza(`fase 3: derivando señales (${chats.size} chats)`);
       if (Date.now() > vencimiento) {

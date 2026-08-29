@@ -208,6 +208,65 @@ describe('lectura EN FLUJO — la hoja de 55 MB no puede existir en memoria', ()
   });
 });
 
+describe('soloEstosChats — no cargar 4.600 conversaciones que nadie va a consultar', () => {
+  // ⛔ El export trae la historia COMPLETA de la cuenta (5.918 chats medidos en
+  // Ecuador) pero el sync solo hace `chats.get(p.chatId)` de sus ~1.316
+  // pedidos. El resto era peso muerto en un worker al que la plataforma ya le
+  // contestaba WORKER_RESOURCE_LIMIT. Es un DESCARTE de datos, así que se fija
+  // por prueba: lo que se pide tiene que llegar entero.
+
+  const archivo = () => hoja([
+    mensaje(2, { chat: 'mio-1', rol: 'Cliente', tipo: 'text', serial: SERIAL_REF }),
+    mensaje(3, { chat: 'ajeno', rol: 'Cliente', tipo: 'text', serial: SERIAL_REF }),
+    mensaje(4, { chat: 'mio-1', rol: 'Cliente', tipo: 'button', texto: 'CONFIRMAR PEDIDO', serial: SERIAL_REF + 1 }),
+    mensaje(5, { chat: 'mio-2', rol: 'Propietario', tipo: 'template', template: 'confirmacion_pedido_k1', serial: SERIAL_REF }),
+    mensaje(6, { chat: 'ajeno', rol: 'Propietario', tipo: 'text', serial: SERIAL_REF }),
+  ]);
+
+  it('guarda solo los pedidos, y los guarda COMPLETOS', () => {
+    const { porChat } = leerHojaMensajes(archivo(), [], {
+      soloEstosChats: new Set(['mio-1', 'mio-2']),
+    });
+    expect([...porChat.keys()].sort()).toEqual(['mio-1', 'mio-2']);
+    // El chat pedido no puede llegar recortado: los DOS mensajes de mio-1.
+    expect(porChat.get('mio-1')).toHaveLength(2);
+    expect(porChat.get('mio-1')![1].texto).toBe('CONFIRMAR PEDIDO');
+  });
+
+  it('sigue contando TODO lo que leyó, aunque guarde poco', () => {
+    // Si `filas` o `chatsVistos` bajaran con el filtro, el log diría que el
+    // archivo encogió y taparía que ImporChat dejó de mandar historia.
+    const { filas, chatsVistos, porChat } = leerHojaMensajes(archivo(), [], {
+      soloEstosChats: new Set(['mio-1']),
+    });
+    expect(filas).toBe(5);
+    expect(chatsVistos).toBe(3);
+    expect(porChat.size).toBe(1);
+  });
+
+  it('sin lista se guarda todo — el filtro es opcional', () => {
+    const { porChat, chatsVistos } = leerHojaMensajes(archivo(), []);
+    expect(porChat.size).toBe(3);
+    expect(chatsVistos).toBe(3);
+  });
+
+  it('una lista vacía NO es "guardá todo": es que no hay nada que buscar', () => {
+    // Un pedido sin chat_id_cliente no llega acá. Una lista vacía tiene que
+    // devolver vacío, no colarse por un `if (set)` mal escrito.
+    const { porChat, chatsVistos } = leerHojaMensajes(archivo(), [], { soloEstosChats: new Set() });
+    expect(porChat.size).toBe(0);
+    expect(chatsVistos).toBe(3);
+  });
+
+  it('lo guardado es idéntico a filtrar después de leer todo', () => {
+    const todo = leerHojaMensajes(archivo(), []);
+    const filtrado = leerHojaMensajes(archivo(), [], { soloEstosChats: new Set(['mio-1', 'mio-2']) });
+    for (const k of filtrado.porChat.keys()) {
+      expect(JSON.stringify(filtrado.porChat.get(k))).toBe(JSON.stringify(todo.porChat.get(k)));
+    }
+  });
+});
+
 describe('el vencimiento — morir con mensaje en vez de que te maten', () => {
   it('corta con LecturaVencida y dice cuántas filas alcanzó', () => {
     // ⛔ Sin esto la plataforma mataba la función SIN catch: la fila de

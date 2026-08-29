@@ -150,6 +150,10 @@ export interface ResultadoHoja {
   porChat: Map<string, MensajeChat[]>;
   /** Filas de datos leídas (sin contar el encabezado). */
   filas: number;
+  /** Chats DISTINTOS que aparecieron en el archivo, se hayan guardado o no.
+   *  Con `soloEstosChats` puesto, `porChat.size` es mucho menor que esto — y la
+   *  diferencia es justamente lo que se dejó de cargar en memoria. */
+  chatsVistos: number;
   /**
    * Se vieron celdas `t="s"` pero la tabla de textos compartidos llegó vacía:
    * el export cambió de formato y los valores saldrían en blanco EN SILENCIO.
@@ -164,6 +168,20 @@ export interface OpcionesHoja {
   maxTexto?: number;
   /** Tamaño del trozo de decodificación. Solo para las pruebas. */
   chunk?: number;
+  /**
+   * ⛔ Guardar SOLO los chats de esta lista. La palanca de memoria más grande
+   * que hay acá (28-ago-2026).
+   *
+   * El export trae la historia COMPLETA de la cuenta —5.918 chats medidos en
+   * Ecuador— pero el sync solo consulta `chats.get(p.chatId)` para los ~1.316
+   * pedidos de su ventana. Los otros ~4.600 chats se cargaban enteros en
+   * memoria para no leerlos NUNCA: 78% del mapa era peso muerto dentro de un
+   * worker al que la plataforma ya le contestaba `WORKER_RESOURCE_LIMIT`.
+   *
+   * Sin la lista se guarda todo (es lo que hacen las pruebas y cualquier
+   * llamador que quiera el archivo entero).
+   */
+  soloEstosChats?: ReadonlySet<string>;
 }
 
 /** Lector incremental: se le van empujando trozos de la hoja y al final devuelve
@@ -196,8 +214,11 @@ export interface LectorHoja {
 export function crearLectorHoja(shared: string[], opts: OpcionesHoja = {}): LectorHoja {
   const maxTexto = opts.maxTexto ?? MAX_TEXTO;
   const vencimiento = opts.vencimiento ?? Number.POSITIVE_INFINITY;
+  const soloEstos = opts.soloEstosChats;
 
   const porChat = new Map<string, MensajeChat[]>();
+  /** Chats distintos vistos, se guarden o no — para poder decir cuánto se descartó. */
+  const vistos = new Set<string>();
   /** letra de columna → nombre, SOLO de las columnas que se usan. */
   let necesarias: Map<string, string> | null = null;
   let filas = 0;
@@ -256,6 +277,11 @@ export function crearLectorHoja(shared: string[], opts: OpcionesHoja = {}): Lect
     const chat = (v["ID Receptor"] ?? "").trim();
     const fecha = serialAFecha(v["Fecha Mensaje"] ?? "");
     if (!chat || !fecha) return;
+    vistos.add(chat);
+    // ⛔ El chat que a nadie le interesa NO se guarda. Ver `soloEstosChats`:
+    // eran ~4.600 de 5.918 conversaciones cargadas enteras en memoria para no
+    // consultarlas jamás.
+    if (soloEstos && !soloEstos.has(chat)) return;
     const tipo = v["Tipo Mensaje"] ?? "";
     const arr = porChat.get(chat) ?? [];
     arr.push({
@@ -296,7 +322,7 @@ export function crearLectorHoja(shared: string[], opts: OpcionesHoja = {}): Lect
       for (const m of resto.matchAll(FILA_RE)) procesarFila(m[1]);
       resto = "";
       for (const arr of porChat.values()) arr.sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
-      return { porChat, filas, sharedFaltante };
+      return { porChat, filas, chatsVistos: vistos.size, sharedFaltante };
     },
   };
 }
