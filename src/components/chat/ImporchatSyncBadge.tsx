@@ -82,16 +82,27 @@ export default function ImporchatSyncBadge({ size = 'sm', className = '' }: Prop
   const status = q.data.status;
   const Icon = STATUS_ICON[status];
   const hours = q.data.lastSyncAt ? (Date.now() - q.data.lastSyncAt.getTime()) / 3_600_000 : null;
-  const text = status === 'failing'
-    ? 'ImporChat: falla al sincronizar'
-    : status === 'never'
-      ? 'ImporChat sin correr'
-      : `ImporChat ${formatRelative(hours)}`;
-  const title = status === 'failing'
-    ? `La última corrida del sync de ImporChat falló${q.data.lastErrorMessage ? `: ${q.data.lastErrorMessage}` : ''}. Puede que el inbound no esté entrando.`
-    : q.data.lastSyncAt
-      ? `Último sync de ImporChat: ${q.data.lastSyncAt.toLocaleString('es-CO')}`
-      : 'Sin corridas del sync de ImporChat';
+  // ⛔ COLGARSE y FALLAR no son lo mismo, y la diferencia cambia dónde hay que
+  // buscar: una corrida que falla deja un error en el log; una que se cuelga no
+  // deja NADA — la fila se queda en «running» para siempre. Decir "falla al
+  // sincronizar" sobre un cuelgue manda a buscar un error que no existe.
+  // Además la última corrida pudo terminar BIEN: las colgadas son las de antes.
+  const colgado = q.data.colgadas > 0;
+  const text = colgado
+    ? 'ImporChat: se está colgando'
+    : status === 'failing'
+      ? 'ImporChat: falla al sincronizar'
+      : status === 'never'
+        ? 'ImporChat sin correr'
+        : `ImporChat ${formatRelative(hours)}`;
+  const title = colgado
+    ? `${q.data.colgadas} de las últimas ${q.data.corridasVistas} corridas del sync de ImporChat arrancaron y nunca terminaron. `
+      + 'Durante esas ventanas el WhatsApp del cliente NO entró: puede haber gente esperando respuesta que no aparece en ninguna pantalla.'
+    : status === 'failing'
+      ? `La última corrida del sync de ImporChat falló${q.data.lastErrorMessage ? `: ${q.data.lastErrorMessage}` : ''}. Puede que el inbound no esté entrando.`
+      : q.data.lastSyncAt
+        ? `Último sync de ImporChat: ${q.data.lastSyncAt.toLocaleString('es-CO')}`
+        : 'Sin corridas del sync de ImporChat';
 
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full border tabular-nums ${STATUS_CLS[status]} ${padding} ${className}`} title={title}>

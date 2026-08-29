@@ -24,6 +24,12 @@ export interface ImporchatSyncHealth {
   /** Mensaje de error de la última corrida, si falló. Para el tooltip. */
   lastErrorMessage: string | null;
   status: ImporchatSyncStatus;
+  /** Cuántas de las últimas corridas arrancaron y nunca cerraron, y cuántas se
+   *  miraron. Con `colgadas > 0` el badge dice "se está colgando" en vez de
+   *  "falla al sincronizar": son problemas distintos y se buscan en lugares
+   *  distintos (uno deja error en el log, el otro no deja NADA). */
+  colgadas: number;
+  corridasVistas: number;
   /** Cuándo vence la llave de ImporChat (store_importchat_config). Best-effort:
    *  si RLS no deja leerla, queda null y el badge solo muestra el estado del sync. */
   tokenExpiraAt: Date | null;
@@ -142,11 +148,10 @@ export function useImporchatSyncHealth(storeId?: string | null) {
       const hoursSinceRun = tsRun ? (ahora - tsRun.getTime()) / 3_600_000 : null;
       const lastRunStatus = terminada?.status ?? null;
       const colgadas = corridas.filter(estaColgada).length;
-      // El tooltip tiene que decir QUÉ pasa. "Falla al sincronizar" sobre una
-      // corrida colgada mandaría a buscar un error que no existe en ningún lado.
-      const lastErrorMessage = colgadas > 0
-        ? `${colgadas} de las últimas ${corridas.length} corridas se colgaron sin terminar (quedaron en «running»). Durante esas ventanas el WhatsApp del cliente NO entró.`
-        : terminada?.error_message ?? null;
+      // ⛔ El mensaje del CUELGUE lo arma el badge, no acá: "la última corrida
+      // falló: <esto>" sería mentira (la última pudo terminar bien; las que se
+      // colgaron son las de antes). Acá solo viaja el conteo.
+      const lastErrorMessage = terminada?.error_message ?? null;
 
       const tokRaw = !tokRes.error && tokRes.data != null ? Number(tokRes.data) : null;
       const tokenHorasRestantes = tokRaw != null && Number.isFinite(tokRaw) ? tokRaw : null;
@@ -159,6 +164,8 @@ export function useImporchatSyncHealth(storeId?: string | null) {
         hoursSinceSync: hoursSinceRun,
         lastErrorMessage,
         status: deriveStatus(hoursSinceRun, lastRunStatus, corridas),
+        colgadas,
+        corridasVistas: corridas.length,
         tokenExpiraAt,
         tokenHorasRestantes,
       };
