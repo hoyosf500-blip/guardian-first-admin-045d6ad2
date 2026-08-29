@@ -166,22 +166,36 @@ export interface OpcionesHoja {
   chunk?: number;
 }
 
+/** Lector incremental: se le van empujando trozos de la hoja y al final devuelve
+ *  lo acumulado. Ver `crearLectorHoja`. */
+export interface LectorHoja {
+  /** Un trozo de `sheet1.xml` (no hace falta que corte en un límite de fila ni
+   *  de carácter UTF-8: el lector guarda la cola parcial). */
+  empujar(trozo: Uint8Array): void;
+  fin(): ResultadoHoja;
+}
+
 /**
- * Lee la hoja del export y devuelve los mensajes agrupados por chat.
+ * Crea un lector al que se le empujan trozos de la hoja SIN tenerla entera en
+ * memoria.
  *
- * ⛔ La hoja descomprimida son 55 MB (medido sobre el archivo real).
- * Decodificarla entera son ~110 MB de string UTF-16 de una sola vez — el camino
- * directo al OOM. Se recorre de a 1 MB: se decodifica el trozo, se procesan las
- * filas COMPLETAS que contiene y solo la cola parcial pasa al siguiente.
+ * ⛔ Ésta es la razón de ser del módulo (28-ago-2026). La plataforma responde
+ * **HTTP 546 `WORKER_RESOURCE_LIMIT` — "not having enough compute resources"**
+ * al correr esto: no es una inferencia, lo dice el error. La hoja
+ * descomprimida son 55 MB y el zip otros 9; materializarlos dentro de un worker
+ * chico es la mitad del problema (la otra mitad, el costo de CPU del parseo,
+ * está resuelta más abajo leyendo solo 6 de las 18 columnas).
+ *
+ * Con este lector el zip se descomprime EN FLUJO y la memoria queda acotada por
+ * el trozo, no por el archivo: lo único que crece es el mapa por chat.
+ *
+ * ⚠️ `shared` se guarda por REFERENCIA a propósito: en flujo, la tabla de textos
+ * puede llegar después de crearse el lector. Llenar ese mismo array antes de
+ * empujar la hoja alcanza.
  */
-export function leerHojaMensajes(
-  hojaRaw: Uint8Array,
-  shared: string[],
-  opts: OpcionesHoja = {},
-): ResultadoHoja {
+export function crearLectorHoja(shared: string[], opts: OpcionesHoja = {}): LectorHoja {
   const maxTexto = opts.maxTexto ?? MAX_TEXTO;
   const vencimiento = opts.vencimiento ?? Number.POSITIVE_INFINITY;
-  const CHUNK = opts.chunk ?? (1 << 20);
 
   const porChat = new Map<string, MensajeChat[]>();
   /** letra de columna → nombre, SOLO de las columnas que se usan. */
@@ -256,22 +270,52 @@ export function leerHojaMensajes(
     porChat.set(chat, arr);
   };
 
+  // `{stream:true}` en cada trozo: un carácter UTF-8 partido entre dos trozos
+  // se reconstruye solo. Decoder propio de esta instancia — mezclar un
+  // `decode()` de una sola vez con los de flujo sobre la MISMA instancia es un
+  // bug latente.
   const dec = new TextDecoder();
   let resto = "";
-  for (let off = 0; off < hojaRaw.length; off += CHUNK) {
-    // El vencimiento se mira una vez por trozo (~55 veces sobre el archivo
-    // real): barato, y convierte una muerte muda en un error con mensaje.
-    if (Date.now() > vencimiento) throw new LecturaVencida(filas);
-    const buf = resto + dec.decode(hojaRaw.subarray(off, Math.min(off + CHUNK, hojaRaw.length)), { stream: true });
-    const corte = buf.lastIndexOf("</row>");
-    if (corte < 0) { resto = buf; continue; }
-    // Un solo matchAll por trozo: recortar fila por fila del buffer copiaría
-    // ~1 MB por cada una de las 48.000 filas.
-    for (const m of buf.slice(0, corte + 6).matchAll(FILA_RE)) procesarFila(m[1]);
-    resto = buf.slice(corte + 6);
-  }
-  for (const m of resto.matchAll(FILA_RE)) procesarFila(m[1]);
 
-  for (const arr of porChat.values()) arr.sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
-  return { porChat, filas, sharedFaltante };
+  return {
+    empujar(trozo: Uint8Array) {
+      // El vencimiento se mira una vez por trozo: barato, y convierte una
+      // muerte muda en un error con mensaje.
+      if (Date.now() > vencimiento) throw new LecturaVencida(filas);
+      const buf = resto + dec.decode(trozo, { stream: true });
+      const corte = buf.lastIndexOf("</row>");
+      // Sin una fila completa todavía: se guarda entero y se espera al próximo.
+      if (corte < 0) { resto = buf; return; }
+      // Un solo matchAll por trozo: recortar fila por fila del buffer copiaría
+      // el trozo entero por cada una de las 48.000 filas.
+      for (const m of buf.slice(0, corte + 6).matchAll(FILA_RE)) procesarFila(m[1]);
+      resto = buf.slice(corte + 6);
+    },
+    fin(): ResultadoHoja {
+      resto += dec.decode(); // cierra cualquier secuencia UTF-8 a medias
+      for (const m of resto.matchAll(FILA_RE)) procesarFila(m[1]);
+      resto = "";
+      for (const arr of porChat.values()) arr.sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
+      return { porChat, filas, sharedFaltante };
+    },
+  };
+}
+
+/**
+ * Lee una hoja que YA está entera en memoria. Envoltorio sobre
+ * `crearLectorHoja` — lo usan las pruebas y cualquier llamador que no pueda
+ * trabajar en flujo. En la edge function se usa el lector directo, que es el
+ * que evita tener los 55 MB adentro.
+ */
+export function leerHojaMensajes(
+  hojaRaw: Uint8Array,
+  shared: string[],
+  opts: OpcionesHoja = {},
+): ResultadoHoja {
+  const CHUNK = opts.chunk ?? (1 << 20);
+  const lector = crearLectorHoja(shared, opts);
+  for (let off = 0; off < hojaRaw.length; off += CHUNK) {
+    lector.empujar(hojaRaw.subarray(off, Math.min(off + CHUNK, hojaRaw.length)));
+  }
+  return lector.fin();
 }

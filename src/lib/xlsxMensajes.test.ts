@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   leerHojaMensajes,
+  crearLectorHoja,
   parsearSharedStrings,
   letraDeRef,
   desescapar,
@@ -147,6 +148,63 @@ describe('leerHojaMensajes — lo que el export de ImporChat de verdad trae', ()
     const { porChat, filas: n } = leerHojaMensajes(hoja(filas), [], { chunk: 64 });
     expect(n).toBe(40);
     expect([...porChat.values()].reduce((a, v) => a + v.length, 0)).toBe(40);
+  });
+});
+
+describe('lectura EN FLUJO — la hoja de 55 MB no puede existir en memoria', () => {
+  // ⛔ Por qué existe este modo: corriendo el sync, la plataforma responde
+  // HTTP 546 WORKER_RESOURCE_LIMIT — "not having enough compute resources".
+  // No es inferencia, es el error. Descomprimir la hoja entera (55 MB) más el
+  // zip (9 MB) no entra en el worker. En flujo, lo único que crece es el mapa.
+  // El riesgo nuevo es el CORTE: los trozos del descompresor caen donde caen.
+
+  it('un trozo que parte una fila al medio no pierde el mensaje', () => {
+    const raw = hoja([
+      mensaje(2, { chat: 'c1', rol: 'Cliente', tipo: 'text', serial: SERIAL_REF }),
+      mensaje(3, { chat: 'c2', rol: 'Propietario', tipo: 'template', serial: SERIAL_REF }),
+    ]);
+    // Trozos de 7 bytes: garantizado que casi todas las filas quedan partidas.
+    const lector = crearLectorHoja([]);
+    for (let i = 0; i < raw.length; i += 7) lector.empujar(raw.subarray(i, i + 7));
+    const { porChat, filas } = lector.fin();
+    expect(filas).toBe(2);
+    expect([...porChat.keys()].sort()).toEqual(['c1', 'c2']);
+  });
+
+  it('un carácter UTF-8 partido entre dos trozos se reconstruye', () => {
+    // El emoji son 4 bytes; cortar por la mitad con un decoder sin `stream`
+    // mete un � y el chat deja de matchear con el pedido, en silencio.
+    const raw = hoja([
+      mensaje(2, { chat: 'señor-😀-ñ', rol: 'Cliente', tipo: 'button', texto: 'CONFIRMAR PEDIDO', serial: SERIAL_REF }),
+    ]);
+    const lector = crearLectorHoja([]);
+    for (let i = 0; i < raw.length; i += 3) lector.empujar(raw.subarray(i, i + 3));
+    const { porChat } = lector.fin();
+    expect([...porChat.keys()]).toEqual(['señor-😀-ñ']);
+    expect(porChat.get('señor-😀-ñ')![0].texto).toBe('CONFIRMAR PEDIDO');
+  });
+
+  it('en flujo da EXACTAMENTE lo mismo que leyendo la hoja entera', () => {
+    const filas = Array.from({ length: 60 }, (_, i) =>
+      mensaje(i + 2, {
+        chat: `c${i % 9}`, rol: i % 3 === 0 ? 'Propietario' : 'Cliente',
+        tipo: i % 5 === 0 ? 'button' : 'text', texto: 'CONFIRMAR PEDIDO',
+        serial: SERIAL_REF + i, ruido: 'z'.repeat(80),
+      }));
+    const raw = hoja(filas);
+    const entero = leerHojaMensajes(raw, []);
+    const lector = crearLectorHoja([]);
+    for (let i = 0; i < raw.length; i += 13) lector.empujar(raw.subarray(i, i + 13));
+    const flujo = lector.fin();
+    expect(flujo.filas).toBe(entero.filas);
+    expect(JSON.stringify([...flujo.porChat])).toBe(JSON.stringify([...entero.porChat]));
+  });
+
+  it('una hoja vacía no rompe el lector', () => {
+    const lector = crearLectorHoja([]);
+    const { porChat, filas } = lector.fin();
+    expect(filas).toBe(0);
+    expect(porChat.size).toBe(0);
   });
 });
 

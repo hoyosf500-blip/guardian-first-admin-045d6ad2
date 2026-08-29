@@ -31,14 +31,25 @@
 //      ⛔ Y volvió a matarla (28-ago-2026): 197 corridas, **82 colgadas (42%)
 //      y CERO errores**, todas en «fase 2» y repartidas parejo en las 24 horas
 //      —a las 3 AM con ImporChat vacío igual que a las 3 PM—, o sea un límite
-//      de la plataforma, no una dependencia lenta. Dos causas y dos arreglos:
-//        · el parser leía las 18 columnas del export y solo se usan 6 → 4× menos
-//          CPU leyendo únicamente las necesarias (medido: 2.305 → 583 ms sobre
-//          una hoja real de 48 MB, con salida idéntica en los 6.000 chats);
-//        · el presupuesto preguntaba "¿queda ALGO de tiempo?" en vez de "¿queda
-//          SUFICIENTE?" → `RESERVA_XLSX_MS`, más un vencimiento DENTRO de la
-//          lectura y un `AbortSignal` en la descarga, para morir con mensaje en
-//          vez de que la maten sin dejar rastro.
+//      de la plataforma, no una dependencia lenta. Disparada a mano, la
+//      plataforma lo dice con todas las letras:
+//
+//          HTTP 546  {"code":"WORKER_RESOURCE_LIMIT",
+//                     "message":"Function failed due to not having enough
+//                                compute resources"}
+//
+//      Eso es MEMORIA y CPU, y hubo que atacar las dos:
+//        · CPU — el parser leía las 18 columnas del export y solo se usan 6.
+//          Medido sobre una hoja real de 48 MB: 2.305 → 583 ms (**4×**), con
+//          salida idéntica en los 6.000 chats.
+//        · MEMORIA — `unzipSync` materializaba la hoja entera (**55 MB**) más
+//          el zip (9 MB), todo vivo a la vez. Ahora se descomprime EN FLUJO
+//          (`Unzip` + `crearLectorHoja`) y lo único que crece con el archivo es
+//          el mapa por chat.
+//        · Y el presupuesto preguntaba "¿queda ALGO de tiempo?" en vez de
+//          "¿queda SUFICIENTE?" → `RESERVA_XLSX_MS`, más un vencimiento DENTRO
+//          de la lectura y un `AbortSignal` en la descarga, para morir con
+//          mensaje en vez de que la maten sin dejar rastro.
 //   3. Deriva la señal y hace un UPDATE DIRIGIDO por (store_id, external_id).
 //      No inserta pedidos ni toca estado/valor/guía: ImporChat no manda sobre
 //      eso. Y no pasa por `upsert_orders_from_dropi` — ⛔ REGLA #1.
@@ -56,7 +67,7 @@
 // "corrió y no había nada" de "no corrió".
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { unzipSync } from "https://esm.sh/fflate@0.8.2";
+import { Unzip, UnzipInflate } from "https://esm.sh/fflate@0.8.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import {
   derivarActividadChat,
@@ -67,7 +78,11 @@ import {
   ensureFreshImporchatToken,
   IMPORCHAT_BASE_DEFAULT,
 } from "../_shared/imporchatSession.ts";
-import { leerHojaMensajes, parsearSharedStrings } from "../_shared/xlsxMensajes.ts";
+import {
+  crearLectorHoja,
+  parsearSharedStrings,
+  type ResultadoHoja,
+} from "../_shared/xlsxMensajes.ts";
 
 const SOURCE = "importchat-sync";
 const PAGE_SIZE = 200;
@@ -177,15 +192,36 @@ async function traerPedidos(
   return { pedidos: out, parcial: true };
 }
 
+/** Junta trozos en un solo buffer. Se usa SOLO para `sharedStrings.xml`, que es
+ *  chico (y que este export ni siquiera trae). La hoja NUNCA se junta. */
+function unir(trozos: Uint8Array[]): Uint8Array {
+  const total = trozos.reduce((a, t) => a + t.length, 0);
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const t of trozos) { out.set(t, off); off += t.length; }
+  return out;
+}
+
 /**
- * Baja el export y descomprime SOLO las dos entradas que importan.
+ * Baja el export y lo lee EN FLUJO: el zip se va descomprimiendo a medida que
+ * llega y las filas se procesan al vuelo.
  *
- * Va en su propia función para que el zip de ~9 MB quede recolectable apenas
- * termina, en vez de vivir hasta el final del parseo.
+ * ⛔ Por qué en flujo y no `unzipSync` (28-ago-2026). Corriendo esto la
+ * plataforma responde **HTTP 546 `WORKER_RESOURCE_LIMIT` — "not having enough
+ * compute resources"**. No es una inferencia: es el error. `unzipSync`
+ * materializa la hoja entera —**55 MB** medidos sobre el archivo real— más los
+ * 9 MB del zip, todo vivo a la vez dentro de un worker chico.
+ *
+ * Bajarle la CPU al parser (4×, leyendo solo 6 de las 18 columnas) era la mitad
+ * del arreglo; ésta es la otra mitad. Ahora lo único que crece con el archivo es
+ * el mapa por chat.
+ *
+ * De las entradas del zip se descomprimen SOLO dos: a las demás (estilos,
+ * temas) no se les llama `start()` y fflate las descarta sin gastar nada.
  */
-async function bajarHoja(
+async function leerExportEnFlujo(
   base: string, token: string, idConf: number, vencimiento: number,
-): Promise<{ hoja: Uint8Array; shared: string[] }> {
+): Promise<ResultadoHoja> {
   const restante = vencimiento - Date.now();
   // ⛔ Sin señal de aborto, si ImporChat tarda en generar el archivo la función
   // se queda colgada del fetch hasta que la plataforma la mata — sin catch, sin
@@ -219,29 +255,63 @@ async function bajarHoja(
   if (!r.ok) {
     throw new Error(`exportar_mensajes_xlsx HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
   }
-  const buf = new Uint8Array(await r.arrayBuffer());
+  if (!r.body) throw new Error("exportar_mensajes_xlsx respondió sin cuerpo");
 
-  // Del zip se sacan SOLO la hoja y la tabla de textos; estilos/temas ni se
-  // descomprimen. (SheetJS descomprimía y modelaba todo: eso mataba la función.)
-  const zip = unzipSync(buf, {
-    filter: (f) => f.name === "xl/worksheets/sheet1.xml" || f.name === "xl/sharedStrings.xml",
-  });
-  const hoja = zip["xl/worksheets/sheet1.xml"];
-  if (!hoja) throw new Error("El XLSX de mensajes no trae la hoja sheet1");
-  return { hoja, shared: parsearSharedStrings(zip["xl/sharedStrings.xml"]) };
+  // ⚠️ `shared` se pasa por REFERENCIA y se llena si la tabla de textos aparece
+  // ANTES que la hoja. Este export no la trae (cada mensaje viaja en su celda),
+  // y si algún día la trajera después, `sharedFaltante` lo grita en vez de
+  // devolver todo en blanco en silencio.
+  const shared: string[] = [];
+  const lector = crearLectorHoja(shared, { vencimiento });
+  const ssTrozos: Uint8Array[] = [];
+  let vioHoja = false;
+
+  const unzipper = new Unzip();
+  unzipper.register(UnzipInflate);
+  unzipper.onfile = (file) => {
+    if (file.name === "xl/sharedStrings.xml") {
+      file.ondata = (err, data, final) => {
+        if (err) throw err;
+        if (data.length) ssTrozos.push(data);
+        if (final) for (const s of parsearSharedStrings(unir(ssTrozos))) shared.push(s);
+      };
+      file.start();
+      return;
+    }
+    if (file.name === "xl/worksheets/sheet1.xml") {
+      vioHoja = true;
+      file.ondata = (err, data) => {
+        if (err) throw err;
+        // Un `LecturaVencida` acá sube por el `push` de abajo: es a propósito.
+        if (data.length) lector.empujar(data);
+      };
+      file.start();
+    }
+    // Al resto no se le llama start(): fflate lo descarta sin descomprimirlo.
+  };
+
+  const reader = r.body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) unzipper.push(value, false);
+  }
+  unzipper.push(new Uint8Array(0), true);
+
+  if (!vioHoja) throw new Error("El XLSX de mensajes no trae la hoja sheet1");
+  return lector.fin();
 }
 
 async function traerMensajes(
   base: string, token: string, idConf: number, vencimiento: number,
 ): Promise<Map<string, MensajeChat[]>> {
-  const { hoja, shared } = await bajarHoja(base, token, idConf, vencimiento);
   // El parser vive en `_shared/xlsxMensajes.ts` y se prueba desde
   // `src/lib/xlsxMensajes.test.ts`: es la pieza que ya mató dos veces a esta
   // función y no tenía una sola prueba. Medido sobre una hoja del tamaño real
   // (48 MB, 48.000 filas × 18 columnas): 2.305 ms → 583 ms, **4× menos CPU**,
-  // con salida idéntica en los 6.000 chats. La diferencia es que ahora se leen
-  // solo las 6 columnas que alguien usa, en vez de las 18.
-  const { porChat, filas, sharedFaltante } = leerHojaMensajes(hoja, shared, { vencimiento });
+  // con salida idéntica en los 6.000 chats, por leer solo las 6 columnas que
+  // alguien usa en vez de las 18.
+  const { porChat, filas, sharedFaltante } = await leerExportEnFlujo(base, token, idConf, vencimiento);
   if (sharedFaltante) {
     // Fail-loud: el export cambió de formato y los valores saldrían en blanco.
     // Una corrida "success" con toda la señal vacía es el peor final posible.
