@@ -187,16 +187,27 @@ async function bajarHoja(
   base: string, token: string, idConf: number, vencimiento: number,
 ): Promise<{ hoja: Uint8Array; shared: string[] }> {
   const restante = vencimiento - Date.now();
+  // ⛔ Sin señal de aborto, si ImporChat tarda en generar el archivo la función
+  // se queda colgada del fetch hasta que la plataforma la mata — sin catch, sin
+  // fila, indistinguible de "nunca corrió".
+  //
+  // El `typeof` no es paranoia decorativa: si el runtime no tuviera
+  // `AbortSignal.timeout`, esto tiraría en TODAS las tiendas de TODAS las
+  // corridas y el sync pasaría de 58% vivo a 100% muerto. No puedo probar el
+  // runtime desde acá, así que degrada — y lo DICE, para que no sea un silencio.
+  let signal: AbortSignal | undefined;
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+    signal = AbortSignal.timeout(Math.max(5_000, restante));
+  } else {
+    console.warn(`[${SOURCE}] este runtime no tiene AbortSignal.timeout: la descarga del XLSX va SIN tope`);
+  }
   let r: Response;
   try {
     r = await fetch(`${base}configuraciones/exportar_mensajes_xlsx`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ id_configuracion: idConf }),
-      // ⛔ Sin señal de aborto, si ImporChat tarda en generar el archivo la
-      // función se queda colgada del fetch hasta que la plataforma la mata —
-      // sin catch, sin fila, indistinguible de "nunca corrió".
-      signal: AbortSignal.timeout(Math.max(5_000, restante)),
+      signal,
     });
   } catch (e) {
     const err = e as { name?: string };
