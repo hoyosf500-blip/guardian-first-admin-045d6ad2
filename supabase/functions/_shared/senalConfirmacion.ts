@@ -28,13 +28,72 @@
 // functions nunca corren. El patrón del repo es dejar la lógica pura en
 // `_shared/` y poner el test en `src/lib/` cruzando el límite.
 
-/** Texto del botón de confirmación de la plantilla `confirmacion_pedido_k1`. */
-export const BOTON_CONFIRMAR = "CONFIRMAR PEDIDO";
-/** El otro botón de la misma plantilla. Apretarlo NO es confirmar: los que lo
- *  apretaron cancelaron 42,9% (n=14) — más cerca de los que no apretaron nada. */
+// ── ⛔ EL TEXTO DEL BOTÓN ES LA SEÑAL — y cambiarlo la apaga ────────────────
+// Incidente del 27-ago-2026, medido el 29: en el panel de ImporChat se cambió
+// la plantilla de confirmación (`confirmacion_pedido_k1` → `confirmacion_datos_v1`,
+// que muestra ciudad/provincia/dirección para bajar devoluciones). La plantilla
+// nueva es mejor, pero su botón dice **"Sí, está correcto"**, no "CONFIRMAR
+// PEDIDO" — y acá se buscaba la palabra "CONFIRMAR". Resultado en producción:
+//
+//     26-ago: 25 de 43 `confirmado` (58%)
+//     27-ago:  1 de 45  (2%)   ← se cableó la plantilla nueva
+//     28-ago:  0 de 41  (0%)
+//
+// Cero. Verificado leyendo chats reales: Roxana Mora (6749394, 6748452) y
+// Seimon Tirado (6755681) APRETARON "Sí, está correcto" y Guardian los archivó
+// como `tibio` = "escribió pero nunca apretó el botón · 34% cancela · llamalo".
+// La asesora estuvo dos días llamando a gente que ya había confirmado, mientras
+// el mejor predictor que tiene esta operación (10% vs 34% de cancelación)
+// marcaba cero para todo el mundo.
+//
+// De ahí las tres listas de abajo: se reconocen los botones de TODAS las
+// plantillas cableadas, no los de una. Y `esBotonConocido` existe para que la
+// próxima vez el sync AVISE en vez de quedarse ciego — ver `botonesDesconocidos`
+// en `importchat-sync`. Cablear una plantilla nueva sin agregar su botón acá no
+// rompe nada visible: simplemente deja de haber confirmados, que es la falla
+// más cara que puede tener este archivo.
+
+/** Botones que SÍ son "confirmo mi pedido", uno por plantilla cableada. */
+export const BOTONES_CONFIRMAR = [
+  "CONFIRMAR PEDIDO",   // confirmacion_pedido_k1 — hasta el 27-ago-2026
+  "SI, ESTA CORRECTO",  // confirmacion_datos_v1  — desde el 27-ago-2026
+] as const;
+/** @deprecated Quedó por compatibilidad; la lista de arriba es la fuente. */
+export const BOTON_CONFIRMAR = BOTONES_CONFIRMAR[0];
+
+/** El OTRO botón de esas mismas plantillas. Apretarlo NO es confirmar: los que
+ *  apretaron "ACTUALIZAR INFORMACIÓN" cancelaron 42,9% (n=14) — del lado malo.
+ *  Se miran ANTES que los de confirmar para que ninguna coincidencia parcial
+ *  los dé por buenos. */
+export const BOTONES_NO_CONFIRMAR = [
+  "ACTUALIZAR INFORMACION", // confirmacion_pedido_k1
+  "CORREGIR UN DATO",       // confirmacion_datos_v1
+] as const;
+/** @deprecated Ver `BOTONES_NO_CONFIRMAR`. */
 export const BOTON_ACTUALIZAR = "ACTUALIZAR INFORMACIÓN";
-/** Plantilla que arranca la confirmación. Sin ella no hay botón que apretar. */
-export const PLANTILLA_CONFIRMACION = "confirmacion_pedido_k1";
+
+/** Botones de las demás plantillas cableadas. No dicen nada de la confirmación;
+ *  están acá para que un botón NUEVO se pueda distinguir de uno ya conocido. */
+export const BOTONES_OTRAS_PLANTILLAS = [
+  "SI, NECESITO LOS DATOS",  // retiro_agencia_v1
+  "REPROGRAMAR ENTREGA",     // novedad_reprogramar_v1
+  "SI, QUIERO RECIBIRLO",    // ultima_oportunidad_v1
+  "SI, APARTENMELO",         // remarketing_v1
+  "SI, REENVIENMELO",        // rescate_devolucion_v1
+  "SI, ESTARE PENDIENTE",    // en_camino_hoy_v2
+  "COORDINAR OTRA HORA",     // en_camino_hoy_v2
+  "SI, CONTINUAR",           // seguimiento_reactivar_v1
+  "YA NO ME INTERESA",       // seguimiento_reactivar_v1
+] as const;
+
+/** Plantillas que arrancan la confirmación. Sin una de ellas no hay botón que
+ *  apretar, y exigirlo sería exigir algo que nunca se ofreció. */
+export const PLANTILLAS_CONFIRMACION = [
+  "confirmacion_pedido_k1",
+  "confirmacion_datos_v1",
+] as const;
+/** @deprecated Ver `PLANTILLAS_CONFIRMACION`. */
+export const PLANTILLA_CONFIRMACION = PLANTILLAS_CONFIRMACION[0];
 
 /** Un mensaje de ImporChat, reducido a lo que esta señal necesita. */
 export interface MensajeChat {
@@ -54,8 +113,17 @@ export interface SenalConfirmacion {
   apretoBotonAt: Date | null;
   /** Cuándo escribió por primera vez (no cuenta apretar botones). */
   clienteEscribioAt: Date | null;
-  /** Si le llegó la plantilla que trae el botón. */
+  /** Si le llegó alguna de las plantillas que traen el botón. */
   recibioPlantilla: boolean;
+  /**
+   * Textos de botones que el cliente apretó y Guardian NO sabe leer.
+   *
+   * Vacío es lo normal. Con algo adentro significa que se cableó una plantilla
+   * nueva en ImporChat y su botón todavía no está en las listas de arriba — o
+   * sea, que la señal de confirmación puede estar apagada AHORA MISMO sin dar
+   * ningún error. `importchat-sync` lo saca a `sync_logs` con el texto puesto.
+   */
+  botonesDesconocidos: string[];
   /**
    * El cliente NUNCA escribió nada, en NINGÚN momento de la historia del chat.
    * Apretar un botón no cuenta como escribir.
@@ -107,15 +175,50 @@ export const RIESGO_DOC: Record<NivelRiesgo, { que: string; tasa: string; queHac
   },
 };
 
+/** Mayúsculas, SIN tildes y con los espacios colapsados. Las tildes se sacan a
+ *  propósito: el botón vivo dice "Sí, está correcto" y ya cambió de acentuación
+ *  una vez. Comparar con tildes es comparar contra la suerte. */
 function limpio(s: string | null | undefined): string {
-  return (s ?? "").trim().toUpperCase();
+  return (s ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toUpperCase()
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** ¿Este mensaje es el cliente apretando el botón de confirmar? */
 export function esBotonConfirmar(m: MensajeChat): boolean {
-  // Se compara por "contiene" y no por igualdad: el export trae el texto del
-  // botón tal cual lo definió la plantilla y ya cambió de acentuación una vez.
-  return m.tipo === "button" && limpio(m.texto).includes("CONFIRMAR");
+  if (m.tipo !== "button") return false;
+  const t = limpio(m.texto);
+  // El "no" gana: "CORREGIR UN DATO" y "ACTUALIZAR INFORMACIÓN" son rechazos
+  // aunque algún día compartan una palabra con un botón de confirmar.
+  if (BOTONES_NO_CONFIRMAR.some((b) => t.includes(b))) return false;
+  if (BOTONES_CONFIRMAR.some((b) => t.includes(b))) return true;
+  // Red de seguridad para las variantes viejas ("Confirmar pedido ✅"): se
+  // compara por "contiene" porque el export trae el texto tal cual lo definió
+  // la plantilla. No alcanza para el botón nuevo — por eso existe la lista.
+  return t.includes("CONFIRMAR");
+}
+
+/**
+ * ¿Este botón es uno de los que Guardian sabe leer?
+ *
+ * Es el detector de "me quedé ciego": cuando alguien cablea una plantilla nueva
+ * en ImporChat, su botón cae acá como desconocido y `importchat-sync` lo dice en
+ * `sync_logs` (con el texto, para poder agregarlo arriba). Sin esto, cambiar una
+ * plantilla apaga la señal de confirmación **sin un solo error** — que es
+ * exactamente lo que pasó entre el 27 y el 29 de agosto de 2026.
+ */
+export function esBotonConocido(m: MensajeChat): boolean {
+  if (m.tipo !== "button") return false;
+  const t = limpio(m.texto);
+  if (!t) return false;
+  return (
+    esBotonConfirmar(m) ||
+    BOTONES_NO_CONFIRMAR.some((b) => t.includes(b)) ||
+    BOTONES_OTRAS_PLANTILLAS.some((b) => t.includes(b))
+  );
 }
 
 /** ¿El cliente escribió de verdad? Apretar un botón no es escribir. */
@@ -142,6 +245,7 @@ export function derivarSenal(
       apretoBotonAt: null,
       clienteEscribioAt: null,
       recibioPlantilla: false,
+      botonesDesconocidos: [],
       mudo: false,
       riesgo: "sin_dato",
     };
@@ -151,14 +255,24 @@ export function derivarSenal(
   const boton = orden.find(esBotonConfirmar) ?? null;
   const palabra = orden.find(esPalabraDelCliente) ?? null;
   const recibioPlantilla = orden.some(
-    (m) => m.rol === "Propietario" && m.plantilla === PLANTILLA_CONFIRMACION,
+    (m) => m.rol === "Propietario" && !!m.plantilla &&
+      (PLANTILLAS_CONFIRMACION as readonly string[]).includes(m.plantilla),
   );
   const mudo = historial !== null && !historial.some(esPalabraDelCliente);
+  const botonesDesconocidos = [
+    ...new Set(
+      orden
+        .filter((m) => m.rol === "Cliente" && m.tipo === "button" && !esBotonConocido(m))
+        .map((m) => (m.texto ?? "").trim())
+        .filter(Boolean),
+    ),
+  ];
 
   return {
     apretoBotonAt: boton ? boton.fecha : null,
     clienteEscribioAt: palabra ? palabra.fecha : null,
     recibioPlantilla,
+    botonesDesconocidos,
     mudo,
     riesgo: clasificar({ apreto: !!boton, escribio: !!palabra, recibioPlantilla, mudo }),
   };

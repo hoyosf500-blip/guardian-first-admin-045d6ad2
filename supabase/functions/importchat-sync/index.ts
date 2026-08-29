@@ -97,7 +97,7 @@ const SOURCE = "importchat-sync";
  * `{"ping":true}` la devuelve SIN tocar ImporChat, sin leer la base y sin
  * escribir en sync_logs. Un `curl` y se sabe.
  */
-const VERSION = "2026-08-29.3-flujo+solo-chats-del-turno";
+const VERSION = "2026-08-29.4-boton-confirmar-plantilla-nueva";
 const PAGE_SIZE = 200;
 const MAX_PAGES = 15;
 const DIAS_DEFAULT = 10;
@@ -590,6 +590,9 @@ Deno.serve(async (req) => {
       }
 
       let tocados = 0, conBoton = 0, mudos = 0, sinSaliente = 0, saltados = 0, frescos = 0;
+      /** Botones que los clientes apretaron y Guardian no sabe leer. Ver abajo:
+       *  es la alarma de "se cableó una plantilla nueva y la señal quedó ciega". */
+      const botonesRaros = new Map<string, number>();
 
       // Lo ya leído hace poco NO se reescribe: así el backfill es REANUDABLE.
       // Sin esto, cada corrida repite los mismos 3.000 pedidos desde el
@@ -653,6 +656,7 @@ Deno.serve(async (req) => {
         const act = derivarActividadChat(historial);
         if (s.apretoBotonAt) conBoton++;
         if (s.mudo) mudos++;
+        for (const b of s.botonesDesconocidos) botonesRaros.set(b, (botonesRaros.get(b) ?? 0) + 1);
         if (historial && !act.salienteAt) sinSaliente++;
         if (dryRun) continue;
 
@@ -750,11 +754,29 @@ Deno.serve(async (req) => {
       }
       console.log(`[${SOURCE}] ${storeId}: ${tocados}/${tareas.length} escritos a los ${Date.now() - t0} ms`);
 
+      // ⛔ ALARMA DE CEGUERA. El texto del botón ES la señal de confirmación, y
+      // cambiar la plantilla en el panel de ImporChat lo cambia sin avisar. Pasó
+      // el 27-ago-2026: `confirmado` se fue de 58% a 0% en dos días porque el
+      // botón nuevo dice "Sí, está correcto" y nadie lo sabía. Un `success` en
+      // verde tapando eso es lo que costó dos días de llamadas al pedo, así que
+      // esto entra a `parciales` y la corrida sale en 'warn' con el texto puesto.
+      if (botonesRaros.size) {
+        const top = [...botonesRaros.entries()]
+          .sort((a, b) => b[1] - a[1]).slice(0, 3)
+          .map(([txt, n]) => `"${txt}" ×${n}`).join(", ");
+        parciales.push(
+          `botones que Guardian no sabe leer (${botonesRaros.size} distintos): ${top}` +
+          ` — si alguno es de confirmar, la señal está CIEGA: agregarlo a BOTONES_CONFIRMAR` +
+          ` en _shared/senalConfirmacion.ts`,
+        );
+      }
+
       totalTocados += tocados;
       resumen.push({
         store_id: storeId, ok: true, pedidos: pedidos.length,
         actualizados: tocados, con_boton: conBoton, mudos,
         sin_saliente: sinSaliente, saltados, frescos, chats: chats.size, dry_run: dryRun,
+        botones_desconocidos: Object.fromEntries(botonesRaros),
       });
       } catch (eStore) {
         // La tienda falló entera (p. ej. 401 de un token que murió a mitad de

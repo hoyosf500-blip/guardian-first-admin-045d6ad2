@@ -3,10 +3,15 @@ import {
   derivarSenal,
   clasificar,
   esBotonConfirmar,
+  esBotonConocido,
   esPalabraDelCliente,
   PRIORIDAD_RIESGO,
   RIESGO_DOC,
   PLANTILLA_CONFIRMACION,
+  PLANTILLAS_CONFIRMACION,
+  BOTONES_CONFIRMAR,
+  BOTONES_NO_CONFIRMAR,
+  BOTONES_OTRAS_PLANTILLAS,
   type MensajeChat,
   type NivelRiesgo,
 } from "../../supabase/functions/_shared/senalConfirmacion";
@@ -51,6 +56,94 @@ describe("reconocer lo que hizo el cliente", () => {
   it("apretar un botón no es escribir", () => {
     expect(esPalabraDelCliente(boton())).toBe(false);
     expect(esPalabraDelCliente(escribe())).toBe(true);
+  });
+});
+
+// ── El incidente del 27-ago-2026 ───────────────────────────────────────────
+// Se cableó `confirmacion_datos_v1` en ImporChat (mejor plantilla: muestra la
+// dirección antes de confirmar) y su botón dice "Sí, está correcto". Acá se
+// buscaba la palabra "CONFIRMAR". `confirmado` pasó de 58% a 0% en dos días
+// sin un solo error, y la asesora llamó a gente que ya había confirmado.
+describe("el botón de CADA plantilla cableada, no el de una sola", () => {
+  const apreta = (texto: string) => esBotonConfirmar(msg({ tipo: "button", texto }));
+
+  it('"Sí, está correcto" ES confirmar — con tilde, sin tilde y en cualquier caso', () => {
+    // Textos reales de producción (Roxana Mora 6749394/6748452, Seimon Tirado
+    // 6755681, 28-ago-2026): los tres apretaron y salieron clasificados `tibio`.
+    expect(apreta("Sí, está correcto")).toBe(true);
+    expect(apreta("SI, ESTA CORRECTO")).toBe(true);
+    expect(apreta("  sí,   está correcto  ")).toBe(true);
+  });
+
+  it('"Corregir un dato" NO es confirmar: es el botón de al lado', () => {
+    // Es el gemelo de "ACTUALIZAR INFORMACIÓN" (42,9% cancela). Darlo por
+    // confirmado mandaría al fondo de la cola justo al que pidió un cambio.
+    expect(apreta("Corregir un dato")).toBe(false);
+  });
+
+  it("los botones de las OTRAS plantillas tampoco confirman nada", () => {
+    // Todas caen dentro de la ventana del pedido (creación +7 días), así que
+    // llegan hasta acá. Ninguna dice nada sobre la confirmación.
+    for (const b of BOTONES_OTRAS_PLANTILLAS) expect(apreta(b)).toBe(false);
+  });
+
+  it("las tres listas no se pisan entre sí", () => {
+    // Un texto en dos listas haría que el resultado dependa del orden de los
+    // `if`, que es exactamente el tipo de bug que no se ve.
+    const todas = [...BOTONES_CONFIRMAR, ...BOTONES_NO_CONFIRMAR, ...BOTONES_OTRAS_PLANTILLAS];
+    expect(new Set(todas).size).toBe(todas.length);
+    for (const b of BOTONES_CONFIRMAR) expect(apreta(b)).toBe(true);
+    for (const b of BOTONES_NO_CONFIRMAR) expect(apreta(b)).toBe(false);
+  });
+
+  it("la plantilla nueva también cuenta como 'le llegó la plantilla'", () => {
+    const conNueva = [
+      msg({ rol: "Propietario", tipo: "template", plantilla: "confirmacion_datos_v1", fecha: t(9) }),
+      msg({ tipo: "button", texto: "Sí, está correcto", fecha: t(9) }),
+    ];
+    const s = derivarSenal(conNueva, conNueva);
+    expect(s.recibioPlantilla).toBe(true);
+    expect(s.riesgo).toBe("confirmado");
+  });
+
+  it("PLANTILLA_CONFIRMACION sigue siendo una de las de la lista", () => {
+    // El export viejo se quedó por compatibilidad; si alguien lo cambia sin
+    // tocar la lista, `recibioPlantilla` empieza a mentir.
+    expect(PLANTILLAS_CONFIRMACION).toContain(PLANTILLA_CONFIRMACION);
+  });
+});
+
+describe("la alarma de ceguera: un botón que no se sabe leer se DENUNCIA", () => {
+  it("un botón nuevo aparece en botonesDesconocidos con su texto", () => {
+    // Es lo único que separa "se cableó una plantilla nueva" de "hace dos días
+    // que nadie confirma". Sin esto la falla es muda.
+    const conv = [
+      plantilla(),
+      msg({ tipo: "button", texto: "Dale, mándenlo", fecha: t(10) }),
+    ];
+    const s = derivarSenal(conv, conv);
+    expect(s.botonesDesconocidos).toEqual(["Dale, mándenlo"]);
+    expect(s.riesgo).not.toBe("confirmado");
+  });
+
+  it("los botones conocidos NO disparan la alarma", () => {
+    const conocidos = [
+      ...BOTONES_CONFIRMAR, ...BOTONES_NO_CONFIRMAR, ...BOTONES_OTRAS_PLANTILLAS,
+    ].map((texto, i) => msg({ tipo: "button", texto, fecha: t(10 + (i % 8)) }));
+    expect(derivarSenal(conocidos, conocidos).botonesDesconocidos).toEqual([]);
+    for (const m of conocidos) expect(esBotonConocido(m)).toBe(true);
+  });
+
+  it("el mismo botón raro repetido se denuncia UNA vez", () => {
+    const conv = [
+      msg({ tipo: "button", texto: "Otra cosa", fecha: t(10) }),
+      msg({ tipo: "button", texto: "Otra cosa", fecha: t(11) }),
+    ];
+    expect(derivarSenal(conv, conv).botonesDesconocidos).toEqual(["Otra cosa"]);
+  });
+
+  it("sin conversación leída no se denuncia nada (no se inventa una alarma)", () => {
+    expect(derivarSenal(null, null).botonesDesconocidos).toEqual([]);
   });
 });
 
