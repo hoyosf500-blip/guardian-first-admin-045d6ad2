@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
+import { soloObserva } from '@/lib/rolesTrabajo';
 
 /**
  * Heartbeat de actividad de operadora — tracking jornada (Capa Productividad).
@@ -79,7 +80,7 @@ export function useOperatorHeartbeat() {
     // volumen de confirmaciones y ensuciarían su propio dashboard de Productividad
     // (auditoría 2026-08-13: el dueño nuevo aparecía fichado como operadora con
     // "turno iniciado"). El supervisor SÍ trabaja, así que se sigue trackeando.
-    if (!user || isAdmin || isOwnerOfActive) return;
+    if (!user || soloObserva({ isAdmin, isOwnerOfActive })) return;
     if (!activeStoreId) return;
 
     const onActivity = () => {

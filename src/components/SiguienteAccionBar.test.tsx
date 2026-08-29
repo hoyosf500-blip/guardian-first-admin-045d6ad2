@@ -15,7 +15,9 @@ const estado = {
    *  se la ve, nadie más la carga. Ver el guardián de siguienteAccion.test.ts. */
   segLoaded: true,
   novedadesQueue: [] as OrderData[],
-  isManagerOfActive: false,
+  /** Dueño de la tienda. El SUPERVISOR no es dueño: trabaja la cola y recibe la
+   *  instrucción igual que la operadora (ver rolesTrabajo.ts). */
+  isOwnerOfActive: false,
   isAdmin: false,
 };
 
@@ -33,7 +35,7 @@ vi.mock('@/contexts/OrderContext', () => ({
   }),
 }));
 vi.mock('@/contexts/StoreContext', () => ({
-  useStore: () => ({ isManagerOfActive: estado.isManagerOfActive }),
+  useStore: () => ({ isOwnerOfActive: estado.isOwnerOfActive }),
 }));
 vi.mock('@/contexts/AuthContext', () => ({
   useAuth: () => ({ isAdmin: estado.isAdmin }),
@@ -69,7 +71,7 @@ beforeEach(() => {
   estado.segData = [];
   estado.segLoaded = true;
   estado.novedadesQueue = [];
-  estado.isManagerOfActive = false;
+  estado.isOwnerOfActive = false;
   estado.isAdmin = false;
 });
 
@@ -92,14 +94,29 @@ describe('SiguienteAccionBar', () => {
   // "yo como dueño no lo entiendo": SegCounterBar está oculto para él, así que
   // hoy ve MENOS que su equipo. La barra sí lo incluye — pero en neutro: darle
   // una orden a quien no ejecuta la cola es ruido.
-  it('al dueño/supervisor le habla en neutro, no en imperativo', () => {
+  it('al DUEÑO le habla en neutro, no en imperativo', () => {
     estado.novedadesQueue = [base, base];
-    estado.isManagerOfActive = true;
+    estado.isOwnerOfActive = true;
     dibujar();
     expect(screen.getByText('2 novedades abiertas')).toBeInTheDocument();
     expect(screen.queryByText(/resolvé/i)).toBeNull();
     expect(screen.getByText('La cola')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /ver/i })).toBeInTheDocument();
+  });
+
+  it('al SUPERVISOR le habla en imperativo: trabaja la cola, no la mira', () => {
+    // ⛔ Esto antes iba con el dueño (la reja era `isManagerOfActive`, que es
+    // «dueño O supervisor»). Roberto atiende la cola de Ecuador todos los días y
+    // la barra le informaba "La cola … Ver" mientras a su compañera, en la misma
+    // pantalla, le decía "Lo que sigue … Ir". Pedido del dueño 28-ago-2026: el
+    // supervisor es un rango más que la operadora, no un espectador.
+    estado.novedadesQueue = [base, base];
+    estado.isOwnerOfActive = false; // supervisor: ni dueño ni admin
+    estado.isAdmin = false;
+    dibujar();
+    expect(screen.getByText(/resolvé las 2 novedades/i)).toBeInTheDocument();
+    expect(screen.getByText('Lo que sigue')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /ir/i })).toBeInTheDocument();
   });
 
   it('el admin global también ve la versión neutra', () => {

@@ -9,6 +9,7 @@ import { usePausaTrabajo } from '@/hooks/usePausaTrabajo';
 import InactivityWarningModal from '@/components/InactivityWarningModal';
 import BotonPausaTrabajo from '@/components/BotonPausaTrabajo';
 import { hasSeguimientoWork } from '@/lib/segLists';
+import { trabajaLaCola } from '@/lib/rolesTrabajo';
 import { segVisiblesParaCola } from '@/lib/segVisibles';
 
 /**
@@ -19,7 +20,7 @@ import { segVisiblesParaCola } from '@/lib/segVisibles';
  */
 export default function InactivityGuard() {
   const { workQueue, segData, novedadesQueue } = useOrders();
-  const { activeStoreId, isManagerOfActive } = useStore();
+  const { activeStoreId, isOwnerOfActive } = useStore();
   const { isAdmin } = useAuth();
   // Los cierres del equipo, para no regañar por trabajo YA hecho. El canal
   // realtime del hook lleva nombre por instancia (useId), así que montarlo acá
@@ -46,17 +47,30 @@ export default function InactivityGuard() {
     [workQueue, novedadesQueue, segData, closed],
   );
 
-  // Mismo universo que el guard: solo operadora pura. A un dueño no se le
-  // ofrece declarar pausas porque a él nadie lo mide.
-  const esOperadora = !isAdmin && !isManagerOfActive;
-  const pausaT = usePausaTrabajo(esOperadora);
+  // ⛔ A QUIÉN SE LE MIDE EL TRABAJO: operadora **y supervisor** (28-ago-2026,
+  // pedido del dueño: "el supervisor también trabaja, solo es un rango más que
+  // el operador, así que lo que él haga tenerlo en cuenta").
+  //
+  // Esto decía `!isAdmin && !isManagerOfActive`, y `isManagerOfActive` es
+  // «dueño O supervisor»: dejaba a Roberto —el que de verdad trabaja la cola de
+  // Ecuador— del lado de los jefes. Consecuencia medible: nunca recibía el
+  // aviso por huecos sin gestionar, y **no tenía el botón «Estoy en otra
+  // cosa»**, así que una ida a la agencia no la podía declarar nadie más que
+  // sus operadoras. Se le contaba el trabajo en el reparto y en Productividad,
+  // pero no se le daba ninguna de las herramientas del que trabaja.
+  //
+  // Al dueño no se le ofrece nada de esto: no se le mide.
+  const mide = trabajaLaCola({ isAdmin, isOwnerOfActive });
+  const pausaT = usePausaTrabajo(mide);
 
+  // El modal que BLOQUEA la pantalla 5 minutos sigue siendo solo para la
+  // operadora — el hook lo decide con `seLeBloqueaLaPantalla`, y ahí está
+  // escrito por qué esa reja es más estrecha a propósito.
   const { warning, acknowledge } = useInactivityGuard({ hasPendingWork, enPausa: pausaT.vigente });
 
-  // Aviso SUAVE por huecos sin gestionar (no bloquea, no cuenta falta). Mismo
-  // universo que el guard duro: solo operadora pura (ni admin, ni dueño, ni
-  // supervisor) — a un manager este recordatorio le mentiría.
-  useSinGestionNudge({ hasPendingWork, enabled: esOperadora && !pausaT.vigente });
+  // Aviso SUAVE por huecos sin gestionar (no bloquea, no cuenta falta): va a
+  // todo el que trabaja la cola, supervisor incluido.
+  useSinGestionNudge({ hasPendingWork, enabled: mide && !pausaT.vigente });
 
   return (
     <>
@@ -64,7 +78,7 @@ export default function InactivityGuard() {
           aplicada (Lovable no las aplica solas). No se dibuja el botón: uno que
           existe y falla al tocarlo es peor que ninguno — el asesor creería que
           declaró su pausa y el sistema lo acusaría igual. */}
-      {esOperadora && pausaT.disponible && (
+      {mide && pausaT.disponible && (
         <BotonPausaTrabajo
           pausa={pausaT.pausa}
           vigente={pausaT.vigente}

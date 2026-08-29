@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useOrderLock } from '@/hooks/useOrderLock';
 import { OrderData, formatPhone, getTrackingUrl, truncate, dbToOrderData, isValidPhoneForCountry, getWhatsAppPhone } from '@/lib/orderUtils';
 import { useStore } from '@/contexts/StoreContext';
+import { soloObserva } from '@/lib/rolesTrabajo';
 import { formatCOP } from '@/lib/utils';
 import { CANCEL_REASONS } from '@/lib/constants';
 import { diasReales } from '@/components/WorkList';
@@ -93,8 +94,11 @@ interface Props {
 export default function CallView({ items, alerts }: Props) {
   const { markResult, undoLast, lastMark, allOrders, setAllOrders, buildWorkQueue } = useOrders();
   const { user, isAdmin } = useAuth();
-  const { activeStore, activeStoreId } = useStore();
+  const { activeStore, activeStoreId, isOwnerOfActive } = useStore();
   const countryCode = activeStore?.country_code;
+  // ⛔ El dueño MIRA, no atiende. Ver el efecto del candado más abajo: para él,
+  // abrir un pedido tiene que costar CERO. Una sola definición en rolesTrabajo.
+  const observa = soloObserva({ isAdmin, isOwnerOfActive });
   const recordContacto = useRecordGestion();
   const { claimOrder, releaseOrder } = useOrderLock();
   // FIX "Siguiente salta ~10": último pedido cuyo lock conseguimos NOSOTROS y
@@ -268,6 +272,24 @@ export default function CallView({ items, alerts }: Props) {
   // o automáticamente por el cron release-stale-locks tras 15 min.
   useEffect(() => {
     if (!o?.dbId || !user || o.result) return;
+    // ⛔ EL DUEÑO NO RECLAMA NADA (28-ago-2026, pedido suyo: "si entro a un
+    // pedido no se me debe contar, solo estoy viendo que todo esté marchando
+    // bien").
+    //
+    // Hasta hoy este efecto corría para TODO EL MUNDO. Ver un pedido lo lockea
+    // con `claim_order`, y `filteredItems` lo esconde de la cola de las demás
+    // con `isLockedByOther` durante 15 minutos. O sea: el dueño abría un pedido
+    // para comprobar que la operación iba bien y **le quitaba ese cliente al
+    // equipo** — sin que apareciera en ninguna pantalla, porque un lock no se
+    // dibuja: el pedido simplemente no está.
+    //
+    // Es el mismo daño que ya se corrigió en Seguimiento en agosto-2026 (un
+    // dueño nuevo que abría la pantalla se auto-asignaba los pedidos de sus
+    // operadoras, ver `useSegAssignment`); Confirmar nunca se tocó.
+    //
+    // Sin claim tampoco hay salto: al jefe no se le rebota de un pedido que
+    // está atendiendo una asesora. Lo ve, que es justo lo que vino a hacer.
+    if (observa) return;
     const orderId = o.dbId;
     let cancelled = false;
     // BUG 3 fix: NO confundir un error de red/RPC con "pedido lockeado".
@@ -316,7 +338,7 @@ export default function CallView({ items, alerts }: Props) {
     };
     attemptClaim(1);
     return () => { cancelled = true; };
-  }, [o?.dbId, user, claimOrder, callIdx, items, setCallOrderId, o?.result]);
+  }, [o?.dbId, user, claimOrder, callIdx, items, setCallOrderId, o?.result, observa]);
 
   // FIX "Siguiente salta ~10" (2026-07-07): liberar el lock del pedido ANTERIOR
   // al pasar a otro. Ver un pedido lo lockea (efecto de arriba) pero nada lo
@@ -342,9 +364,17 @@ export default function CallView({ items, alerts }: Props) {
   }, [o?.dbId, releaseOrder]);
 
   // Best-effort release on tab close so locks no quedan huérfanos hasta el cron.
+  //
+  // ⛔ SOLO SI EL CANDADO ES NUESTRO (28-ago-2026). Antes soltaba el del pedido
+  // en pantalla fuera de quién lo tuviera, y `release_order` corriendo como
+  // admin **puede soltar candados ajenos** (es la misma razón por la que el
+  // release-on-navigate de arriba ya exigía `claimedByMeRef`). Concreto: el
+  // dueño abría un pedido que una asesora estaba atendiendo, cerraba la pestaña
+  // y le liberaba el cliente — el pedido reaparecía en la cola de todas y otra
+  // persona lo llamaba encima. Dos llamadas al mismo cliente, sin rastro.
   useEffect(() => {
     const handler = () => {
-      if (o?.dbId) void releaseOrder(o.dbId);
+      if (o?.dbId && claimedByMeRef.current === o.dbId) void releaseOrder(o.dbId);
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);

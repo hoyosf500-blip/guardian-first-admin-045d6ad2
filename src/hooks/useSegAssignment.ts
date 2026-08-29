@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
+import { soloObserva } from '@/lib/rolesTrabajo';
 
 /**
  * Asignación persistente de pedidos en Seguimiento y Rescate.
@@ -21,7 +22,8 @@ import { useStore } from '@/contexts/StoreContext';
 export function useSegAssignment() {
   const { isAdmin } = useAuth();
   const { isOwnerOfActive } = useStore();
-  const esJefe = isAdmin || isOwnerOfActive;
+  // Misma definición que Confirmar y que la jornada: `rolesTrabajo.ts`.
+  const esJefe = soloObserva({ isAdmin, isOwnerOfActive });
 
   const claimSegOrder = useCallback(async (orderId: string): Promise<boolean> => {
     if (esJefe) return true;

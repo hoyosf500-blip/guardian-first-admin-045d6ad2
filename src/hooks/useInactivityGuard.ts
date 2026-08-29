@@ -13,6 +13,7 @@ import {
 } from '@/lib/inactivityWindow';
 import { useStoreSchedule } from '@/hooks/useStoreSchedule';
 import { onGestion } from '@/lib/eventosGestion';
+import { seLeBloqueaLaPantalla } from '@/lib/rolesTrabajo';
 
 /**
  * Alertas de inactividad (presión psicológica de no perder tiempo).
@@ -31,7 +32,9 @@ import { onGestion } from '@/lib/eventosGestion';
  *    no se puede cerrar hasta que termine). El contador acumula por día y queda
  *    registrado server-side (record_inactivity_warning) para el reporte del admin.
  *
- * Gates: solo OPERADORAS puras (no admin, no owner/supervisor) con tienda activa.
+ * Gates: `seLeBloqueaLaPantalla` (`rolesTrabajo.ts`) — operadora pura con tienda
+ * activa. Ni admin, ni dueño, ni supervisor: al supervisor SÍ se le mide el
+ * trabajo, pero trabarle la pantalla deja al equipo sin quien lo destrabe.
  */
 
 export interface InactivityWarning {
@@ -56,7 +59,7 @@ function lockKey(storeId: string): string {
 
 export function useInactivityGuard({ hasPendingWork, enPausa = false }: { hasPendingWork: boolean; enPausa?: boolean }) {
   const { user, isAdmin, loading: authLoading } = useAuth();
-  const { activeStoreId, isManagerOfActive } = useStore();
+  const { activeStoreId, isManagerOfActive, isOwnerOfActive } = useStore();
   // Horario laboral de la tienda (configurable). Default 9–17 si no está cargado
   // o la migration no se aplicó — el guard nunca depende de que exista.
   const scheduleQuery = useStoreSchedule(activeStoreId);
@@ -82,9 +85,17 @@ export function useInactivityGuard({ hasPendingWork, enPausa = false }: { hasPen
   const scheduleRef = useRef<WorkSchedule>(DEFAULT_SCHEDULE);
   scheduleRef.current = scheduleQuery.data ? scheduleFromMinutes(scheduleQuery.data) : DEFAULT_SCHEDULE;
 
-  // Solo operadoras puras con tienda activa.
+  // Solo a quien se le puede TRABAR la pantalla, con tienda activa.
+  //
+  // La reja es más estrecha que «trabaja la cola» a propósito, y desde el
+  // 28-ago-2026 esa diferencia está escrita y probada en `rolesTrabajo.ts` en
+  // vez de vivir en un `!isManagerOfActive` suelto que se leía como un olvido.
+  // Al supervisor SÍ se le mide el trabajo (reparto, jornada, aviso por huecos,
+  // botón de pausa); lo único que no se le hace es bloquearle la pantalla cinco
+  // minutos, porque es el que destraba al resto del equipo.
   const enabled =
-    !authLoading && !!user && !isAdmin && !!activeStoreId && !isManagerOfActive;
+    !authLoading && !!user && !!activeStoreId &&
+    seLeBloqueaLaPantalla({ isAdmin, isOwnerOfActive, isManagerOfActive });
 
   // Init del contador del día desde localStorage (sobrevive a un reload).
   // Corre UNA vez por tienda: un flip transitorio de `enabled` (ej. refresh de

@@ -9,6 +9,7 @@ import { segVisiblesParaCola } from '@/lib/segVisibles';
 import { useSegTouchIndex } from '@/hooks/useSegTouchIndex';
 import { useOpenIncidences } from '@/hooks/useOpenIncidences';
 import { splitNovedades } from '@/lib/novedadesSplit';
+import { soloObserva } from '@/lib/rolesTrabajo';
 import { cn } from '@/lib/utils';
 
 /**
@@ -55,7 +56,7 @@ const TONO = {
 
 export default function SiguienteAccionBar() {
   const { workQueue, segData, segLoaded, novedadesQueue, loadSegData, loadNovedades } = useOrders();
-  const { isManagerOfActive, activeStoreId } = useStore();
+  const { isOwnerOfActive, activeStoreId } = useStore();
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -124,8 +125,16 @@ export default function SiguienteAccionBar() {
   const rutaBase = accion.ruta.split('?')[0];
   if (accion.key !== 'al_dia' && location.pathname === rutaBase) return null;
 
-  // El dueño/supervisor/admin lee el estado; la asesora recibe la instrucción.
-  const mira = isManagerOfActive || isAdmin;
+  // El dueño lee el estado ("La cola … Ver"); el que trabaja recibe la
+  // instrucción ("Lo que sigue … Ir").
+  //
+  // ⛔ El SUPERVISOR está del lado del que trabaja (28-ago-2026). Esto decía
+  // `isManagerOfActive || isAdmin`, que incluye al supervisor: a Roberto —el
+  // que más trabaja la cola en Ecuador— la barra le informaba en vez de
+  // mandarlo, en la misma pantalla en la que a su compañera le decía qué hacer.
+  // Una barra que existe para que nadie se quede quieto no puede tratar de
+  // espectador a quien está atendiendo.
+  const mira = soloObserva({ isAdmin, isOwnerOfActive });
   const t = TONO[accion.tono];
   const Icono = ICONO[accion.key];
 
