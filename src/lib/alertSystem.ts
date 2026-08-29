@@ -64,7 +64,25 @@ export function getSegStage(estado: string): string {
 }
 
 export function getAlertLevel(diasConf: number, dias: number, estado: string, transportadora: string, novedad?: string): AlertInfo | null {
-  const stage = getSegStage(estado);
+  // ⛔ UN PEDIDO SIN CONFIRMAR NO TIENE SLA DE TRANSPORTADORA (29-ago-2026).
+  //
+  // Toda esta tarjeta habla de ESCANEOS de la transportadora. Un pedido en
+  // `PENDIENTE CONFIRMACION` no tiene guía, no lo despachó nadie y ninguna
+  // transportadora lo tocó: no hay nada que escanear.
+  //
+  // Y no era un detalle cosmético. `sinEscaneo` sale de `diasConf`, que en un
+  // pedido sin confirmar vale 0 y **se queda en 0 para siempre** (nunca hubo
+  // fecha de confirmación). O sea que el pedido que lleva diez días sin que
+  // nadie lo llame mostraba un verde *"Normal · Escaneo reciente de
+  // transportadora"* — la peor mentira posible: la que tranquiliza.
+  //
+  // Medido en producción sobre el pedido 6742720 (Miguel Yanza, EC): estado
+  // PENDIENTE CONFIRMACION, guía vacía, `fecha_conf` en null, y la ficha
+  // afirmando un escaneo reciente de GINTRACOM con cuenta regresiva de 7 días.
+  //
+  // Su problema no es la transportadora, es que nadie lo llamó — y para eso la
+  // ficha ya tiene el botón «Ir a Confirmar».
+  if ((estado || '').toUpperCase().trim() === 'PENDIENTE CONFIRMACION') return null;
 
   // diasConf === 0 es un valor VÁLIDO ("se movió/confirmó HOY" — el estado más
   // sano posible), NO un faltante. El ternario viejo (`> 0`) lo tiraba y caía a

@@ -79,6 +79,44 @@ describe('SlaAlertCard', () => {
     expect(alertEl?.getAttribute('aria-live')).toBe('assertive');
   });
 
+  // ── El hueco que nadie probaba (29-ago-2026) ───────────────────────────
+  // Todas las pruebas de arriba usan estados YA DESPACHADOS, así que el caso
+  // "la transportadora todavía no lo tiene" nunca se ejerció. Medido en
+  // producción sobre el pedido 6742720: PENDIENTE CONFIRMACION, guía vacía,
+  // fecha_conf null — y la ficha afirmaba "Normal · Escaneo reciente de
+  // transportadora · GINTRACOM (deadline 7d)".
+
+  it('⛔ un pedido SIN CONFIRMAR no tiene tarjeta de SLA de transportadora', () => {
+    // `diasConf` vale 0 y se queda en 0 para siempre (nunca hubo confirmación),
+    // así que el pedido abandonado diez días mostraba un VERDE tranquilizador.
+    const order = makeOrder({
+      estado: 'PENDIENTE CONFIRMACION', guia: '', fechaConf: '',
+      diasConf: 0, dias: 10, transportadora: 'GINTRACOM',
+    });
+    const { container } = render(<SlaAlertCard order={order} />);
+    expect(container.innerHTML).toBe('');
+  });
+
+  it('⛔ sin guía NO se afirma un escaneo ni se dibuja la cuenta regresiva', () => {
+    // Dropi preasigna la transportadora antes de despachar: su nombre solo NO
+    // prueba que el paquete salió. Nadie puede escanear lo que no existe.
+    const order = makeOrder({ estado: 'PENDIENTE', guia: '', diasConf: 0, dias: 1, transportadora: 'GINTRACOM' });
+    const { container } = render(<SlaAlertCard order={order} />);
+    expect(screen.queryByText(/Escaneo reciente/)).toBeNull();
+    expect(screen.queryByText(/deadline/)).toBeNull();
+    expect(container.querySelector('[role="progressbar"]')).toBeNull();
+    // Y se dice lo que sí se sabe, con la transportadora al lado.
+    expect(screen.getByText(/Todavía sin guía/)).toBeTruthy();
+    expect(screen.getByText(/GINTRACOM/)).toBeTruthy();
+  });
+
+  it('CON guía el escaneo y el plazo se siguen mostrando igual que siempre', () => {
+    const order = makeOrder({ estado: 'EN REPARTO', guia: 'G123', diasConf: 2, dias: 2, transportadora: 'COORDINADORA' });
+    const { container } = render(<SlaAlertCard order={order} />);
+    expect(screen.getAllByText(/deadline/).length).toBeGreaterThan(0);
+    expect(container.querySelector('[role="progressbar"]')).toBeTruthy();
+  });
+
   it('has accessible progressbar with correct values', () => {
     const order = makeOrder({ diasConf: 2, dias: 2, transportadora: 'TCC' });
     const { container } = render(<SlaAlertCard order={order} />);

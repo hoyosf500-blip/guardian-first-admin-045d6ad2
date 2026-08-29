@@ -65,6 +65,10 @@ export default function SlaAlertCard({ order }: Props) {
   const style = LEVEL_STYLES[alert.level];
   const carrierDeadline = getCarrierDeadline(order.transportadora);
   const daysElapsed = alert.sinEscaneo;
+  /** Sin guía la transportadora NO tiene el paquete: nada que escanear y nada
+   *  que contar. Dropi preasigna la transportadora antes de despachar, así que
+   *  su nombre solo NO prueba que el envío haya salido. */
+  const sinGuia = !String(order.guia || '').trim();
   const pct = Math.min(100, Math.round((daysElapsed / carrierDeadline) * 100));
 
   const shouldAct = needsAction(order.estado, order.diasConf, order.dias, order.novedadSol, null);
@@ -101,17 +105,29 @@ export default function SlaAlertCard({ order }: Props) {
             <h3 className={`text-sm font-bold ${style.text}`}>{alert.label}</h3>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            {daysElapsed > 0
-              ? `Sin escaneo de transportadora hace ${daysElapsed} día${daysElapsed === 1 ? '' : 's'}`
-              : 'Escaneo reciente de transportadora'}
-            {order.transportadora ? ` · ${order.transportadora} (deadline ${carrierDeadline}d)` : ''}
+            {/* ⛔ "Escaneo reciente de transportadora" es una AFIRMACIÓN, y sin
+                guía es falsa: nadie pudo escanear un paquete que todavía no
+                existe. Antes se decía igual, con el nombre de la transportadora
+                que Dropi deja preasignada, y sonaba a que el envío iba en
+                camino. Sin guía se dice lo que de verdad se sabe. */}
+            {sinGuia
+              ? 'Todavía sin guía — la transportadora aún no lo tiene'
+              : daysElapsed > 0
+                ? `Sin escaneo de transportadora hace ${daysElapsed} día${daysElapsed === 1 ? '' : 's'}`
+                : 'Escaneo reciente de transportadora'}
+            {order.transportadora
+              ? ` · ${order.transportadora}${sinGuia ? '' : ` (deadline ${carrierDeadline}d)`}`
+              : ''}
           </p>
 
           {/* Consumo del plazo de la transportadora: pista tenue, relleno con
               degradado + glow, marcas fijas al 50/75% y cabeza luminosa en la
               posición actual (mismo remate que el punto final del área del
               Dashboard). Antes era una barrita de color plano. */}
-          {carrierDeadline > 0 && (
+          {/* Sin guía tampoco hay cuenta regresiva: una barra consumiendo el
+              plazo de una transportadora que no tiene el paquete es la misma
+              mentira, dibujada. */}
+          {carrierDeadline > 0 && !sinGuia && (
             <div className="mt-3">
               <div className="flex justify-between text-[10px] text-muted-foreground mb-1.5 font-mono tabular-nums">
                 <span>0d</span>
