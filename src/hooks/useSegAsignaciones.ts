@@ -28,6 +28,40 @@ export interface EstadoReparto {
   entre: number;
   /** Del plantel, cuántas quedaron afuera por no haber marcado entrada hoy. */
   ausentes: number;
+  /**
+   * NO se repartió porque todavía no hay suficiente equipo presente. No es un
+   * error: es "todavía no". El llamador NO debe sellar el día — tiene que
+   * volver a intentar más tarde. Ver `HAY_QUORUM` abajo.
+   */
+  sinQuorum?: boolean;
+}
+
+/**
+ * ⛔ CUÁNTA GENTE TIENE QUE HABER MARCADO ENTRADA PARA REPARTIR.
+ *
+ * ── El bug que esto evita (encontrado 28-ago-2026, ANTES de que pegara) ──────
+ * El reparto va solo a quien marcó entrada hoy, y corre automático la primera
+ * vez que un jefe abre Seguimiento. En Rushmira EC eso es Roberto (supervisor),
+ * y a las 8 de la mañana **el único que marcó entrada es él**. Resultado:
+ * `destinatarios = [Roberto]` y **los 315 pedidos del día quedaban asignados a
+ * una sola persona**.
+ *
+ * Y no se podía deshacer solo: `repartir_seguimiento` hace
+ * `ON CONFLICT DO NOTHING` y `repartirCola` nunca toca lo ya asignado, así que
+ * cuando Estefano y María José llegaran a las 8:30 **no quedaba un solo pedido
+ * sin dueño para repartirles**. El panel habría mostrado a Roberto con
+ * "0/315 · 315 sin tocar" y a las demás "al día" con cero — leyéndose como que
+ * Roberto no hace nada y el resto no tiene trabajo. Peor que no repartir.
+ *
+ * Con menos de dos presentes NO se reparte y NO se sella el día: se espera. La
+ * cola mientras tanto es de todas (la asignación es etiqueta, nunca candado) y
+ * el panel lo dice con esas palabras.
+ *
+ * Con una sola asesora en la tienda el quórum es 1: repartir entre una persona
+ * es correcto, ahí no hay nada que equilibrar.
+ */
+export function quorumParaRepartir(plantel: number): number {
+  return Math.min(2, Math.max(1, plantel));
 }
 
 type RespuestaSuelta = PromiseLike<{
@@ -175,7 +209,12 @@ export function useSegAsignaciones() {
    * ni acá ni en la RPC (`ON CONFLICT DO NOTHING`).
    */
   const repartir = useCallback(
-    async (orderIdsPorUrgencia: string[]): Promise<EstadoReparto | null> => {
+    async (
+      orderIdsPorUrgencia: string[],
+      /** `forzar` = lo apretó un jefe a mano: se reparte con quien haya. El
+       *  automático NO fuerza — espera a que llegue el equipo. */
+      opts?: { forzar?: boolean },
+    ): Promise<EstadoReparto | null> => {
       if (!activeStoreId || !isManagerOfActive || !soportado) return null;
       setRepartiendo(true);
       try {
@@ -211,6 +250,17 @@ export function useSegAsignaciones() {
         const destinatarios = filtrados.length > 0 ? filtrados : operadores;
         const entre = destinatarios.length;
         const ausentes = Math.max(0, operadores.length - entre);
+
+        // ⛔ QUÓRUM: con medio equipo sin llegar, repartir es peor que esperar.
+        // Ver `quorumParaRepartir` para el caso concreto que esto evita (los 315
+        // pedidos del día en manos de una sola persona, sin vuelta atrás).
+        // Solo aplica al automático: si un jefe aprieta el botón, manda él.
+        if (!opts?.forzar && operadores.length > 0 && entre < quorumParaRepartir(operadores.length)) {
+          return {
+            asignados: 0, ignorados: 0, sinOperadores: false, desbalance: 0,
+            entre, ausentes, sinQuorum: true,
+          };
+        }
 
         const plan = repartirCola({
           pedidos: orderIdsPorUrgencia.map((orderId) => ({ orderId })),

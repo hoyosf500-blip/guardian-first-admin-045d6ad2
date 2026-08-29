@@ -364,24 +364,40 @@ export default function SeguimientoTab() {
   // ORDEN importa: se manda la cola accionable ordenada por urgencia, para que
   // cada asesora reciba una mezcla parecida en vez de que una cargue con todo
   // lo que vence hoy. El panel es presentacional y no conoce los pedidos.
-  const repartirColaDeHoy = useCallback(async () => {
+  const repartirColaDeHoy = useCallback(async (opts?: { forzar?: boolean; silencioso?: boolean }) => {
     const ids = dedupedByDate
       .filter((o) => esAccionable(o) && o.dbId)
       .sort((a, b) => (horasSinMovimiento(b) ?? 0) - (horasSinMovimiento(a) ?? 0))
       .map((o) => String(o.dbId));
-    const r = await asig.repartir(ids);
-    if (!r) { toast.error('No se pudo repartir la cola'); return; }
+    const r = await asig.repartir(ids, { forzar: opts?.forzar });
+    if (!r) { if (!opts?.silencioso) toast.error('No se pudo repartir la cola'); return r; }
+    // ⛔ Todavía no llegó el equipo: NO es un error y NO se avisa en el camino
+    // automático — a las 8 de la mañana un cartel diciendo "no se repartió" cada
+    // vez que se refresca el tablero es ruido. Se reintenta solo. Ver el quórum
+    // en `useSegAsignaciones`.
+    if (r.sinQuorum) {
+      if (!opts?.silencioso) {
+        toast.message('Todavía no llegó el equipo', {
+          description: `Solo ${r.entre} de ${r.entre + r.ausentes} marcaron entrada hoy. Se reparte solo cuando haya al menos dos; mientras tanto la cola es de todas. Podés repartir igual apretando de nuevo.`,
+        });
+      }
+      return r;
+    }
     if (r.sinOperadores) {
-      toast.error('No hay asesoras en esta tienda', {
-        description: 'Agregá operadoras en Admin → Equipo para poder repartir.',
-      });
-      return;
+      if (!opts?.silencioso) {
+        toast.error('No hay asesoras en esta tienda', {
+          description: 'Agregá operadoras en Admin → Equipo para poder repartir.',
+        });
+      }
+      return r;
     }
     if (r.asignados === 0) {
-      toast.success('Ya estaba todo repartido', {
-        description: 'Ningún pedido quedó sin dueño. Volver a repartir no le quita el trabajo a nadie.',
-      });
-      return;
+      if (!opts?.silencioso) {
+        toast.success('Ya estaba todo repartido', {
+          description: 'Ningún pedido quedó sin dueño. Volver a repartir no le quita el trabajo a nadie.',
+        });
+      }
+      return r;
     }
     // ⛔ `r.entre`, NO `asig.operadores.length`. El reparto va solo a quien marcó
     // entrada hoy, pero el aviso seguía contando el plantel completo: con 5 en la
@@ -393,7 +409,10 @@ export default function SeguimientoTab() {
         + (r.ausentes > 0 ? ` ${r.ausentes} no marcaron y no recibieron nada.` : '')
         + (r.ignorados > 0 ? ` ${r.ignorados} ya tenían dueño.` : ''),
     });
+    return r;
   }, [dedupedByDate, asig]);
+  /** El botón del panel: lo apretó una persona, así que MANDA ella. */
+  const repartirAMano = useCallback(() => { void repartirColaDeHoy({ forzar: true }); }, [repartirColaDeHoy]);
 
   // ⛔ EL REPARTO SE HACE SOLO (28-ago-2026). Medido en producción: `seg_asignaciones`
   // tenía CERO filas — la herramienta existía, funcionaba y estaba probada, pero
@@ -408,9 +427,13 @@ export default function SeguimientoTab() {
   //   · la llave de localStorage por tienda+día — no se repite al recargar (F5).
   //   · `asig.cargado` + `asignaciones.size === 0` — si ya hay reparto, no toca
   //     nada. Los DOS: ver abajo.
-  // La llave se sella ANTES de llamar: si el reparto falla, no se reintenta en
-  // bucle contra la base. El botón manual queda para eso y para re-repartir
-  // cuando entra alguien tarde.
+  //
+  // ⛔ EL DÍA SE SELLA DESPUÉS, Y SOLO SI DE VERDAD REPARTIÓ (28-ago-2026).
+  // Antes se sellaba ANTES de llamar, para no reintentar en bucle. Pero el
+  // reparto ahora puede decir "todavía no llegó el equipo" (quórum), y sellar
+  // eso dejaba el día entero sin reparto por haber abierto el CRM temprano —
+  // que es exactamente lo que hace un jefe. Se sella al confirmar que asignó, y
+  // los reintentos se espacian con `ultimoIntentoRef` para no golpear la base.
   //
   // ⛔ Se exige `asig.cargado`, NO `!asig.cargando` (bug propio, 28-ago-2026).
   // `cargando` arranca en false y solo se prende dentro de `cargar()`: hay un
@@ -421,6 +444,7 @@ export default function SeguimientoTab() {
   // dueño. La llave del día tapaba el caso normal, no el de otra máquina, otro
   // jefe o una ventana de incógnito.
   const yaIntentadoRef = useRef(false);
+  const ultimoIntentoRef = useRef(0);
   useEffect(() => {
     if (!isManagerOfActive || !asig.soportado || !asig.cargado) return;
     if (yaIntentadoRef.current || !activeStoreId) return;
@@ -431,9 +455,21 @@ export default function SeguimientoTab() {
     const hoy = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }))
       .toISOString().slice(0, 10);
     const llave = `guardian.repartoAuto:${activeStoreId}:${hoy}`;
-    try { if (localStorage.getItem(llave)) return; localStorage.setItem(llave, '1'); } catch { /* sin storage: se reparte igual, una vez por sesión */ }
-    yaIntentadoRef.current = true;
-    void repartirColaDeHoy();
+    try { if (localStorage.getItem(llave)) return; } catch { /* sin storage: alcanza con los refs */ }
+    // El efecto se re-evalúa con cada refresco del tablero. Un reintento cada
+    // 5 min alcanza para agarrar a la segunda asesora apenas marca entrada, sin
+    // consultar la presencia en cada push de realtime.
+    const REINTENTO_MS = 5 * 60_000;
+    if (Date.now() - ultimoIntentoRef.current < REINTENTO_MS) return;
+    ultimoIntentoRef.current = Date.now();
+    void repartirColaDeHoy({ silencioso: true }).then((r) => {
+      // ⛔ Solo se sella si REPARTIÓ. `sinQuorum` es "todavía no": sellar ahí
+      // dejaba al equipo sin reparto todo el día por haber abierto temprano.
+      // `null` (no se pudo) tampoco sella — se reintenta.
+      if (!r || r.sinQuorum) return;
+      yaIntentadoRef.current = true;
+      try { localStorage.setItem(llave, '1'); } catch { /* sin storage: el ref alcanza para esta sesión */ }
+    });
   }, [isManagerOfActive, asig.soportado, asig.cargado, asig.asignaciones, activeStoreId, segLoaded, dedupedByDate.length, repartirColaDeHoy]);
 
   // Vista de dueño (pieza D). Se calcula sobre la COLA ACCIONABLE, la misma
@@ -1502,7 +1538,7 @@ export default function SeguimientoTab() {
             <TurnoDelEquipoPanel
               resumen={resumenTurno}
               nombreDe={nombreDeAsesora}
-              onRepartir={isManagerOfActive ? repartirColaDeHoy : undefined}
+              onRepartir={isManagerOfActive ? repartirAMano : undefined}
               repartiendo={asig.repartiendo}
               yoId={user?.id ?? null}
             />
