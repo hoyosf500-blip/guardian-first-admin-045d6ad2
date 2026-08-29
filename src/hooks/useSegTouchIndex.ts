@@ -2,6 +2,7 @@ import { useState, useEffect, useId } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { isSegCloser } from '@/lib/segDailyReview';
 import { esAvisoAgencia } from '@/lib/avisoAgencia';
+import { crearVueloCompartido } from '@/lib/vueloCompartido';
 
 /**
  * Ventana de búsqueda de cierres. Cubre con holgura la ventana de datos de
@@ -49,6 +50,105 @@ export interface SegTouchIndex {
 
 const VACIO: SegTouchIndex = { closed: new Map(), avisosAgencia: new Map() };
 
+/**
+ * ⛔ UNA sola lectura para las TRES instancias del hook (medido el 29-ago-2026).
+ *
+ * Este hook lo montan a la vez `SeguimientoTab`, `SiguienteAccionBar` (que vive
+ * en el layout) e `InactivityGuard`. Cada instancia hacía SU propio barrido de
+ * 90 días de `touchpoints`, y como ese barrido se pagina de a 1.000 filas, eran
+ * **6 peticiones para el mismo dato**. Se vio en el cronómetro de producción:
+ * tres consultas idénticas separadas por milisegundos —`…42.536Z`, `…42.539Z`,
+ * `…44.584Z`— compitiendo entre ellas por el mismo pool.
+ *
+ * Y no era solo el costo: la tercera copia aterrizaba ~2,5 s tarde, cambiaba la
+ * cola visible y eso **volvía a disparar `useRiesgoChat` entero** (otros 4
+ * viajes). Una lectura de más arrastraba otras cuatro.
+ *
+ * Acá el vuelo se comparte: la primera instancia dispara, las otras se cuelgan
+ * de la MISMA promesa. El realtime sigue siendo por instancia (cada una con su
+ * canal, que es lo que evita el choque de nombres que ya tumbó /seguimiento).
+ *
+ * TTL corto a propósito: alcanza para agrupar el montaje simultáneo y las
+ * navegaciones entre pantallas, sin quedarse con una foto vieja. Los cierres que
+ * lleguen después entran por realtime.
+ */
+const TTL_MS = 30_000;
+/** La mecánica (vuelo compartido, fallo no cacheado, TTL) vive y se prueba en
+ *  `src/lib/vueloCompartido.ts`. Acá solo se le pasa qué cargar. */
+const VUELO = crearVueloCompartido<SegTouchIndex>(TTL_MS);
+
+/**
+ * ⛔ Un fallo NO se cachea. Si la lectura se rompe, `ok:false` deja el índice
+ * fuera del caché para que el próximo montaje reintente — cachear un mapa vacío
+ * por un error de red sería afirmar "nadie cerró nada" durante 30 s, y `closed`
+ * es justamente lo que saca de la cola los pedidos ya resueltos.
+ */
+async function cargarIndice(storeId: string): Promise<{ idx: SegTouchIndex; ok: boolean }> {
+  const cutoffIso = new Date(Date.now() - CLOSER_LOOKBACK_DAYS * 86400000).toISOString();
+  // Paginación: Supabase corta todo SELECT a ~1000 filas. Con ~40 gestiones
+  // SEG/día, 90 días superan ese tope y el corte (orden arbitrario sin
+  // ORDER BY) se comía justamente los cierres RECIENTES → pedidos que el
+  // equipo YA resolvió reaparecían como accionables y se volvía a llamar a
+  // clientes resueltos. Descendente a propósito: si algo se trunca (error a
+  // mitad de camino o HARD_LIMIT), se pierden cierres viejos e irrelevantes,
+  // nunca los nuevos.
+  const PAGE_SIZE = 1000;
+  const HARD_LIMIT = 10000;
+  type Tp = { phone: string; action: string; created_at: string };
+  const all: Tp[] = [];
+  let fromIdx = 0;
+  let ok = true;
+  while (true) {
+    const { data, error } = await supabase
+      .from('touchpoints')
+      .select('phone, action, created_at')
+      .eq('store_id', storeId)
+      .ilike('action', 'SEG:%')
+      .gte('created_at', cutoffIso)
+      .order('created_at', { ascending: false })
+      .range(fromIdx, fromIdx + PAGE_SIZE - 1);
+    if (error || !data) {
+      // Error a mitad de la paginación: nos quedamos con lo ya leído (las
+      // páginas más recientes) — un mapa parcial oculta MENOS de lo debido,
+      // nunca de más, y el realtime completa los cierres que sigan llegando.
+      console.warn('[useSegTouchIndex] error paginando touchpoints SEG:', error);
+      ok = false;
+      break;
+    }
+    all.push(...(data as Tp[]));
+    if (data.length < PAGE_SIZE || all.length >= HARD_LIMIT) break;
+    fromIdx += PAGE_SIZE;
+  }
+  // Una sola pasada sobre las mismas filas: los cierres y los avisos de
+  // agencia salen del mismo SELECT. Leer el aviso NO cuesta una consulta.
+  const closed = new Map<string, number>();
+  const avisosAgencia = new Map<string, number>();
+  const ultimo = (m: Map<string, number>, phone: string, ms: number) => {
+    const prev = m.get(phone);
+    if (prev === undefined || ms > prev) m.set(phone, ms);
+  };
+  for (const t of all) {
+    if (!t.phone) continue;
+    const ms = new Date(t.created_at).getTime();
+    if (isSegCloser(t.action)) ultimo(closed, t.phone, ms);
+    else if (esAvisoAgencia(t.action)) ultimo(avisosAgencia, t.phone, ms);
+  }
+  return { idx: { closed, avisosAgencia }, ok };
+}
+
+/** Vacía el vuelo compartido. Para las pruebas y un reset explícito. */
+export function _limpiarCacheSegTouch(): void {
+  VUELO.limpiar();
+}
+
+function leerIndice(storeId: string): Promise<SegTouchIndex> {
+  return VUELO.pedir(
+    storeId,
+    () => cargarIndice(storeId).then(({ idx, ok }) => ({ valor: idx, ok })),
+    () => VACIO,
+  );
+}
+
 export function useSegTouchIndex(storeId: string | null): SegTouchIndex {
   const [idx, setIdx] = useState<SegTouchIndex>(VACIO);
   // ⛔ El nombre del canal lleva un id POR INSTANCIA (22-ago-2026, tumbó
@@ -67,57 +167,12 @@ export function useSegTouchIndex(storeId: string | null): SegTouchIndex {
     setIdx(VACIO);
     if (!storeId) return;
     let cancelled = false;
-    void (async () => {
-      const cutoffIso = new Date(Date.now() - CLOSER_LOOKBACK_DAYS * 86400000).toISOString();
-      // Paginación: Supabase corta todo SELECT a ~1000 filas. Con ~40 gestiones
-      // SEG/día, 90 días superan ese tope y el corte (orden arbitrario sin
-      // ORDER BY) se comía justamente los cierres RECIENTES → pedidos que el
-      // equipo YA resolvió reaparecían como accionables y se volvía a llamar a
-      // clientes resueltos. Descendente a propósito: si algo se trunca (error a
-      // mitad de camino o HARD_LIMIT), se pierden cierres viejos e irrelevantes,
-      // nunca los nuevos.
-      const PAGE_SIZE = 1000;
-      const HARD_LIMIT = 10000;
-      type Tp = { phone: string; action: string; created_at: string };
-      const all: Tp[] = [];
-      let fromIdx = 0;
-      while (true) {
-        const { data, error } = await supabase
-          .from('touchpoints')
-          .select('phone, action, created_at')
-          .eq('store_id', storeId)
-          .ilike('action', 'SEG:%')
-          .gte('created_at', cutoffIso)
-          .order('created_at', { ascending: false })
-          .range(fromIdx, fromIdx + PAGE_SIZE - 1);
-        if (cancelled) return;
-        if (error || !data) {
-          // Error a mitad de la paginación: nos quedamos con lo ya leído (las
-          // páginas más recientes) — un mapa parcial oculta MENOS de lo debido,
-          // nunca de más, y el realtime completa los cierres que sigan llegando.
-          console.warn('[useSegTouchIndex] error paginando touchpoints SEG:', error);
-          break;
-        }
-        all.push(...(data as Tp[]));
-        if (data.length < PAGE_SIZE || all.length >= HARD_LIMIT) break;
-        fromIdx += PAGE_SIZE;
-      }
-      // Una sola pasada sobre las mismas filas: los cierres y los avisos de
-      // agencia salen del mismo SELECT. Leer el aviso NO cuesta una consulta.
-      const closed = new Map<string, number>();
-      const avisosAgencia = new Map<string, number>();
-      const ultimo = (m: Map<string, number>, phone: string, ms: number) => {
-        const prev = m.get(phone);
-        if (prev === undefined || ms > prev) m.set(phone, ms);
-      };
-      for (const t of all) {
-        if (!t.phone) continue;
-        const ms = new Date(t.created_at).getTime();
-        if (isSegCloser(t.action)) ultimo(closed, t.phone, ms);
-        else if (esAvisoAgencia(t.action)) ultimo(avisosAgencia, t.phone, ms);
-      }
-      if (!cancelled) setIdx({ closed, avisosAgencia });
-    })();
+    // `leerIndice` comparte el vuelo entre las instancias: si otra ya lo pidió,
+    // acá no sale ninguna petición. La bandera `cancelled` sigue evitando que una
+    // respuesta lenta de la tienda A pise el estado (ya en blanco) de la tienda B.
+    void leerIndice(storeId).then((nuevo) => {
+      if (!cancelled) setIdx(nuevo);
+    });
     return () => { cancelled = true; };
   }, [storeId]);
 

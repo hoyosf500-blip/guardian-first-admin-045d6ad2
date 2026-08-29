@@ -131,6 +131,68 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
       type Row = Parameters<typeof dbToOrderData>[0];
       const all: Row[] = [];
       let fromIdx = 0;
+
+      // ⛔ LAS TRES CONSULTAS SON INDEPENDIENTES: van EN PARALELO (29-ago-2026).
+      //
+      // Iban en fila detrás del bucle paginado, y eso se midió en producción:
+      // la principal terminaba a los 4,8 s, recién ahí arrancaba devoluciones
+      // (0,4 s) y después la de estado nulo (0,1 s) — **1,7 s en serie** para
+      // tres consultas que no se necesitan entre sí. Y todo lo que depende de la
+      // cola (el estado del chat, el índice de gestiones) esperaba a las tres.
+      //
+      // Se lanzan YA y se esperan al final. El orden de concatenación se
+      // mantiene igual (principal → devoluciones → sin estado) para no mover ni
+      // un pedido de lugar: `dbToOrderData` recibe el mismo `idx` que antes.
+      //
+      // Cada una se traga su propio error, igual que antes: sin el extra el
+      // tablero sigue sirviendo. Avisar, no caer.
+      const devDesde = new Date(Date.now() - 30 * 86_400_000).toISOString();
+      // Sin last_movement_at NO se puede afirmar "reciente", pero tratarlo
+      // como "no existe" era peor: una devolucion sin fecha de movimiento no
+      // aparecia en Seguimiento NI UN DIA (la principal la excluye por estado
+      // y esta la excluia por fecha). Entra si el pedido se creo hace <90d.
+      const devCreadoDesde = new Date(Date.now() - 90 * 86_400_000).toISOString();
+      const pDevoluciones = (async (): Promise<Row[]> => {
+        try {
+          const { data, error } = await supabase
+            .from('orders')
+            .select(ORDER_COLUMNS)
+            .eq('store_id', storeId)
+            // La misma familia que excluye la principal (cero solape, cero hueco).
+            .or('estado.ilike.DEVOLUC%,estado.ilike.DEVUELT%,estado.ilike.EN PROCESO DE DEVOLUC%')
+            .or(`last_movement_at.gte.${devDesde},and(last_movement_at.is.null,created_at.gte.${devCreadoDesde})`)
+            .order('created_at', { ascending: false })
+            .limit(2000);
+          if (error) {
+            console.warn('Error cargando devoluciones recientes:', error.message);
+            return [];
+          }
+          return ((data || []) as unknown) as Row[];
+        } catch (e) {
+          console.warn('Error cargando devoluciones recientes:', e);
+          return [];
+        }
+      })();
+      const pSinEstado = (async (): Promise<Row[]> => {
+        try {
+          const { data, error } = await supabase
+            .from('orders')
+            .select(ORDER_COLUMNS)
+            .eq('store_id', storeId)
+            .is('estado', null)
+            .order('created_at', { ascending: false })
+            .limit(500);
+          if (error) {
+            console.warn('Error cargando pedidos sin estado:', error.message);
+            return [];
+          }
+          return ((data || []) as unknown) as Row[];
+        } catch (e) {
+          console.warn('Error cargando pedidos sin estado:', e);
+          return [];
+        }
+      })();
+
       while (true) {
         const toIdx = fromIdx + PAGE_SIZE - 1;
         const { data, error } = await supabase
@@ -197,7 +259,7 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
         fromIdx += PAGE_SIZE;
       }
       // DEVOLUCIONES RECIENTES (auditoría 14-ago-2026, artifact fa210631). Los
-      // dos filtros exactos de arriba existen porque esta query NO tiene ventana
+      // dos filtros exactos de arriba existen porque esa query NO tiene ventana
       // de fecha — sin ellos entraría el histórico completo de devoluciones. El
       // costo era que "se fue a devolución" se volvía INVISIBLE: las columnas
       // Devolución del tablero llevaban meses en 0 en Colombia (las variantes
@@ -206,59 +268,25 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
       // Query aparte y ACOTADA por último movimiento: trae EXACTAMENTE lo que
       // la principal excluye (cero solape) sin cargar años de devoluciones.
       // La misma ventana (30d) usa el chip "Se fue a devolución" de segLists.
-      try {
-        const devDesde = new Date(Date.now() - 30 * 86_400_000).toISOString();
-        // Sin last_movement_at NO se puede afirmar "reciente", pero tratarlo
-        // como "no existe" era peor: una devolucion sin fecha de movimiento no
-        // aparecia en Seguimiento NI UN DIA (la principal la excluye por estado
-        // y esta la excluia por fecha). Entra si el pedido se creo hace <90d.
-        const devCreadoDesde = new Date(Date.now() - 90 * 86_400_000).toISOString();
-        const { data: devRows, error: devError } = await supabase
-          .from('orders')
-          .select(ORDER_COLUMNS)
-          .eq('store_id', storeId)
-          // La misma familia que excluye la principal (cero solape, cero hueco).
-          .or('estado.ilike.DEVOLUC%,estado.ilike.DEVUELT%,estado.ilike.EN PROCESO DE DEVOLUC%')
-          .or(`last_movement_at.gte.${devDesde},and(last_movement_at.is.null,created_at.gte.${devCreadoDesde})`)
-          .order('created_at', { ascending: false })
-          .limit(2000);
-        if (devError) {
-          // No-fatal: sin el extra el tablero sigue sirviendo. Avisar, no caer.
-          console.warn('Error cargando devoluciones recientes:', devError.message);
-        } else if (prevStoreRef.current === storeId) {
-          all.push(...(((devRows || []) as unknown) as Row[]));
-        }
-      } catch (e) {
-        console.warn('Error cargando devoluciones recientes:', e);
-      }
-      // PEDIDOS SIN ESTADO — el hueco que ningun filtro de arriba puede tapar.
       //
+      // PEDIDOS SIN ESTADO — el hueco que ningun filtro de arriba puede tapar.
       // En SQL, `NOT (NULL = 'X')` no es TRUE: es NULL, y PostgREST descarta la
       // fila. O sea que cada `.not('estado','eq',...)` de la query principal
       // tambien tira los pedidos con `estado IS NULL` — no aparecen en
       // Seguimiento NUNCA, sin toast ni aviso. `dropi-nightly-reconcile`
       // documenta esta misma trampa dos veces y por eso filtra del lado del
       // cliente; el frontend no habia aplicado la leccion.
-      //
       // Medido el 21-ago-2026 en las dos tiendas: CERO filas. Esto es una
-      // defensa, no una reparacion — y por eso es barata. El dia que Dropi
-      // devuelva un estado vacio, el pedido va a estar a la vista en vez de
-      // desaparecer, que es exactamente como se pierden.
-      try {
-        const { data: sinEstado, error: sinEstadoError } = await supabase
-          .from('orders')
-          .select(ORDER_COLUMNS)
-          .eq('store_id', storeId)
-          .is('estado', null)
-          .order('created_at', { ascending: false })
-          .limit(500);
-        if (sinEstadoError) {
-          console.warn('Error cargando pedidos sin estado:', sinEstadoError.message);
-        } else if (prevStoreRef.current === storeId) {
-          all.push(...(((sinEstado || []) as unknown) as Row[]));
-        }
-      } catch (e) {
-        console.warn('Error cargando pedidos sin estado:', e);
+      // defensa, no una reparacion — y por eso es barata.
+      //
+      // Las dos salieron arriba, en paralelo con el bucle. Acá solo se cosechan,
+      // en el MISMO orden que antes.
+      const [devRows, sinEstadoRows] = await Promise.all([pDevoluciones, pSinEstado]);
+      // El guard multi-tienda vale igual que antes: si la tienda cambió mientras
+      // estas dos volaban, aterrizarlas mezclaría países.
+      if (prevStoreRef.current === storeId) {
+        all.push(...devRows);
+        all.push(...sinEstadoRows);
       }
       const mapped = all.map((o, idx) => dbToOrderData(o, idx));
       mapped.sort((a, b) => calcPriority(b) - calcPriority(a));
