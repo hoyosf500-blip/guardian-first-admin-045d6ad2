@@ -24,9 +24,21 @@
 //      materializa 48.000 objetos de 18 campos: la función se quedaba sin
 //      memoria/CPU y la PLATAFORMA LA MATABA — sin catch, sin fila en
 //      sync_logs. Medido: 7 disparos, 7 muertes mudas, cero rastro. Ahora se
-//      descomprimen SOLO las dos entradas que importan del zip (fflate) y se
-//      recorren las filas con regex, guardando por chat lo mínimo: memoria
-//      acotada en vez de proporcional al archivo.
+//      descomprimen SOLO las dos entradas que importan del zip (fflate) y el
+//      parseo vive en `_shared/xlsxMensajes.ts`, probado desde
+//      `src/lib/xlsxMensajes.test.ts`.
+//
+//      ⛔ Y volvió a matarla (28-ago-2026): 197 corridas, **82 colgadas (42%)
+//      y CERO errores**, todas en «fase 2» y repartidas parejo en las 24 horas
+//      —a las 3 AM con ImporChat vacío igual que a las 3 PM—, o sea un límite
+//      de la plataforma, no una dependencia lenta. Dos causas y dos arreglos:
+//        · el parser leía las 18 columnas del export y solo se usan 6 → 4× menos
+//          CPU leyendo únicamente las necesarias (medido: 2.305 → 583 ms sobre
+//          una hoja real de 48 MB, con salida idéntica en los 6.000 chats);
+//        · el presupuesto preguntaba "¿queda ALGO de tiempo?" en vez de "¿queda
+//          SUFICIENTE?" → `RESERVA_XLSX_MS`, más un vencimiento DENTRO de la
+//          lectura y un `AbortSignal` en la descarga, para morir con mensaje en
+//          vez de que la maten sin dejar rastro.
 //   3. Deriva la señal y hace un UPDATE DIRIGIDO por (store_id, external_id).
 //      No inserta pedidos ni toca estado/valor/guía: ImporChat no manda sobre
 //      eso. Y no pasa por `upsert_orders_from_dropi` — ⛔ REGLA #1.
@@ -55,6 +67,7 @@ import {
   ensureFreshImporchatToken,
   IMPORCHAT_BASE_DEFAULT,
 } from "../_shared/imporchatSession.ts";
+import { leerHojaMensajes, parsearSharedStrings } from "../_shared/xlsxMensajes.ts";
 
 const SOURCE = "importchat-sync";
 const PAGE_SIZE = 200;
@@ -67,10 +80,22 @@ const VENTANA_DESPUES_MS = 7 * 24 * 60 * 60 * 1000;
 /** Presupuesto de pared por debajo del límite del edge, para que SIEMPRE
  *  alcance a escribir la fila de sync_logs. Mismo criterio que dropi-cron. */
 const BUDGET_MS = 110_000;
-/** Los textos del export se recortan al guardarlos: lo único largo que se lee
- *  es el botón ("CONFIRMAR PEDIDO"), y 48.000 mensajes completos en memoria son
- *  justamente lo que mataba a la función. */
-const MAX_TEXTO = 64;
+/**
+ * ⛔ CUÁNTO TIEMPO HAY QUE TENER LIBRE PARA ANIMARSE A EMPEZAR EL XLSX.
+ *
+ * Éste era el bug de fondo (medido el 28-ago-2026: 197 corridas, **82 colgadas
+ * = 42%, y CERO errores**, repartidas parejo en las 24 horas — o sea un límite
+ * de la plataforma, no ImporChat lento). La comprobación de presupuesto
+ * preguntaba *"¿queda ALGO de tiempo?"* y con 1 ms libre se metía igual en una
+ * operación de decenas de segundos. La plataforma la mataba a mitad, sin
+ * `catch`, y la fila de `sync_logs` quedaba en `running` PARA SIEMPRE: desde
+ * afuera, idéntica a "nunca corrió". Por eso las 82 murieron todas en el mismo
+ * punto, «fase 2».
+ *
+ * La pregunta correcta es *"¿queda tiempo SUFICIENTE para lo que viene?"*.
+ * Bajar y leer el export tarda ~15 s cuando todo va bien; 35 s es holgado.
+ */
+const RESERVA_XLSX_MS = 35_000;
 /** Un pedido leído hace menos de esto no se vuelve a escribir. Hace que el
  *  backfill sea REANUDABLE: si una corrida no alcanza a terminar, la siguiente
  *  arranca donde quedó en vez de repetir todo y morir en el mismo lugar. */
@@ -104,13 +129,8 @@ function parseLocal(s: string): Date | null {
   return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
 }
 
-/** Serial de Excel (días desde 1899-12-30) → Date UTC real. 25569 = días entre
- *  esa época y 1970-01-01. */
-function serialAFecha(v: string): Date | null {
-  const n = Number(v);
-  if (!Number.isFinite(n) || n < 20000 || n > 90000) return null;
-  return new Date(Math.round((n - 25569) * 86400000));
-}
+// `serialAFecha` (las fechas del XLSX) vive en `_shared/xlsxMensajes.ts` junto
+// al resto del parseo del export, donde SÍ tiene pruebas.
 
 interface PedidoIC {
   externalId: string;
@@ -157,14 +177,34 @@ async function traerPedidos(
   return { pedidos: out, parcial: true };
 }
 
-async function traerMensajes(
-  base: string, token: string, idConf: number,
-): Promise<Map<string, MensajeChat[]>> {
-  const r = await fetch(`${base}configuraciones/exportar_mensajes_xlsx`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ id_configuracion: idConf }),
-  });
+/**
+ * Baja el export y descomprime SOLO las dos entradas que importan.
+ *
+ * Va en su propia función para que el zip de ~9 MB quede recolectable apenas
+ * termina, en vez de vivir hasta el final del parseo.
+ */
+async function bajarHoja(
+  base: string, token: string, idConf: number, vencimiento: number,
+): Promise<{ hoja: Uint8Array; shared: string[] }> {
+  const restante = vencimiento - Date.now();
+  let r: Response;
+  try {
+    r = await fetch(`${base}configuraciones/exportar_mensajes_xlsx`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ id_configuracion: idConf }),
+      // ⛔ Sin señal de aborto, si ImporChat tarda en generar el archivo la
+      // función se queda colgada del fetch hasta que la plataforma la mata —
+      // sin catch, sin fila, indistinguible de "nunca corrió".
+      signal: AbortSignal.timeout(Math.max(5_000, restante)),
+    });
+  } catch (e) {
+    const err = e as { name?: string };
+    if (err?.name === "TimeoutError" || err?.name === "AbortError") {
+      throw new Error(`ImporChat no entregó el XLSX en ${Math.round(restante / 1000)} s (se abortó la descarga)`);
+    }
+    throw e;
+  }
   if (!r.ok) {
     throw new Error(`exportar_mensajes_xlsx HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
   }
@@ -175,105 +215,27 @@ async function traerMensajes(
   const zip = unzipSync(buf, {
     filter: (f) => f.name === "xl/worksheets/sheet1.xml" || f.name === "xl/sharedStrings.xml",
   });
-  const dec = new TextDecoder();
-  const desescapar = (s: string) => s
-    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
-    .replace(/&amp;/g, "&");
+  const hoja = zip["xl/worksheets/sheet1.xml"];
+  if (!hoja) throw new Error("El XLSX de mensajes no trae la hoja sheet1");
+  return { hoja, shared: parsearSharedStrings(zip["xl/sharedStrings.xml"]) };
+}
 
-  // Tabla de textos compartidos. Se recorta cada entrada a MAX_TEXTO: lo único
-  // largo del archivo son los mensajes, y de ellos solo se lee si un botón dice
-  // "CONFIRMAR" (17 caracteres). Guardar los textos enteros son ~20 MB al pedo.
-  const shared: string[] = [];
-  const ssRaw = zip["xl/sharedStrings.xml"];
-  if (ssRaw) {
-    const ss = dec.decode(ssRaw);
-    for (const si of ss.matchAll(/<si>([\s\S]*?)<\/si>|<si\/>/g)) {
-      if (si[1] === undefined) { shared.push(""); continue; }
-      let s = "";
-      for (const t of si[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)) s += t[1];
-      shared.push(desescapar(s).slice(0, MAX_TEXTO));
-    }
+async function traerMensajes(
+  base: string, token: string, idConf: number, vencimiento: number,
+): Promise<Map<string, MensajeChat[]>> {
+  const { hoja, shared } = await bajarHoja(base, token, idConf, vencimiento);
+  // El parser vive en `_shared/xlsxMensajes.ts` y se prueba desde
+  // `src/lib/xlsxMensajes.test.ts`: es la pieza que ya mató dos veces a esta
+  // función y no tenía una sola prueba. Medido sobre una hoja del tamaño real
+  // (48 MB, 48.000 filas × 18 columnas): 2.305 ms → 583 ms, **4× menos CPU**,
+  // con salida idéntica en los 6.000 chats. La diferencia es que ahora se leen
+  // solo las 6 columnas que alguien usa, en vez de las 18.
+  const { porChat, filas, sharedFaltante } = leerHojaMensajes(hoja, shared, { vencimiento });
+  if (sharedFaltante) {
+    // Fail-loud: el export cambió de formato y los valores saldrían en blanco.
+    // Una corrida "success" con toda la señal vacía es el peor final posible.
+    throw new Error("El XLSX trae celdas compartidas pero sin tabla de textos: cambió el formato del export");
   }
-
-  const hojaRaw = zip["xl/worksheets/sheet1.xml"];
-  if (!hojaRaw) throw new Error("El XLSX de mensajes no trae la hoja sheet1");
-
-  // Valor de una celda: `t="s"` indexa la tabla compartida, `t="inlineStr"` trae
-  // el texto adentro, y el resto es el valor crudo (las fechas son seriales).
-  const valorCelda = (celda: string): string => {
-    const t = /\bt="([^"]+)"/.exec(celda)?.[1];
-    if (t === "inlineStr") {
-      let s = "";
-      for (const x of celda.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)) s += x[1];
-      return desescapar(s).slice(0, MAX_TEXTO);
-    }
-    const v = /<v[^>]*>([\s\S]*?)<\/v>/.exec(celda)?.[1];
-    if (v == null) return "";
-    if (t === "s") return shared[Number(v)] ?? "";
-    return desescapar(v).slice(0, MAX_TEXTO);
-  };
-  const letra = (ref: string) => /^([A-Z]+)/.exec(ref)?.[1] ?? "";
-
-  const porChat = new Map<string, MensajeChat[]>();
-  let cols: Record<string, string> | null = null; // nombre de columna → letra
-  let filas = 0;
-
-  const procesarFila = (interior: string) => {
-    const celdas: Record<string, string> = {};
-    for (const c of interior.matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>|<c\b([^>]*)\/>/g)) {
-      const attrs = c[1] ?? c[3] ?? "";
-      const ref = /\br="([A-Z]+\d+)"/.exec(attrs)?.[1];
-      if (!ref) continue;
-      celdas[letra(ref)] = c[1] === undefined ? "" : valorCelda(`<c ${attrs}>${c[2]}</c>`);
-    }
-    if (!cols) {
-      // Fila 1 = encabezados. Se mapean por NOMBRE y no por posición: el día que
-      // ImporChat agregue una columna al medio, esto sigue funcionando.
-      cols = {};
-      for (const [L, nombre] of Object.entries(celdas)) cols[nombre.trim()] = L;
-      return;
-    }
-    filas++;
-    // El cliente es SIEMPRE el Receptor, incluso en las filas que escribió él.
-    const chat = (celdas[cols["ID Receptor"] ?? ""] ?? "").trim();
-    const fecha = serialAFecha(celdas[cols["Fecha Mensaje"] ?? ""] ?? "");
-    if (!chat || !fecha) return;
-    const tipo = celdas[cols["Tipo Mensaje"] ?? ""] ?? "";
-    const arr = porChat.get(chat) ?? [];
-    arr.push({
-      rol: celdas[cols["Rol"] ?? ""] ?? "",
-      tipo,
-      // Solo los botones necesitan texto (para leer "CONFIRMAR"). El resto va
-      // vacío a propósito: es la diferencia entre caber en memoria y no caber.
-      texto: tipo === "button" ? (celdas[cols["Texto Mensaje"] ?? ""] ?? "") : "",
-      plantilla: celdas[cols["Template"] ?? ""] || null,
-      fecha,
-    });
-    porChat.set(chat, arr);
-  };
-
-  // ⛔ La hoja descomprimida son 55 MB (medido sobre el archivo real) y este
-  // export NO usa tabla de textos compartidos: cada mensaje viaja dentro de su
-  // celda. Decodificarla entera son ~110 MB de string UTF-16 de una sola vez —
-  // el camino directo al OOM. Se recorre de a 1 MB: se decodifica el trozo, se
-  // procesan las filas COMPLETAS que contiene y solo la cola parcial pasa al
-  // siguiente. La memoria queda acotada por el buffer, no por el archivo.
-  const CHUNK = 1 << 20;
-  let resto = "";
-  for (let off = 0; off < hojaRaw.length; off += CHUNK) {
-    const buf = resto + dec.decode(hojaRaw.subarray(off, Math.min(off + CHUNK, hojaRaw.length)), { stream: true });
-    const corte = buf.lastIndexOf("</row>");
-    if (corte < 0) { resto = buf; continue; }
-    // Un solo matchAll por trozo: recortar fila por fila del buffer copiaría
-    // ~1 MB por cada una de las 48.000 filas.
-    for (const m of buf.slice(0, corte + 6).matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)) procesarFila(m[1]);
-    resto = buf.slice(corte + 6);
-  }
-  for (const m of resto.matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)) procesarFila(m[1]);
-
-  for (const arr of porChat.values()) arr.sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
   console.log(`[${SOURCE}] XLSX: ${filas} filas → ${porChat.size} chats`);
   return porChat;
 }
@@ -499,17 +461,25 @@ Deno.serve(async (req) => {
       console.log(`[${SOURCE}] ${storeId}: ${pedidos.length} pedidos a los ${Date.now() - t0} ms`);
       if (pedidosParciales) parciales.push(`pedidos incompletos (se cortó la paginación)`);
       await traza(`fase 2: bajando y leyendo el XLSX (${pedidos.length} pedidos)`);
-      if (Date.now() > vencimiento) {
-        await log("warn", `Se acabó el tiempo trayendo pedidos (${pedidos.length}); no se alcanzó a leer los mensajes. Volvé a correrlo.`, 0);
-        return json({ ok: true, parcial: true, actualizados: 0 });
+      // ⛔ Se exige tiempo SUFICIENTE, no "algo de tiempo". Ver RESERVA_XLSX_MS:
+      // entrar acá con el reloj casi agotado es lo que dejaba 4 de cada 10
+      // corridas muertas en `running`. Y no se `return`: se anota y se sigue con
+      // las demás tiendas, para que el resumen final sea honesto.
+      const libre = vencimiento - Date.now();
+      if (libre < RESERVA_XLSX_MS) {
+        parciales.push(
+          `quedaban ${Math.round(libre / 1000)} s y leer el chat necesita ~${RESERVA_XLSX_MS / 1000}: ` +
+          `no se leyeron los mensajes de ${pedidos.length} pedidos (la próxima corrida los agarra)`,
+        );
+        continue;
       }
 
-      const chats = await traerMensajes(base, token, Number(cfg.id_configuracion));
+      const chats = await traerMensajes(base, token, Number(cfg.id_configuracion), vencimiento);
       console.log(`[${SOURCE}] ${storeId}: ${chats.size} chats a los ${Date.now() - t0} ms`);
       await traza(`fase 3: derivando señales (${chats.size} chats)`);
       if (Date.now() > vencimiento) {
-        await log("warn", `Se acabó el tiempo leyendo el XLSX (${chats.size} chats); no se alcanzó a escribir. Volvé a correrlo.`, 0);
-        return json({ ok: true, parcial: true, actualizados: 0 });
+        parciales.push(`se acabó el tiempo leyendo el XLSX (${chats.size} chats); no se alcanzó a escribir`);
+        continue;
       }
 
       let tocados = 0, conBoton = 0, mudos = 0, sinSaliente = 0, saltados = 0, frescos = 0;
