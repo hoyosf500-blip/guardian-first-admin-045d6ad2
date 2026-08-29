@@ -85,6 +85,55 @@ describe('el ciclo que pidió el dueño', () => {
     expect(r.accion).toBe('llamar');
   });
 
+  it('⛔ los intentos de DÍAS ANTERIORES cuentan: no puede decir "2º" sobre el cuarto', () => {
+    // El bug: `gestion` es solo de HOY, así que un cliente con tres gestiones
+    // esta semana y ninguna hoy leía "2º intento" (el 1 lo aportaba el saliente).
+    // Decisión del dueño 28-ago-2026: se cuenta la semana.
+    const viejo = new Date(haceMin(ESPERA_REINTENTO_MIN + 60)).toISOString();
+    const sinHistorial = c({ actividad: act({ salienteAt: haceMin(ESPERA_REINTENTO_MIN + 60) }) });
+    expect(sinHistorial.etiqueta).toContain('2º intento');
+
+    const conHistorial = c({
+      actividad: act({ salienteAt: haceMin(ESPERA_REINTENTO_MIN + 60) }),
+      gestionPrevia: ges({ intentos: 3, ultimoAt: viejo }),
+    });
+    expect(conHistorial.intentosConocidos).toBe(3);
+    expect(conHistorial.etiqueta).toContain('4º intento');
+    expect(conHistorial.accion).toBe('llamar');
+  });
+
+  it('las de hoy SE SUMAN a las previas — los dos mapas viven aparte', () => {
+    // `gestionSegPorTelefono` (hoy, vivo) y `ultimaGestionSeg` (días anteriores,
+    // se lee al cargar) son disjuntos a propósito: fusionarlos daría de menos en
+    // cuanto la asesora marque el primer pedido del turno.
+    const r = c({
+      gestion: ges({ intentos: 1, ultimoAt: new Date(haceMin(ESPERA_REINTENTO_MIN + 5)).toISOString() }),
+      gestionPrevia: ges({ intentos: 2, ultimoAt: new Date(haceMin(60 * 24 * 2)).toISOString() }),
+    });
+    expect(r.intentos).toBe(1);          // el día, que es lo que firma el cierre
+    expect(r.intentosConocidos).toBe(3); // 1 de hoy + 2 de la semana
+    expect(r.etiqueta).toContain('4º intento');
+  });
+
+  it('⛔ el historial NO enfría el pedido ni lo saca de la cola de hoy', () => {
+    // Una gestión de anteayer no puede esconder un pedido que hoy hay que
+    // trabajar: `ultimoNuestroMs` sigue saliendo de hoy + el saliente.
+    const r = c({ gestionPrevia: ges({ intentos: 5, ultimoAt: new Date(haceMin(60 * 24 * 2)).toISOString() }) });
+    expect(r.estado).toBe('sin_tocar');
+    expect(enEspera(r)).toBe(false);
+    expect(r.ultimoNuestroMs).toBeNull();
+  });
+
+  it('el saliente de ImporChat no se SUMA a lo anotado: es el mismo mensaje', () => {
+    // Contarlo aparte mandaría a llamar antes de tiempo sobre un solo contacto.
+    const r = c({
+      actividad: act({ salienteAt: haceMin(ESPERA_REINTENTO_MIN + 10) }),
+      gestion: ges({ intentos: 1, ultimoAt: new Date(haceMin(ESPERA_REINTENTO_MIN + 10)).toISOString() }),
+    });
+    expect(r.intentosConocidos).toBe(1);
+    expect(r.etiqueta).toContain('2º intento');
+  });
+
   it('nadie le escribió nunca → "Sin avisar"', () => {
     const r = c({});
     expect(r.estado).toBe('sin_tocar');

@@ -9,6 +9,7 @@ import { useStore } from '@/contexts/StoreContext';
 import { useOrderNotesIndex } from '@/hooks/useOrderNotesIndex';
 import { useRiesgoChat } from '@/hooks/useRiesgoChat';
 import { compararRiesgo, contarPorRiesgo } from '@/lib/riesgoChat';
+import { estadoConversacion } from '@/lib/actividadChat';
 import ResumenRiesgoStrip from '@/components/confirmar/ResumenRiesgoStrip';
 import VelocimetroTurno from '@/components/confirmar/VelocimetroTurno';
 import MetaDiaBar from '@/components/confirmar/MetaDiaBar';
@@ -507,10 +508,29 @@ export default function ConfirmarTab({ profile }: Props) {
     const dueA = hasDueReminder({ nextReminderAt: remA });
     const dueB = hasDueReminder({ nextReminderAt: remB });
     if (dueA !== dueB) return dueA ? -1 : 1;
+    // ⛔ EL CLIENTE QUE ESCRIBIÓ Y ESPERA VA ARRIBA (decisión del dueño,
+    // 28-ago-2026). La fila ya mostraba «El cliente escribió … y sigue sin
+    // respuesta», pero eso era SOLO un chip: el pedido podía quedar en el puesto
+    // 200 y nadie lo veía. En Seguimiento el mismo hecho es rango 0
+    // (`rangoCiclo`) — la misma verdad movía una pantalla y no la otra.
+    //
+    // Va DEBAJO del recordatorio vencido a propósito: ese es una promesa con
+    // hora que el sistema garantiza por escrito ("vuelve solo al tope"), son
+    // pocos, y romperla cuesta más. Encima del riesgo de cancelación sí: alguien
+    // que acaba de escribir levantó la mano, y eso vale más que una probabilidad.
+    //
+    // Misma función que dibuja el chip en `WorkList` — si discreparan, el pedido
+    // rojo no quedaría arriba.
+    const espA = a.dbId ? estadoConversacion(chatActividad.get(a.dbId)) === 'espera_respuesta' : false;
+    const espB = b.dbId ? estadoConversacion(chatActividad.get(b.dbId)) === 'espera_respuesta' : false;
+    if (espA !== espB) return espA ? -1 : 1;
     const ra = a.dbId ? riesgoIndex.get(a.dbId) ?? null : null;
     const rb = b.dbId ? riesgoIndex.get(b.dbId) ?? null : null;
     return compararRiesgo(ra, rb);
-  }), [visibleQueue, filter, search, dateFrom, dateTo, notesIndex, riesgoIndex, onlyUntouched, myConfirmTouchedToday, gestionPorPedido, coverageConfirmError, user?.id, esAplazado]);
+    // `chatActividad` es dependencia REAL: sin ella el orden no se recalcularía
+    // cuando llega la respuesta de un cliente, que es justo el momento en que
+    // este criterio tiene que actuar.
+  }), [visibleQueue, filter, search, dateFrom, dateTo, notesIndex, riesgoIndex, chatActividad, onlyUntouched, myConfirmTouchedToday, gestionPorPedido, coverageConfirmError, user?.id, esAplazado]);
 
   // Resumen de la cola PENDIENTE por etiqueta de chat (para el strip de arriba).
   // Sobre `visibleQueue` (no `filteredItems`): el conteo tiene que reflejar TODA

@@ -24,6 +24,10 @@ export interface EstadoReparto {
   ignorados: number;
   sinOperadores: boolean;
   desbalance: number;
+  /** Entre cuántas personas se repartió DE VERDAD (las presentes hoy). */
+  entre: number;
+  /** Del plantel, cuántas quedaron afuera por no haber marcado entrada hoy. */
+  ausentes: number;
 }
 
 type RespuestaSuelta = PromiseLike<{
@@ -82,6 +86,20 @@ export function useSegAsignaciones() {
   const [operadores, setOperadores] = useState<string[]>([]);
   const [soportado, setSoportado] = useState(true);
   const [cargando, setCargando] = useState(false);
+  /**
+   * ⛔ `!cargando` NO es lo mismo que "ya sé".
+   *
+   * `cargando` arranca en `false` y solo se pone en `true` DENTRO de `cargar()`,
+   * que corre en un efecto: hay un render entero en el que no está cargando y
+   * tampoco leyó nada. Volviendo a `/seguimiento` desde otra pantalla la cola ya
+   * está en `OrderContext`, así que el auto-reparto podía dispararse en ese
+   * hueco viendo `asignaciones` vacío **porque todavía no había leído** — y
+   * `repartirCola` recalcula el equilibrio desde cero, apilándole a una sola
+   * persona todo lo que no tenía dueño.
+   *
+   * Esto se pone en `true` cuando la lectura TERMINÓ, aunque haya dado vacío.
+   */
+  const [cargado, setCargado] = useState(false);
   const [repartiendo, setRepartiendo] = useState(false);
   const seqRef = useRef(0);
 
@@ -114,6 +132,9 @@ export function useSegAsignaciones() {
     if (faltaLaMigracion(asigRes.error)) {
       setSoportado(false);
       setCargando(false);
+      // Se leyó y la respuesta fue "esa tabla no existe": es un resultado, no un
+      // pendiente. `soportado=false` ya apaga todo el camino de reparto.
+      setCargado(true);
       return;
     }
 
@@ -139,6 +160,11 @@ export function useSegAsignaciones() {
     }
 
     setCargando(false);
+    // ⛔ Solo si la lectura de asignaciones NO dio error. Un fallo de red deja
+    // `cargado` en false, y el auto-reparto —que lo exige— no corre: repartir
+    // creyendo que no hay dueños cuando en realidad no se pudo leer es
+    // exactamente el "cero que sustituye a no se pudo medir".
+    if (!asigRes.error) setCargado(true);
   }, [activeStoreId]);
 
   useEffect(() => { void cargar(); }, [cargar]);
@@ -174,21 +200,29 @@ export function useSegAsignaciones() {
         // se corrige re-repartiendo; NO repartirle a quien sí vino la deja sin
         // trabajo asignado todo el día.
         const presentes = await presenciaDeHoy();
-        const destinatarios = presentes && presentes.size > 0
+        const filtrados = presentes && presentes.size > 0
           ? operadores.filter((id) => presentes.has(id))
           : operadores;
+        // ⛔ `entre` es a QUIÉNES les tocó de verdad, y sube al llamador para que
+        // el aviso no mienta. El mensaje decía «Entre N asesoras» con el plantel
+        // COMPLETO aunque el reparto hubiera ido solo a las presentes: con 5 en
+        // la tienda y 3 trabajando, avisaba "entre 5". Y ese aviso es lo único
+        // que el jefe mira para saber si el reparto salió bien.
+        const destinatarios = filtrados.length > 0 ? filtrados : operadores;
+        const entre = destinatarios.length;
+        const ausentes = Math.max(0, operadores.length - entre);
 
         const plan = repartirCola({
           pedidos: orderIdsPorUrgencia.map((orderId) => ({ orderId })),
-          operadores: destinatarios.length > 0 ? destinatarios : operadores,
+          operadores: destinatarios,
           yaAsignados,
         });
 
         if (plan.motivoSinAsignar === 'sin_operadores') {
-          return { asignados: 0, ignorados: 0, sinOperadores: true, desbalance: 0 };
+          return { asignados: 0, ignorados: 0, sinOperadores: true, desbalance: 0, entre, ausentes };
         }
         if (plan.nuevas.length === 0) {
-          return { asignados: 0, ignorados: 0, sinOperadores: false, desbalance: desbalance(plan.cargaFinal) };
+          return { asignados: 0, ignorados: 0, sinOperadores: false, desbalance: desbalance(plan.cargaFinal), entre, ausentes };
         }
 
         const { data, error } = await (supabase.rpc as unknown as (
@@ -213,6 +247,8 @@ export function useSegAsignaciones() {
           ignorados: fila?.ignorados ?? 0,
           sinOperadores: false,
           desbalance: desbalance(plan.cargaFinal),
+          entre,
+          ausentes,
         };
       } finally {
         setRepartiendo(false);
@@ -251,6 +287,7 @@ export function useSegAsignaciones() {
     operadores,
     soportado,
     cargando,
+    cargado,
     repartiendo,
     repartir,
     reasignar,

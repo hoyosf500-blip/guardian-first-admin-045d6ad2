@@ -4,7 +4,6 @@ import { MessageSquare, Phone, MapPin, Package, Clock, Inbox, CheckCircle2, Load
 import { useStore } from '@/contexts/StoreContext';
 import { useInboxEsperando, type InboxItem } from '@/hooks/useInboxEsperando';
 import { useImporchatSyncHealth } from '@/hooks/useImporchatSyncHealth';
-import ImporchatSyncBadge from '@/components/chat/ImporchatSyncBadge';
 import { haceCuantoMs } from '@/lib/actividadChat';
 import { getWhatsAppPhone, formatPhone } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
@@ -85,7 +84,12 @@ export default function InboxPage() {
           Clientes que escribieron y nadie contestó todavía. El de arriba es el que lleva más esperando —
           a ninguno se lo deja enfriar.
         </p>
-        <div className="mt-2"><ImporchatSyncBadge size="md" /></div>
+        {/* ⛔ Acá había otro `ImporchatSyncBadge`. Desde el 28-ago-2026 el badge
+            vive en `ProtectedLayout`, al lado del de Dropi, para que se vea
+            también en Confirmar y Seguimiento —que dependen del MISMO dato y no
+            lo mostraban—. Dejar los dos pintaba la misma píldora dos veces en
+            esta pantalla. El banner rojo de abajo, que es propio de este listado,
+            no se toca. */}
       </header>
 
       {feedDudoso && (

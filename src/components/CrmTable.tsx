@@ -634,12 +634,12 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
       // "Gestionado hoy" (vuelve mañana); cierre = sale (snooze 30d).
       const label = isSegCloser(action) ? cleanSegAction(action) : 'Gestionado hoy';
       setResults(prev => ({ ...prev, [order.dbId!]: label }));
-      const inserted = await recordGestion(order.phone, module, action);
-      if (!inserted) {
-        // useRecordGestion NUNCA lanza: devuelve null si faltó teléfono o si el
-        // INSERT no entró (RLS, red). Festejar igual dejaba la card oculta con
-        // toast verde y CERO touchpoint: el contador de la asesora no se movía
-        // y al recargar el pedido reaparecía. Mismo contrato que SegBoard.
+      const { ok, fila } = await recordGestion(order.phone, module, action);
+      if (!ok) {
+        // useRecordGestion NUNCA lanza: `ok:false` = faltó teléfono o el INSERT
+        // no entró (RLS, red). Festejar igual dejaba la card oculta con toast
+        // verde y CERO touchpoint: el contador de la asesora no se movía y al
+        // recargar el pedido reaparecía. Mismo contrato que SegBoard.
         setResults(prev => {
           const next = { ...prev };
           delete next[order.dbId!];
@@ -648,7 +648,12 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
         toast.error('No se pudo registrar. Reintentá.');
         return;
       }
-      setTouchpoints(prev => [inserted as Touchpoint, ...prev]);
+      // ⛔ `fila` puede venir null CON `ok:true` (la base aceptó pero no devolvió
+      // la fila, o fue un doble clic que el candado anti-duplicado descartó). Eso
+      // NO es un fallo: se festeja igual y esta lista se pinta cuando llegue la
+      // relectura. Tratarlo como error era el bug de "no se pudo registrar" sobre
+      // una gestión guardada.
+      if (fila) setTouchpoints(prev => [fila as unknown as Touchpoint, ...prev]);
       toast.success(action);
     } finally {
       markingInFlightRef.current.delete(order.dbId);

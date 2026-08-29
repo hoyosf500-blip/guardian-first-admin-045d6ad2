@@ -29,8 +29,8 @@ export type GestionModule = 'SEG' | 'RESCUE' | 'NOVEDAD' | 'LLAMADA' | 'WHATSAPP
  * contador no se movía. Duplicar el formato del INSERT es exactamente lo que lo
  * causaría de nuevo — por eso vive en un solo lugar.
  *
- * Devuelve la fila insertada, o null si faltó teléfono/tienda/usuario o falló el
- * INSERT (nunca lanza: el llamador degrada sin romper la pantalla).
+ * Devuelve `{ ok, fila }` (nunca lanza: el llamador degrada sin romper la
+ * pantalla). Ver `ResultadoGestion` para por qué son DOS datos y no uno.
  */
 /**
  * Anti-duplicado, a nivel de MÓDULO (no por tarjeta).
@@ -49,7 +49,31 @@ export type GestionModule = 'SEG' | 'RESCUE' | 'NOVEDAD' | 'LLAMADA' | 'WHATSAPP
  * una tabla caliente (REGLA #0) y necesita su propia ventana.
  */
 type FilaTouchpoint = { created_at?: string } | null;
-const ULTIMA_GESTION = new Map<string, { at: number; fila: FilaTouchpoint }>();
+
+/**
+ * ⛔ "SE GUARDÓ" y "ME DEVOLVIÓ LA FILA" son dos preguntas distintas.
+ *
+ * Antes esto devolvía la fila a secas y el llamador decidía con `if (fila)`. Un
+ * INSERT que entra pero cuyo `.select()` vuelve vacío —RLS de lectura, respuesta
+ * recortada— le mostraba a la asesora **"No se pudo registrar. Reintentá."**
+ * sobre una gestión que SÍ quedó guardada. Y con el candado anti-duplicado de
+ * acá abajo el error se volvía pegajoso: el reintento dentro del minuto no
+ * inserta nada y repite el mismo cartel.
+ *
+ * `ok` sale de que la base NO devolvió error. `fila` es un extra: sirve para
+ * pintar el touchpoint al instante (`CrmTable`) y puede venir null sin que eso
+ * signifique que falló.
+ */
+export interface ResultadoGestion {
+  /** La base aceptó la gestión (o ya estaba registrada hace segundos). */
+  ok: boolean;
+  /** La fila insertada, si la base la devolvió. `null` NO significa fallo. */
+  fila: FilaTouchpoint;
+}
+
+const FALLO: ResultadoGestion = { ok: false, fila: null };
+
+const ULTIMA_GESTION = new Map<string, { at: number; resultado: ResultadoGestion }>();
 const VENTANA_ANTIDUP_MS = 60_000;
 
 export function useRecordGestion() {
@@ -57,17 +81,16 @@ export function useRecordGestion() {
   const { activeStoreId } = useStore();
 
   return useCallback(
-    async (phone: string, module: GestionModule, action: string) => {
-      if (!user || !activeStoreId || !phone) return null;
+    async (phone: string, module: GestionModule, action: string): Promise<ResultadoGestion> => {
+      if (!user || !activeStoreId || !phone) return FALLO;
 
-      // ⛔ Repetición reciente: se DESCARTA el INSERT pero se devuelve la fila
-      // anterior, NO null. Para la pantalla el clic funcionó — la gestión ya
-      // está registrada. Devolver null mostraría "No se pudo registrar,
-      // reintentá" sobre algo que sí se guardó, y la asesora insistiría: el
-      // error opuesto y peor.
+      // ⛔ Repetición reciente: se DESCARTA el INSERT pero se devuelve `ok`.
+      // Para la pantalla el clic funcionó — la gestión ya está registrada.
+      // Devolver un fallo mostraría "No se pudo registrar, reintentá" sobre algo
+      // que sí se guardó, y la asesora insistiría: el error opuesto y peor.
       const llave = `${activeStoreId}|${phone}|${module}: ${action}`;
       const previa = ULTIMA_GESTION.get(llave);
-      if (previa && Date.now() - previa.at < VENTANA_ANTIDUP_MS) return previa.fila;
+      if (previa && Date.now() - previa.at < VENTANA_ANTIDUP_MS) return previa.resultado;
 
       const now = new Date();
       const tp = {
@@ -79,9 +102,11 @@ export function useRecordGestion() {
         action_time: now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
       };
       const { data, error } = await supabase.from('touchpoints').insert(tp).select();
-      if (error) return null;
-      const fila = data?.[0] ?? null;
-      ULTIMA_GESTION.set(llave, { at: Date.now(), fila });
+      // ⛔ El veredicto lo da `error`, NO si volvió la fila. Ver `ResultadoGestion`.
+      if (error) return FALLO;
+      const resultado: ResultadoGestion = { ok: true, fila: data?.[0] ?? null };
+      const fila = resultado.fila;
+      ULTIMA_GESTION.set(llave, { at: Date.now(), resultado });
       // Recién ACÁ, con la fila confirmada por la base, se avisa a la pantalla.
       // Es lo que hace que el contador baje en el acto en vez de esperar un
       // realtime que sobre `touchpoints` no existía (ver `eventosGestion.ts`).
@@ -92,9 +117,9 @@ export function useRecordGestion() {
         modulo: module,
         accion: action,
         operatorId: user.id,
-        at: (fila as { created_at?: string } | null)?.created_at || now.toISOString(),
+        at: fila?.created_at || now.toISOString(),
       });
-      return fila;
+      return resultado;
     },
     [user, activeStoreId],
   );

@@ -9,7 +9,7 @@ import { MAX_DAILY_ATTEMPTS } from '@/lib/confirmarQueue';
 import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
 import { RIESGO_INFO, type NivelRiesgo } from '@/lib/riesgoChat';
-import type { ActividadChatOrden } from '@/lib/actividadChat';
+import { estadoConversacion, type ActividadChatOrden } from '@/lib/actividadChat';
 import OrderEditorDialog from '@/components/confirmar/OrderEditorDialog';
 import { useRefreshOrderRow } from '@/hooks/useRefreshOrderRow';
 import type { NoteIndex } from '@/hooks/useOrderNotesIndex';
@@ -174,7 +174,14 @@ export default function WorkList({ items, onOpenCall, notesIndex, riesgoIndex, a
               {(() => {
                 const a = o.dbId ? actividadChat?.get(o.dbId) : undefined;
                 if (!a) return null;
-                const esperando = a.entranteAt != null && (a.salienteAt == null || a.entranteAt > a.salienteAt);
+                // ⛔ `estadoConversacion`, NO una copia de su comparación. Acá
+                // estaba escrita a mano `entranteAt > salienteAt`, que da lo
+                // mismo hoy — y es exactamente cómo nacen las contradicciones que
+                // esta pantalla ya sufrió ("9 de 32" y "21 de 32" a la vez). Es
+                // además la MISMA función con la que ConfirmarTab ordena la cola:
+                // si el chip y el orden discreparan, el pedido rojo no estaría
+                // arriba.
+                const esperando = estadoConversacion(a) === 'espera_respuesta';
                 if (esperando) {
                   return (
                     <div className="mt-1.5 flex items-center gap-1.5 text-[11px] min-w-0">

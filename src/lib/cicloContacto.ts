@@ -85,8 +85,14 @@ export interface Ciclo {
   etiqueta: string | null;
   /** Qué toca hacer, para que la tarjeta pueda resaltar el botón correcto. */
   accion: AccionCiclo;
-  /** Cuántas veces se intentó contactar (lo que sabemos: gestiones de hoy). */
+  /** Gestiones registradas HOY. Es la cuenta del día, la que mira el cierre. */
   intentos: number;
+  /**
+   * Todo lo que sabemos que se intentó: gestiones de hoy + las de los días
+   * anteriores + el mensaje que registró ImporChat. Es lo que decide el número
+   * de la etiqueta ("3º intento") y el salto a llamar.
+   */
+  intentosConocidos: number;
   /** ms del último contacto NUESTRO (mensaje verificado o gestión registrada). */
   ultimoNuestroMs: number | null;
   /** ms del último mensaje del cliente, si contestó después. */
@@ -97,7 +103,7 @@ export interface Ciclo {
 
 const CERO: Ciclo = {
   estado: 'sin_tocar', etiqueta: null, accion: 'avisar',
-  intentos: 0, ultimoNuestroMs: null, respondioMs: null, vuelveEnMin: null,
+  intentos: 0, intentosConocidos: 0, ultimoNuestroMs: null, respondioMs: null, vuelveEnMin: null,
 };
 
 function haceTexto(ms: number, ahora: number): string {
@@ -125,11 +131,30 @@ function haceTexto(ms: number, ahora: number): string {
 export function cicloContacto(args: {
   actividad?: ActividadChatOrden | null;
   gestion?: GestionDelPedido | null;
+  /**
+   * Gestiones de los días ANTERIORES a hoy (de `OrderContext.ultimaGestionSeg`).
+   *
+   * ── Por qué entra por separado (decisión del dueño, 28-ago-2026) ───────────
+   * `gestion` es solo del día, así que a un cliente al que se le escribió tres
+   * veces esta semana la tarjeta le decía **"2º intento"**. El número que la
+   * asesora lee para decidir si sigue insistiendo o levanta el teléfono estaba
+   * mal, y siempre para el mismo lado: de menos.
+   *
+   * ⛔ Va aparte y NO se mezcla con `gestion` porque los dos mapas viven con
+   * relojes distintos: el de hoy se actualiza en vivo con cada clic, el de la
+   * semana solo se relee al cargar la pantalla. Sumarlos funciona; fusionarlos
+   * daría de menos apenas la asesora marque el primer pedido del turno.
+   *
+   * ⛔ Tampoco toca `ultimoNuestroMs`: una gestión de anteayer no puede enfriar
+   * un pedido ni sacarlo de la cola de hoy.
+   */
+  gestionPrevia?: GestionDelPedido | null;
   ahoraMs?: number;
 }): Ciclo {
   const ahora = args.ahoraMs ?? Date.now();
   const act = args.actividad ?? null;
   const g = args.gestion ?? null;
+  const previa = args.gestionPrevia ?? null;
 
   const salienteMs = act?.salienteAt ?? null;
   const gestionMs = g?.ultimoAt ? Date.parse(g.ultimoAt) : NaN;
@@ -137,9 +162,16 @@ export function cicloContacto(args: {
     .filter((x): x is number => x != null && Number.isFinite(x));
   const ultimoNuestroMs = candidatos.length ? Math.max(...candidatos) : null;
   const intentos = g?.intentos ?? 0;
+  // Todo lo que sabemos que salió hacia este cliente: lo de hoy + lo de los días
+  // anteriores + el mensaje que ImporChat registró (que puede no estar anotado
+  // como gestión). El `max` con el saliente y no la suma: ese mensaje es
+  // probablemente el MISMO que alguien anotó, y contarlo dos veces mandaría a
+  // llamar antes de tiempo.
+  const anotados = intentos + (previa?.intentos ?? 0);
+  const intentosConocidos = Math.max(anotados, salienteMs != null ? 1 : 0);
 
   if (ultimoNuestroMs == null) {
-    return { ...CERO, intentos, etiqueta: 'Sin avisar' };
+    return { ...CERO, intentos, intentosConocidos, etiqueta: 'Sin avisar' };
   }
 
   // ¿Contestó DESPUÉS de lo último que le mandamos? Es la única comparación que
@@ -150,7 +182,7 @@ export function cicloContacto(args: {
       estado: 'respondio',
       etiqueta: `Te respondió · ${haceTexto(entrante, ahora)}`,
       accion: 'atender',
-      intentos, ultimoNuestroMs, respondioMs: entrante, vuelveEnMin: null,
+      intentos, intentosConocidos, ultimoNuestroMs, respondioMs: entrante, vuelveEnMin: null,
     };
   }
 
@@ -165,19 +197,24 @@ export function cicloContacto(args: {
       // obliga a la asesora a dividir de cabeza en medio de la llamada.
       etiqueta: `Escrito ${haceTexto(ultimoNuestroMs, ahora)} · vuelve ${textoEspera(vuelveEnMin)}`,
       accion: null,
-      intentos, ultimoNuestroMs, respondioMs: null, vuelveEnMin,
+      intentos, intentosConocidos, ultimoNuestroMs, respondioMs: null, vuelveEnMin,
     };
   }
 
   // Pasó la espera y no dijo nada. Al tercer intento el chat no está
   // funcionando con esta persona: se manda al teléfono.
   //
-  // ⛔ `intentos` solo cuenta las gestiones de HOY (así viene de la base). Un
-  // pedido al que le escribimos hace tres días y nadie volvió a tocar traía
-  // `intentos = 0` y la etiqueta decía **"1º intento"** sobre alguien que ya
-  // recibió un mensaje — visto en pantalla el 28-ago-2026. Si ImporChat
-  // registra un saliente, hubo al menos un intento, lo hayamos anotado o no.
-  const hechos = Math.max(intentos, salienteMs != null ? 1 : 0);
+  // ⛔ El número sale de `intentosConocidos`, NO de `intentos`.
+  //
+  // `intentos` solo cuenta las gestiones de HOY (así viene de la base), y con eso
+  // la etiqueta decía **"2º intento"** sobre un cliente que ya había recibido
+  // cuatro mensajes esta semana — y el salto a llamar llegaba tarde. Decisión del
+  // dueño (28-ago-2026): se cuenta la SEMANA. Ver `gestionPrevia`.
+  //
+  // Lo que NO cambia: la cola de llamadas la sigue decidiendo `tocaLlamar()`
+  // (`escalarLlamada.ts`), que mira las HORAS desde nuestro último mensaje. Acá
+  // solo se decide qué dice la etiqueta y hacia dónde apunta `accion`.
+  const hechos = intentosConocidos;
   const numero = hechos + 1;
   const llamar = hechos >= INTENTOS_ANTES_DE_LLAMAR;
   return {
@@ -186,7 +223,7 @@ export function cicloContacto(args: {
       ? `${numero}º intento · mejor llamá`
       : `${numero}º intento · no contestó ${haceTexto(ultimoNuestroMs, ahora)}`,
     accion: llamar ? 'llamar' : 'insistir',
-    intentos, ultimoNuestroMs, respondioMs: null, vuelveEnMin: null,
+    intentos, intentosConocidos, ultimoNuestroMs, respondioMs: null, vuelveEnMin: null,
   };
 }
 

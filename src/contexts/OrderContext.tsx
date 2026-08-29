@@ -108,10 +108,13 @@ interface OrderState {
    *  `mySegTouchedToday`, que es personal. */
   gestionSegPorTelefono: Map<string, GestionDelPedido>;
   /**
-   * Última gestión de Seguimiento por teléfono en los ÚLTIMOS 7 DÍAS.
-   * SOLO para mostrar en la tarjeta: nunca bloquea ni cuenta como trabajo de
-   * hoy. Contesta *"¿alguien ya lo trabajó, aunque no haya sido hoy?"* — el
-   * hueco por el que la asesora repetía el reclamo de una compañera.
+   * Última gestión de Seguimiento por teléfono en los 7 días ANTERIORES a hoy
+   * (hoy queda fuera: vive en `gestionSegPorTelefono`, que además está vivo).
+   *
+   * Nunca bloquea ni cuenta como trabajo de hoy. Contesta *"¿alguien ya lo
+   * trabajó, aunque no haya sido hoy?"* — el hueco por el que la asesora
+   * repetía el reclamo de una compañera — y le da a `cicloContacto` los
+   * intentos de días anteriores para que la etiqueta no diga "2º" sobre el 4º.
    */
   ultimaGestionSeg: Map<string, GestionDelPedido>;
   /** Como va HOY cada asesora (conf/canc/noresp), misma dedup que el contador
@@ -620,10 +623,20 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       const next = buildGestionSegPorTelefono(deHoy);
       return mismaGestion(prev, next) ? prev : next;
     });
-    // Solo para MOSTRAR: quién fue el último en tocarlo en la semana. Nunca
-    // bloquea — un contacto de anteayer no puede impedir trabajarlo hoy.
+    // Lo de los días ANTERIORES a hoy. Nunca bloquea — un contacto de anteayer
+    // no puede impedir trabajarlo hoy — y hace dos trabajos:
+    //   · la tarjeta dice quién lo intentó cuando hoy no lo tocó nadie;
+    //   · `cicloContacto` le suma sus `intentos` a los de hoy para que la
+    //     etiqueta diga "4º intento" y no "2º" (decisión del dueño, 28-ago).
+    //
+    // ⛔ EXCLUYE hoy a propósito. Si trajera también las de hoy, la suma
+    // `previa + hoy` contaría dos veces cada gestión de la mañana. Y no alcanza
+    // con "restar": este mapa se arma UNA vez al cargar, mientras que el de hoy
+    // sigue creciendo en vivo con cada clic — separados, los dos quedan bien
+    // durante todo el turno.
+    const previas = filas.filter(r => r.created_at < todayStartIso);
     setUltimaGestionSeg(prev => {
-      const next = buildGestionSegPorTelefono(filas);
+      const next = buildGestionSegPorTelefono(previas);
       return mismaGestion(prev, next) ? prev : next;
     });
     setCoverageSegError(false);

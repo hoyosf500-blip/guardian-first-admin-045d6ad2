@@ -27,13 +27,28 @@ interface Props {
    *  y su acción. Además le ahorra una fila entera a la asesora, que no lo ve. */
   onRepartir?: () => void;
   repartiendo?: boolean;
+  /**
+   * Quién está mirando el panel. Desde el 28-ago-2026 lo ven TODAS, no solo los
+   * jefes — y la asesora entraba a buscar su propio nombre entre cuatro filas
+   * para saber cuánto le faltaba. Su fila va primera y marcada.
+   *
+   * `null`/ausente = no se sabe: no se resalta ninguna. Nunca se adivina.
+   */
+  yoId?: string | null;
 }
 
 /** `null` = no se pudo medir. NUNCA se dibuja como 0 — ver la regla en turnoDelEquipo.ts. */
 const cifra = (n: number | null) => (n === null ? '—' : String(n));
 
-export default function TurnoDelEquipoPanel({ resumen, nombreDe, onRepartir, repartiendo }: Props) {
+export default function TurnoDelEquipoPanel({ resumen, nombreDe, onRepartir, repartiendo, yoId }: Props) {
   const { filas, sinDueno, totalAccionable, tocadosTotal, medible } = resumen;
+
+  // Mi fila primero. El orden entre las demás NO se toca (viene calculado desde
+  // `turnoDelEquipo`): solo se sube la propia, que es la única que la asesora
+  // busca. `sort` de ES2019 es estable, así que el resto queda como estaba.
+  const filasOrdenadas = yoId
+    ? [...filas].sort((a, b) => Number(b.operatorId === yoId) - Number(a.operatorId === yoId))
+    : filas;
 
   // Sin cola accionable no hay turno que mirar. Dibujar una tabla vacía sería
   // ruido justo en la pantalla que vino a quitar ruido.
@@ -99,9 +114,10 @@ export default function TurnoDelEquipoPanel({ resumen, nombreDe, onRepartir, rep
         </p>
       ) : (
         <ul className="divide-y divide-border/60">
-          {filas.map((f) => {
+          {filasOrdenadas.map((f) => {
             const falta = f.sinTocar;
             const alDia = falta === 0;
+            const esMia = !!yoId && f.operatorId === yoId;
             // De lo que le falta, cuánto SÍ intentó sin que le contestaran. Un
             // "no contestó" deja el pedido pendiente para todo el equipo (por eso
             // no cuenta como gestionado), pero decirle "sin tocar" a quien llamó
@@ -109,9 +125,22 @@ export default function TurnoDelEquipoPanel({ resumen, nombreDe, onRepartir, rep
             // para decidir a quién reclamarle.
             const intentos = f.intentadosSinRespuesta ?? 0;
             return (
-              <li key={f.operatorId} className="flex items-center gap-3 px-4 py-2.5">
-                <span className="min-w-0 flex-1 truncate text-xs font-semibold">
+              <li
+                key={f.operatorId}
+                className={cn(
+                  'flex items-center gap-3 px-4 py-2.5',
+                  // Riel a la izquierda + fondo tenue: se encuentra de un vistazo
+                  // sin gritar. El "Vos" al lado del nombre es lo que de verdad lo
+                  // resuelve en blanco y negro o para quien no distinga el tono.
+                  esMia && 'relative bg-accent/8',
+                )}
+              >
+                {esMia && (
+                  <span className="absolute left-0 top-0 bottom-0 w-[3px] bg-accent" aria-hidden="true" />
+                )}
+                <span className={cn('min-w-0 flex-1 truncate text-xs font-semibold', esMia && 'text-accent')}>
                   {nombreDe(f.operatorId)}
+                  {esMia && <span className="ml-1.5 font-normal text-[10px] uppercase tracking-wide opacity-80">vos</span>}
                 </span>
 
                 <span className="shrink-0 text-[11px] text-muted-foreground font-mono tabular-nums">

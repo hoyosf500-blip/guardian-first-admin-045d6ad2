@@ -18,7 +18,7 @@ import { useOperatorNames } from '@/hooks/useOperatorNames';
 import { useRefreshOrder } from '@/hooks/useRefreshOrder';
 import { useRecordGestion } from '@/hooks/useRecordGestion';
 import { useStore } from '@/contexts/StoreContext';
-import { useWaChat } from '@/contexts/WaChatContext';
+import { copiarAlPortapapeles } from '@/lib/portapapeles';
 import { useSessionState } from '@/hooks/useSessionState';
 import { TiltCard } from '@/components/ui3d';
 import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDialog';
@@ -279,7 +279,11 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   const navigate = useNavigate();
   const { refresh, isRefreshing } = useRefreshOrder();
   const { activeStoreId } = useStore();
-  const { openChat, waEnabled } = useWaChat();
+  // ⛔ Acá se llamaba a `useWaChat()` para un botón que ya no existe (el de
+  // WhatsApp propio, muerto desde que se retiró el bot). Quedaban `openChat` y
+  // `waEnabled` sin ningún consumidor: ~400 tarjetas suscribiéndose a un
+  // contexto para nada. TypeScript no lo marca (`noUnusedLocals: false`) ni
+  // ESLint tampoco, así que solo se ve leyendo.
   const recordGestion = useRecordGestion();
   // Guarda la ACCIÓN elegida (no un booleano): la tarjeta confirma "Envié la
   // guía ✓" en vez de un "listo" que no dice qué se hizo.
@@ -336,7 +340,10 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
     if (enVueloRef.current || yaGestionada || !o.phone) return;
     enVueloRef.current = true;
     setGestionando(true);
-    const ok = await recordGestion(o.phone, 'SEG', metodo);
+    // ⛔ El veredicto es `ok`, no si volvió la fila: un INSERT que entra pero no
+    // devuelve nada mostraba "No se pudo registrar" sobre una gestión guardada,
+    // y con el candado anti-duplicado el cartel se repetía en el reintento.
+    const { ok } = await recordGestion(o.phone, 'SEG', metodo);
     setGestionando(false);
     enVueloRef.current = false;
     if (ok) {
@@ -362,7 +369,11 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   // El ciclo de contacto: qué pasó con lo último que le mandamos y qué toca
   // ahora. Reemplaza cuatro familias de etiquetas — ver el bloque de la
   // etiqueta más abajo y `cicloContacto.ts`.
-  const ciclo = cicloContacto({ actividad, gestion: gEquipo, ahoraMs: ahoraTick });
+  // `gPrevia` va SIEMPRE (no solo cuando no hubo nada hoy, que es como se elige
+  // qué mostrar en el renglón de historial): los intentos de la semana se suman
+  // a los de hoy para que el número de la etiqueta sea el de verdad.
+  const gPrevia = o.phone ? historialEquipo?.get(o.phone) : undefined;
+  const ciclo = cicloContacto({ actividad, gestion: gEquipo, gestionPrevia: gPrevia, ahoraMs: ahoraTick });
   // El detalle SÍ se conserva, pero en el `title`: las dos fuentes (lo que
   // ImporChat registró y lo que declaró la asesora) y quién lo tocó. Era lo que
   // ocupaba cuatro renglones en la cara de la tarjeta.
@@ -584,8 +595,13 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
             necesitan para pegarlo en Dropi). Antes era texto suelto dentro de
             una tarjeta clicable: seleccionarlo con el mouse abría el pedido, así
             que en la práctica no se podía copiar. `stopPropagation` obligatorio
-            por lo mismo. Sin `navigator.clipboard` (contexto no seguro) no se
-            finge: avisa que no se pudo. */}
+            por lo mismo.
+
+            ⛔ La copia va por `copiarAlPortapapeles`, que SÍ avisa cuando no
+            pudo. La versión anterior era `navigator.clipboard?.writeText(n)
+            .then(…).catch(…)`: el `?.` corta la cadena entera, así que en
+            contexto no seguro no copiaba NI avisaba — y el comentario de acá
+            afirmaba lo contrario. Ver `portapapeles.ts`. */}
         {o.externalId
           ? (
             <button
@@ -593,9 +609,12 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
               onClick={(e) => {
                 e.stopPropagation();
                 const n = String(o.externalId);
-                navigator.clipboard?.writeText(n)
-                  .then(() => toast.success(`Copiado: ${n}`))
-                  .catch(() => toast.error('No se pudo copiar. Anotalo a mano.'));
+                void copiarAlPortapapeles(n).then((ok) => {
+                  if (ok) toast.success(`Copiado: ${n}`);
+                  // El número va en el mensaje: si no se pudo copiar, al menos
+                  // queda a la vista para transcribirlo sin abrir el pedido.
+                  else toast.error(`No se pudo copiar. El número es ${n}`);
+                });
               }}
               title={`Copiar el número ${o.externalId}`}
               className="group/copy mt-1 flex max-w-full items-center gap-1 text-[11px] text-muted-foreground font-mono tabular-nums hover:text-foreground transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded"
@@ -1483,6 +1502,10 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
       // `cicloContacto` por render** (3,9 ms) contra 585 (0,85 ms) así. Y el
       // tablero se reordena con cada latido del reloj y con cada push de
       // realtime, no una vez.
+      // ⛔ Acá NO va `gestionPrevia`, a propósito: lo único que se usa es
+      // `rangoCiclo`, que mira el ESTADO (respondió / enfriando / resto) y no el
+      // número de intentos. Pasarlo obligaría a reordenar las ~600 tarjetas
+      // cuando carga el historial, para que el orden quede exactamente igual.
       const clave = new Map<OrderData, { inc: number; rango: number; dias: number }>();
       for (const o of arr) {
         const c = cicloContacto({
@@ -1545,6 +1568,8 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
     for (const c of todasLasColumnas) {
       let enfriando = 0;
       for (const o of c.orders) {
+        // Sin `gestionPrevia`, igual que el orden de arriba: `enEspera` mira el
+        // reloj del último contacto, no cuántos intentos hubo.
         const ci = cicloContacto({ actividad: actividadChat?.get(String(o.dbId ?? '')), gestion: gestionEquipo?.get(o.phone ?? ''), ahoraMs: ahoraTick });
         if (enEspera(ci)) enfriando += 1;
       }

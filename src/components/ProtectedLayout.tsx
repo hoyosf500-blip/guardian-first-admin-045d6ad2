@@ -24,6 +24,7 @@ import { leerTiendaPendiente, olvidarTiendaPendiente, type TiendaPendiente } fro
 import { esSesionFantasma, MENSAJE_SESION_FANTASMA } from '@/lib/sesionFantasma';
 import StoreSelector from '@/components/StoreSelector';
 import SyncFreshness from '@/components/SyncFreshness';
+import ImporchatSyncBadge from '@/components/chat/ImporchatSyncBadge';
 import type { LucideIcon } from 'lucide-react';
 import { IconRail, HudTopbar, AuroraBackdrop } from '@/components/ui3d';
 
@@ -546,7 +547,23 @@ function ProtectedLayoutInner() {
                   </div>
                 )}
                 {store.needsSetup && <ConectarDropiBanner onAbrir={() => setWizardOpen(true)} />}
-                <div className="mb-3"><SyncFreshness /></div>
+                {/* ⛔ LA FRESCURA DE IMPORCHAT VA AL LADO DE LA DE DROPI
+                    (28-ago-2026). El badge existía y estaba probado, pero solo
+                    se dibujaba en `/admin` —que es managerOnly, o sea que la
+                    asesora NUNCA lo veía— y en `/inbox`.
+                    Y de `orders.chat_*` cuelga TODO el vocabulario nuevo de
+                    Confirmar y Seguimiento: la rayita verde, "Te respondió",
+                    "toca llamar", el ciclo entero. Lo escribe `importchat-sync`,
+                    que se ha quedado colgado en `running`. Con ese sync trabado
+                    un cliente que escribió hace dos horas no aparece esperando y
+                    la pantalla se ve igual de tranquila que si no hubiera nadie
+                    — el "cero que sustituye a no se pudo medir", aplicado a
+                    todas las etiquetas a la vez.
+                    En tiendas sin ImporChat el badge devuelve `null`. */}
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <div className="min-w-0 flex-1"><SyncFreshness /></div>
+                  <ImporchatSyncBadge />
+                </div>
                 {/* "Lo que sigue" — pieza A del protocolo del turno. Va DEBAJO
                     de los banners de salud (si el sync está roto, eso manda) y
                     ARRIBA del contador y del contenido: es lo primero que se

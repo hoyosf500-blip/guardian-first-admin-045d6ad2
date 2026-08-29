@@ -383,8 +383,14 @@ export default function SeguimientoTab() {
       });
       return;
     }
+    // ⛔ `r.entre`, NO `asig.operadores.length`. El reparto va solo a quien marcó
+    // entrada hoy, pero el aviso seguía contando el plantel completo: con 5 en la
+    // tienda y 3 trabajando decía "entre 5 asesoras". Los ausentes se NOMBRAN en
+    // número — si el jefe esperaba que fueran 5, tiene que enterarse acá y no
+    // descubrirlo mañana viendo pedidos sin gestionar.
     toast.success(`${r.asignados} pedido${r.asignados === 1 ? '' : 's'} repartido${r.asignados === 1 ? '' : 's'}`, {
-      description: `Entre ${asig.operadores.length} asesora${asig.operadores.length === 1 ? '' : 's'}.`
+      description: `Entre ${r.entre} asesora${r.entre === 1 ? '' : 's'} que marcaron entrada hoy.`
+        + (r.ausentes > 0 ? ` ${r.ausentes} no marcaron y no recibieron nada.` : '')
         + (r.ignorados > 0 ? ` ${r.ignorados} ya tenían dueño.` : ''),
     });
   }, [dedupedByDate, asig]);
@@ -400,13 +406,23 @@ export default function SeguimientoTab() {
   //   · `yaIntentadoRef` — no se dispara dos veces en la misma sesión aunque el
   //     tablero se vuelva a renderizar.
   //   · la llave de localStorage por tienda+día — no se repite al recargar (F5).
-  //   · `asignaciones.size === 0` — si ya hay reparto, no toca nada.
+  //   · `asig.cargado` + `asignaciones.size === 0` — si ya hay reparto, no toca
+  //     nada. Los DOS: ver abajo.
   // La llave se sella ANTES de llamar: si el reparto falla, no se reintenta en
   // bucle contra la base. El botón manual queda para eso y para re-repartir
   // cuando entra alguien tarde.
+  //
+  // ⛔ Se exige `asig.cargado`, NO `!asig.cargando` (bug propio, 28-ago-2026).
+  // `cargando` arranca en false y solo se prende dentro de `cargar()`: hay un
+  // render en el que no está cargando y tampoco leyó. Volviendo acá desde otra
+  // pantalla la cola ya está en `OrderContext`, así que ese hueco era alcanzable
+  // — y repartir viendo el mapa vacío "porque todavía no leí" recalcula el
+  // equilibrio desde cero y le apila a una sola persona todo lo que no tenía
+  // dueño. La llave del día tapaba el caso normal, no el de otra máquina, otro
+  // jefe o una ventana de incógnito.
   const yaIntentadoRef = useRef(false);
   useEffect(() => {
-    if (!isManagerOfActive || !asig.soportado || asig.cargando) return;
+    if (!isManagerOfActive || !asig.soportado || !asig.cargado) return;
     if (yaIntentadoRef.current || !activeStoreId) return;
     // Sin cola cargada no se reparte: repartir una lista vacía sellaría el día
     // sin haber asignado nada.
@@ -418,7 +434,7 @@ export default function SeguimientoTab() {
     try { if (localStorage.getItem(llave)) return; localStorage.setItem(llave, '1'); } catch { /* sin storage: se reparte igual, una vez por sesión */ }
     yaIntentadoRef.current = true;
     void repartirColaDeHoy();
-  }, [isManagerOfActive, asig.soportado, asig.cargando, asig.asignaciones, activeStoreId, segLoaded, dedupedByDate.length, repartirColaDeHoy]);
+  }, [isManagerOfActive, asig.soportado, asig.cargado, asig.asignaciones, activeStoreId, segLoaded, dedupedByDate.length, repartirColaDeHoy]);
 
   // Vista de dueño (pieza D). Se calcula sobre la COLA ACCIONABLE, la misma
   // población que el hero y que el guard de inactividad — si midiera otra cosa,
@@ -466,7 +482,13 @@ export default function SeguimientoTab() {
     return () => clearInterval(id);
   }, []);
 
-  /** El ciclo de un pedido, con las dos fuentes que ya tiene la pantalla. */
+  /** El ciclo de un pedido, con las dos fuentes que ya tiene la pantalla.
+   *
+   *  ⛔ Sin `gestionPrevia` a propósito: de acá solo se lee `enEspera` (qué se
+   *  esconde y qué falta), que depende del RELOJ del último contacto y no de
+   *  cuántos intentos hubo. Los intentos de la semana los usa la TARJETA, que
+   *  calcula su propio ciclo con el historial. Pasarlo acá recalcularía la
+   *  pantalla entera para dar exactamente el mismo resultado. */
   const cicloDe = useCallback(
     (o: OrderData) => cicloContacto({
       actividad: o.dbId ? chatActividad.get(String(o.dbId)) : null,
@@ -1482,6 +1504,7 @@ export default function SeguimientoTab() {
               nombreDe={nombreDeAsesora}
               onRepartir={isManagerOfActive ? repartirColaDeHoy : undefined}
               repartiendo={asig.repartiendo}
+              yoId={user?.id ?? null}
             />
           </motion.div>
         )}
