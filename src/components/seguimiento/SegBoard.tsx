@@ -266,7 +266,7 @@ const COLUMN_PAGE = 30;
  *  el pedido y no desde que entró a este estado. La cuenta sigue viva y con
  *  nombre propio en `segPulso` (`diasSinMovimiento`, `estaDetenido`). */
 
-const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, touchedTodayPhones, gestionEquipo, nombreDe, avisoMs, columnLabel, actividad, ahoraTick, novedadCerrada }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisoMs?: number | null; columnLabel?: string; actividad?: ActividadChatOrden | null;
+const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, touchedTodayPhones, gestionEquipo, historialEquipo, nombreDe, avisoMs, columnLabel, actividad, ahoraTick, novedadCerrada, ampliada }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; historialEquipo?: Map<string, GestionDelPedido>; ampliada?: boolean; nombreDe?: (id?: string | null) => string; avisoMs?: number | null; columnLabel?: string; actividad?: ActividadChatOrden | null;
   /** La novedad de este pedido ya la cerró (o dejó vencer) la transportadora:
    *  Dropi rechaza resolverla. `undefined` = no se sabe → no se afirma nada. */
   novedadCerrada?: boolean;
@@ -302,6 +302,9 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   // inmediata al click, antes de que el realtime actualice el set.
   // Gestion del EQUIPO sobre este telefono hoy (quien, que metodo, a que hora).
   const gEquipo = o.phone ? gestionEquipo?.get(o.phone) : undefined;
+  // Lo de la SEMANA. Solo se usa si no hubo nada hoy: si hay gestión de hoy, esa
+  // manda (es la más fresca y la que además bloquea).
+  const gHistoria = !gEquipo && o.phone ? historialEquipo?.get(o.phone) : undefined;
   // Cuenta como gestionada si la trabajo CUALQUIERA, no solo yo. Antes solo
   // miraba `touchedTodayPhones` (personal): a una asesora le seguia apareciendo
   // como pendiente un pedido que otra ya habia trabajado esa manana, y volver a
@@ -404,7 +407,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
         // la regla de compatibilidad de index.css ya opaca .bg-card/40 con
         // :root:not(.dark) — por eso NO hace falta pasarlo a bg-card, y hacerlo
         // solo rompería el vidrio en oscuro, que es el look aprobado.
-        'group bg-card/40 rounded-xl border p-3.5 shadow-card3d cursor-pointer transition-colors duration-150 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
+        'group relative bg-card/40 rounded-xl border p-3.5 shadow-card3d cursor-pointer transition-colors duration-150 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
         // Estados terminales (entregado/devolución/cancelado/indemnizada) van
         // atenuados: la asesora no tiene nada que hacer con ellos y competían
         // visualmente con las columnas donde sí hay trabajo.
@@ -416,6 +419,31 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
         tone && !selected ? cn('border-t-2', TONE[tone].headBar) : '',
       )}
     >
+      {/* ⛔ RIEL VERDE = SE LE PUEDE ESCRIBIR AHORA (28-ago-2026).
+          Pedido del dueño: *"a los chats que estén disponibles ponelos con color
+          verde para diferenciarlos"*. "Disponible" es la ventana de 24 h de Meta
+          abierta: se le puede mandar un mensaje escrito a mano, sin plantilla.
+          `ventanaChat` ya se calculaba acá para el globo del botón de
+          conversación, así que no cuesta ni una consulta.
+
+          Va de riel IZQUIERDO y no de borde: el borde ya lo usan el foco
+          (`border-accent`) y el riel SUPERIOR de la fase. Tres cosas peleando
+          por el mismo borde terminan tapándose entre sí.
+
+          ⛔ Solo con `'abierta'`. `sin_dato` NO es "cerrada": no saber si la
+          ventana está abierta jamás se pinta como que no lo está — se deja sin
+          color, que es lo honesto.
+
+          No confundir con el chip rojo "Te respondió": ese dice que ALGUIEN TE
+          ESPERA; este dice que PODÉS ESCRIBIRLE. Un pedido puede tener los dos,
+          y son la misma pregunta solo por casualidad. Está en el glosario. */}
+      {ventanaChat.estado === 'abierta' && (
+        <span
+          className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl bg-success"
+          aria-hidden="true"
+        />
+      )}
+
       {/* Fila de badges arriba (patrón del handoff: "● D3  PRIORIDAD"), para que
           el nombre del cliente use TODO el ancho de la columna en vez de pelear
           espacio con los badges. Era la causa principal del amontonamiento. */}
@@ -634,15 +662,17 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
         {/* Blancos táctiles dentro de una tarjeta que YA es clickeable: sin
             separación real y con menos de 44px, un toque impreciso disparaba la
             acción vecina o navegaba al detalle. gap-2 + 44px mínimo cada uno.
-            El layout tolera 1 a 4 botones: rastrear depende de que haya URL
-            de transportadora, Llamar del teléfono normalizable, y WhatsApp de
-            waEnabled + teléfono.
-
-            Jerarquía: WhatsApp es la acción REAL (es como se contacta al
-            cliente) y va tintado; rastrear, refrescar y llamar son secundarias
-            y van fantasma. */}
+            ⛔ MENOS BOTONES EN EL TABLERO (28-ago-2026). El dueño:
+            *"siento que en Seguimiento hay muchos botones, simplifiquemos"*.
+            Eran hasta 8 controles por tarjeta ×100 tarjetas por columna.
+            **Rastrear** y **refrescar desde Dropi** salieron de la vista normal:
+            no se usan de un vistazo (el tablero ya se sincroniza solo cada ~11
+            min y hay un «Sincronizar» global arriba). NO se pierde nada — los
+            dos siguen en la vista AMPLIADA de la columna y en la ficha del
+            pedido. En la tarjeta quedan las que deciden y actúan: llamar y ver
+            la conversación. */}
         <div className="flex items-center gap-2 shrink-0">
-          {(trackUrl || carrierHome) && (
+          {ampliada && (trackUrl || carrierHome) && (
             <a
               href={trackUrl || carrierHome || '#'}
               target="_blank" rel="noopener noreferrer"
@@ -654,6 +684,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
               <ExternalLink size={14} aria-hidden="true" />
             </a>
           )}
+          {ampliada && (
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); void refresh(activeStoreId, o.externalId); }}
@@ -664,6 +695,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           >
             <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} aria-hidden="true" />
           </button>
+          )}
           {/* Llamar SIN gate de waEnabled: en una tienda sin canal de WhatsApp
               esta era la ÚNICA forma de contactar y no existía — la operadora
               abría el detalle en cada llamada. Mismo patrón que CrmTable:
@@ -681,20 +713,12 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
               <Phone size={14} aria-hidden="true" />
             </a>
           )}
-          {waEnabled && waPhone && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                void openChat({ phone: o.phone, name: o.nombre });
-              }}
-              title="Abrir chat de WhatsApp (ver el bot / escribir)"
-              aria-label="Abrir chat de WhatsApp"
-              className="p-2 min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg bg-success/12 border border-success/30 text-success hover:bg-success/20 hover:border-success/60 transition-colors"
-            >
-              <MessageCircle size={14} aria-hidden="true" />
-            </button>
-          )}
+          {/* ⛔ Acá había un botón de WhatsApp gateado por `waEnabled`, que NUNCA
+              se dibujaba: `WaChatContext` es un stub con `waEnabled=false` desde
+              que se retiró el bot propio. Ocupaba lugar en la lectura del
+              archivo y sumaba al recuento de botones sin existir en pantalla.
+              Escribirle al cliente se hace con el botón de la conversación de
+              acá al lado, que es el que anda. */}
           {/* LA CONVERSACIÓN (ImporChat). Solo aparece si el chat está leído:
               sin ese dato no hay hilo que mostrar.
 
@@ -773,20 +797,30 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
                 *"no hay etiquetas de si tocaron ese pedido"*.
                 Que NO bloquee es a propósito y no se toca —el pedido sigue
                 necesitando trabajo—; lo que faltaba era decirlo. */}
-            {gEquipo && (
-              <div
-                className="mt-2.5 flex items-center gap-1.5 rounded-lg border border-border bg-card/40 px-2 py-1 text-[11px] text-muted-foreground"
-                title={`${nombreDe ? nombreDe(gEquipo.ultimoPor) : 'Una asesora'} ya lo trabajó hoy: ${gEquipo.ultimoResult}. Sigue en la cola porque no se pudo hablar con el cliente.`}
-              >
-                <History size={10} aria-hidden="true" className="shrink-0" />
-                <span className="truncate">
-                  <b className="font-semibold text-foreground">{nombreDe ? nombreDe(gEquipo.ultimoPor) : 'Una asesora'}</b>
-                  {` · ${gEquipo.ultimoResult}`}
-                  {haceCuanto(gEquipo.ultimoAt) ? ` · ${haceCuanto(gEquipo.ultimoAt)}` : ''}
-                  {gEquipo.intentos > 1 ? ` · ${gEquipo.intentos} intentos hoy` : ''}
-                </span>
-              </div>
-            )}
+            {/* Si no hubo nada HOY, se muestra lo de la SEMANA (`gHistoria`).
+                El dueño lo reportó así: *"esa Soledad, yo sé que Roberto la
+                tocó y no sale"*. Tenía razón: el mapa era de hoy y Roberto la
+                había reclamado el 27. La asesora siguiente volvía a reclamarla. */}
+            {(gEquipo || gHistoria) && (() => {
+              const g = gEquipo ?? gHistoria!;
+              const deHoy = !!gEquipo;
+              return (
+                <div
+                  className="mt-2.5 flex items-center gap-1.5 rounded-lg border border-border bg-card/40 px-2 py-1 text-[11px] text-muted-foreground"
+                  title={deHoy
+                    ? `${nombreDe ? nombreDe(g.ultimoPor) : 'Una asesora'} ya lo trabajó hoy: ${g.ultimoResult}. Sigue en la cola porque no se pudo hablar con el cliente.`
+                    : `${nombreDe ? nombreDe(g.ultimoPor) : 'Una asesora'} lo trabajó en los últimos días: ${g.ultimoResult}. No bloquea nada — podés seguir vos.`}
+                >
+                  <History size={10} aria-hidden="true" className="shrink-0" />
+                  <span className="truncate">
+                    <b className="font-semibold text-foreground">{nombreDe ? nombreDe(g.ultimoPor) : 'Una asesora'}</b>
+                    {` · ${g.ultimoResult}`}
+                    {haceCuanto(g.ultimoAt) ? ` · ${haceCuanto(g.ultimoAt)}` : ''}
+                    {g.intentos > 1 ? ` · ${g.intentos} ${deHoy ? 'intentos hoy' : 'en la semana'}` : ''}
+                  </span>
+                </div>
+              );
+            })()}
           <div className="mt-2.5 flex flex-wrap gap-1.5">
             {/* La PRIMERA acción MANDA el mensaje; solo si no se puede (fase sin
                 acción, tienda sin ImporChat, ninguna plantilla que sirva) cae al
@@ -948,7 +982,7 @@ function ColumnBody({ colKey, scrollRefs, children }: {
  * (botones + teclado) que recorre SOLO los pedidos de esa columna. Pensado para
  * que la operadora se concentre en una fase (ej. "En Reparto") y vaya uno por uno.
  */
-function FocusedColumn({ col, countryCode, touchedTodayPhones, gestionEquipo, nombreDe, avisosAgencia, actividadChat, incidenciasAbiertas, onBack }: { col: ColumnDef & { orders: OrderData[] }; countryCode?: string | null; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisosAgencia?: Map<string, number>; actividadChat?: Map<string, ActividadChatOrden>; incidenciasAbiertas?: Set<string> | null; onBack: () => void }) {
+function FocusedColumn({ col, countryCode, touchedTodayPhones, gestionEquipo, historialEquipo, nombreDe, avisosAgencia, actividadChat, incidenciasAbiertas, onBack }: { col: ColumnDef & { orders: OrderData[] }; countryCode?: string | null; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; historialEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisosAgencia?: Map<string, number>; actividadChat?: Map<string, ActividadChatOrden>; incidenciasAbiertas?: Set<string> | null; onBack: () => void }) {
   const ahoraTick = useRelojMinuto();
   const navigate = useNavigate();
   const { activeStoreId } = useStore();
@@ -1095,6 +1129,8 @@ function FocusedColumn({ col, countryCode, touchedTodayPhones, gestionEquipo, no
                 columnLabel={col.label}
                 touchedTodayPhones={touchedTodayPhones}
                 gestionEquipo={gestionEquipo}
+                historialEquipo={historialEquipo}
+                ampliada
                 nombreDe={nombreDe}
                 avisoMs={o.phone ? avisosAgencia?.get(o.phone) ?? null : null}
                 actividad={o.dbId ? actividadChat?.get(String(o.dbId)) ?? null : null}
@@ -1245,6 +1281,12 @@ interface SegBoardProps {
   /** Gestion del EQUIPO por telefono hoy (OrderContext.gestionSegPorTelefono).
    *  Contraparte de equipo de `touchedTodayPhones`, que es personal. */
   gestionEquipo?: Map<string, GestionDelPedido>;
+  /** Última gestión del equipo en los ÚLTIMOS 7 DÍAS (OrderContext.ultimaGestionSeg).
+   *  SOLO informa: nunca bloquea ni cuenta como trabajo de hoy. Existe porque el
+   *  mapa de arriba es de HOY, y una gestión de anteayer quedaba invisible —
+   *  medido: Roberto reclamó el pedido de Soledad el 27-ago y la tarjeta no lo
+   *  decía, así que la siguiente asesora lo volvía a reclamar. */
+  historialEquipo?: Map<string, GestionDelPedido>;
   emptyTitle?: string;
   emptyDesc?: string;
   /**
@@ -1289,7 +1331,7 @@ function useRelojMinuto(): number {
   return ahora;
 }
 
-export default function SegBoard({ data, countryCode, statusFilter, touchedTodayPhones, gestionEquipo, avisosAgencia, actividadChat, incidenciasAbiertas, celebratory = false, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
+export default function SegBoard({ data, countryCode, statusFilter, touchedTodayPhones, gestionEquipo, historialEquipo, avisosAgencia, actividadChat, incidenciasAbiertas, celebratory = false, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
   const ahoraTick = useRelojMinuto();
   // Nombre de la asesora que gestionó: cache módulo-level compartido, una sola
   // lectura de profiles por sesión (no una por tarjeta).
@@ -1564,7 +1606,7 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
     // aunque el tablero las tenga plegadas.
     const focusedCol = todasLasColumnas.find((c) => c.key === focusedKey);
     if (focusedCol) {
-      return <FocusedColumn key={focusedKey} col={focusedCol} countryCode={countryCode} touchedTodayPhones={touchedTodayPhones} gestionEquipo={gestionEquipo} nombreDe={nombreDe} avisosAgencia={avisosAgencia} actividadChat={actividadChat} incidenciasAbiertas={incidenciasAbiertas} onBack={() => setFocusedKey(null)} />;
+      return <FocusedColumn key={focusedKey} col={focusedCol} countryCode={countryCode} touchedTodayPhones={touchedTodayPhones} gestionEquipo={gestionEquipo} historialEquipo={historialEquipo} nombreDe={nombreDe} avisosAgencia={avisosAgencia} actividadChat={actividadChat} incidenciasAbiertas={incidenciasAbiertas} onBack={() => setFocusedKey(null)} />;
     }
   }
 
@@ -1799,6 +1841,7 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
                   columnLabel={col.label}
                   touchedTodayPhones={touchedTodayPhones}
                   gestionEquipo={gestionEquipo}
+                  historialEquipo={historialEquipo}
                   nombreDe={nombreDe}
                   avisoMs={o.phone ? avisosAgencia?.get(o.phone) ?? null : null}
                   actividad={o.dbId ? actividadChat?.get(String(o.dbId)) ?? null : null}

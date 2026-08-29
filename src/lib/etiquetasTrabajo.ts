@@ -76,7 +76,9 @@ const DE_SEGUIMIENTO: Array<Omit<EntradaGlosario, 'pantalla'>> = [
   {
     clave: 'seg-respondio',
     etiqueta: 'Te respondió',
-    que: 'El cliente escribió DESPUÉS de lo último que le mandamos. Hay una persona esperando.',
+    que: 'El cliente escribió DESPUÉS de lo último que le mandamos. Hay una persona esperando. '
+      + 'NO es lo mismo que la rayita verde: esa dice que PODÉS escribirle, esta dice que ALGUIEN TE ESPERA. '
+      + 'Un pedido puede tener las dos.',
     queHacer: 'Se lee y se contesta antes que nada. Es lo único que no puede esperar.',
     equivaleA: 'Quedó con dudas',
   },
@@ -120,6 +122,13 @@ const DE_SEGUIMIENTO: Array<Omit<EntradaGlosario, 'pantalla'>> = [
     etiqueta: 'Nombre · lo que marcó · hace cuánto',
     que: 'Una compañera ya lo intentó y NO logró hablar con el cliente. Por eso sigue en la cola.',
     queHacer: 'Podés seguir vos. No estás repitiendo: ella no llegó a hablarle.',
+    equivaleA: null,
+  },
+  {
+    clave: 'seg-riel-verde',
+    etiqueta: 'Rayita verde a la izquierda',
+    que: 'Se le puede escribir a mano AHORA: el cliente escribió hace menos de 24 h, así que WhatsApp deja mandarle un mensaje normal.',
+    queHacer: 'Si le vas a escribir, empezá por estos: no hace falta plantilla y podés decirle exactamente lo que pasa.',
     equivaleA: null,
   },
   {

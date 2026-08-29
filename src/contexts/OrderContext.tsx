@@ -107,6 +107,13 @@ interface OrderState {
    *  TELÉFONO (touchpoints no guarda order_id). Contraparte de equipo de
    *  `mySegTouchedToday`, que es personal. */
   gestionSegPorTelefono: Map<string, GestionDelPedido>;
+  /**
+   * Última gestión de Seguimiento por teléfono en los ÚLTIMOS 7 DÍAS.
+   * SOLO para mostrar en la tarjeta: nunca bloquea ni cuenta como trabajo de
+   * hoy. Contesta *"¿alguien ya lo trabajó, aunque no haya sido hoy?"* — el
+   * hueco por el que la asesora repetía el reclamo de una compañera.
+   */
+  ultimaGestionSeg: Map<string, GestionDelPedido>;
   /** Como va HOY cada asesora (conf/canc/noresp), misma dedup que el contador
    *  del equipo. Lo ven todos: el dueno para no preguntar, y el equipo para
    *  saber como va la jornada sin entrar a Productividad. */
@@ -170,6 +177,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const [gestionPorPedido, setGestionPorPedido] = useState<Map<string, GestionDelPedido>>(new Map());
   const [gestionCargada, setGestionCargada] = useState(false);
   const [gestionSegPorTelefono, setGestionSegPorTelefono] = useState<Map<string, GestionDelPedido>>(new Map());
+  const [ultimaGestionSeg, setUltimaGestionSeg] = useState<Map<string, GestionDelPedido>>(new Map());
   const [resumenAsesorasHoy, setResumenAsesorasHoy] = useState<ResumenAsesora[]>([]);
   const [sinRespuestaHoy, setSinRespuestaHoy] = useState<ResumenSinRespuesta | null>(null);
   // El resumen de "no contestaron" es lo ÚNICO de esta pantalla que cambia solo
@@ -566,6 +574,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     // Recalculada en cada intento, no capturada: un reintento que cruza la
     // medianoche Bogotá tiene que leer el día NUEVO.
     const todayStartIso = new Date(`${bogotaToday()}T00:00:00-05:00`).toISOString();
+    // La consulta trae UNA semana; el corte de "hoy" se aplica en memoria (ver
+    // abajo). Una semana de una tienda son unos cientos de filas y la
+    // paginación ya está puesta, así que no cuesta una consulta más.
+    const historiaDesdeIso = new Date(Date.parse(todayStartIso) - 7 * 86400000).toISOString();
     // Sin `.eq('operator_id', user.id)`: la MISMA consulta sirve para las dos
     // poblaciones (la mía y la del equipo) y se parte en memoria. Traer solo lo
     // mío era la razón por la que el tablero de Seguimiento le mostraba a una
@@ -582,7 +594,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         .select('phone, action, operator_id, created_at')
         .eq('store_id', activeStoreId)
         .ilike('action', 'SEG:%')
-        .gte('created_at', todayStartIso)
+        .gte('created_at', historiaDesdeIso)
         .order('created_at', { ascending: false })
         .range(desde, desde + PAGE - 1);
       // "No se pudo leer" se marca, no se disfraza de cero.
@@ -590,8 +602,27 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       filas.push(...(data as TpRow[]));
       if (data.length < PAGE || filas.length >= 10000) break;
     }
-    setMySegTouchedToday(new Set(filas.filter(r => r.operator_id === user.id).map(r => r.phone)));
+    // ⛔ HOY y la HISTORIA se separan acá, en memoria (una sola consulta).
+    //
+    // El dueño, mirando el tablero: *"esa Soledad, yo sé que Roberto la tocó y
+    // no sale"*. Tenía razón. Medido en el pedido 6637528: tres gestiones
+    // `SEG: Reclamé transportadora` del 27-ago y un "No respondió" del 21 — la
+    // ventana era `todayStartIso`, así que la tarjeta no las veía y la asesora
+    // volvía a trabajar un pedido que su compañera ya había reclamado.
+    //
+    // La ventana de la CONSULTA pasó a 7 días, pero lo que cuenta como "de hoy"
+    // NO se toca: `mySegTouchedToday` y `gestionSegPorTelefono` siguen saliendo
+    // solo de las filas de hoy. Mezclarlas haría que un pedido tocado anteayer
+    // contara como trabajado hoy, y el cierre del día firmaría números falsos.
+    const deHoy = filas.filter(r => r.created_at >= todayStartIso);
+    setMySegTouchedToday(new Set(deHoy.filter(r => r.operator_id === user.id).map(r => r.phone)));
     setGestionSegPorTelefono(prev => {
+      const next = buildGestionSegPorTelefono(deHoy);
+      return mismaGestion(prev, next) ? prev : next;
+    });
+    // Solo para MOSTRAR: quién fue el último en tocarlo en la semana. Nunca
+    // bloquea — un contacto de anteayer no puede impedir trabajarlo hoy.
+    setUltimaGestionSeg(prev => {
       const next = buildGestionSegPorTelefono(filas);
       return mismaGestion(prev, next) ? prev : next;
     });
@@ -1619,7 +1650,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     counter, myCounter, timerStart,
     loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
     loadNovedades: novedades.loadNovedades, resolveNovedad: novedades.resolveNovedad,
-    myConfirmTouchedToday, mySegTouchedToday, gestionPorPedido, gestionCargada, gestionSegPorTelefono, resumenAsesorasHoy, sinRespuestaHoy,
+    myConfirmTouchedToday, mySegTouchedToday, gestionPorPedido, gestionCargada, gestionSegPorTelefono, ultimaGestionSeg, resumenAsesorasHoy, sinRespuestaHoy,
     coverageError, coverageConfirmError, coverageSegError,
   }), [
     allOrders, workQueue,
@@ -1629,7 +1660,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     counter, myCounter, timerStart,
     loading, excelLoaded, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
     novedades.loadNovedades, novedades.resolveNovedad,
-    myConfirmTouchedToday, mySegTouchedToday, gestionPorPedido, gestionCargada, gestionSegPorTelefono, resumenAsesorasHoy, sinRespuestaHoy,
+    myConfirmTouchedToday, mySegTouchedToday, gestionPorPedido, gestionCargada, gestionSegPorTelefono, ultimaGestionSeg, resumenAsesorasHoy, sinRespuestaHoy,
     coverageError, coverageConfirmError, coverageSegError,
   ]);
 

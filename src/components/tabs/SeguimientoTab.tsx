@@ -121,7 +121,7 @@ export default function SeguimientoTab() {
   // FALLÓ → mySegTouchedToday viene vacío pero NO significa "cero gestionados".
   // Ver el contrato en OrderContext: flag true = dato AUSENTE, mostrar "—" en
   // tono neutro, nunca un 0 que parezca medido.
-  const { segData, segLoaded, segLoading, segLastUpdate, loadSegData, mySegTouchedToday, gestionSegPorTelefono, coverageSegError } = useOrders();
+  const { segData, segLoaded, segLoading, segLastUpdate, loadSegData, mySegTouchedToday, gestionSegPorTelefono, ultimaGestionSeg, coverageSegError } = useOrders();
   // El cutoff de "muertos" depende del país de la tienda activa (EC cicla más
   // lento que CO). Patrón de CrmCallView: leer activeStore?.country_code.
   const { activeStore, activeStoreId, isManagerOfActive } = useStore();
@@ -1841,6 +1841,7 @@ export default function SeguimientoTab() {
           // el botón renacía como pendiente y permitía duplicar touchpoints.
           touchedTodayPhones={mySegTouchedToday}
           gestionEquipo={gestionSegPorTelefono}
+          historialEquipo={ultimaGestionSeg}
           celebratory={allManagedToday}
           emptyTitle={allManagedToday ? '¡Todo gestionado hoy! ✓' : undefined}
           emptyDesc={allManagedToday

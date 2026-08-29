@@ -32,6 +32,26 @@ export type GestionModule = 'SEG' | 'RESCUE' | 'NOVEDAD' | 'LLAMADA' | 'WHATSAPP
  * Devuelve la fila insertada, o null si faltó teléfono/tienda/usuario o falló el
  * INSERT (nunca lanza: el llamador degrada sin romper la pantalla).
  */
+/**
+ * Anti-duplicado, a nivel de MÓDULO (no por tarjeta).
+ *
+ * ── Medido en producción (28-ago-2026) ──────────────────────────────────────
+ * El pedido 6637528 (Soledad Zubiria) tiene TRES filas
+ * `SEG: Reclamé transportadora` con el mismo minuto: 27-ago 20:04. Un clic
+ * contó tres veces, y eso le infla la productividad a quien lo hizo.
+ *
+ * `touchpoints` no tiene constraint anti-duplicado (está documentado), y el
+ * guard `enVueloRef` de `SegCard` es **por instancia de tarjeta**: no ve el caso
+ * del mismo teléfono dibujado en más de una tarjeta, que es justo cuando pasa.
+ * Por eso la llave vive acá, fuera de todo componente.
+ *
+ * El candado es de CLIENTE a propósito. Un UNIQUE sobre `touchpoints` es DDL en
+ * una tabla caliente (REGLA #0) y necesita su propia ventana.
+ */
+type FilaTouchpoint = { created_at?: string } | null;
+const ULTIMA_GESTION = new Map<string, { at: number; fila: FilaTouchpoint }>();
+const VENTANA_ANTIDUP_MS = 60_000;
+
 export function useRecordGestion() {
   const { user } = useAuth();
   const { activeStoreId } = useStore();
@@ -39,6 +59,16 @@ export function useRecordGestion() {
   return useCallback(
     async (phone: string, module: GestionModule, action: string) => {
       if (!user || !activeStoreId || !phone) return null;
+
+      // ⛔ Repetición reciente: se DESCARTA el INSERT pero se devuelve la fila
+      // anterior, NO null. Para la pantalla el clic funcionó — la gestión ya
+      // está registrada. Devolver null mostraría "No se pudo registrar,
+      // reintentá" sobre algo que sí se guardó, y la asesora insistiría: el
+      // error opuesto y peor.
+      const llave = `${activeStoreId}|${phone}|${module}: ${action}`;
+      const previa = ULTIMA_GESTION.get(llave);
+      if (previa && Date.now() - previa.at < VENTANA_ANTIDUP_MS) return previa.fila;
+
       const now = new Date();
       const tp = {
         phone,
@@ -51,6 +81,7 @@ export function useRecordGestion() {
       const { data, error } = await supabase.from('touchpoints').insert(tp).select();
       if (error) return null;
       const fila = data?.[0] ?? null;
+      ULTIMA_GESTION.set(llave, { at: Date.now(), fila });
       // Recién ACÁ, con la fila confirmada por la base, se avisa a la pantalla.
       // Es lo que hace que el contador baje en el acto en vez de esperar un
       // realtime que sobre `touchpoints` no existía (ver `eventosGestion.ts`).
