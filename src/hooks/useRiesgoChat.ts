@@ -205,7 +205,13 @@ export function useRiesgoChat(storeId: string | null, orderIds: string[]): Riesg
       return;
     }
     // Una consulta chica (el pedido abierto) sale YA: ver MINIMO_PARA_ESPERAR.
-    if (orderIds.length < MINIMO_PARA_ESPERAR) { void load(); return; }
+    // Se desarma el piso que hubiera quedado de una cola grande anterior: si no,
+    // este viaje sale ahora y el timer dispara OTRO igual unos ms después.
+    if (orderIds.length < MINIMO_PARA_ESPERAR) {
+      if (pisoRef.current) { clearTimeout(pisoRef.current); pisoRef.current = null; }
+      void load();
+      return;
+    }
     // Piso: si ya hay uno armado se deja correr. Los cambios que lleguen
     // mientras tanto NO lo reinician — cuando venza, `loadRef` ya apunta a la
     // versión con la cola más nueva, así que sale UN solo viaje con lo último.
