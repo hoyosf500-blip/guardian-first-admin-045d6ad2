@@ -43,6 +43,43 @@ const COLS_BASE = 'id, chat_riesgo, chat_leido_at';
  */
 const PISO_REFRESCO_MS = 8_000;
 
+/**
+ * ⛔ PISO ANTES DE LA PRIMERA CARGA (medido en producción, 29-ago-2026).
+ *
+ * La cola visible se arma de dos fuentes que aterrizan casi juntas: los pedidos
+ * (`useDataLoader`) y el índice de cierres (`useSegTouchIndex`, que los filtra).
+ * Cada aterrizaje cambia `idsKey` y disparaba una carga entera. Medido con el
+ * cronómetro:
+ *
+ *   t=6344  tanda A → 5 lotes, 661 pedidos, ~1.000 ms cada uno
+ *   t=6346  tanda B → 4 lotes, 582 pedidos   ← 2 ms después
+ *
+ * `seqRef` descarta bien el resultado de A, pero **las cinco peticiones ya
+ * salieron**: son ~1.000 ms de trabajo tirado y, peor, duplican la carga
+ * concurrente justo en el instante en que la pantalla intenta asentarse (nueve
+ * consultas pesadas a la vez se estorban entre ellas y las nueve tardan más).
+ *
+ * Antes iban separadas 2,4 s y el desperdicio pasaba desapercibido; al acelerar
+ * lo de arriba quedaron una encima de la otra y se hizo visible.
+ *
+ * Es un PISO, no un debounce que se reinicia — la misma regla que el refresco de
+ * realtime de más abajo: bajo un chorro de cambios, un debounce que se reinicia
+ * puede no disparar NUNCA y dejar la pantalla sin señal de chat. Acá el timer se
+ * arma una vez y, cuando vence, usa el `load` MÁS NUEVO.
+ */
+const PISO_PRIMERA_CARGA_MS = 250;
+
+/**
+ * A partir de cuántos pedidos vale la pena esperar.
+ *
+ * ⛔ Este hook NO es solo de la cola: `CallView`, `CrmCallView` y
+ * `ChatClienteCard` lo llaman con UN id para el pedido abierto. Ahí el piso
+ * sería una regresión donde más se nota —el dueño vive en el pedido abierto— y
+ * además no arregla nada: con un id no hay dos tandas que juntar. Una consulta
+ * chica sale al instante; el piso es para la ráfaga de la cola.
+ */
+const MINIMO_PARA_ESPERAR = LOTE;
+
 type Fila = {
   id: string; chat_riesgo: unknown; chat_leido_at: string | null;
   chat_saliente_at?: string | null; chat_saliente_tipo?: string | null; chat_entrante_at?: string | null;
@@ -155,7 +192,38 @@ export function useRiesgoChat(storeId: string | null, orderIds: string[]): Riesg
     setStatus('ok');
   }, [storeId, idsKey]);
 
-  useEffect(() => { void load(); }, [load]);
+  // Ver `PISO_PRIMERA_CARGA_MS`: dos cambios de cola separados por milisegundos
+  // salían como DOS cargas completas y la primera se tiraba entera.
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  const pisoRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    // Sin tienda o sin cola no hay nada que pedir: se vacía YA, sin esperar.
+    if (!storeId || !idsKey) {
+      if (pisoRef.current) { clearTimeout(pisoRef.current); pisoRef.current = null; }
+      setIndex(VACIO); setActividad(VACIO_ACT); setStatus('ok');
+      return;
+    }
+    // Una consulta chica (el pedido abierto) sale YA: ver MINIMO_PARA_ESPERAR.
+    if (orderIds.length < MINIMO_PARA_ESPERAR) { void load(); return; }
+    // Piso: si ya hay uno armado se deja correr. Los cambios que lleguen
+    // mientras tanto NO lo reinician — cuando venza, `loadRef` ya apunta a la
+    // versión con la cola más nueva, así que sale UN solo viaje con lo último.
+    if (pisoRef.current) return;
+    pisoRef.current = setTimeout(() => {
+      pisoRef.current = null;
+      void loadRef.current();
+    }, PISO_PRIMERA_CARGA_MS);
+    // `load` NO va en las dependencias a propósito: es la MISMA función que
+    // `idsKey`/`storeId` ya representan, y agregarla haría que el efecto se
+    // reejecute por identidad y rearme el piso. `loadRef` la mantiene fresca.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeId, idsKey]);
+  // Al desmontar no queda un timer suelto pidiendo datos de una pantalla que ya
+  // no está (ni de la tienda anterior tras un cambio de tienda).
+  useEffect(() => () => {
+    if (pisoRef.current) { clearTimeout(pisoRef.current); pisoRef.current = null; }
+  }, []);
 
   // ── INBOUND EN VIVO ────────────────────────────────────────────────────────
   // Ahora la mayoría de clientes escriben inbound. Sin esto, cuando un cliente
