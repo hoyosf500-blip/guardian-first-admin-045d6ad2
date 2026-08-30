@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
+import { paginarQuery } from '@/lib/paginarQuery';
 import { findSupersededPendingConfDetailed, findClienteYaDespachado, isLocallyDead, type ProgressedOrder } from '@/lib/duplicateOrders';
 import { detectDuplicatePairs } from '@/lib/duplicatePairs';
 import { buildActiveDupIndex, type ConfirmarOrderAlerts } from '@/lib/orderAlerts';
@@ -111,6 +112,14 @@ export default function ConfirmarTab({ profile }: Props) {
   // Pedidos "progresados" (ya reales en Dropi) de los mismos teléfonos de la cola,
   // para detectar PENDIENTE CONFIRMACION duplicados/viejos y ocultarlos (ver abajo).
   const [progressedOrders, setProgressedOrders] = useState<ProgressedOrder[]>([]);
+  /** ⛔ ¿Se pudo REVISAR duplicados? Un `progressedOrders` vacío es AMBIGUO:
+   *  puede ser "este cliente no tiene otro pedido" (dato real) o "la consulta
+   *  falló" (no sabemos nada). Con el segundo caso pintado como el primero
+   *  desaparecen sin aviso el panel rojo "DUPLICADO VIVO", el chip DUP de cada
+   *  fila, el aviso "YA REENVIADO" y el de "cliente con OTRO pedido ya
+   *  despachado" — y la asesora confirma el segundo pedido del mismo cliente:
+   *  doble despacho, flete y producto perdidos. */
+  const [dupsError, setDupsError] = useState(false);
   const [dupExpanded, setDupExpanded] = useState(false);
   // Duplicado VIVO cuya cancelación se está confirmando (AlertDialog).
   // null = sin diálogo abierto. Mismo patrón que NotesPanel.
@@ -251,27 +260,55 @@ export default function ConfirmarTab({ profile }: Props) {
   // de los mismos teléfonos que están en la cola, para detectar duplicados viejos.
   useEffect(() => {
     const phones = phoneSig ? phoneSig.split('|') : [];
-    if (!activeStoreId || phones.length === 0) { setProgressedOrders([]); return; }
+    if (!activeStoreId || phones.length === 0) { setProgressedOrders([]); setDupsError(false); return; }
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     let cancelled = false;
-    supabase.from('orders')
-      .select('phone, producto, external_id, estado, fecha, created_at')
-      .eq('store_id', activeStoreId)
-      .in('phone', phones)
-      .not('estado', 'ilike', 'PENDIENTE CONFIRMACION')
-      .neq('estado', 'CANCELADO')
-      .neq('estado', 'REEMPLAZADA')
-      // ARCHIVADO GHOST = borrado en Dropi (nightly-reconcile). NO es un "pedido
-      // real más nuevo": dejarlo entrar acá ocultaba el PENDIENTE legítimo del
-      // mismo cliente y lo pintaba como "DUPLICADO VIVO" con botón de cancelar
-      // — la asesora cancelaba el ÚNICO pedido real (auditoría 2026-08-13).
-      .neq('estado', 'ARCHIVADO GHOST')
-      .neq('estado', 'ARCHIVADO_GHOST')
-      .gte('created_at', since)
-      .then(({ data, error }) => {
-        if (cancelled || error || !data) return;
-        setProgressedOrders(data as ProgressedOrder[]);
-      }, () => { /* red: dejamos la cola sin filtrar (no rompemos Confirmar) */ });
+    void (async () => {
+      // ⛔ POR LOTES + PAGINADO (30-ago-2026). Antes iba un solo `.in('phone', …)`
+      // con la cola ENTERA: los teléfonos viajan en la URL (con 300 pendientes
+      // se pasa del largo que acepta PostgREST) y la respuesta se corta en 1000
+      // filas sin avisar. Mismo molde que `useRiesgoChat` (LOTE = 150).
+      const LOTE = 150;
+      const filas: ProgressedOrder[] = [];
+      for (let i = 0; i < phones.length; i += LOTE) {
+        if (cancelled) return;
+        const lote = phones.slice(i, i + LOTE);
+        const { filas: pagina, error } = await paginarQuery<ProgressedOrder>(
+          () => supabase.from('orders')
+            .select('phone, producto, external_id, estado, fecha, created_at')
+            .eq('store_id', activeStoreId)
+            .in('phone', lote)
+            .neq('estado', 'CANCELADO')
+            .neq('estado', 'REEMPLAZADA')
+            // ARCHIVADO GHOST = borrado en Dropi (nightly-reconcile). NO es un
+            // "pedido real más nuevo": dejarlo entrar acá ocultaba el PENDIENTE
+            // legítimo del mismo cliente y lo pintaba como "DUPLICADO VIVO" con
+            // botón de cancelar — la asesora cancelaba el ÚNICO pedido real
+            // (auditoría 2026-08-13).
+            .neq('estado', 'ARCHIVADO GHOST')
+            .neq('estado', 'ARCHIVADO_GHOST')
+            .gte('created_at', since)
+            .order('created_at', { ascending: false })
+            .order('external_id', { ascending: true }) as never,
+          { cancelado: () => cancelled },
+        );
+        if (cancelled) return;
+        // ⛔ Un fallo NO puede pasar por "no hay duplicados": se dice.
+        if (error) { setDupsError(true); return; }
+        filas.push(...pagina);
+      }
+      if (cancelled) return;
+      // ⛔ `PENDIENTE CONFIRMACION` se filtra en CLIENTE, no con
+      // `.not('estado','ilike',…)`: en SQL `NOT (NULL ilike 'X')` es NULL, así
+      // que ese filtro descartaba también las filas con `estado` NULL — y un
+      // pedido sin estado del mismo cliente es exactamente el que hay que ver.
+      // Mismo patrón que la consulta VIP de CallView.
+      setProgressedOrders(filas.filter((f) => {
+        const e = String(f.estado ?? '').toUpperCase().trim();
+        return e !== 'PENDIENTE CONFIRMACION';
+      }));
+      setDupsError(false);
+    })();
     return () => { cancelled = true; };
   }, [phoneSig, activeStoreId]);
 
@@ -545,13 +582,23 @@ export default function ConfirmarTab({ profile }: Props) {
   // clientes fríos. Sobre `visibleQueue` (toda la cola pendiente, no la filtrada
   // por etiqueta): la meta es cubrir TODO lo que entró, no un subconjunto.
   const cobertura = useMemo(() => {
-    const total = visibleQueue.length;
+    // ⛔ MISMA POBLACIÓN QUE EL TITULAR (30-ago-2026). Antes se calculaba sobre
+    // `visibleQueue` CRUDO: los pedidos REAGENDADOS —clientes que SÍ se
+    // trabajaron y que pidieron que los llamen otro día— contaban para siempre
+    // como «sin tocar (se enfrían)», en rojo, así que la barra «Meta del día ·
+    // que a todos se les llame» nunca podía llegar a cero. Y la asesora no
+    // podía bajarlos: no aparecen en la lista, justamente porque están
+    // aplazados. Un reclamo permanente por un trabajo que sí se hizo.
+    const ahora = Date.now();
+    const base = visibleQueue.filter((o) =>
+      !o.result && !esAplazado(o, ahora) && !isLockedByOther(o, user?.id ?? null, ahora));
+    const total = base.length;
     if (coverageConfirmError) return { total, sinTocar: null as number | null };
     const sinTocar = gestionCargada
-      ? visibleQueue.filter((o) => !o.dbId || !gestionPorPedido.has(o.dbId)).length
-      : visibleQueue.filter((o) => !o.dbId || !myConfirmTouchedToday.has(o.dbId)).length;
+      ? base.filter((o) => !o.dbId || !gestionPorPedido.has(o.dbId)).length
+      : base.filter((o) => !o.dbId || !myConfirmTouchedToday.has(o.dbId)).length;
     return { total, sinTocar };
-  }, [visibleQueue, gestionCargada, gestionPorPedido, myConfirmTouchedToday, coverageConfirmError]);
+  }, [visibleQueue, gestionCargada, gestionPorPedido, myConfirmTouchedToday, coverageConfirmError, esAplazado, user?.id]);
 
   // Velocímetro del turno: gestionados por MÍ hoy vs pendientes de la cola.
   // `conteoRiesgo.total` = pendientes (sin result) = lo que "falta".
@@ -1386,6 +1433,25 @@ export default function ConfirmarTab({ profile }: Props) {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* ⛔ Un cero afirmado acá cuesta un DESPACHO DOBLE. Sin este aviso,
+              una consulta caída se veía igual que "este cliente no tiene otro
+              pedido": desaparecían el panel rojo "DUPLICADO VIVO", el chip DUP,
+              "YA REENVIADO" y "ya tiene otro despachado", y la pantalla quedaba
+              normal. Tono neutro a propósito: no sabemos si hay duplicados, no
+              sabemos que los haya. */}
+          {dupsError && (
+            <div role="alert" className="mb-4 flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3">
+              <AlertTriangle size={16} className="mt-0.5 flex-shrink-0 text-warning" aria-hidden="true" />
+              <p className="text-[11px] leading-relaxed">
+                <span className="font-semibold text-warning">No se pudo revisar si hay pedidos duplicados.</span>{' '}
+                <span className="text-muted-foreground">
+                  Los avisos de «duplicado» y «ya reenviado» no están funcionando ahora mismo:
+                  antes de despachar, verificá en Dropi que el cliente no tenga otro pedido en curso.
+                </span>
+              </p>
             </div>
           )}
 

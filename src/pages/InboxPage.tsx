@@ -239,6 +239,7 @@ export default function InboxPage() {
           externalId={String(abierto.externalId)}
           nombre={abierto.nombre}
           estado={abierto.estado}
+          phone={abierto.phone}
           datos={{
             guia: abierto.guia,
             transportadora: abierto.transportadora,

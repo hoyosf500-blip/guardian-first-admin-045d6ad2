@@ -1,4 +1,6 @@
 import { classifySegEstado, esColaDeConfirmacion } from './segStatus';
+import { conRastreo } from './datosPlantilla';
+import type { DatosPedido } from './plantillasMeta';
 
 /**
  * Lo que se le escribe al cliente, según dónde está el paquete.
@@ -18,7 +20,13 @@ const nom = (nombre?: string | null) => {
   return limpio ? limpio.charAt(0).toUpperCase() + limpio.slice(1).toLowerCase() : '';
 };
 
-export function plantillasPara(estado: string | null | undefined, nombre?: string | null): Plantilla[] {
+export function plantillasPara(
+  estado: string | null | undefined,
+  nombre?: string | null,
+  /** Guía y transportadora del pedido. Sin esto las fases `guia` /
+   *  `bodega_trans` no pueden armar el arranque que el botón PROMETE. */
+  datos?: DatosPedido | null,
+): Plantilla[] {
   const hola = nom(nombre) ? `Hola ${nom(nombre)}` : 'Hola';
   const fase = classifySegEstado(estado || '');
 
@@ -47,6 +55,59 @@ export function plantillasPara(estado: string | null | undefined, nombre?: strin
       {
         titulo: 'Lo iba a pensar',
         texto: `${hola}, te lo dejo apartado sin compromiso: pagas recién cuando lo recibes en la mano. ¿Te lo despacho esta semana?`,
+      },
+    ];
+  }
+  // ⛔ LAS TRES FASES QUE CAÍAN AL FALLBACK (30-ago-2026).
+  //
+  // `guia`, `bodega_trans` y `procesamiento` no tenían rama, así que caían al
+  // catch-all del final. `AccionPrincipal` toma `plantillasPara(...)[0].texto`
+  // como el mensaje del botón, lo manda, y registra `accion.gestion` — que para
+  // estas fases es «Envié la guía» / «Avisé que está en proceso». O sea: el
+  // botón decía «Mandarle la guía», mandaba *"¿todo bien con la entrega?"* (sin
+  // guía, sin transportadora, sin link) y firmaba la primera. Es exactamente lo
+  // que este módulo vino a arreglar —«el botón dice lo que le va a llegar al
+  // cliente, y lo manda»— y quedó abierto en tres fases.
+  if (fase === 'guia' || fase === 'bodega_trans') {
+    const d = conRastreo(datos);
+    const guia = String(d.guia ?? '').trim();
+    const transp = String(d.transportadora ?? '').trim();
+    // El link SOLO si lleva la guía adentro: `conRastreo` ya descarta la
+    // portada pelada de la transportadora (mandar a alguien a una página en
+    // blanco a buscar solo es peor que no mandarle nada).
+    const conLink = d.rastreoUrl ? ` Puedes seguirlo acá 👉 ${d.rastreoUrl}` : '';
+    const conTransp = transp ? ` con ${transp}` : '';
+    // Sin guía NO se promete una guía: se dice lo que sí se sabe.
+    const primera = guia
+      ? {
+          titulo: 'Mandarle la guía',
+          texto: `${hola}, tu pedido ya salió${conTransp}. Tu número de guía es ${guia}.${conLink} ¿Vas a estar para recibirlo?`,
+        }
+      : {
+          titulo: 'Avisarle que ya salió',
+          texto: `${hola}, tu pedido ya salió${conTransp} y va en camino. En cuanto tenga el número de guía te lo paso. ¿Vas a estar para recibirlo?`,
+        };
+    return [
+      primera,
+      {
+        titulo: 'Quién recibe',
+        texto: `${hola}, ¿me confirmas quién recibe el pedido y en qué horario? Así el repartidor no viaja en vano.`,
+      },
+      {
+        titulo: 'Confirmar la dirección',
+        texto: `${hola}, antes de que salga a reparto: ¿me confirmas que la dirección sigue igual y me pasas una referencia cerquita?`,
+      },
+    ];
+  }
+  if (fase === 'procesamiento') {
+    return [
+      {
+        titulo: 'Ya se está preparando',
+        texto: `${hola}, tu pedido ya está confirmado y lo estamos preparando para despacharlo. En cuanto salga te paso el número de guía.`,
+      },
+      {
+        titulo: 'Confirmar la dirección',
+        texto: `${hola}, antes de despacharlo: ¿me confirmas que la dirección sigue igual y me pasas una referencia cerquita (una tienda, una esquina o qué queda al frente)?`,
       },
     ];
   }

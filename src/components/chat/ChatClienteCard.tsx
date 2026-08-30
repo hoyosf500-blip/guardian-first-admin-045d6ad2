@@ -48,12 +48,17 @@ export interface SenalesChat {
  * confirmar y la actividad), así que mostrarlas no cuesta una query extra.
  */
 export default function ChatClienteCard({
-  externalId, orderId, nombre, estado, datos, senales, modulo,
+  externalId, orderId, nombre, estado, phone, datos, senales, modulo,
   mostrarEscribir = false, mostrarSenales = false, altoClase, className,
 }: {
   externalId?: string | null;
   orderId?: string | null;
   nombre?: string | null;
+  /** ⛔ SIN ESTO EL CONTADOR NO BAJA. `touchpoints` no está en la publicación
+   *  de realtime, así que la ÚNICA vía para que la cobertura del día se entere
+   *  de un WhatsApp enviado es el evento local `emitirGestion` — que solo se
+   *  emite `if (gestion?.phone)`. Ver `EscribirWhatsappDialog`. */
+  phone?: string | null;
   estado?: string | null;
   datos?: DatosPedido;
   /**
@@ -221,6 +226,7 @@ export default function ChatClienteCard({
           externalId={String(externalId)}
           nombre={nombre}
           estado={estado}
+          phone={phone}
           actividad={act}
           datos={datos}
           modulo={modulo}

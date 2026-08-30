@@ -138,9 +138,30 @@ export default function PlantillasWhatsapp({ externalId, fase, estadoPedido, pho
   // resto queda a un clic. NINGUNA se esconde: la regla de este archivo sigue
   // siendo que esconder una plantilla aprobada es decidir por la asesora con
   // una regexp.
+  // Serializado para que las memos de abajo no se recalculen por una identidad
+  // nueva del objeto en cada render (ver el bloque del efecto más abajo).
+  const claveDatos = JSON.stringify(datos ?? {});
+  // ⛔ EL TERCER ARGUMENTO (30-ago-2026). `partirPlantillas` hace DOS pasadas
+  // —primero las completables, después el resto— pero SOLO si recibe el
+  // predicado. El diálogo la llamaba con dos argumentos, así que la doble
+  // pasada nunca corría y dentro de cada patrón mandaba el desempate por
+  // botones/variables, que no mira si Guardian puede completar la plantilla.
+  //
+  // Efecto en pantalla: en un pedido en agencia, la PRIMERA recomendada era la
+  // que pide «Plazo para retirar: ____ días». La asesora la elegía, aparecía
+  // «Falta un dato» y el botón Enviar quedaba deshabilitado. O peor: escribía
+  // un plazo inventado, que es justo lo que este módulo tiene prohibido.
+  //
+  // Las incompletables NO se esconden —siguen en la lista, detrás—: solo dejan
+  // de salir primeras. Es la misma lección que `plantillaParaAccion` ya aplica
+  // en el botón de acción ("entre dos que sirven, la que se puede mandar gana a
+  // la que suena mejor"), que faltaba en el selector.
   const { recomendadas } = useMemo(
-    () => partirPlantillas(plantillas, estadoPedido),
-    [plantillas, estadoPedido],
+    () => {
+      const d = conRastreo(JSON.parse(claveDatos) as DatosPedido);
+      return partirPlantillas(plantillas, estadoPedido, (p) => faltantes(p, sugerirValores(p, d)).length === 0);
+    },
+    [plantillas, estadoPedido, claveDatos],
   );
   const grupos = useMemo(() => agruparPlantillas(plantillas, estadoPedido), [plantillas, estadoPedido]);
   // En "Ver todas" las recomendadas ya están arriba: repetirlas dentro de su
@@ -162,7 +183,6 @@ export default function PlantillasWhatsapp({ externalId, fase, estadoPedido, pho
   // vez del que ella corrigió. Serializar deja que el efecto corra solo cuando
   // el pedido cambia de verdad, y no obliga a que cada call-site se acuerde de
   // memoizar.
-  const claveDatos = JSON.stringify(datos ?? {});
   useEffect(() => {
     // `conRastreo` arma el link de rastreo cuando la transportadora lo permite;
     // sin él, el hueco del link se llenaba con el NÚMERO de guía y el cliente
@@ -215,6 +235,18 @@ export default function PlantillasWhatsapp({ externalId, fase, estadoPedido, pho
     // touchpoint lo escribe el servidor y sin este aviso nadie se entera hasta
     // recargar (ver `eventosGestion.ts`).
     const r = await enviarPlantilla(externalId, elegida.nombre, valores, modulo, { phone });
+    if (r.ok && r.yaEnviado) {
+      // ⛔ `ok:true` NO es "le llegó": el servidor frenó el reenvío por la
+      // idempotencia del día y no salió ningún mensaje. Decir "enviada al
+      // cliente" acá es afirmar un envío que no ocurrió, y era lo que hacía la
+      // asesora dar por hecho el recordatorio de la tarde.
+      toast.info('Esta plantilla ya se le había mandado hoy — no se reenvió', {
+        description: 'Si necesitás insistir, llamalo o mandale un mensaje escrito.',
+      });
+      setElegida(null);
+      // NO se llama a onEnviado: es lo que pinta la tarjeta como gestionada.
+      return;
+    }
     if (r.ok) {
       toast.success('Plantilla enviada al cliente');
       setElegida(null);

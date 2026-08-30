@@ -506,6 +506,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
             orderId={o.dbId}
             nombre={o.nombre}
             estado={o.estado}
+            phone={o.phone}
             datos={{
               guia: o.guia,
               transportadora: o.transportadora,
@@ -728,6 +729,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
           externalId={o.externalId}
           nombre={o.nombre}
           estado={o.estado}
+          phone={o.phone}
           datos={{
             guia: o.guia,
             transportadora: o.transportadora,

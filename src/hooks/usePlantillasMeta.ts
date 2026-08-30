@@ -159,6 +159,22 @@ export interface ResultadoPlantilla {
   error?: string;
   /** Qué huecos quedaron vacíos, si el servidor frenó por eso. */
   faltantes?: number[];
+  /**
+   * ⛔ El servidor dijo "ya se mandó antes hoy" y NO reenvió nada.
+   *
+   * `ok: true` significa "la operación terminó bien", NO "al cliente le llegó
+   * un mensaje". El hook LEÍA `ya_enviado` (para no emitir la gestión
+   * optimista) y lo DESCARTABA al devolver, así que río abajo los dos
+   * consumidores trataban `ok:true` como envío real: toast verde «El cliente
+   * ya lo recibió por WhatsApp» y la tarjeta pintada como gestionada, sobre un
+   * mensaje que nunca salió. Es la misma regla que este repo escribió para
+   * `importchat-send` —«un listo sin confirmar es peor que un error»— rota en
+   * el camino de vuelta.
+   *
+   * El candado de un envío por día está BIEN. Lo que hay que arreglar es que
+   * la pantalla afirme un envío que no ocurrió.
+   */
+  yaEnviado?: boolean;
 }
 
 export function useEnviarPlantilla() {
@@ -208,7 +224,7 @@ export function useEnviarPlantilla() {
           optimista: true,
         });
       }
-      return { ok: true };
+      return { ok: true, yaEnviado: r.ya_enviado === true };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : 'No se pudo enviar la plantilla' };
     } finally {

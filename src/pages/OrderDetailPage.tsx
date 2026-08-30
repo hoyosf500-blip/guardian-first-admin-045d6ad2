@@ -915,6 +915,7 @@ export default function OrderDetailPage() {
           orderId={order.id}
           nombre={order.nombre}
           estado={order.estado}
+          phone={order.phone}
           mostrarSenales
           className="h-full"
         />
@@ -1121,6 +1122,7 @@ export default function OrderDetailPage() {
           externalId={String(order.external_id)}
           nombre={order.nombre}
           estado={order.estado}
+          phone={order.phone}
           datos={{
             guia: order.guia,
             transportadora: order.transportadora,

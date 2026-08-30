@@ -1730,6 +1730,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
                   externalId={String(o.externalId)}
                   nombre={o.nombre}
                   estado={o.estado}
+                  phone={o.phone}
                   datos={{
                     guia: o.guia,
                     transportadora: o.transportadora,

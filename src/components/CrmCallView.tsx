@@ -1093,6 +1093,7 @@ export default function CrmCallView({
               orderId={o.dbId}
               nombre={o.nombre}
               estado={o.estado}
+              phone={o.phone}
               datos={{
                 guia: o.guia,
                 transportadora: o.transportadora,
@@ -1124,6 +1125,7 @@ export default function CrmCallView({
           externalId={String(o.externalId)}
           nombre={o.nombre}
           estado={o.estado}
+          phone={o.phone}
           actividad={senales.actividad}
           datos={{
             guia: o.guia,

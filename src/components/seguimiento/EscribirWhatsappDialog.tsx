@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { MessageCircle, Send, Clock, X, Package } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -54,10 +54,15 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
 }) {
   const { enviar, enviando } = useEnviarWhatsapp();
   const [texto, setTexto] = useState('');
-  const plantillas = useMemo(() => plantillasPara(estado, nombre), [estado, nombre]);
   const datosPedido = useMemo<DatosPedido>(
     () => ({ ...datos, nombre: datos?.nombre ?? nombre ?? null }),
     [datos, nombre],
+  );
+  // `datosPedido` va como tercer argumento: sin él, las fases con guía
+  // arrancaban con un texto genérico SIN la guía. Ver `plantillasChat.ts`.
+  const plantillas = useMemo(
+    () => plantillasPara(estado, nombre, datosPedido),
+    [estado, nombre, datosPedido],
   );
   // ⛔ `faseParaPlantillas`, NO `classifySegEstado`: la cola de Confirmar cae
   // en `otros` y ahí las plantillas salían en orden alfabético, con las de
@@ -99,12 +104,49 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
   // camino, no se sabe si se puede escribir. Decir "no se puede" ahí sería
   // afirmar algo que un segundo después se desmiente solo.
   const averiguando = !actividad && (hilo.estado === 'inicial' || hilo.estado === 'cargando');
+  // ⛔ `sin_chat` ES TERMINAL: ImporChat contestó que este pedido no tiene
+  // conversación. No hay nada que esperar — el `sin_dato` mudo prometía un dato
+  // que nunca iba a llegar, y dejaba el cuadro sin textarea Y sin plantillas:
+  // la asesora abría «WhatsApp» y no tenía absolutamente nada que tocar.
+  //
+  // Un pedido sin conversación es justamente `nunca_escribio`, que es EL caso
+  // donde la plantilla es la única vía. Ofrecerla no puede colar un envío
+  // indebido: el servidor revalida la ventana antes de mandar.
+  const sinConversacion = v.estado === 'sin_dato' && hilo.estado === 'sin_chat';
+  const estadoVentanaEfectivo: EstadoVentana = sinConversacion ? 'nunca_escribio' : v.estado;
 
   // Arranca con la primera sugerencia ya puesta: a las 9 de la mañana, con 40
   // pedidos, el cuadro en blanco es lo que hace que nadie escriba.
+  //
+  // ⛔ UNA SOLA VEZ POR APERTURA (30-ago-2026). `plantillas` se memoiza en
+  // [estado, nombre], así que un cambio de estado por realtime devolvía un
+  // array nuevo, el efecto volvía a correr con el diálogo ABIERTO y le
+  // reemplazaba a la asesora el mensaje largo que estaba redactando por la
+  // sugerencia enlatada. `if (open)` no protege de nada: el diálogo sigue
+  // abierto, que es justo el problema.
+  const sembradoRef = useRef(false);
   useEffect(() => {
-    if (open) setTexto(plantillas[0]?.texto ?? '');
+    if (!open) { sembradoRef.current = false; return; }
+    if (sembradoRef.current) return;
+    sembradoRef.current = true;
+    setTexto(plantillas[0]?.texto ?? '');
   }, [open, plantillas]);
+
+  // ⛔ RED DE SEGURIDAD para el olvido que ya costó un regaño a una persona:
+  // `touchpoints` NO está en la publicación de realtime, así que la única vía
+  // para que la cobertura del día registre un WhatsApp es el evento local
+  // `emitirGestion` — y ese solo se emite `if (gestion?.phone)`. Sin `phone`,
+  // la asesora manda el mensaje, ve "enviado y confirmado", y el pedido sigue
+  // contando como "por gestionar hoy". Se arregló en el tablero y no se
+  // propagó a las otras seis pantallas durante meses, EN SILENCIO.
+  useEffect(() => {
+    if (open && !phone) {
+      console.warn(
+        '[EscribirWhatsappDialog] falta `phone` — el mensaje se va a enviar pero ' +
+        'NO va a bajar el contador de gestión del día. Pasá phone={o.phone}.',
+      );
+    }
+  }, [open, phone]);
 
   const mandar = async () => {
     const r = await enviar(externalId, texto, modulo, { phone });
@@ -170,7 +212,9 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
         ) : (
           <div className="flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
             <X size={13} aria-hidden="true" className="shrink-0 mt-0.5" />
-            <span>{MOTIVO_VENTANA[v.estado]}</span>
+            <span>{sinConversacion
+              ? 'Este pedido todavía no tiene conversación en ImporChat, así que un mensaje escrito a mano no le llega. Se le puede mandar una plantilla aprobada, o llamarlo.'
+              : MOTIVO_VENTANA[v.estado]}</span>
           </div>
         )}
 
@@ -180,7 +224,7 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
             `sin_dato` queda afuera a propósito: si todavía no se sabe si la
             ventana está abierta, ofrecer la plantilla —que cuesta más— sería
             empujar a la salida cara antes de saber si hace falta. */}
-        {!averiguando && (v.estado === 'vencida' || v.estado === 'nunca_escribio') && (
+        {!averiguando && (estadoVentanaEfectivo === 'vencida' || estadoVentanaEfectivo === 'nunca_escribio') && (
           <PlantillasWhatsapp
             externalId={externalId}
             fase={fase}

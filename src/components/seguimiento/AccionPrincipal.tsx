@@ -144,9 +144,14 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
   );
   const huecos = useMemo(() => (plantilla ? faltantes(plantilla, valores) : []), [plantilla, valores]);
 
+  // ⛔ `datosPedido` va como tercer argumento (30-ago-2026). Sin él, en las
+  // fases `guia`/`bodega_trans` el botón decía «Mandarle la guía», mandaba
+  // *"¿todo bien con la entrega?"* —sin guía, sin transportadora, sin link— y
+  // registraba «Envié la guía»: prometía una cosa, mandaba otra y firmaba la
+  // primera.
   const textoLibre = useMemo(
-    () => plantillasPara(estado, nombre)[0]?.texto ?? '',
-    [estado, nombre],
+    () => plantillasPara(estado, nombre, datosPedido)[0]?.texto ?? '',
+    [estado, nombre, datosPedido],
   );
 
   // ⛔ Un clic no se pierde en silencio (visto en pantalla el 27-ago-2026).
@@ -202,6 +207,17 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
     const r = conPlantilla && plantilla
       ? await enviarPlantilla(externalId, plantilla.nombre, valores, modulo, { phone, accion: gestion })
       : await enviar(externalId, textoLibre, modulo, { phone, accion: gestion });
+    // ⛔ `ok:true` NO es "le llegó" (ver `ResultadoPlantilla.yaEnviado`): el
+    // servidor pudo haber frenado el reenvío por la idempotencia del día sin
+    // mandar nada. El toast verde y `onEnviado` —que pinta la tarjeta como
+    // trabajada— afirmaban un envío que no ocurrió.
+    if (r.ok && 'yaEnviado' in r && r.yaEnviado) {
+      toast.info('Esta plantilla ya se le había mandado hoy — no se reenvió', {
+        description: 'Si necesitás insistir, llamalo o mandale un mensaje escrito.',
+      });
+      setAbierto(false);
+      return;
+    }
     if (r.ok) {
       toast.success(gestion, { description: 'El cliente ya lo recibió por WhatsApp.' });
       setAbierto(false);
