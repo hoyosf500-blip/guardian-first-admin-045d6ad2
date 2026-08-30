@@ -273,3 +273,93 @@ export function novedadesDocumentadas(transportadora: string): string[] {
   if (!car) return [];
   return GUIAS.filter((g) => g.transportadora === car).map((g) => g.novedad);
 }
+
+// ───────────── Cobertura MEDIDA con los pedidos de la tienda ─────────────
+//
+// «Cada operación es diferente y ese Drive de Dropi es viejo» (dueño,
+// 29-ago-2026). Auditado contra 11.450 pedidos de una tienda EC: de los 692
+// sectores «sin cobertura» de la hoja, Servientrega entrega igual en la mayoría
+// (45% en esos sectores contra 62% global — peor, pero lejos de «no llega») y
+// LAAR entrega 70% en los mismos sectores. Solo 12 se confirmaron como «no
+// llega» con los envíos reales. Conclusión: lo que dice Dropi es un AVISO; lo
+// que manda es lo que ESTA tienda midió con sus propios pedidos. Acá va lo puro;
+// el hook `useCoberturaMedida` trae las filas de la tienda activa.
+
+export interface FilaEnvio {
+  estado: string | null;
+  transportadora: string | null;
+  direccion: string | null;
+}
+
+export type VeredictoCobertura = 'no_llega' | 'regular' | 'entregamos' | 'sin_dato';
+
+export interface CoberturaMedida {
+  entregados: number;
+  devueltos: number;
+  /** entregados + devueltos: los que ya terminaron. Cancelados y en ruta no cuentan. */
+  terminales: number;
+  /** entregados / terminales, o null sin terminales. */
+  tasa: number | null;
+  /** Con menos de 3 terminales no se afirma nada: `sin_dato` (un 0 de 1 no es «no llega»). */
+  veredicto: VeredictoCobertura;
+  porTransportadora: Array<{ transportadora: string; entregados: number; devueltos: number }>;
+  /** Transportadora con la que SÍ se entrega ahí (≥2 terminales y ≥60%), o null. */
+  mejorAlternativa: string | null;
+}
+
+/** Dirección que en realidad es un retiro en agencia: no mide cobertura a domicilio. */
+const ES_RETIRO = /RETIR[OA]\s*CS|CLIENTE RETIRA|RETIRA\s*:|(?:OFICINA|AGENCIA) DE SERVI/i;
+
+/**
+ * Patrones ILIKE para pescar candidatos en la base: las dos palabras más largas
+ * del sector con cada vocal (y la N, por la Ñ) reemplazada por `_` — así
+ * «BASTION» y «BASTIÓN» caen los dos (20 de 31 direcciones de Bastión Popular
+ * llevan tilde y Postgres no la ignora). Trae de más a propósito: el filtro fino
+ * lo hace `medirCobertura` con `sectorSinCobertura` sobre lo que vuelve.
+ */
+export function patronesIlikeSector(sector: string): string[] {
+  const toks = tokensSector(sector)
+    .filter((t) => /^[A-Z]{3,}$/.test(t))
+    .sort((a, b) => b.length - a.length)
+    .slice(0, 2);
+  return toks.map((t) => '%' + t.replace(/[AEIOUN]/g, '_') + '%');
+}
+
+/**
+ * Qué pasó de verdad con los envíos de la tienda a ese sector. Puro: recibe las
+ * filas (ya acotadas por ciudad y por patrón) y se queda solo con las que
+ * `sectorSinCobertura` confirma como ESE sector, a domicilio, y terminadas.
+ */
+export function medirCobertura(filas: FilaEnvio[], ciudad: string, sector: string): CoberturaMedida {
+  const objetivo = strip(sector);
+  const porT = new Map<string, { entregados: number; devueltos: number }>();
+  let entregados = 0;
+  let devueltos = 0;
+  for (const f of filas) {
+    if (!f.direccion || ES_RETIRO.test(f.direccion)) continue;
+    const z = sectorSinCobertura(f.direccion, ciudad);
+    if (!z || strip(z.sector) !== objetivo) continue;
+    const est = strip(f.estado ?? '');
+    const r = est === 'ENTREGADO' ? 'e' : est.startsWith('DEVOLUCION') ? 'd' : null;
+    if (!r) continue;
+    const t = normalizarTransportadora(f.transportadora) ?? (strip(f.transportadora ?? '') || 'SIN TRANSPORTADORA');
+    const c = porT.get(t) ?? { entregados: 0, devueltos: 0 };
+    if (r === 'e') { c.entregados++; entregados++; } else { c.devueltos++; devueltos++; }
+    porT.set(t, c);
+  }
+  const terminales = entregados + devueltos;
+  const tasa = terminales ? entregados / terminales : null;
+  const veredicto: VeredictoCobertura =
+    terminales < 3 ? 'sin_dato' : (tasa as number) >= 0.6 ? 'entregamos' : (tasa as number) >= 0.45 ? 'regular' : 'no_llega';
+  const porTransportadora = [...porT.entries()]
+    .map(([transportadora, c]) => ({ transportadora, ...c }))
+    .sort((a, b) => (b.entregados + b.devueltos) - (a.entregados + a.devueltos));
+  const rate = (c: { entregados: number; devueltos: number }) => c.entregados / (c.entregados + c.devueltos);
+  const candidatas = porTransportadora
+    .filter((c) => c.entregados + c.devueltos >= 2 && rate(c) >= 0.6)
+    .sort((a, b) => rate(b) - rate(a));
+  return {
+    entregados, devueltos, terminales, tasa, veredicto, porTransportadora,
+    mejorAlternativa: candidatas[0]?.transportadora ?? null,
+  };
+}

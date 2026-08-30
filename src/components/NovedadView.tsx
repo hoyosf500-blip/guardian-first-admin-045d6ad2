@@ -42,6 +42,10 @@ interface Props {
    *  con la key compartida, el re-seed de una instancia pisaba la posición
    *  de la otra y la operadora perdía su lugar en la cola de llamadas. */
   stateKey?: string;
+  /** ¿La incidencia está ABIERTA en Dropi? true → los botones envían la
+   *  solución a Dropi; false → Dropi ya la cerró y solo se registra acá;
+   *  null → no se pudo saber (se intenta Dropi igual). */
+  incidenciaAbierta?: boolean | null;
 }
 
 /** Tinte de urgencia por antigüedad. Mismos cortes de siempre (7 / 4 días),
@@ -55,7 +59,7 @@ const URGENCIA = {
   neutral: { chip: 'bg-muted/40 border-border text-muted-foreground', dot: 'bg-muted-foreground' },
 } as const;
 
-export default function NovedadView({ items, stateKey = 'novedades:callOrderId' }: Props) {
+export default function NovedadView({ items, stateKey = 'novedades:callOrderId', incidenciaAbierta = null }: Props) {
   const { loadNovedades } = useOrders();
   const { markNovedad } = useMarkNovedadResolved();
   const recordContacto = useRecordGestion();
@@ -71,6 +75,9 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
   const [solution, setSolution] = useState('');
   const [showReturnConfirm, setShowReturnConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Último rechazo de Dropi para ESTE pedido: se muestra tal cual y habilita
+  // «registrar solo acá» como salida explícita (nunca automática).
+  const [dropiRechazo, setDropiRechazo] = useState<string | null>(null);
   // Descarte local: cuando marco resuelta/devolución la card desaparece al
   // instante (sin tocar OrderContext); `loadNovedades(true)` reconcilia luego.
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
@@ -156,18 +163,28 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
 
   const navCall = (dir: number) => {
     const target = visibleItems[Math.max(0, Math.min(visibleItems.length - 1, callIdx + dir))];
-    if (target) setCallOrderId(keyOf(target));
+    if (target) { setCallOrderId(keyOf(target)); setDropiRechazo(null); }
   };
 
-  // Marca local de gestión (no empuja a Dropi — ella ya resolvió allá).
-  //  - resuelta/devolución: descarta la card y reconcilia.
+  // Gestión de la novedad (29-ago-2026: los botones VUELVEN a hablar con Dropi).
+  //  - incidencia abierta (o desconocida): Resuelta/Devolución van a Dropi con
+  //    la nota como solución; solo si Dropi acepta la card se descarta.
+  //  - incidencia cerrada por la transportadora: Dropi la rechaza siempre →
+  //    registro local, como antes.
   //  - sin respuesta: registra el intento y avanza (la novedad sigue en cola).
-  const doMark = async (tipo: NovedadResultTipo) => {
+  const doMark = async (tipo: NovedadResultTipo, forzarLocal = false) => {
     if (!o || submitting) return;
     setSubmitting(true);
     try {
-      const ok = await markNovedad(o, tipo, tipo === 'resuelta' ? solution : undefined);
-      if (!ok) return;
+      const r = await markNovedad(
+        o,
+        tipo,
+        tipo === 'resuelta' ? solution : undefined,
+        { dropi: !forzarLocal && incidenciaAbierta !== false },
+      );
+      if (r.dropi === 'rechazado' || r.dropi === 'sin_red') setDropiRechazo(r.mensaje || 'sin detalle');
+      if (!r.ok) return;
+      setDropiRechazo(null);
       if (tipo === 'sin_respuesta') {
         navCall(1);
       } else {
@@ -427,12 +444,16 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
             {/* Nota opcional (solo aplica a "Resuelta") */}
             <div className="flex flex-1 flex-col min-h-0">
               <label className="block hud-label font-bold text-muted-foreground mb-1.5">
-                Nota de la gestión <span className="text-muted-foreground/60 normal-case font-normal">(opcional)</span>
+                {incidenciaAbierta !== false
+                  ? <>Solución para Dropi <span className="text-muted-foreground/60 normal-case font-normal">(obligatoria en «Resuelta»: es lo que lee la transportadora)</span></>
+                  : <>Nota de la gestión <span className="text-muted-foreground/60 normal-case font-normal">(opcional)</span></>}
               </label>
               <textarea
                 value={solution}
                 onChange={(e) => setSolution(e.target.value.slice(0, 500))}
-                placeholder="Ej: Cliente confirma estar en casa mañana entre 2-5pm. Barrio correcto: Chapinero."
+                placeholder={incidenciaAbierta !== false
+                  ? 'Ej: Cliente confirma dirección: Mz 5 villa 8, Cdla Los Esteros, frente a la escuela. Recibe mañana 2-5pm, tel. correcto.'
+                  : 'Ej: Cliente confirma estar en casa mañana entre 2-5pm.'}
                 rows={2}
                 disabled={submitting}
                 className="w-full flex-1 min-h-[120px] rounded-xl bg-muted/50 border border-border p-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 resize-none disabled:opacity-60 transition-colors"
@@ -472,8 +493,33 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
                 "Resuelta" — el más usado — no avisaba nada y la marca local NO
                 empuja a Dropi: sin este recordatorio la incidencia podía vencer
                 allá y el paquete devolverse solo. */}
+            {dropiRechazo && (
+              <div className="rounded-xl border border-danger/30 bg-danger/10 p-2.5 text-[11px] text-danger space-y-1.5" role="alert">
+                <div><strong>Dropi no aceptó la solución:</strong> {dropiRechazo}</div>
+                <div className="text-muted-foreground">
+                  Si ya la resolviste en el panel de Dropi (o la incidencia ya está cerrada allá), podés dejarla registrada solo acá:
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => doMark('resuelta', true)}
+                    disabled={submitting}
+                    className="min-h-9 px-3 rounded-lg border border-border bg-card/40 text-xs font-semibold text-foreground hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  >
+                    Registrar resuelta solo acá
+                  </button>
+                  <button
+                    onClick={() => setDropiRechazo(null)}
+                    className="min-h-9 px-3 rounded-lg text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </div>
+            )}
             <p className="text-[10px] text-muted-foreground text-center">
-              Estos botones solo registran la gestión acá — resolvé la novedad en el panel de Dropi.
+              {incidenciaAbierta !== false
+                ? <>«Resuelta» y «Devolución» se envían a Dropi con tu solución — la novedad sale de la cola solo si Dropi la acepta.</>
+                : <>Dropi ya cerró esta incidencia (no acepta solución): estos botones solo registran acá.</>}
               <br />"Sin respuesta" deja la novedad en la cola para reintentar.
             </p>
           </>

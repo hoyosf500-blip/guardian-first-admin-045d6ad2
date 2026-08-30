@@ -336,7 +336,7 @@ export default function NovedadesTab() {
       )}
 
       {/* Queue — solo las gestionables (incidencia abierta en Dropi) */}
-      {porGestionar.length > 0 && <NovedadView items={filtered} />}
+      {porGestionar.length > 0 && <NovedadView items={filtered} incidenciaAbierta={conocido ? true : null} />}
 
       {/* Esperando transportadora: estado NOVEDAD sin incidencia abierta.
           La transportadora cerró/venció la incidencia — no hay nada que
@@ -376,7 +376,7 @@ export default function NovedadesTab() {
                   reintento de entrega o devolución.
                 </span>
               </div>
-              <NovedadView items={esperandoFiltered} stateKey="novedades:esperando:callOrderId" />
+              <NovedadView items={esperandoFiltered} stateKey="novedades:esperando:callOrderId" incidenciaAbierta={false} />
             </div>
           )}
         </div>

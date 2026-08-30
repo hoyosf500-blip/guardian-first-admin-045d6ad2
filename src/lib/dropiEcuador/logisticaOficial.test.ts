@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
+  medirCobertura,
+  patronesIlikeSector,
   agenciasServientrega,
   abreSabado,
   sectorSinCobertura,
@@ -136,5 +138,61 @@ describe('reglas oficiales por transportadora', () => {
     expect(RETIRO_EN_OFICINA.GINTRACOM.permite).toBe(false);
     expect(RETIRO_EN_OFICINA.VELOCES.permite).toBe(false);
     expect(INTENTOS_ENTREGA_MAX.SERVIENTREGA).toBe(2);
+  });
+});
+
+describe('cobertura MEDIDA con los pedidos de la tienda (manda sobre la lista de Dropi)', () => {
+  const filas = [
+    { estado: 'ENTREGADO', transportadora: 'SERVIENTREGA', direccion: 'Bastión Popular bloque 3 mz 1234 sl 5' },
+    { estado: 'DEVOLUCION', transportadora: 'SERVIENTREGA', direccion: 'BASTION POPULAR BLOQUE 1B' },
+    { estado: 'DEVOLUCION EN TRANSITO', transportadora: 'Servientrega', direccion: 'bastion popular bloque 7' },
+    { estado: 'ENTREGADO', transportadora: 'LAARCOURIER', direccion: 'Bastión Popular bloque 2, casa verde' },
+    { estado: 'ENTREGADO', transportadora: 'LAAR COURIER', direccion: 'Bastion Popular bloque 10' },
+    // No cuentan: cancelado, en ruta, retiro en agencia, otro sector, sin dirección
+    { estado: 'CANCELADO', transportadora: 'SERVIENTREGA', direccion: 'Bastión Popular bloque 4' },
+    { estado: 'EN TRANSITO', transportadora: 'SERVIENTREGA', direccion: 'Bastión Popular bloque 5' },
+    { estado: 'ENTREGADO', transportadora: 'SERVIENTREGA', direccion: 'RETIRO CS GUAYAQUIL_PARQUE CALIFORNIA - km 10.5 via daule (bastion popular)' },
+    { estado: 'ENTREGADO', transportadora: 'SERVIENTREGA', direccion: 'Flor de Bastión bloque 9' },
+    { estado: 'ENTREGADO', transportadora: 'SERVIENTREGA', direccion: null },
+  ];
+  const SECTOR = 'BASTION POPULAR TODOS LOS BLOQUES';
+
+  it('cuenta solo terminales a domicilio de ESE sector, con tilde o sin tilde, y separa por transportadora', () => {
+    const m = medirCobertura(filas, 'GUAYAQUIL', SECTOR);
+    expect(m.entregados).toBe(3);
+    expect(m.devueltos).toBe(2);
+    expect(m.terminales).toBe(5);
+    expect(m.veredicto).toBe('entregamos');
+    expect(m.porTransportadora).toEqual([
+      { transportadora: 'SERVIENTREGA', entregados: 1, devueltos: 2 },
+      { transportadora: 'LAARCOURIER', entregados: 2, devueltos: 0 },
+    ]);
+    expect(m.mejorAlternativa).toBe('LAARCOURIER');
+  });
+
+  it('con menos de 3 terminales NO afirma nada (un 0 de 1 no es «no llega»)', () => {
+    const m = medirCobertura(filas.slice(0, 2), 'GUAYAQUIL', SECTOR);
+    expect(m.terminales).toBe(2);
+    expect(m.veredicto).toBe('sin_dato');
+    expect(medirCobertura([], 'GUAYAQUIL', SECTOR).tasa).toBeNull();
+  });
+
+  it('no_llega solo por debajo del 45% con 3+ terminales', () => {
+    const m = medirCobertura(filas.slice(0, 3), 'GUAYAQUIL', SECTOR);
+    expect(m.terminales).toBe(3);
+    expect(m.veredicto).toBe('no_llega');
+    expect(m.mejorAlternativa).toBeNull();
+  });
+
+  it('el patrón ILIKE pesca la tilde y la Ñ; lo que trae de más lo descarta el filtro fino', () => {
+    const p = patronesIlikeSector(SECTOR);
+    expect(p).toEqual(['%B_ST___%', '%P_P_L_R%']);
+    const like = (s: string, pat: string) =>
+      new RegExp('^' + pat.replace(/%/g, '.*').replace(/_/g, '.') + '$', 'i').test(s);
+    expect(like('Bastión Popular bloque 3', p[0])).toBe(true);
+    expect(like('bastion popular', p[1])).toBe(true);
+    expect(patronesIlikeSector('COOP. RUMIÑAHUI LA LOZA')[0]).toBe('%R_M___H__%');
+    // Un sector sin palabra usable no manda a la base a buscar «todo».
+    expect(patronesIlikeSector('7')).toEqual([]);
   });
 });
