@@ -33,7 +33,7 @@ import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { cn } from '@/lib/utils';
+import { cn, bogotaToday } from '@/lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
@@ -121,7 +121,7 @@ export default function SeguimientoTab() {
   // FALLÓ → mySegTouchedToday viene vacío pero NO significa "cero gestionados".
   // Ver el contrato en OrderContext: flag true = dato AUSENTE, mostrar "—" en
   // tono neutro, nunca un 0 que parezca medido.
-  const { segData, segLoaded, segLoading, segLastUpdate, loadSegData, mySegTouchedToday, gestionSegPorTelefono, ultimaGestionSeg, coverageSegError } = useOrders();
+  const { segData, segLoaded, segLoading, segLastUpdate, loadSegData, mySegTouchedToday, gestionSegPorTelefono, ultimaGestionSeg, coverageSegError, segError } = useOrders();
   // El cutoff de "muertos" depende del país de la tienda activa (EC cicla más
   // lento que CO). Patrón de CrmCallView: leer activeStore?.country_code.
   const { activeStore, activeStoreId, isManagerOfActive } = useStore();
@@ -452,10 +452,28 @@ export default function SeguimientoTab() {
     // sin haber asignado nada.
     if (!segLoaded || dedupedByDate.length === 0) return;
     if (asig.asignaciones.size > 0) return;
-    const hoy = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }))
-      .toISOString().slice(0, 10);
+    // ⛔ `bogotaToday()`, no el idiom de doble conversión. Ver el bloque de
+    // useSegAsignaciones: `new Date(toLocaleString(...))` aplica el offset dos
+    // veces y a partir de las 19:00 devolvía el día SIGUIENTE. Acá el efecto era
+    // peor que una lista vacía: se sellaba la llave de MAÑANA en localStorage,
+    // así que el reparto automático quedaba apagado PARA SIEMPRE desde el día
+    // siguiente — sin ningún error, simplemente dejaba de correr, y las tres
+    // asesoras volvían a mirar la misma pila eligiendo por su cuenta.
+    const hoy = bogotaToday();
     const llave = `guardian.repartoAuto:${activeStoreId}:${hoy}`;
-    try { if (localStorage.getItem(llave)) return; } catch { /* sin storage: alcanza con los refs */ }
+    try {
+      // Limpieza: los navegadores donde el bug de arriba YA selló una llave con
+      // fecha futura quedarían bloqueados hasta que llegue ese día. Arreglar el
+      // cálculo no los desbloquea solo. De paso deja de acumular una llave por
+      // día para siempre — se borra todo lo que no sea el sello de HOY.
+      const viejas: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('guardian.repartoAuto:') && k !== llave) viejas.push(k);
+      }
+      viejas.forEach(k => localStorage.removeItem(k));
+      if (localStorage.getItem(llave)) return;
+    } catch { /* sin storage: alcanza con los refs */ }
     // El efecto se re-evalúa con cada refresco del tablero. Un reintento cada
     // 5 min alcanza para agarrar a la segunda asesora apenas marca entrada, sin
     // consultar la presencia en cada push de realtime.
@@ -844,6 +862,37 @@ export default function SeguimientoTab() {
   // falso, justo lo que la REGLA #2 prohíbe. La tienda VACÍA de verdad tiene
   // segLoaded=true → cae al "Sin pedidos" correcto, no al esqueleto. En error, el
   // loader ya reintenta a los 30s + toast, así que el esqueleto no se queda pegado.
+  // ⛔ SALIDA DEL ESQUELETO. Con la lectura fallando, `segLoaded` nunca pasa a
+  // true y el esqueleto de abajo se dibujaba PARA SIEMPRE: el toast ya se cerró
+  // solo, la cabecera no se dibuja (así que tampoco el botón "Volver a leer la
+  // base") y la única salida era que a la asesora se le ocurriera recargar.
+  // Ahora se le dice qué pasó y se le da el botón. El hook además reintenta solo
+  // con backoff, así que esto normalmente se resuelve sin tocar nada.
+  if (!segLoaded && segData.length === 0 && segError) {
+    return (
+      <div className="max-w-7xl mx-auto" role="alert">
+        <div className="mt-10 mx-auto max-w-md rounded-2xl border border-danger/30 bg-danger/10 p-6 text-center">
+          <span className="w-11 h-11 rounded-2xl bg-danger/15 border border-danger/30 text-danger flex items-center justify-center mx-auto mb-3" aria-hidden="true">
+            <Truck size={20} strokeWidth={2.25} />
+          </span>
+          <p className="text-sm font-semibold text-foreground">No se pudo leer la base</p>
+          <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">
+            Seguimiento no pudo cargar los pedidos. Estamos reintentando solos cada pocos
+            segundos; si querés, probá vos ahora.
+          </p>
+          <p className="mt-2 text-[11px] text-muted-foreground/80 font-mono break-words">{segError}</p>
+          <button
+            type="button"
+            onClick={() => { void loadSegData(true); }}
+            className="mt-4 inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-xs font-semibold text-foreground hover:bg-card/70 transition-colors"
+          >
+            <RefreshCw size={13} aria-hidden="true" /> Volver a leer la base
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!segLoaded && segData.length === 0) {
     return (
       <div className="max-w-7xl mx-auto" role="status" aria-live="polite">
@@ -1430,14 +1479,26 @@ export default function SeguimientoTab() {
                     dueño se enteró porque se lo contaron. Un cero explícito es
                     justamente la señal. */}
                 <div className="mt-3 pt-3 border-t border-border/50 tilt-layer-1">
+                  {/* ⛔ Con `coverageSegError` la lectura de gestiones FALLÓ: un 0
+                      acá es un reclamo al equipo por un dato que nunca se pudo
+                      leer — y la tarjeta vecina, a 20 cm, ya está diciendo lo
+                      contrario ("No se pudieron leer tus gestiones de hoy").
+                      Contrato de `coverageSegError` (OrderContext): flag true →
+                      DATO AUSENTE, "—" en tono NEUTRO, nunca un 0 que parezca
+                      medido, nunca el amarillo del regaño. */}
                   <div className="flex items-baseline gap-1.5 flex-wrap text-xs">
                     <span className="text-muted-foreground">Gestionó el equipo hoy:</span>
-                    <strong className={`font-mono tabular-nums ${gestionados > 0 ? 'text-foreground' : 'text-warning'}`}>
-                      {gestionados}
+                    <strong className={`font-mono tabular-nums ${coverageSegError ? 'text-muted-foreground' : gestionados > 0 ? 'text-foreground' : 'text-warning'}`}>
+                      {coverageSegError ? '—' : gestionados}
                     </strong>
                     <span className="text-muted-foreground">de {total}</span>
                   </div>
-                  {asesorasHoy.length > 0 ? (
+                  {coverageSegError ? (
+                    <p className="mt-1.5 text-[11px] text-muted-foreground leading-relaxed">
+                      No se pudieron leer las gestiones de hoy. No sabemos si el equipo
+                      tocó Seguimiento — esto no es un cero.
+                    </p>
+                  ) : asesorasHoy.length > 0 ? (
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {asesorasHoy.map((a) => (
                         <span
@@ -1898,7 +1959,6 @@ export default function SeguimientoTab() {
           // Para que "Gestioné hoy" sepa si el pedido YA se gestionó hoy: al
           // destildar "Ocultar gestionados" las tarjetas vuelven, y sin este set
           // el botón renacía como pendiente y permitía duplicar touchpoints.
-          touchedTodayPhones={mySegTouchedToday}
           gestionEquipo={gestionSegPorTelefono}
           historialEquipo={ultimaGestionSeg}
           celebratory={allManagedToday}

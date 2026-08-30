@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { repartirCola, desbalance, type AsignacionExistente } from '@/lib/repartoEquitativo';
+import { bogotaToday } from '@/lib/utils';
 
 /**
  * Asignación de la cola de Seguimiento del día — pieza C del protocolo del turno.
@@ -145,9 +146,17 @@ export function useSegAsignaciones() {
     // El día se calcula en Bogotá, igual que en la RPC. Sin esto, después de
     // las 19:00 hora local el cliente pediría el día siguiente en UTC y la
     // lista de asignaciones aparecería vacía a mitad del turno.
-    const hoyBogota = new Date(
-      new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }),
-    ).toISOString().slice(0, 10);
+    //
+    // ⛔ EL IDIOM ANTERIOR HACÍA EXACTAMENTE ESO (auditoría 30-ago-2026):
+    //   new Date(new Date().toLocaleString('en-US', {timeZone:'America/Bogota'}))
+    //     .toISOString().slice(0,10)
+    // `toLocaleString` da el texto en Bogotá, pero `new Date(texto)` lo vuelve a
+    // interpretar en la zona del NAVEGADOR: el desplazamiento se aplica DOS
+    // veces y solo se cancela antes de las 19:00. A partir de esa hora pedía el
+    // día SIGUIENTE y la lista salía vacía — justo en las dos últimas horas del
+    // turno, que es cuando se cierra el día. Invisible el 80% de la jornada.
+    // `bogotaToday()` formatea directo con Intl: una sola conversión.
+    const hoyBogota = bogotaToday();
 
     const [asigRes, miembrosRes] = await Promise.all([
       sbSuelto

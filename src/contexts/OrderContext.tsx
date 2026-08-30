@@ -45,6 +45,8 @@ interface OrderState {
   segLoading: boolean;
   segLastUpdate: Date | null;
   loadSegData: (force?: boolean) => Promise<void>;
+  /** Último fallo de lectura de la cola de Seguimiento. Ver `useDataLoader`. */
+  segError: string | null;
   // Rescate eliminado (2026-05-08): /seguimiento + listas SLA cubren todos
   // los casos. Las propiedades resData/resLoaded/resLoading/loadResData ya
   // no existen — usar segData con filtros de segLists.ts.
@@ -1759,7 +1761,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   // SeguimientoTab re-renderiza la lista entera).
   const ctxValue = useMemo(() => ({
     allOrders, workQueue,
-    segData: dataLoader.segData, segLoaded: dataLoader.segLoaded, segLoading: dataLoader.segLoading,
+    segData: dataLoader.segData, segLoaded: dataLoader.segLoaded, segLoading: dataLoader.segLoading, segError: dataLoader.segError,
     segLastUpdate: dataLoader.segLastUpdate, loadSegData: dataLoader.loadSegData,
     novedadesQueue: novedades.novedadesQueue, novedadesLoading: novedades.novedadesLoading,
     novedadesError: novedades.novedadesError,
@@ -1770,7 +1772,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     coverageError, coverageConfirmError, coverageSegError, counterCargado, colaConfirmarError,
   }), [
     allOrders, workQueue,
-    dataLoader.segData, dataLoader.segLoaded, dataLoader.segLoading,
+    dataLoader.segData, dataLoader.segLoaded, dataLoader.segLoading, dataLoader.segError,
     dataLoader.segLastUpdate, dataLoader.loadSegData,
     novedades.novedadesQueue, novedades.novedadesLoading, novedades.novedadesError,
     counter, myCounter, timerStart,

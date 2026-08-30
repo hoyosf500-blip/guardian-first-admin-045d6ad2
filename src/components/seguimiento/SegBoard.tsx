@@ -266,7 +266,7 @@ const COLUMN_PAGE = 30;
  *  el pedido y no desde que entró a este estado. La cuenta sigue viva y con
  *  nombre propio en `segPulso` (`diasSinMovimiento`, `estaDetenido`). */
 
-const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, touchedTodayPhones, gestionEquipo, historialEquipo, nombreDe, avisoMs, columnLabel, actividad, ahoraTick, novedadCerrada, ampliada }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; historialEquipo?: Map<string, GestionDelPedido>; ampliada?: boolean; nombreDe?: (id?: string | null) => string; avisoMs?: number | null; columnLabel?: string; actividad?: ActividadChatOrden | null;
+const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, gestionEquipo, historialEquipo, nombreDe, avisoMs, columnLabel, actividad, ahoraTick, novedadCerrada, ampliada }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void; gestionEquipo?: Map<string, GestionDelPedido>; historialEquipo?: Map<string, GestionDelPedido>; ampliada?: boolean; nombreDe?: (id?: string | null) => string; avisoMs?: number | null; columnLabel?: string; actividad?: ActividadChatOrden | null;
   /** La novedad de este pedido ya la cerró (o dejó vencer) la transportadora:
    *  Dropi rechaza resolverla. `undefined` = no se sabe → no se afirma nada. */
   novedadCerrada?: boolean;
@@ -323,7 +323,6 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   // La gestion PROPIA sigue bloqueando siempre: acabo de registrarla y volver a
   // tocar el boton insertaria un touchpoint duplicado.
   const gEquipoEfectiva = !!gEquipo && esContactoEfectivo(gEquipo.ultimoResult);
-  const yaGestionada = !!gestionada || gEquipoEfectiva || (!!o.phone && !!touchedTodayPhones?.has(o.phone));
   const metodosRapidos = metodosRapidosParaEstado(o.estado);
 
   // Acciones del tablero: registran el touchpoint (SEG: <acción>) para que el
@@ -374,6 +373,26 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   // a los de hoy para que el número de la etiqueta sea el de verdad.
   const gPrevia = o.phone ? historialEquipo?.get(o.phone) : undefined;
   const ciclo = cicloContacto({ actividad, gestion: gEquipo, gestionPrevia: gPrevia, ahoraMs: ahoraTick });
+  // ⛔ LA TARJETA SE BLOQUEA CON EL MISMO RELOJ QUE LA ESCONDE (30-ago-2026).
+  //
+  // Antes el tercer término era `touchedTodayPhones?.has(o.phone)`: un candado
+  // de DÍA COMPLETO, escrito en julio como anti-duplicado, ANTES del modelo de
+  // "cola viva" (`cicloContacto`, ESPERA_REINTENTO_MIN = 240). Con los dos
+  // conviviendo, el sistema se contradecía solo: a las 4 h el pedido volvía al
+  // tablero con la etiqueta «2º intento · mejor llamá» y sumaba al chip
+  // amarillo «N no contestaron · toca llamar» — y al abrirlo cada tarjeta
+  // mostraba únicamente el cartel verde «Gestionado hoy». Sin botón Llamar, sin
+  // «Envié la guía», sin «No contestó». El trabajo que el sistema acababa de
+  // pedir era imposible de hacer desde el tablero.
+  //
+  // El anti-duplicado real ya vive en otro lado y con otra ventana: el candado
+  // de 60 s de `useRecordGestion` y el `enVueloRef` de acá arriba. Este candado
+  // de un día quedó huérfano.
+  //
+  // Mientras enfría, `enEspera(ciclo)` mantiene el cartel verde (de hecho la
+  // tarjeta ni se dibuja: `boardData` la filtra); cuando vuelve a la cola,
+  // vuelve CON sus botones.
+  const yaGestionada = !!gestionada || gEquipoEfectiva || enEspera(ciclo);
   // El detalle SÍ se conserva, pero en el `title`: las dos fuentes (lo que
   // ImporChat registró y lo que declaró la asesora) y quién lo tocó. Era lo que
   // ocupaba cuatro renglones en la cara de la tarjeta.
@@ -1001,7 +1020,7 @@ function ColumnBody({ colKey, scrollRefs, children }: {
  * (botones + teclado) que recorre SOLO los pedidos de esa columna. Pensado para
  * que la operadora se concentre en una fase (ej. "En Reparto") y vaya uno por uno.
  */
-function FocusedColumn({ col, countryCode, touchedTodayPhones, gestionEquipo, historialEquipo, nombreDe, avisosAgencia, actividadChat, incidenciasAbiertas, onBack }: { col: ColumnDef & { orders: OrderData[] }; countryCode?: string | null; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; historialEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisosAgencia?: Map<string, number>; actividadChat?: Map<string, ActividadChatOrden>; incidenciasAbiertas?: Set<string> | null; onBack: () => void }) {
+function FocusedColumn({ col, countryCode, gestionEquipo, historialEquipo, nombreDe, avisosAgencia, actividadChat, incidenciasAbiertas, onBack }: { col: ColumnDef & { orders: OrderData[] }; countryCode?: string | null; gestionEquipo?: Map<string, GestionDelPedido>; historialEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisosAgencia?: Map<string, number>; actividadChat?: Map<string, ActividadChatOrden>; incidenciasAbiertas?: Set<string> | null; onBack: () => void }) {
   const ahoraTick = useRelojMinuto();
   const navigate = useNavigate();
   const { activeStoreId } = useStore();
@@ -1146,7 +1165,6 @@ function FocusedColumn({ col, countryCode, touchedTodayPhones, gestionEquipo, hi
                 selected={i === selIdx}
                 cardRef={i === selIdx ? selRef : undefined}
                 columnLabel={col.label}
-                touchedTodayPhones={touchedTodayPhones}
                 gestionEquipo={gestionEquipo}
                 historialEquipo={historialEquipo}
                 ampliada
@@ -1290,15 +1308,14 @@ interface SegBoardProps {
   countryCode?: string | null;
   /** Filtro de la fila "resumen por estado" — si está, muestra solo esa columna. */
   statusFilter?: string | null;
-  /**
-   * Phones que ESTA operadora ya gestionó hoy (mySegTouchedToday del
-   * OrderContext). Baja como prop (no useOrders() en SegCard) a propósito:
-   * un context en la tarjeta re-renderizaría cientos de cards en CADA cambio
-   * de OrderContext, no solo cuando cambia el set.
-   */
-  touchedTodayPhones?: Set<string>;
-  /** Gestion del EQUIPO por telefono hoy (OrderContext.gestionSegPorTelefono).
-   *  Contraparte de equipo de `touchedTodayPhones`, que es personal. */
+  /* ⛔ `touchedTodayPhones` SE QUITÓ (30-ago-2026). Era el candado de día
+     completo que dejaba la tarjeta muda cuando el pedido volvía a la cola a las
+     4 h — ver el bloque de `yaGestionada`. Al dejar de leerse quedaba un Set
+     bajando cuatro niveles sin consumidor: y como cambia de identidad en CADA
+     evento de realtime, rompía el `memo` de las ~400 tarjetas para nada. La
+     cobertura personal se sigue viendo en el chip "Tu cola hoy" de la cabecera,
+     que es donde tiene sentido. */
+  /** Gestion del EQUIPO por telefono hoy (OrderContext.gestionSegPorTelefono). */
   gestionEquipo?: Map<string, GestionDelPedido>;
   /** Última gestión del equipo en los ÚLTIMOS 7 DÍAS (OrderContext.ultimaGestionSeg).
    *  SOLO informa: nunca bloquea ni cuenta como trabajo de hoy. Existe porque el
@@ -1350,7 +1367,7 @@ function useRelojMinuto(): number {
   return ahora;
 }
 
-export default function SegBoard({ data, countryCode, statusFilter, touchedTodayPhones, gestionEquipo, historialEquipo, avisosAgencia, actividadChat, incidenciasAbiertas, celebratory = false, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
+export default function SegBoard({ data, countryCode, statusFilter, gestionEquipo, historialEquipo, avisosAgencia, actividadChat, incidenciasAbiertas, celebratory = false, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
   const ahoraTick = useRelojMinuto();
   // Nombre de la asesora que gestionó: cache módulo-level compartido, una sola
   // lectura de profiles por sesión (no una por tarjeta).
@@ -1631,7 +1648,7 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
     // aunque el tablero las tenga plegadas.
     const focusedCol = todasLasColumnas.find((c) => c.key === focusedKey);
     if (focusedCol) {
-      return <FocusedColumn key={focusedKey} col={focusedCol} countryCode={countryCode} touchedTodayPhones={touchedTodayPhones} gestionEquipo={gestionEquipo} historialEquipo={historialEquipo} nombreDe={nombreDe} avisosAgencia={avisosAgencia} actividadChat={actividadChat} incidenciasAbiertas={incidenciasAbiertas} onBack={() => setFocusedKey(null)} />;
+      return <FocusedColumn key={focusedKey} col={focusedCol} countryCode={countryCode} gestionEquipo={gestionEquipo} historialEquipo={historialEquipo} nombreDe={nombreDe} avisosAgencia={avisosAgencia} actividadChat={actividadChat} incidenciasAbiertas={incidenciasAbiertas} onBack={() => setFocusedKey(null)} />;
     }
   }
 
@@ -1864,8 +1881,7 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
                   countryCode={countryCode}
                   tone={col.tone}
                   columnLabel={col.label}
-                  touchedTodayPhones={touchedTodayPhones}
-                  gestionEquipo={gestionEquipo}
+                    gestionEquipo={gestionEquipo}
                   historialEquipo={historialEquipo}
                   nombreDe={nombreDe}
                   avisoMs={o.phone ? avisosAgencia?.get(o.phone) ?? null : null}

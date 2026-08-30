@@ -77,6 +77,14 @@ interface DataLoaderState {
   segLoading: boolean;
   segLastUpdate: Date | null;
   loadSegData: (force?: boolean) => Promise<void>;
+  /** Mensaje del último fallo de lectura, o `null`.
+   *
+   *  Existe porque sin él la pantalla no tenía CÓMO salir: el toast se cierra
+   *  solo a los segundos y el esqueleto de "Cargando seguimiento…" (que se
+   *  dibuja mientras `segLoaded` sea false) esconde la cabecera, o sea también
+   *  el botón "Volver a leer la base". La asesora quedaba con un esqueleto gris
+   *  para siempre y la única salida era que se le ocurriera recargar. */
+  segError: string | null;
 }
 
 export function useDataLoader(user: User | null, storeId: string | null): DataLoaderState {
@@ -84,6 +92,7 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
   const [segLoaded, setSegLoaded] = useState(false);
   const [segLoading, setSegLoading] = useState(false);
   const [segLastUpdate, setSegLastUpdate] = useState<Date | null>(null);
+  const [segError, setSegError] = useState<string | null>(null);
 
   // MULTI-TENANT: useDataLoader es singleton bajo OrderProvider — su estado NO
   // se remonta al cambiar de tienda. Sin esto, `segLoaded` sigue true y el
@@ -97,16 +106,25 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
     prevStoreRef.current = storeId;
     setSegData([]);
     setSegLoaded(false);
+    // El error de la tienda anterior no describe a la nueva.
+    setSegError(null);
   }, [storeId]);
 
-  // Reintento ÚNICO ante error de red: si el refetch que falló era el catch-up
-  // al volver a la pestaña, sin esto Seguimiento quedaba viejo hasta el próximo
-  // tick del poll de 15 min (auditoría 2026-07-07). `retriedOnceRef` corta la
-  // cadena: máximo UN reintento por episodio de fallo (se rearma solo cuando
-  // una carga vuelve a salir bien) — sin él, fallo→retry→fallo→retry loopeaba
-  // cada 30s con un toast por intento (review 2026-07-07).
+  // Reintento con BACKOFF ante error de red (30-ago-2026).
+  //
+  // Antes era un reintento ÚNICO por episodio, y el episodio solo se cerraba en
+  // el camino de ÉXITO. Con dos fallos seguidos el hook se quedaba SIN NINGÚN
+  // camino de recuperación: el poll de 15 min está condicionado a `segLoaded`,
+  // que solo pasa a true si alguna carga terminó bien. La asesora quedaba con
+  // el esqueleto gris de "Cargando seguimiento…" para siempre.
+  //
+  // El motivo del reintento único era real —fallo→retry→fallo→retry cada 30 s
+  // con un toast por intento— y se conserva: el backoff (2 s, 4 s, 8 s… tope
+  // 60 s) espacia los intentos, y el toast sale UNA sola vez por episodio.
+  // Mismo molde que `segRetryAttempt` en OrderContext.
   const retryTimerRef = useRef<number | null>(null);
   const retriedOnceRef = useRef(false);
+  const intentoFallidoRef = useRef(0);
   const inFlightRef = useRef(false);
   const loadSegDataRef = useRef<(force?: boolean) => void>(() => {});
   useEffect(() => () => {
@@ -225,15 +243,20 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
           .range(fromIdx, toIdx);
         if (error) {
           console.error('Error loading seg orders:', error);
+          setSegError(error.message || 'No se pudo leer la base');
+          // El toast, UNA vez por episodio (era lo que evitaba el spam).
           if (!retriedOnceRef.current) {
             toast.error('Error cargando seguimiento: ' + error.message);
             retriedOnceRef.current = true;
-            if (retryTimerRef.current == null) {
-              retryTimerRef.current = window.setTimeout(() => {
-                retryTimerRef.current = null;
-                loadSegDataRef.current(true);
-              }, 30_000);
-            }
+          }
+          // El reintento, SIEMPRE — con backoff. Ver el bloque de arriba.
+          if (retryTimerRef.current == null) {
+            const n = intentoFallidoRef.current++;
+            const espera = Math.min(2_000 * 2 ** n, 60_000);
+            retryTimerRef.current = window.setTimeout(() => {
+              retryTimerRef.current = null;
+              loadSegDataRef.current(true);
+            }, espera);
           }
           return;
         }
@@ -282,12 +305,22 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
       // Las dos salieron arriba, en paralelo con el bucle. Acá solo se cosechan,
       // en el MISMO orden que antes.
       const [devRows, sinEstadoRows] = await Promise.all([pDevoluciones, pSinEstado]);
-      // El guard multi-tienda vale igual que antes: si la tienda cambió mientras
-      // estas dos volaban, aterrizarlas mezclaría países.
-      if (prevStoreRef.current === storeId) {
-        all.push(...devRows);
-        all.push(...sinEstadoRows);
+      // ⛔ El guard multi-tienda vale para TODO el aterrizaje, no solo para
+      // estos dos push. Antes, si la tienda cambiaba entre la última página y
+      // este punto, se saltaban los dos push pero igual se hacía `setSegData` +
+      // `setSegLoaded(true)` con `all` — las páginas de la tienda ANTERIOR. Y
+      // no se corregía solo: con `segLoaded` en true, el `loadSegData()` sin
+      // force que dispara SeguimientoTab al cambiar de tienda hace no-op, así
+      // que quedaban los pedidos de Ecuador bajo el encabezado de Colombia
+      // hasta que alguien recargara. Mezclar países está PROHIBIDO.
+      // Mismo patrón que las otras dos colas (useNovedades, OrderContext):
+      // `return` ANTES de escribir estado, y relanzar para la tienda nueva.
+      if (prevStoreRef.current !== storeId) {
+        window.setTimeout(() => loadSegDataRef.current(true), 0);
+        return;
       }
+      all.push(...devRows);
+      all.push(...sinEstadoRows);
       const mapped = all.map((o, idx) => dbToOrderData(o, idx));
       mapped.sort((a, b) => calcPriority(b) - calcPriority(a));
       setSegData(prev => smartMerge(prev, mapped));
@@ -296,6 +329,8 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
       // Cargó bien → cerrar el episodio de fallo: cancelar reintento pendiente
       // y rearmar el "único reintento" para el próximo episodio.
       retriedOnceRef.current = false;
+      intentoFallidoRef.current = 0;
+      setSegError(null);
       if (retryTimerRef.current != null) {
         window.clearTimeout(retryTimerRef.current);
         retryTimerRef.current = null;
@@ -318,6 +353,6 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
   }, [user, segLoaded, loadSegData]);
 
   return {
-    segData, setSegData, segLoaded, setSegLoaded, segLoading, segLastUpdate, loadSegData,
+    segData, setSegData, segLoaded, setSegLoaded, segLoading, segLastUpdate, loadSegData, segError,
   };
 }

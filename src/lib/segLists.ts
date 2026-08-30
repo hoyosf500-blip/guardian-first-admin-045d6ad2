@@ -1,5 +1,5 @@
 import type { OrderData } from './orderUtils';
-import { calcBusinessDays, parseDate } from './orderUtils';
+import { calcBusinessDays, parseDate, diasCalendarioBogota } from './orderUtils';
 import { classifySegEstado } from './segStatus';
 import { estaDetenido, horasSinMovimiento } from './segPulso';
 
@@ -318,10 +318,27 @@ const SEG_LIST_DEFS: SegListDef[] = [
       const f = faseDe(o);
       if (f !== 'devolucion' && f !== 'devolucion_transito') return false;
       // Reloj real con hora (mismo criterio que estaDetenido / agencia_2d).
-      // Sin fecha de movimiento NO matchea: sin saber CUÁNDO se devolvió no
-      // se puede afirmar que es reciente.
       const h = horasSinMovimiento(o);
-      return h != null && h <= 30 * 24;
+      if (h != null) return h <= 30 * 24;
+      // ⛔ SIN `last_movement_at` SE CAE A LA FECHA DE CREACIÓN (30-ago-2026).
+      //
+      // Antes esto devolvía `false`, aplicando la regla "no saber ≠ vencido"
+      // —correcta en `agencia_2d` y `detenidos_3d`, donde el reloj DECIDE la
+      // urgencia—. Acá el reloj solo acota una ventana, y el LOADER ya resolvió
+      // el caso: `useDataLoader` trae explícitamente las devoluciones sin fecha
+      // de movimiento creadas en los últimos 90 días, con el comentario de que
+      // descartarlas era peor ("no aparecía en Seguimiento NI UN DÍA").
+      //
+      // O sea: el loader y el predicado se arreglaron por separado con criterios
+      // OPUESTOS. El resultado era que esas devoluciones se veían en la columna
+      // del tablero pero nunca entraban a la cola de rescate — y el rescate es
+      // la llamada que en julio recuperó 32 de 49 pedidos.
+      //
+      // ⚠️ Días CALENDARIO, no hábiles: la etiqueta de la lista dice "últimos 30
+      // días" y `diasDesdeCreacion` cuenta HÁBILES (30 hábiles ≈ 42 corridos).
+      // La ventana del reloj de arriba también es calendario (30 × 24 h).
+      const diasCal = o.fecha ? diasCalendarioBogota(o.fecha) : Math.max(0, o.dias || 0);
+      return diasCal <= 30;
     },
   },
 

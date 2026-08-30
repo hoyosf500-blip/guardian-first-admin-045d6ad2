@@ -182,6 +182,13 @@ describe('SEG_LISTS — catch-all y terminales', () => {
     for (const estadoTerminal of ['ENTREGADO', 'CANCELADO', 'REEMPLAZADA', 'DEVOLUCION', 'INDEMNIZADA']) {
       const o: OrderData = { ...baseOrder, estado: estadoTerminal, fecha: '', dias: 10 };
       for (const lista of SEG_LISTS) {
+        // `devolucion_reciente` es la ÚNICA lista eximida del guard terminal:
+        // su trabajo ES el terminal (la llamada de rescate). Hasta el 30-ago
+        // este bucle la incluía y pasaba POR ACCIDENTE — una devolución sin
+        // `lastMovementAt` devolvía false por la regla vieja, no por la
+        // exención. Con el predicado alineado al loader hay que declararla,
+        // igual que ya la declara el bloque de `devolucion_reciente` abajo.
+        if (lista.slug === 'devolucion_reciente') continue;
         expect(lista.matches(o), `${lista.slug} no debe matchear ${estadoTerminal}`).toBe(false);
       }
     }
@@ -219,6 +226,9 @@ describe('SEG_LISTS — estados de ECUADOR', () => {
     for (const estado of TERMINALES_EC) {
       const o: OrderData = { ...baseOrder, estado, fecha: '', dias: 12 };
       for (const lista of SEG_LISTS) {
+        // Ver la nota del guard terminal de arriba: `devolucion_reciente` está
+        // eximida por diseño, y varios de estos estados EC son devoluciones.
+        if (lista.slug === 'devolucion_reciente') continue;
         expect(lista.matches(o), `${lista.slug} no debe matchear ${estado}`).toBe(false);
       }
     }
@@ -435,8 +445,33 @@ describe('devolucion_reciente — se fue a devolución (reloj sobre terminales)'
     expect(lista().matches(o)).toBe(false);
   });
 
-  it('sin lastMovementAt NO matchea: sin saber CUÁNDO se devolvió no es "reciente"', () => {
+  // ⛔ SIN `lastMovementAt` SE CAE A LA FECHA DE CREACIÓN (cambio del 30-ago-2026).
+  //
+  // La regla anterior era "sin fecha de movimiento NO matchea: no se puede
+  // afirmar que es reciente". Suena bien y es la regla correcta en `agencia_2d`
+  // y `detenidos_3d`, donde el reloj DECIDE la urgencia. Acá no: el reloj solo
+  // acota una ventana, y `useDataLoader` YA trae a propósito las devoluciones
+  // sin fecha de movimiento creadas en los últimos 90 días — con el comentario
+  // de que descartarlas era peor ("no aparecía en Seguimiento NI UN DÍA").
+  // El loader y el predicado se habían arreglado por separado con criterios
+  // opuestos: esas devoluciones se veían en la columna del tablero pero nunca
+  // entraban a la cola de rescate, que es la llamada que en julio recuperó 32
+  // de 49 pedidos.
+  it('sin lastMovementAt cae a la fecha de creación: una devolución de hace 8 días SÍ es rescatable', () => {
     const o: OrderData = { ...baseOrder, estado: 'DEVOLUCION', fecha: '', dias: 8, lastMovementAt: null };
+    expect(lista().matches(o)).toBe(true);
+  });
+
+  it('…pero el fallback NO abre la puerta a todo: sin lastMovementAt y creada hace 60 días, no', () => {
+    const o: OrderData = { ...baseOrder, estado: 'DEVOLUCION', fecha: '', dias: 60, lastMovementAt: null };
+    expect(lista().matches(o)).toBe(false);
+  });
+
+  it('el fallback usa días CALENDARIO, no hábiles — la etiqueta dice "últimos 30 días"', () => {
+    // 40 días calendario son ~28 hábiles: con el contador de hábiles esta
+    // devolución habría entrado igual, contradiciendo su propio rótulo.
+    const hace40 = new Date(Date.now() - 40 * 86400000).toISOString().slice(0, 10);
+    const o: OrderData = { ...baseOrder, estado: 'DEVOLUCION', fecha: hace40, dias: 40, lastMovementAt: null };
     expect(lista().matches(o)).toBe(false);
   });
 
