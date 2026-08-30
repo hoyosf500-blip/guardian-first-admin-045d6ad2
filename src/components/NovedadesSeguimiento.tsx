@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { useNovedadesSeguimiento, SeguimientoRange } from '@/hooks/useNovedadesSeguimiento';
 import { formatDuration, NOVEDAD_TIPO_LABEL } from '@/lib/novedadGestion';
+import AvisoLecturaNovedades from '@/components/novedades/AvisoLecturaNovedades';
 import { Stat } from '@/components/novedades/Stat';
 import { NovCard, MetricBar, RangePills, EmptyCard } from '@/components/novedades/NovedadesChrome';
 import { fadeUp } from '@/components/novedades/chromeTokens';
@@ -54,6 +55,20 @@ export default function NovedadesSeguimiento() {
         </button>
       </motion.div>
 
+      {/* ⛔ Las banderas del hook, DIBUJADAS. Se calculaban y nadie las leía:
+          "Gestionadas hoy 0", el aviso rojo "nadie tocó novedades hoy" y el
+          badge "0 hoy" al lado de cada asesora podían salir de una lectura que
+          FALLÓ. Un cero falso acá es un reclamo injusto a una persona. */}
+      <motion.div {...fadeUp(0.04)}>
+        <AvisoLecturaNovedades
+          loadError={s.loadError}
+          muestraParcial={s.muestraParcial}
+          telefonosOmitidos={s.telefonosOmitidos}
+          onReintentar={s.refresh}
+          cargando={s.loading}
+        />
+      </motion.div>
+
       {/* Cobertura del día */}
       <motion.div {...fadeUp(0.05)} className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Stat
@@ -63,7 +78,8 @@ export default function NovedadesSeguimiento() {
         <Stat
           icon={<CheckCircle2 size={17} />} label="Gestionadas hoy" value={s.gestionadasHoy}
           tone={s.gestionadasHoy > 0 ? 'success' : 'default'}
-          hint={s.pendientes > 0 && s.gestionadasHoy === 0 ? '⚠ nadie tocó novedades hoy' : undefined}
+          // Con la lectura caída, "nadie tocó novedades hoy" no es un hecho.
+          hint={!s.loadError && s.pendientes > 0 && s.gestionadasHoy === 0 ? '⚠ nadie tocó novedades hoy' : undefined}
         />
         <Stat icon={<TrendingUp size={17} />} label="Nuevas hoy ≈" value={s.nuevasHoy} tone="info" hint="entraron / se movieron hoy" />
         <Stat
@@ -85,7 +101,9 @@ export default function NovedadesSeguimiento() {
           ) : (
             <ul className="space-y-0.5">
               {s.porOperadora.map((op) => {
-                const sinTocarHoy = op.hoy === 0 && s.pendientes > 0 && op.isMember;
+                // Idem: sin lectura buena no se le puede poner a nadie un
+                // badge rojo de "0 hoy" — no sabemos si trabajó o no.
+                const sinTocarHoy = !s.loadError && op.hoy === 0 && s.pendientes > 0 && op.isMember;
                 return (
                   <MetricBar
                     key={op.operatorId}

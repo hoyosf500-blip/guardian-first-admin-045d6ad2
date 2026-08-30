@@ -280,8 +280,22 @@ export function guiaOficialNovedad(novedad: string | null | undefined, transport
     const oficial = GUIAS.find((g) => g.transportadora === a.transportadora && strip(g.novedad).startsWith(strip(a.fichaOficial ?? '')));
     if (oficial) { const { toks: _t, key: _k, ...g } = oficial; return g; }
   }
-  if (texto.length < 3) return null;
-  const cands = car ? GUIAS.filter((g) => g.transportadora === car) : GUIAS;
+  // ⛔ SIN TRANSPORTADORA RECONOCIDA NO SE ADIVINA (30-ago-2026).
+  //
+  // Antes esto era `car ? GUIAS.filter(...) : GUIAS`: sin transportadora se
+  // buscaba en las CINCO hojas y ganaba el mejor puntaje. Resultado medido: una
+  // novedad de un pedido que no va con Veloces mostraba «Guía oficial de Dropi —
+  // VELOCES — "NO CONTESTA"», con las instrucciones, los plazos y la plantilla
+  // de Veloces. La asesora respondía a Dropi con el formato equivocado.
+  //
+  // Es exactamente lo que el motor de CO/GT prohíbe a propósito
+  // (`novedades/fichas.ts`: "Adivinar sería inventar"), con su prueba guardiana.
+  // Ecuador quedó con la regla vieja y sin esa prueba.
+  //
+  // Devolver null es la respuesta honesta: la pantalla dice que no sabe qué
+  // transportadora lleva el pedido, que es la verdad.
+  if (!car || texto.length < 3) return null;
+  const cands = GUIAS.filter((g) => g.transportadora === car);
   if (!cands.length) return null;
 
   const literal = cands.filter((g) => g.key.length >= 6 && (texto.includes(g.key) || g.key.includes(texto)));

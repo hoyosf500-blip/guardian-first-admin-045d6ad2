@@ -33,7 +33,7 @@ import FingerprintBadge from '@/components/FingerprintBadge';
 import { diasSinMovimiento } from '@/lib/segPulso';
 import ChatClienteCard from '@/components/chat/ChatClienteCard';
 import SectorSinCoberturaChip from '@/components/SectorSinCoberturaChip';
-import { guiaNovedadPorPais, plantillaSolucionPorPais, paisTieneGuia, notasTransportadoraPorPais, reglasTransversalesPorPais, respuestaPublicada, fuenteDeFicha } from '@/lib/novedades/porPais';
+import { guiaNovedadPorPais, plantillaSolucionPorPais, paisTieneGuia, notasTransportadoraPorPais, reglasTransversalesPorPais, respuestaPublicada, fuenteDeFicha, esEstadoDeFlujo, confianzaDeFicha } from '@/lib/novedades/porPais';
 
 interface Props {
   items: OrderData[];
@@ -412,11 +412,37 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
           }
           return (
             <div className="rounded-2xl border border-border bg-card/40 px-4 py-3 text-xs space-y-1.5">
-              <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                Guía oficial de Dropi · {guia.transportadora} · «{guia.novedad}»
+              {/* ⛔ EL TÍTULO DICE DE DÓNDE SALE, NO SIEMPRE "oficial de Dropi".
+                  En Guatemala NO existe guía pública de Dropi: la fuente son los
+                  términos que publican Forza, Cargo Expreso y Guatex, y 20 de
+                  las 23 fichas están marcadas `confianza:'secundaria'`. El campo
+                  se tipaba, se copiaba y se testeaba — y no se dibujaba en
+                  ninguna pantalla. */}
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5 flex-wrap">
+                <span>
+                  {confianzaDeFicha(guia) === 'oficial'
+                    ? 'Guía oficial de Dropi'
+                    : `Lo que publica ${guia.transportadora}`}
+                  {' · '}{guia.transportadora} · «{guia.novedad}»
+                </span>
+                {confianzaDeFicha(guia) !== 'oficial' && (
+                  <span
+                    className="rounded px-1.5 py-0.5 border border-warning/40 bg-warning/10 text-warning normal-case tracking-normal font-semibold"
+                    title="No sale del diccionario de Dropi: sale de lo que publica la transportadora. Verificá antes de responderle a Dropi con esto."
+                  >
+                    fuente secundaria
+                  </span>
+                )}
               </div>
               <div><span className="font-semibold text-foreground">Qué significa:</span> {guia.significado}</div>
-              {respuestaPublicada(guia) ? (
+              {esEstadoDeFlujo(guia) ? (
+                // ⛔ NO en verde y NO bajo "Cómo responder en el panel de Dropi".
+                // Es un estado del flujo (Solicitado, En ruta, Arribo…), no una
+                // novedad: la asesora leía «NO NECESITA RESPUESTA» en verde bajo
+                // ese título y cerraba el pedido sin gestionar, creyendo que lo
+                // decía Dropi.
+                <div><span className="font-semibold text-warning">Esto no es una novedad:</span> {guia.comoResponder} Si el pedido está detenido acá, el trabajo es empujar la logística, no responderle a la transportadora.</div>
+              ) : respuestaPublicada(guia) ? (
                 <div><span className="font-semibold text-success">Cómo responder en el panel de Dropi:</span> {guia.comoResponder}</div>
               ) : (
                 // Dropi publica el significado pero NO la respuesta (Veloces,
@@ -522,23 +548,40 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
                 <div className="mb-1.5 flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setSolution(plantilla.texto.slice(0, maxSolucion))}
+                    /* Sin `.slice()`: la plantilla YA se construye dentro del
+                       tope (ver `plantillaCO`). Cortarla acá otra vez era lo que
+                       la dejaba a mitad de palabra y sin teléfono. */
+                    onClick={() => setSolution(plantilla.texto)}
                     disabled={submitting}
                     className="min-h-9 px-3 rounded-lg border border-success/30 bg-success/10 text-xs font-semibold text-success hover:bg-success/15 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                   >
                     {plantilla.origen === 'oficial' ? 'Usar la plantilla oficial de Dropi' : 'Usar plantilla base'}
                   </button>
                   <span className="text-[10px] text-muted-foreground">
+                    {/* ⛔ El texto de abajo decía "Sin ficha oficial para esta
+                        novedad" AUNQUE justo arriba se estuviera mostrando la
+                        ficha de la transportadora: `plantillaCO`/`plantillaGT`
+                        siempre devuelven origen:'generica', así que la frase
+                        hablaba de la PLANTILLA y se leía como si hablara de la
+                        ficha. Ahora se dice lo que es: la ficha está arriba, el
+                        formato de abajo es genérico. */}
                     {plantilla.origen === 'oficial'
                       ? `Formato que pide Dropi para «${guiaActual?.novedad}» en ${guiaActual?.transportadora}. Completá los ____ con lo que acordaste.`
-                      : 'Sin ficha oficial para esta novedad: completá los ____ con lo que acordaste con el cliente.'}
+                      : guiaActual
+                        ? 'Formato base (la ficha de arriba no trae un texto exacto): completá los ____ con lo que acordaste con el cliente.'
+                        : 'Sin ficha para esta novedad: completá los ____ con lo que acordaste con el cliente.'}
                     {maxSolucion < 500 && ` Máximo ${maxSolucion} caracteres (lo exige la transportadora).`}
                   </span>
                 </div>
               )}
               <textarea
                 value={solution}
-                onChange={(e) => setSolution(e.target.value.slice(0, maxSolucion))}
+                /* ⛔ NO se trunca lo que la asesora escribe. Antes el
+                   `.slice()` la dejaba sin poder agregar ni el teléfono ni el
+                   barrio: llegaba a 120/120 y el textarea se volvía de piedra,
+                   sin decir por qué. Ahora se la deja escribir y se le avisa
+                   abajo cuánto se pasó. */
+                onChange={(e) => setSolution(e.target.value)}
                 placeholder={incidenciaAbierta !== false
                   ? 'Ej: Cliente confirma dirección: Mz 5 villa 8, Cdla Los Esteros, frente a la escuela. Recibe mañana 2-5pm, tel. correcto.'
                   : 'Ej: Cliente confirma estar en casa mañana entre 2-5pm.'}
@@ -546,8 +589,15 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
                 disabled={submitting}
                 className="w-full min-h-[120px] max-h-[320px] rounded-xl bg-muted/50 border border-border p-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 resize-y disabled:opacity-60 transition-colors"
               />
-              <div className="flex justify-end mt-1">
-                <span className={`text-[10px] font-mono tabular-nums ${solution.length > maxSolucion * 0.9 ? 'text-attention' : 'text-muted-foreground'}`}>
+              <div className="flex justify-between items-center gap-2 mt-1">
+                {solution.length > maxSolucion ? (
+                  <span className="text-[10px] text-attention leading-tight">
+                    Te pasaste por {solution.length - maxSolucion} caracteres del tope que acepta
+                    {guiaActual?.transportadora ? ` ${guiaActual.transportadora}` : ' la transportadora'} —
+                    puede cortarse en el panel. Acortá antes de enviar.
+                  </span>
+                ) : <span />}
+                <span className={`text-[10px] font-mono tabular-nums shrink-0 ${solution.length > maxSolucion ? 'text-attention font-bold' : solution.length > maxSolucion * 0.9 ? 'text-attention' : 'text-muted-foreground'}`}>
                   {solution.length}/{maxSolucion}
                 </span>
               </div>

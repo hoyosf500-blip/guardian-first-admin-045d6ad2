@@ -1,5 +1,6 @@
 import { useNovedadesSeguimiento, SeguimientoRange, DimensionRow } from '@/hooks/useNovedadesSeguimiento';
 import { CULPA_LABEL, CULPA_ORDER, Culpa } from '@/lib/novedadTaxonomy';
+import AvisoLecturaNovedades from './AvisoLecturaNovedades';
 import { Stat } from '@/components/novedades/Stat';
 import {
   NovCard, SwatchLegend, MetricBar, RangePills, EmptyCard,
@@ -134,8 +135,20 @@ export default function NovedadesPuntosMejora() {
         />
       </motion.div>
 
-      {/* Empty state */}
-      {totalNov === 0 && !s.loading && (
+      {/* ⛔ Las banderas del hook, DIBUJADAS. Sin esto, "Novedades analizadas: 0"
+          y la tarjeta verde de abajo salían igual de una lectura que FALLÓ. */}
+      <motion.div {...fadeUp(0.02)}>
+        <AvisoLecturaNovedades
+          loadError={s.loadError}
+          muestraParcial={s.muestraParcial}
+          telefonosOmitidos={s.telefonosOmitidos}
+          onReintentar={s.refresh}
+          cargando={s.loading}
+        />
+      </motion.div>
+
+      {/* Empty state — solo cuando el cero es un cero MEDIDO. */}
+      {totalNov === 0 && !s.loading && !s.loadError && (
         <motion.div {...fadeUp(0.1)}>
           <EmptyCard msg="No hay novedades en el período para analizar." />
         </motion.div>

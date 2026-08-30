@@ -28,7 +28,16 @@ import { dropiWebFetch, WebFallbackError } from "../_shared/dropiWebQuote.ts";
 
 // Dropi rechaza result_number > 100 (400 isSuccess=false — ver bug dropi-snapshot).
 const PAGE_SIZE = 100;
-const MAX_PAGES = 3; // 300 incidencias abiertas es ya un escenario irreal.
+// ⛔ El tope no puede ser SILENCIOSO (auditoría 30-ago-2026). Cuando se agotan
+// las páginas con la última llena, lo que falta se archivaba en el bloque
+// plegado "Esperando transportadora", bajo el cartel que AFIRMA "su incidencia
+// ya no está abierta en Dropi… intentar solucionarlas va a ser rechazado" —
+// mientras arriba la pantalla podía mostrar el check verde "No hay novedades
+// por gestionar". Trabajo real escondido detrás de un panel cerrado.
+// Ahora se devuelve `partial` y el cliente lo trata igual que "no se pudo
+// leer": no separa, todo visible como pendiente. Subir el tope sin la bandera
+// solo mueve el problema al siguiente número.
+const MAX_PAGES = 6;
 // 60 y no 30 (H2, auditoría 14-ago-2026): la cola de Novedades del CRM muestra
 // 60 días, y con la ventana en 30 una novedad cuya ÚLTIMA incidencia quedó
 // registrada hace 31-59 días —pero sigue ABIERTA en Dropi— no aparecía en esta
@@ -108,6 +117,9 @@ Deno.serve(async (req) => {
     const from = new Date(until.getTime() - INCIDENCE_WINDOW_DAYS * 86400000);
 
     const ids: string[] = [];
+    // Se pone en true SOLO si una página vino corta: es la única prueba de que
+    // se leyó todo. Salir por agotar MAX_PAGES lo deja en false.
+    let completo = false;
     for (let page = 0; page < MAX_PAGES; page++) {
       const params = new URLSearchParams({
         orderBy: "id",
@@ -144,13 +156,20 @@ Deno.serve(async (req) => {
         const id = (r as Record<string, unknown>)?.id;
         if (id != null) ids.push(String(id));
       }
-      if (rows.length < PAGE_SIZE) break;
+      if (rows.length < PAGE_SIZE) { completo = true; break; }
     }
 
     return jsonResp({
       ok: true,
       ids,
       count: ids.length,
+      // `partial:true` = se agotaron las páginas con la última LLENA, o sea que
+      // hay incidencias abiertas que no entraron. Mismo contrato que
+      // dropi-snapshot, que ya devolvía {partial, message}.
+      partial: !completo,
+      message: completo
+        ? undefined
+        : `Se leyeron las primeras ${ids.length} incidencias abiertas y puede haber más. Mientras tanto no se separa "esperando transportadora": todo queda visible como pendiente.`,
       windowDays: INCIDENCE_WINDOW_DAYS,
       asOf: new Date().toISOString(),
     }, 200, corsHeaders);

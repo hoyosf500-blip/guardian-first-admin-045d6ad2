@@ -72,11 +72,41 @@ function plantillaCO(
   const tel = (pedido.phone ?? '').trim() || '____';
   const nombre = (pedido.nombre ?? '').trim() || '____';
   const dir = (pedido.direccion ?? '').trim() || '____';
-  let texto = maximo <= 120
-    ? `OFRECER A LA DIRECCIÓN ${dir} BARRIO ____. Recibe el ____. Tel ${tel}.`
-    : `OFRECER A LA DIRECCIÓN ${dir} BARRIO ____, CIUDAD ____. Cliente ${nombre} confirma que recibe el ____ (día y franja). Tel ${tel}.`;
-  if (texto.length > maximo) texto = texto.slice(0, maximo);
-  return { texto, maximo, origen: 'generica' };
+  if (maximo > 120) {
+    return {
+      texto: `OFRECER A LA DIRECCIÓN ${dir} BARRIO ____, CIUDAD ____. Cliente ${nombre} confirma que recibe el ____ (día y franja). Tel ${tel}.`,
+      maximo,
+      origen: 'generica',
+    };
+  }
+  // ⛔ LA PLANTILLA CORTA SE CONSTRUYE CORTA, NO CORTADA (30-ago-2026).
+  //
+  // Antes se armaba el texto completo y se hacía `slice(0, maximo)`. Con una
+  // dirección larga (las de Bogotá lo son) el corte caía a mitad de palabra y
+  // se llevaba puesto justo lo que la transportadora necesita:
+  //   «OFRECER A LA DIRECCION CALLE 45 A SUR # 72 F - 31 BARRIO KENNEDY
+  //    CENTRAL TORRE 3 APTO 402 BARRIO ____. Recibe el ____. T»
+  // sin teléfono y sin poder completar el barrio: el contador marcaba 120/120 y
+  // el textarea ya no dejaba escribir. Eso es lo que leía Interrapidísimo.
+  //
+  // Ahora se reservan primero las partes que NO se pueden perder (los dos
+  // huecos que la asesora completa y el teléfono) y la dirección entra con lo
+  // que sobre, recortada en un límite de PALABRA y con «…» para que se vea que
+  // está abreviada.
+  const cabeza = 'OFRECER A LA DIRECCIÓN ';
+  const cola = ` BARRIO ____. Recibe el ____. Tel ${tel}.`;
+  const espacioDir = maximo - cabeza.length - cola.length;
+  let dirCorta = dir;
+  if (espacioDir > 0 && dir.length > espacioDir) {
+    const cortado = dir.slice(0, espacioDir - 1);
+    const ultimoEspacio = cortado.lastIndexOf(' ');
+    dirCorta = (ultimoEspacio > espacioDir / 2 ? cortado.slice(0, ultimoEspacio) : cortado).trimEnd() + '…';
+  } else if (espacioDir <= 0) {
+    // Caso patológico (un tope tan chico que ni el esqueleto entra): se prefiere
+    // entregar lo esencial sin dirección antes que un texto cortado a la mitad.
+    return { texto: cola.trim(), maximo, origen: 'generica' };
+  }
+  return { texto: `${cabeza}${dirCorta}${cola}`, maximo, origen: 'generica' };
 }
 
 function plantillaGT(
@@ -173,5 +203,41 @@ export function fuenteDeFicha(g: GuiaNovedadCualquiera | null): string | null {
 /** Si la ficha trae cómo responder o solo el significado. */
 export function respuestaPublicada(g: GuiaNovedadCualquiera | null): boolean {
   if (!g) return false;
+  if (esEstadoDeFlujo(g)) return false;
   return 'respuestaPublicada' in g ? g.respuestaPublicada : g.comoResponder.trim().length > 0;
+}
+
+/**
+ * ¿La ficha dice literalmente que NO hay nada que responder?
+ *
+ * En Guatemala, 8 de las 23 fichas son ESTADOS DE FLUJO ("Solicitado", "En
+ * ruta", "Arribo a instalaciones"), no novedades: su `responder` empieza con
+ * "NO NECESITA RESPUESTA". Como `respuestaPublicada` solo miraba si el texto
+ * estaba vacío, esas fichas caían en la rama VERDE de la pantalla y la asesora
+ * leía, en verde y bajo el título "Cómo responder en el panel de Dropi":
+ * *"NO NECESITA RESPUESTA (estado de flujo, no novedad)"* — y cerraba el
+ * pedido sin gestionar, creyendo que era Dropi quien lo decía.
+ *
+ * Un "no hay nada que hacer" NO es una instrucción de respuesta: va en su
+ * propia rama, en tono de advertencia, para que se lea como lo que es.
+ */
+export function esEstadoDeFlujo(g: GuiaNovedadCualquiera | null): boolean {
+  if (!g) return false;
+  return /^\s*NO NECESITA RESPUESTA/i.test(g.comoResponder || '');
+}
+
+/**
+ * ¿La ficha viene del diccionario OFICIAL de Dropi, o de una fuente secundaria?
+ *
+ * El encabezado de la caja decía "Guía oficial de Dropi" para los tres países.
+ * En Guatemala eso es falso y el propio registro lo dice: la fuente son los
+ * términos publicados por Forza, Cargo Expreso y Guatex — *"no existe guía
+ * pública de Dropi Guatemala"* — y 20 de las 23 fichas están marcadas
+ * `confianza: 'secundaria'`. El campo se tipaba, se copiaba y se testeaba,
+ * pero no se renderizaba en ninguna pantalla.
+ */
+export function confianzaDeFicha(g: GuiaNovedadCualquiera | null): 'oficial' | 'secundaria' {
+  if (g && 'confianza' in g && g.confianza) return g.confianza;
+  // Las fichas de Ecuador no traen el campo: salen del Drive oficial de Dropi.
+  return 'oficial';
 }

@@ -18,6 +18,8 @@ import { supabase } from '@/integrations/supabase/client';
 interface OpenIncidencesResp {
   ok?: boolean;
   ids?: (string | number)[];
+  /** La lectura se cortó por el tope de páginas: la lista está INCOMPLETA. */
+  partial?: boolean;
   error?: string;
 }
 
@@ -63,6 +65,16 @@ export function useOpenIncidences(storeId: string | null) {
             body: { store_id: storeId },
           });
           const d = (data as OpenIncidencesResp | null) ?? null;
+          // ⛔ `partial` se trata IGUAL que "no se pudo leer" → null, y el
+          // consumidor no separa la cola: todo queda visible como pendiente.
+          //
+          // Una lista incompleta es PEOR que ninguna: lo que no entró se
+          // archivaba en el bloque plegado "Esperando transportadora", bajo el
+          // cartel que afirma "su incidencia ya no está abierta en Dropi…
+          // intentar solucionarlas va a ser rechazado". Novedades con
+          // incidencia ABIERTA quedaban escondidas detrás de un panel cerrado,
+          // con el check verde "No hay novedades por gestionar" arriba.
+          if (d?.partial) return null;
           return !error && d?.ok && Array.isArray(d.ids) ? new Set(d.ids.map(String)) : null;
         })().finally(() => { enVuelo.delete(storeId); });
         enVuelo.set(storeId, p);
