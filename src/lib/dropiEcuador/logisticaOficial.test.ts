@@ -227,3 +227,28 @@ describe('plantilla de solución según la guía oficial de Dropi', () => {
     expect(p.texto).toContain('____');
   });
 });
+
+describe('alias: lo que Dropi escribe de verdad en orders.novedad también tiene ficha', () => {
+  it('«NO RECLAMO EN OFICINA» (SE) va a la ficha oficial de retiro en agencia', () => {
+    const g = guiaOficialNovedad('NO RECLAMO EN OFICINA', 'SERVIENTREGA');
+    expect(g?.novedad).toMatch(/PARA RETIRO EN AGENCIA SERVIENTREGA/);
+  });
+  it('«DEVUELTO DE» / «DEVOLUCION DE DISTRIBUCION» / «ENVIO CON NOVEDAD» (SE) tienen ficha sintética que manda a hablar con el cliente', () => {
+    for (const n of ['DEVUELTO DE', 'DEVOLUCION DE DISTRIBUCION', 'ENVIO CON NOVEDAD']) {
+      const g = guiaOficialNovedad(n, 'SERVIENTREGA');
+      expect(g?.transportadora).toBe('SERVIENTREGA');
+      expect(g?.comoResponder).toMatch(/habl[áa] con el cliente/i);
+      expect(g?.queNoHacer).toMatch(/volver a ofrecer/i);
+    }
+  });
+  it('«DEVOLUCION AL REMITENTE» (SE): ya no admite solución', () => {
+    expect(guiaOficialNovedad('DEVOLUCION AL REMITENTE', 'SERVIENTREGA')?.comoResponder).toMatch(/No hay solución/);
+  });
+  it('LAAR con novedad vacía: ficha que explica que Dropi no tiene incidencia', () => {
+    const g = guiaOficialNovedad('', 'LAARCOURIER');
+    expect(g?.transportadora).toBe('LAARCOURIER');
+    expect(g?.significado).toMatch(/no le pasó a Dropi/);
+    // Servientrega con novedad vacía sigue sin ficha: no se inventa.
+    expect(guiaOficialNovedad('', 'SERVIENTREGA')).toBeNull();
+  });
+});

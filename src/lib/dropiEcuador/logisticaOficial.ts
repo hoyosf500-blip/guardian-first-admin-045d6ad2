@@ -237,10 +237,50 @@ for (const [car, items] of Object.entries(novedadesRaw as Record<string, Novedad
  * transportadora reconocible busca en todas. null cuando no hay una ficha
  * clara — nunca se devuelve «la más parecida» a cualquier costo.
  */
+// Lo que Dropi escribe en `orders.novedad` NO siempre es el nombre de la causal de
+// la hoja: para Servientrega EC trae el MOVIMIENTO («DEVUELTO DE DISTRIBUCION»,
+// «ENVIO CON NOVEDAD», «NO RECLAMO EN OFICINA») y para LAAR viene vacío.
+// Medido el 30-ago-2026 sobre las 119 novedades vivas de la tienda EC: 16 de 18
+// de Servientrega y las 101 de LAAR no matcheaban ninguna ficha. Estos alias
+// las cubren: o apuntan a la ficha oficial correcta, o dan una ficha sintética
+// escrita con lo que la hoja de esa transportadora sí dice (intentos máximos,
+// «solo volver a ofrecer = no efectiva», 5 días en agencia).
+interface AliasNovedad { transportadora: TransportadoraEC; match: RegExp; fichaOficial?: string; sintetica?: Omit<GuiaNovedad, 'transportadora'> }
+const ALIAS_NOVEDAD: AliasNovedad[] = [
+  { transportadora: 'SERVIENTREGA', match: /NO RECLAM[OA] EN OFICINA|NO RETIRA/, fichaOficial: 'PARA RETIRO EN AGENCIA SERVIENTREGA' },
+  { transportadora: 'SERVIENTREGA', match: /DEVOLUCION AL REMITENTE|DEVUELTO AL REMITENTE/, sintetica: {
+    novedad: 'DEVOLUCION AL REMITENTE',
+    significado: 'Servientrega ya inició la devolución del paquete a la bodega: la incidencia no admite solución.',
+    comoResponder: 'No hay solución que enviar. Registrá la gestión acá y escribile al cliente por WhatsApp para saber qué pasó y ofrecerle recompra cuando el paquete vuelva.',
+    queNoHacer: 'Prometerle al cliente que «lo vuelven a intentar»: el paquete ya va de regreso.',
+    observaciones: 'Servientrega intenta máximo 2 veces; después de la segunda devuelve sola.',
+  } },
+  { transportadora: 'SERVIENTREGA', match: /DEVUELTO DE|DEVOLUCION DE DISTRIBUCION|ENVIO CON NOVEDAD/, sintetica: {
+    novedad: 'DEVUELTO DE DISTRIBUCION / ENVIO CON NOVEDAD',
+    significado: 'El motorizado salió a entregar y regresó con el paquete. Dropi trae solo el movimiento, NO la causal (no estaba, dirección, no quiso, sin dinero…).',
+    comoResponder: 'Primero hablá con el cliente para saber qué pasó y recién ahí respondé con el formato de ESA causal: «Me he comunicado con el cliente al número ____ y me indica que ____ (día y hora en que recibe, quién recibe, dirección con referencia). No mayor a 24 horas». Si el cliente ya no quiere el pedido: Devolución.',
+    queNoHacer: 'Responder «volver a ofrecer» sin haber hablado con el cliente: Servientrega lo toma como solución no efectiva y devuelve.',
+    observaciones: 'Servientrega intenta máximo 2 veces. Si el problema es la zona, ofrecé retiro en la agencia más cercana.',
+  } },
+  { transportadora: 'LAARCOURIER', match: /^$/, sintetica: {
+    novedad: 'NOVEDAD SIN MOTIVO (LAAR no lo reporta a Dropi)',
+    significado: 'LAAR puso el pedido en NOVEDAD pero no le pasó a Dropi ni el motivo ni una incidencia abierta: en el panel de Dropi no aparece nada que solucionar.',
+    comoResponder: 'Mirá el motivo en el rastreo de LAAR (guía LC…) y llamá al cliente. En Dropi no hay incidencia que responder: la gestión se registra acá, y el reintento o la devolución se ven después en el estado. Si el cliente no puede recibir, LAAR permite retiro en su oficina hasta 5 días.',
+    queNoHacer: 'Dar por perdido el pedido o esperar a que Dropi avise: no va a avisar.',
+    observaciones: 'LAAR intenta máximo 3 veces. Solución no mayor a 24 horas desde que se habla con el cliente.',
+  } },
+];
+
 export function guiaOficialNovedad(novedad: string | null | undefined, transportadora?: string | null): GuiaNovedad | null {
   const texto = strip(novedad ?? '').replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
-  if (texto.length < 3) return null;
   const car = normalizarTransportadora(transportadora);
+  for (const a of ALIAS_NOVEDAD) {
+    if (car !== a.transportadora || !a.match.test(texto)) continue;
+    if (a.sintetica) return { transportadora: a.transportadora, ...a.sintetica };
+    const oficial = GUIAS.find((g) => g.transportadora === a.transportadora && strip(g.novedad).startsWith(strip(a.fichaOficial ?? '')));
+    if (oficial) { const { toks: _t, key: _k, ...g } = oficial; return g; }
+  }
+  if (texto.length < 3) return null;
   const cands = car ? GUIAS.filter((g) => g.transportadora === car) : GUIAS;
   if (!cands.length) return null;
 
