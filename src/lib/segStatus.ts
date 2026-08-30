@@ -228,6 +228,24 @@ const _unclassifiedSeen = new Set<string>();
 const OTROS_ESPERADOS = new Set(['PENDIENTE CONFIRMACION']);
 
 /**
+ * ¿Este pedido está en la COLA DE CONFIRMAR?
+ *
+ * `classifySegEstado` lo deja en `'otros'` a propósito (arriba está el porqué),
+ * pero `'otros'` es también donde cae un estado que Dropi inventó y nadie
+ * clasificó. Confundir las dos cosas fue el bug del 30-ago-2026: al ordenar
+ * las plantillas por "la fase `otros`" se le mostraban las de confirmación a
+ * CUALQUIER estado desconocido, que bien podría estar en tránsito.
+ *
+ * Esta función responde la pregunta precisa —"¿es la cola de Confirmar?"— y es
+ * la que deben usar las plantillas. Un estado raro sigue devolviendo `false`.
+ */
+export function esColaDeConfirmacion(estado: string | null | undefined): boolean {
+  if (!estado) return false;
+  const e = String(estado).normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
+  return OTROS_ESPERADOS.has(e);
+}
+
+/**
  * Clasifica un `estado` de Dropi en una `SegStatusKey`. Acepta cualquier casing
  * (uppercasea internamente). Estados desconocidos caen en `'otros'` y emiten un
  * `console.warn` la primera vez que aparecen.

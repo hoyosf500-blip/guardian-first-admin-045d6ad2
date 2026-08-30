@@ -1,4 +1,4 @@
-import { classifySegEstado } from './segStatus';
+import { classifySegEstado, esColaDeConfirmacion } from './segStatus';
 
 /**
  * Lo que se le escribe al cliente, según dónde está el paquete.
@@ -22,6 +22,34 @@ export function plantillasPara(estado: string | null | undefined, nombre?: strin
   const hola = nom(nombre) ? `Hola ${nom(nombre)}` : 'Hola';
   const fase = classifySegEstado(estado || '');
 
+  // ⛔ La cola de CONFIRMAR. `PENDIENTE CONFIRMACION` clasifica como `otros`
+  // (no es una fase de Seguimiento — ver `OTROS_ESPERADOS` en segStatus.ts), y
+  // hasta el 30-ago-2026 caía en el fallback de abajo: la asesora de Confirmar
+  // abría el cuadro y lo único que le ofrecíamos era "¿todo bien con la
+  // entrega?" sobre un pedido que NO está despachado ni tiene entrega. Es la
+  // pantalla donde más se escribe del día y era la peor servida.
+  // Estos arranques son los cuatro momentos reales de esa cola: no contesta,
+  // confirmar, falta la dirección, y el que dijo "después te digo".
+  if (esColaDeConfirmacion(estado)) {
+    return [
+      {
+        titulo: 'No contestó la llamada',
+        texto: `${hola}, te acabo de llamar por tu pedido y no logré ubicarte. ¿Te queda mejor que te llame más tarde o lo confirmamos por aquí?`,
+      },
+      {
+        titulo: 'Confirmar el pedido',
+        texto: `${hola}, te escribo para confirmar tu pedido antes de despacharlo. ¿Me confirmas que lo quieres y que la dirección sigue siendo la misma?`,
+      },
+      {
+        titulo: 'Falta la dirección exacta',
+        texto: `${hola}, para poder despachar tu pedido me falta la dirección completa: calle y número, y una referencia cerquita (una tienda, una esquina o qué queda al frente). ¿Me la pasas?`,
+      },
+      {
+        titulo: 'Lo iba a pensar',
+        texto: `${hola}, te lo dejo apartado sin compromiso: pagas recién cuando lo recibes en la mano. ¿Te lo despacho esta semana?`,
+      },
+    ];
+  }
   if (fase === 'oficina') {
     return [
       {

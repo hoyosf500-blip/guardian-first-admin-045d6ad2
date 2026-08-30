@@ -1,4 +1,4 @@
-import { classifySegEstado, type SegStatusKey } from './segStatus';
+import { classifySegEstado, esColaDeConfirmacion, type SegStatusKey } from './segStatus';
 
 /**
  * El idioma HUMANO de Seguimiento: cómo se llama, en español, lo que hay que
@@ -374,6 +374,24 @@ const FASE_EN_PALABRAS: Partial<Record<SegStatusKey, string>> = {
   entregado: 'entregado',
 };
 
+/**
+ * La fase con la que se ORDENAN las plantillas de Meta.
+ *
+ * Casi siempre es la fase del tablero, con UNA excepción que costó meses de
+ * plantillas mal ordenadas: la cola de Confirmar (`PENDIENTE CONFIRMACION`)
+ * cae en `otros` a propósito, y `POR_FASE` no tiene —ni debe tener— esa clave,
+ * porque ahí caen también los estados que Dropi inventa. Se traduce acá a
+ * `procesamiento`, que es la fila cuya regex ya apunta a
+ * `confirmacion|reconfirmacion|direccion_incompleta`.
+ *
+ * Usala SIEMPRE en lugar de `classifySegEstado` para alimentar
+ * `usePlantillasMeta` / `ordenarParaFase`.
+ */
+export function faseParaPlantillas(estado: string | null | undefined): SegStatusKey {
+  if (esColaDeConfirmacion(estado)) return 'procesamiento';
+  return classifySegEstado(estado || '');
+}
+
 export function faseEnPalabras(estado: string | null | undefined): string | null {
   if (!estado) return null;
   return FASE_EN_PALABRAS[classifySegEstado(estado)] ?? null;
@@ -398,7 +416,14 @@ export function agruparPlantillas<T extends PlantillaOrdenable>(
   plantillas: readonly T[],
   estado: string | null | undefined,
 ): GrupoDePlantillas<T>[] {
-  const claveFase = estado ? GRUPO_POR_FASE[classifySegEstado(estado)] ?? null : null;
+  const claveFase = !estado
+    ? null
+    // La cola de Confirmar no es una fase del tablero (cae en `otros`), pero SÍ
+    // tiene un grupo propio y es la pantalla donde más se escribe: va primero.
+    // Un estado desconocido, en cambio, sigue sin grupo — ver `esColaDeConfirmacion`.
+    : esColaDeConfirmacion(estado)
+      ? 'confirmacion'
+      : GRUPO_POR_FASE[classifySegEstado(estado)] ?? null;
   const porClave = new Map<GrupoPlantillaClave, T[]>();
   for (const p of plantillas) {
     const g = grupoPlantilla(p.nombre).clave;

@@ -7,7 +7,7 @@ import { useConversacion } from '@/hooks/useConversacion';
 import ConversacionChat from '@/components/seguimiento/ConversacionChat';
 import PlantillasWhatsapp from '@/components/seguimiento/PlantillasWhatsapp';
 import { plantillasPara } from '@/lib/plantillasChat';
-import { classifySegEstado } from '@/lib/segStatus';
+import { faseParaPlantillas } from '@/lib/accionSeguimiento';
 import { componerEstadoPedido } from '@/lib/estadoPedidoRespuesta';
 import { getTrackingUrl } from '@/lib/orderUtils';
 import { ventanaWhatsapp, MOTIVO_VENTANA, type EstadoVentana } from '@/lib/ventanaWhatsapp';
@@ -59,7 +59,10 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
     () => ({ ...datos, nombre: datos?.nombre ?? nombre ?? null }),
     [datos, nombre],
   );
-  const fase = useMemo(() => classifySegEstado(estado || ''), [estado]);
+  // ⛔ `faseParaPlantillas`, NO `classifySegEstado`: la cola de Confirmar cae
+  // en `otros` y ahí las plantillas salían en orden alfabético, con las de
+  // confirmación cuartas. Ver el guardián `plantillasConfirmar.test.ts`.
+  const fase = useMemo(() => faseParaPlantillas(estado), [estado]);
 
   // Bot NO CIEGO (asistido): con la data que Guardian YA tiene arma la respuesta
   // a "¿cuál es mi guía / cuándo llega?". La asesora la mete al cuadro de un clic

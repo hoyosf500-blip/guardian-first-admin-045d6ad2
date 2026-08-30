@@ -370,11 +370,23 @@ export function sugerirValores(p: PlantillaMeta, d: DatosPedido): Record<number,
 // ⛔ Las claves son valores de `SegStatusKey` (src/lib/segStatus.ts). Una clave
 // que no exista ahí NO falla: simplemente nunca dispara, en silencio.
 //
-// Pasó con `pendiente` (arreglado 27-ago-2026): no es una fase — un
-// `PENDIENTE CONFIRMACION` clasifica como `procesamiento`, y lo que no encaja
-// en ninguna cae en `otros`. Durante meses las plantillas de confirmación y
-// remarketing nunca se subieron por fase, y nadie se enteró porque la lista
-// igual se mostraba entera, solo que mal ordenada.
+// Pasó con `pendiente` (27-ago-2026): no es una fase. Ese arreglo cambió la
+// clave muerta por `procesamiento` **dando por hecho** que ahí caía un
+// `PENDIENTE CONFIRMACION` — y NO cae: `segStatus.ts` lo manda a `otros` a
+// propósito (ver `OTROS_ESPERADOS`; no es una fase de Seguimiento, es la cola
+// de Confirmar). Medido el 30-ago-2026 ejecutando la función:
+//   classifySegEstado('PENDIENTE CONFIRMACION') === 'otros'
+//   classifySegEstado('PENDIENTE')              === 'procesamiento'
+// O sea: durante meses la pantalla de Confirmar ordenó las plantillas
+// ALFABÉTICAMENTE, con `confirmacion` y `reconfirmacion` separadas por
+// `en_transito` y `novedad` en el medio — lo que reportó el dueño.
+//
+// ⛔ NO se arregla agregando una clave `otros` acá: en `otros` cae TAMBIÉN
+// cualquier estado que Dropi invente y nadie haya clasificado, y a ese no hay
+// que ofrecerle plantillas de confirmación (podría estar en tránsito). La
+// traducción se hace ANTES, en `faseParaPlantillas` (src/lib/accionSeguimiento),
+// que reconoce la cola de Confirmar por su estado real y la manda a
+// `procesamiento`, que es la fila de acá abajo con la regex correcta.
 const POR_FASE: Record<string, RegExp> = {
   oficina: /retiro_agencia|retiro|agencia/,
   novedad: /novedad/,

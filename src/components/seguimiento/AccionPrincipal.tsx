@@ -4,7 +4,7 @@ import { Send, Loader2, MessageCircle } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useEnviarWhatsapp, type ModuloEnvio } from '@/hooks/useEnviarWhatsapp';
 import { usePlantillasMeta, useEnviarPlantilla } from '@/hooks/usePlantillasMeta';
-import { accionPrincipal, plantillaParaAccion } from '@/lib/accionSeguimiento';
+import { accionPrincipal, plantillaParaAccion, faseParaPlantillas } from '@/lib/accionSeguimiento';
 import { plantillasPara } from '@/lib/plantillasChat';
 import { renderizar, faltantes, sugerirValores, type DatosPedido } from '@/lib/plantillasMeta';
 import { conRastreo } from '@/lib/datosPlantilla';
@@ -61,6 +61,9 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
   const [abierto, setAbierto] = useState(false);
   const accion = accionPrincipal(estado);
   const fase = useMemo(() => classifySegEstado(estado || ''), [estado]);
+  // ⛔ Para ORDENAR plantillas no vale la fase del tablero: la cola de Confirmar
+  // cae en `otros` y quedaba sin orden. Ver `faseParaPlantillas`.
+  const fasePlantillas = useMemo(() => faseParaPlantillas(estado), [estado]);
 
   // La ventana decide TODO lo de abajo. Se calcula PRIMERO con lo sincronizado
   // (lo que ya tiene la tarjeta): abrir el hilo por cada una de las 83 tarjetas
@@ -103,7 +106,7 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
 
   // Solo se piden al ABRIR: son 40 plantillas por llamada y en el tablero hay
   // decenas de tarjetas a la vez.
-  const { plantillas, estado: estadoPl } = usePlantillasMeta(abierto && conPlantilla, fase);
+  const { plantillas, estado: estadoPl } = usePlantillasMeta(abierto && conPlantilla, fasePlantillas);
   const { enviar, enviando: enviandoTexto } = useEnviarWhatsapp();
   const { enviarPlantilla, enviando: enviandoPl } = useEnviarPlantilla();
   const enviando = enviandoTexto || enviandoPl;
