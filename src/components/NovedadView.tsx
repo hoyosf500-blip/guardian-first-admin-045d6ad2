@@ -33,7 +33,7 @@ import FingerprintBadge from '@/components/FingerprintBadge';
 import { diasSinMovimiento } from '@/lib/segPulso';
 import ChatClienteCard from '@/components/chat/ChatClienteCard';
 import SectorSinCoberturaChip from '@/components/SectorSinCoberturaChip';
-import { guiaOficialNovedad, plantillaSolucion } from '@/lib/dropiEcuador/logisticaOficial';
+import { guiaNovedadPorPais, plantillaSolucionPorPais, paisTieneGuia } from '@/lib/novedades/porPais';
 
 interface Props {
   items: OrderData[];
@@ -108,9 +108,13 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
   // puesto y huecos para lo que acordó la asesora. Solo Ecuador. Nunca se
   // envía solo: la asesora lo completa — «solo VOLVER A OFRECER» es solución
   // no efectiva para Dropi.
-  const esEC = activeStore?.country_code === 'EC';
-  const guiaActual = esEC && o ? guiaOficialNovedad(o.novedad, o.transportadora) : null;
-  const plantilla = esEC && o ? plantillaSolucion(guiaActual, { phone: o.phone, nombre: o.nombre, direccion: o.direccion }, o.transportadora) : null;
+  // Multi-país (30-ago-2026): la ficha y el borrador salen del registro por
+  // país (`novedades/porPais.ts`). Ecuador tiene las hojas oficiales; los demás
+  // países reciben la plantilla genérica de Dropi y NUNCA la ficha ecuatoriana
+  // «por parecida». El envío a Dropi ya era multi-país (host por country_code).
+  const pais = activeStore?.country_code;
+  const guiaActual = o ? guiaNovedadPorPais(pais, o.novedad, o.transportadora) : null;
+  const plantilla = o ? plantillaSolucionPorPais(pais, guiaActual, { phone: o.phone, nombre: o.nombre, direccion: o.direccion }, o.transportadora) : null;
   const maxSolucion = plantilla?.maximo ?? 500;
 
   // Reset local state when the current order changes
@@ -392,9 +396,18 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
             vivía en la memoria de cada asesora. Solo Ecuador (las hojas son de
             EC) y solo si hay una ficha clara — sin ficha no se dibuja nada,
             nunca «la más parecida». */}
-        {esEC && (() => {
+        {(() => {
           const guia = guiaActual;
-          if (!guia) return null;
+          if (!guia) {
+            // Sin ficha no se dibuja «la más parecida». Si el país no tiene
+            // hojas cargadas se dice, para que nadie crea que Guardian sabe
+            // algo que no sabe.
+            return o.novedad && !paisTieneGuia(pais) ? (
+              <p className="text-[11px] text-muted-foreground px-1">
+                Todavía no hay guía oficial de novedades cargada para este país: leé la novedad, hablá con el cliente y respondele a Dropi con el formato de abajo.
+              </p>
+            ) : null;
+          }
           return (
             <div className="rounded-2xl border border-border bg-card/40 px-4 py-3 text-xs space-y-1.5">
               <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">

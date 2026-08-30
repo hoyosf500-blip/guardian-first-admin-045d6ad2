@@ -127,7 +127,7 @@ export default function NovedadesTab() {
               lo que pasa de verdad — antes decía lo contrario y también era
               verdad entonces. */}
           <p className="text-sm text-muted-foreground">
-            Resolvé la novedad acá: la solución se envía a Dropi con la plantilla oficial de la transportadora. Las de «Esperando transportadora» ya no tienen incidencia abierta y solo se registran.
+            Resolvé la novedad acá: la solución se envía a Dropi con el formato que acepta (y la guía oficial de la transportadora cuando el país la tiene cargada). Las de «Esperando transportadora» ya no tienen incidencia abierta y solo se registran.
           </p>
         </div>
         <div className="relative flex flex-wrap items-center gap-2 shrink-0">
