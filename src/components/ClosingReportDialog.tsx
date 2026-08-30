@@ -31,6 +31,13 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
   const [stats, setStats] = useState<TodayStats | null>(null);
   /** ¿Se pudo LEER el resumen del día? Ver el comentario de `load`. */
   const [statsError, setStatsError] = useState(false);
+  /** ⛔ ¿Se pudo LEER la lista de pendientes? Mismo problema que `statsError`,
+   *  en la otra mitad del diálogo: "no se pudo leer" y "no hay pendientes"
+   *  compartían la misma rama y el mismo array vacío, así que la asesora leía
+   *  «Resumen automático del día» sin ninguna advertencia y firmaba un cierre
+   *  limpio sobre clientes con llamadas del día sin usar. La supervisora lo lee
+   *  así en /admin → Reportes diarios. */
+  const [pendingError, setPendingError] = useState(false);
   const [step, setStep] = useState(1);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -41,7 +48,13 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
       (supabase.rpc as unknown as (fn: string) => Promise<{ data: PendingRow[] | null; error: unknown }>)('pending_retry_list'),
       (supabase.rpc as unknown as (fn: string) => Promise<{ data: TodayStats[] | null; error: unknown }>)('today_call_stats'),
     ]);
-    if (!pendingRes.error && pendingRes.data) setPending(pendingRes.data);
+    if (!pendingRes.error && pendingRes.data) {
+      setPending(pendingRes.data);
+      setPendingError(false);
+    } else {
+      setPending([]);
+      setPendingError(true);
+    }
     // Fallar la lectura y no haber trabajado se veían IGUAL (auditoría
     // 4-ago-2026): con el error descartado, `stats` quedaba en null y la
     // pantalla imprimía `stats?.confirmados ?? 0` — o sea "Confirmados 0 ·
@@ -111,9 +124,11 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
             Cerrar turno {!loading && <span className="text-xs text-muted-foreground font-normal">— paso {step} de 2</span>}
           </DialogTitle>
           <DialogDescription>
-            {hasPending
-              ? `Tenés ${pending.length} cliente${pending.length > 1 ? 's' : ''} sin llamar. Podés cerrar igual, pero quedará registrado.`
-              : 'Resumen automático del día. Solo agrega notas si lo necesitas.'}
+            {pendingError
+              ? 'No se pudo verificar si te quedaron llamadas pendientes. Cerrá igual — el cierre queda marcado como no verificado.'
+              : hasPending
+                ? `Tenés ${pending.length} cliente${pending.length > 1 ? 's' : ''} sin llamar. Podés cerrar igual, pero quedará registrado.`
+                : 'Resumen automático del día. Solo agrega notas si lo necesitas.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -127,6 +142,23 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
                     muestra hasta 3 in-line + un "ver más" si hay más; el
                     submit del step 2 detecta hasPending y pasa p_force=true
                     para que el cierre quede etiquetado server-side. */}
+                {/* Tono NEUTRO, no amarillo: no sabemos si quedaron pendientes,
+                    no sabemos que los haya. Es lo mismo que ya hace `statsError`
+                    justo abajo. */}
+                {pendingError && (
+                  <div className="rounded-lg border border-border bg-card/40 p-3">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle size={16} className="text-muted-foreground mt-0.5 flex-shrink-0" />
+                      <div className="text-xs text-muted-foreground flex-1">
+                        <div className="font-semibold text-foreground mb-0.5">No se pudo revisar tus llamadas pendientes</div>
+                        <div>
+                          No sabemos si te quedaron clientes sin llamar — esto no significa que no queden.
+                          Cerrá igual: el cierre va marcado como no verificado.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {hasPending && (
                   <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 space-y-2">
                     <div className="flex items-start gap-2">
@@ -257,8 +289,11 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
                       RPC recibe p_force=true y registra el cierre con la marca
                       "cerrado con N pendientes" — el bloqueo server-side se
                       mantiene activo para auditoría pero ya no impide cerrar. */}
-                  <Button onClick={() => submit(hasPending)} disabled={submitting} className="flex-1">
-                    {submitting ? <Loader2 className="animate-spin" size={16} /> : hasPending ? 'Cerrar con pendientes' : 'Enviar cierre'}
+                  {/* `pendingError` fuerza igual que `hasPending`: un cierre
+                      que no se pudo verificar NO puede quedar registrado como
+                      limpio. */}
+                  <Button onClick={() => submit(hasPending || pendingError)} disabled={submitting} className="flex-1">
+                    {submitting ? <Loader2 className="animate-spin" size={16} /> : hasPending ? 'Cerrar con pendientes' : pendingError ? 'Cerrar sin verificar' : 'Enviar cierre'}
                   </Button>
                 </div>
               </div>

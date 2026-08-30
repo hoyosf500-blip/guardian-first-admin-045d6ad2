@@ -64,7 +64,20 @@ export interface UseLogisticsStatsResult {
 
 export function useLogisticsStats(
   filters: LogisticsFilters,
-  opts?: { disableRealtime?: boolean },
+  opts?: {
+    disableRealtime?: boolean;
+    /**
+     * Solo se va a leer `summary`: no se disparan las 3 RPC pesadas
+     * (`logistics_by_carrier` / `_by_city` / `_by_product`).
+     *
+     * ⛔ Lo pide `ComparisonView` (30-ago-2026), que consume ÚNICAMENTE
+     * `summary` y monta el hook DOS veces —una por período—: eran 6 consultas
+     * pesadas por apertura que nadie dibujaba, contra la misma base con la que
+     * el equipo está trabajando. `logistics_by_product` con 50 filas y ventanas
+     * largas es de las más caras de /logistica.
+     */
+    soloResumen?: boolean;
+  },
 ): UseLogisticsStatsResult {
   const { fromDate, toDate, ciudad } = filters;
   const ciudadKey = ciudad?.trim() || null;
@@ -75,6 +88,8 @@ export function useLogisticsStats(
   const baseKey = ['logistics', storeId ?? 'none', fromDate, toDate, ciudadKey] as const;
   const queryClient = useQueryClient();
   const storeReady = Boolean(storeId);
+  // Las 3 pesadas solo corren si alguien las va a dibujar. Ver `soloResumen`.
+  const detalleReady = storeReady && !opts?.soloResumen;
 
   const summary = useQuery<LogisticsSummary | null>({
     queryKey: [...baseKey, 'summary'],
@@ -98,7 +113,7 @@ export function useLogisticsStats(
       p_ciudad: ciudadKey,
     }),
     staleTime: STALE_5MIN,
-    enabled: storeReady,
+    enabled: detalleReady,
   });
 
   const cities = useQuery<CityReturns[]>({
@@ -111,7 +126,7 @@ export function useLogisticsStats(
     staleTime: STALE_5MIN,
     // Cuando hay filtro de ciudad, esta query no aporta (sería 1 sola fila).
     // La deshabilitamos para ahorrar round-trip.
-    enabled: storeReady && !ciudadKey,
+    enabled: detalleReady && !ciudadKey,
   });
 
   const products = useQuery<ProductFailure[]>({
@@ -124,7 +139,7 @@ export function useLogisticsStats(
       p_limit: 50,
     }, ciudadKey),
     staleTime: STALE_5MIN,
-    enabled: storeReady,
+    enabled: detalleReady,
   });
 
   // Realtime: cualquier cambio en `orders` invalida los 4 queries

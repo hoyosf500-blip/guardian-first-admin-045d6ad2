@@ -1,4 +1,4 @@
-import { Fragment, memo, useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
+import { Fragment, memo, useCallback, useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
@@ -10,7 +10,7 @@ import {
 import { OrderData, getTrackingUrl, getWhatsAppPhone, parseDate } from '@/lib/orderUtils';
 import { classifySegEstado, estadoDifiereDeFase, normalizaRotulo, type SegStatusKey } from '@/lib/segStatus';
 import { haceCuantoMs, type ActividadChatOrden } from '@/lib/actividadChat';
-import { cicloContacto, enEspera, rangoCiclo } from '@/lib/cicloContacto';
+import { cicloContacto, enEspera, rangoCiclo, type Ciclo } from '@/lib/cicloContacto';
 import { metodosRapidosParaEstado, esContactoEfectivo, faseConGestion } from '@/lib/segMetodosEstado';
 import { haceCuanto, type GestionDelPedido } from '@/lib/gestionPorPedido';
 import { FASES_VIVAS, HORAS_DETENIDO, diasSinMovimiento, estaDetenido } from '@/lib/segPulso';
@@ -266,7 +266,100 @@ const COLUMN_PAGE = 30;
  *  el pedido y no desde que entró a este estado. La cuenta sigue viva y con
  *  nombre propio en `segPulso` (`diasSinMovimiento`, `estaDetenido`). */
 
-const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, gestionEquipo, historialEquipo, nombreDe, avisoMs, columnLabel, actividad, ahoraTick, novedadCerrada, ampliada }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void; gestionEquipo?: Map<string, GestionDelPedido>; historialEquipo?: Map<string, GestionDelPedido>; ampliada?: boolean; nombreDe?: (id?: string | null) => string; avisoMs?: number | null; columnLabel?: string; actividad?: ActividadChatOrden | null;
+/**
+ * Lo que la tarjeta necesita del RELOJ, calculado UNA vez en el padre.
+ *
+ * ⛔ POR QUÉ EXISTE (30-ago-2026). El comentario del reloj de abajo dice
+ * *"Un solo reloj arriba, y memo hace que solo se redibuje lo que de verdad
+ * cambió"*. La primera mitad era cierta (un timer, no 400); la segunda no: al
+ * viajar `ahoraTick` como prop, el número cambiaba cada 60 s y rompía el `memo`
+ * de TODAS las tarjetas por igual, cambiaran o no sus datos. En la pantalla
+ * donde la asesora pasa las ocho horas eso se siente como un tirón cada minuto:
+ * el scroll de la columna queda pegado un instante y un click que cae en esa
+ * ventana se pierde.
+ *
+ * Ahora el padre —que ya recorre la lista una vez por minuto— calcula los tres
+ * valores derivados y `useTiempoPorPedido` CONSERVA LA REFERENCIA ANTERIOR
+ * cuando el contenido no cambió. En un minuto cambian un puñado de tarjetas,
+ * no las 600. Mismo patrón de identidad estable que `mismaGestion` en
+ * OrderContext y `smartMerge`.
+ */
+interface TiempoPedido {
+  ciclo: Ciclo;
+  /** Días en ESTE estado. `null` = sin fecha de movimiento (no es cero). */
+  diasEstado: number | null;
+  detenido: boolean;
+}
+
+const claveTiempo = (o: OrderData) => String(o.dbId ?? o.externalId ?? o.phone ?? '');
+
+/** Igualdad por CONTENIDO de lo que la tarjeta dibuja. `intentos` entra porque
+ *  la etiqueta lo muestra; `ultimoNuestroMs` no, porque no se pinta. */
+const mismoTiempo = (a: TiempoPedido, b: TiempoPedido) =>
+  a.diasEstado === b.diasEstado
+  && a.detenido === b.detenido
+  && a.ciclo.estado === b.ciclo.estado
+  && a.ciclo.etiqueta === b.ciclo.etiqueta
+  && a.ciclo.accion === b.ciclo.accion
+  && a.ciclo.intentos === b.ciclo.intentos
+  && a.ciclo.intentosConocidos === b.ciclo.intentosConocidos;
+
+function useTiempoPorPedido(
+  data: OrderData[],
+  ahoraTick: number,
+  actividadChat?: Map<string, ActividadChatOrden>,
+  gestionEquipo?: Map<string, GestionDelPedido>,
+  historialEquipo?: Map<string, GestionDelPedido>,
+): (o: OrderData) => TiempoPedido {
+  const prevRef = useRef<Map<string, TiempoPedido>>(new Map());
+  const mapa = useMemo(() => {
+    const prev = prevRef.current;
+    const next = new Map<string, TiempoPedido>();
+    for (const o of data) {
+      const nuevo: TiempoPedido = {
+        // `gestionPrevia` SÍ va acá (a diferencia del cálculo de ORDEN, que la
+        // omite a propósito): la etiqueta de la tarjeta suma los intentos de la
+        // semana para no decir "2º" sobre el 4º.
+        ciclo: cicloContacto({
+          actividad: actividadChat?.get(String(o.dbId ?? '')),
+          gestion: gestionEquipo?.get(o.phone ?? ''),
+          gestionPrevia: o.phone ? historialEquipo?.get(o.phone) : undefined,
+          ahoraMs: ahoraTick,
+        }),
+        diasEstado: diasSinMovimiento(o, ahoraTick),
+        detenido: estaDetenido(o, ahoraTick),
+      };
+      const k = claveTiempo(o);
+      const viejo = prev.get(k);
+      next.set(k, viejo && mismoTiempo(viejo, nuevo) ? viejo : nuevo);
+    }
+    prevRef.current = next;
+    return next;
+  }, [data, ahoraTick, actividadChat, gestionEquipo, historialEquipo]);
+
+  // ⛔ Devuelve una FUNCIÓN, no el Map: si una tarjeta se dibuja con un pedido
+  // que no está en `data` (una columna con su propia lista, un render en el
+  // medio de un cambio de datos), un `.get(...)!` daría `undefined` y la
+  // tarjeta reventaría al leer `tiempo.ciclo` — tumbando la pantalla entera,
+  // que es exactamente el modo de fallo que ya costó una caída. Acá se calcula
+  // al vuelo: se pierde la memoización de ESE pedido, no la pantalla.
+  return useCallback((o: OrderData) => {
+    const cacheado = mapa.get(claveTiempo(o));
+    if (cacheado) return cacheado;
+    return {
+      ciclo: cicloContacto({
+        actividad: actividadChat?.get(String(o.dbId ?? '')),
+        gestion: gestionEquipo?.get(o.phone ?? ''),
+        gestionPrevia: o.phone ? historialEquipo?.get(o.phone) : undefined,
+        ahoraMs: ahoraTick,
+      }),
+      diasEstado: diasSinMovimiento(o, ahoraTick),
+      detenido: estaDetenido(o, ahoraTick),
+    };
+  }, [mapa, ahoraTick, actividadChat, gestionEquipo, historialEquipo]);
+}
+
+const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, gestionEquipo, historialEquipo, nombreDe, avisoMs, columnLabel, actividad, tiempo, novedadCerrada, ampliada }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void; gestionEquipo?: Map<string, GestionDelPedido>; historialEquipo?: Map<string, GestionDelPedido>; ampliada?: boolean; nombreDe?: (id?: string | null) => string; avisoMs?: number | null; columnLabel?: string; actividad?: ActividadChatOrden | null;
   /** La novedad de este pedido ya la cerró (o dejó vencer) la transportadora:
    *  Dropi rechaza resolverla. `undefined` = no se sabe → no se afirma nada. */
   novedadCerrada?: boolean;
@@ -275,7 +368,9 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
    *  montar un intervalo en cada una de las ~400 tarjetas del tablero sería
    *  400 timers y 400 re-renders por minuto. Un solo reloj arriba, y `memo`
    *  hace que solo se redibuje lo que de verdad cambió. */
-  ahoraTick: number }) {
+  /** Lo derivado del reloj, calculado en el padre con identidad estable.
+   *  Ver `useTiempoPorPedido` — NO se pasa el instante crudo. */
+  tiempo: TiempoPedido }) {
   const navigate = useNavigate();
   const { refresh, isRefreshing } = useRefreshOrder();
   const { activeStoreId } = useStore();
@@ -361,8 +456,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   const debeLlamar = tocaLlamar(actividad, o.estado);
   // Días EN ESTE ESTADO (no desde que nació el pedido) + el corte de "detenido"
   // que ya existe (72 h). Ver el badge D más abajo.
-  const diasEstado = diasSinMovimiento(o, ahoraTick);
-  const detenido = estaDetenido(o, ahoraTick);
+  const { diasEstado, detenido } = tiempo;
   const waPhone = o.phone ? getWhatsAppPhone(o.phone, countryCode) : '';
 
   // El ciclo de contacto: qué pasó con lo último que le mandamos y qué toca
@@ -371,8 +465,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   // `gPrevia` va SIEMPRE (no solo cuando no hubo nada hoy, que es como se elige
   // qué mostrar en el renglón de historial): los intentos de la semana se suman
   // a los de hoy para que el número de la etiqueta sea el de verdad.
-  const gPrevia = o.phone ? historialEquipo?.get(o.phone) : undefined;
-  const ciclo = cicloContacto({ actividad, gestion: gEquipo, gestionPrevia: gPrevia, ahoraMs: ahoraTick });
+  const ciclo = tiempo.ciclo;
   // ⛔ LA TARJETA SE BLOQUEA CON EL MISMO RELOJ QUE LA ESCONDE (30-ago-2026).
   //
   // Antes el tercer término era `touchedTodayPhones?.has(o.phone)`: un candado
@@ -1022,6 +1115,9 @@ function ColumnBody({ colKey, scrollRefs, children }: {
  */
 function FocusedColumn({ col, countryCode, gestionEquipo, historialEquipo, nombreDe, avisosAgencia, actividadChat, incidenciasAbiertas, onBack }: { col: ColumnDef & { orders: OrderData[] }; countryCode?: string | null; gestionEquipo?: Map<string, GestionDelPedido>; historialEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisosAgencia?: Map<string, number>; actividadChat?: Map<string, ActividadChatOrden>; incidenciasAbiertas?: Set<string> | null; onBack: () => void }) {
   const ahoraTick = useRelojMinuto();
+  // Ver `useTiempoPorPedido`: lo derivado del reloj se calcula ACÁ, una vez,
+  // con identidad estable — no viaja el instante crudo a cada tarjeta.
+  const tiempoDe = useTiempoPorPedido(col.orders, ahoraTick, actividadChat, gestionEquipo, historialEquipo);
   const navigate = useNavigate();
   const { activeStoreId } = useStore();
   const t = TONE[col.tone];
@@ -1171,7 +1267,7 @@ function FocusedColumn({ col, countryCode, gestionEquipo, historialEquipo, nombr
                 nombreDe={nombreDe}
                 avisoMs={o.phone ? avisosAgencia?.get(o.phone) ?? null : null}
                 actividad={o.dbId ? actividadChat?.get(String(o.dbId)) ?? null : null}
-                ahoraTick={ahoraTick}
+                tiempo={tiempoDe(o)}
                 novedadCerrada={incidenciasAbiertas && col.baseKey === 'novedad' ? !(o.externalId && incidenciasAbiertas.has(String(o.externalId))) : undefined}
                 onOpen={() => { focusByIndex(i); if (o.externalId) navigate(`/pedido/${o.externalId}`, { state: { siblingIds, storeId: activeStoreId } }); }}
               />
@@ -1369,6 +1465,10 @@ function useRelojMinuto(): number {
 
 export default function SegBoard({ data, countryCode, statusFilter, gestionEquipo, historialEquipo, avisosAgencia, actividadChat, incidenciasAbiertas, celebratory = false, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
   const ahoraTick = useRelojMinuto();
+  // Ver `useTiempoPorPedido`: lo derivado del reloj se calcula ACÁ, una vez por
+  // minuto, con identidad estable — así el `memo` de las ~600 tarjetas solo se
+  // rompe en las pocas cuyo texto cambió, en vez de en todas.
+  const tiempoDe = useTiempoPorPedido(data, ahoraTick, actividadChat, gestionEquipo, historialEquipo);
   // Nombre de la asesora que gestionó: cache módulo-level compartido, una sola
   // lectura de profiles por sesión (no una por tarjeta).
   const { nameOf: nombreDe } = useOperatorNames();
@@ -1886,7 +1986,7 @@ export default function SegBoard({ data, countryCode, statusFilter, gestionEquip
                   nombreDe={nombreDe}
                   avisoMs={o.phone ? avisosAgencia?.get(o.phone) ?? null : null}
                   actividad={o.dbId ? actividadChat?.get(String(o.dbId)) ?? null : null}
-                  ahoraTick={ahoraTick}
+                  tiempo={tiempoDe(o)}
                   novedadCerrada={
                     // `undefined` mientras no se sepa: sin el dato de Dropi no
                     // se afirma que una novedad esté cerrada.

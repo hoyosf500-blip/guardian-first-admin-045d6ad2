@@ -61,8 +61,15 @@ export default memo(function ComparisonView({
   periodA, periodB,
   onPeriodAChange, onPeriodBChange,
 }: Props) {
-  const a = useLogisticsStats(periodA);
-  const b = useLogisticsStats(periodB);
+  // ⛔ `soloResumen` + `disableRealtime` (30-ago-2026). Esta vista consume
+  // ÚNICAMENTE `summary` (lo dice el comentario de abajo), pero montaba el hook
+  // completo DOS veces: 6 consultas pesadas por apertura que nadie dibuja —
+  // entre ellas `logistics_by_product` con 50 filas, de las más caras de
+  // /logistica— más DOS canales de realtime que invalidan todo el prefijo
+  // 'logistics' cada vez que el cron toca `orders`. Contra la misma base con la
+  // que el equipo está trabajando.
+  const a = useLogisticsStats(periodA, { soloResumen: true, disableRealtime: true });
+  const b = useLogisticsStats(periodB, { soloResumen: true, disableRealtime: true });
 
   const aError = a.summary.isError;
   const bError = b.summary.isError;

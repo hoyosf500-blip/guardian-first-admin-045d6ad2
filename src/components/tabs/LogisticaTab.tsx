@@ -375,11 +375,28 @@ export default function LogisticaTab() {
     // Decisiones / Billetera el timestamp mentía sobre la frescura de la plata
     // (auditoría 2026-07-07). Invalidar por prefijo cubre el resto sin acoplar
     // este componente a cada hook.
+    //
+    // ⛔ LA LISTA SE QUEDÓ ATRÁS OTRA VEZ (30-ago-2026). La tanda anterior
+    // cubrió lo que existía entonces; los hooks que se agregaron después
+    // —pauta, flete por transportadora, devoluciones del período, KPIs mes a
+    // mes, balance, costos unitarios, rendiciones— quedaron fuera, así que el
+    // botón "Refrescar" y el reloj de "actualizado 14:32" mentían justamente
+    // sobre las cifras de PLATA, que son las que se miran para decidir.
+    //
+    // Se descubre sola: el `for` de abajo recorre TODOS los prefijos que usan
+    // las tabs de esta pantalla. Al agregar un hook nuevo, sumá su prefijo acá
+    // o el reloj vuelve a mentir sobre él.
     for (const key of [
       'financial-summary', 'ganancia-neta-dropi', 'operativo-cohorte',
       'orders-estado-breakdown', 'wallet_movements', 'wallet_saldo_hoy',
       'wallet_daily_series', 'wallet_sync_health', 'logistics-city-carrier-matrix',
       'logistics-cost-basis', 'product-profitability',
+      // Agregados el 30-ago: los consumen Resumen / Finanzas / Balance /
+      // Decisiones y ninguno se refrescaba con el botón.
+      'store-ad-spend', 'flete-por-carrier', 'devoluciones-del-periodo',
+      'kpis-mensuales', 'balance-mensual', 'costos-unitarios',
+      'logistica-monthly-costs', 'rendiciones', 'cobertura-medida',
+      'logistics-cities-list', 'wallet-sin-clasificar', 'nightly-reconcile-health',
     ]) {
       void queryClient.invalidateQueries({ queryKey: [key] });
     }
