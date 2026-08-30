@@ -121,13 +121,13 @@ export default function NovedadesTab() {
             </span>
             Novedades
           </h2>
-          {/* HONESTIDAD: los botones de la card solo MARCAN la gestión en el
-              CRM (useMarkNovedadResolved no empuja a Dropi). El copy viejo
-              prometía "resolución en vivo contra Dropi" y una operadora nueva
-              podía marcar "Resuelta" sin tocar el panel — la incidencia vencía
-              y el paquete se devolvía solo. */}
+          {/* Desde el 30-ago-2026 los botones de la card SÍ envían la solución a
+              Dropi (useMarkNovedadResolved con incidencia abierta; verificado en
+              vivo: «Novedades reportadas con éxito!»). El copy tiene que decir
+              lo que pasa de verdad — antes decía lo contrario y también era
+              verdad entonces. */}
           <p className="text-sm text-muted-foreground">
-            Gestioná cada novedad en el panel de Dropi y registrá acá el resultado — marcar no resuelve en Dropi
+            Resolvé la novedad acá: la solución se envía a Dropi con la plantilla oficial de la transportadora. Las de «Esperando transportadora» ya no tienen incidencia abierta y solo se registran.
           </p>
         </div>
         <div className="relative flex flex-wrap items-center gap-2 shrink-0">
