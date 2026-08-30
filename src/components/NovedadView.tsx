@@ -391,44 +391,22 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
             pide Dropi que se responda en su panel y qué NO hacer. Antes esto
             vivía en la memoria de cada asesora. Solo Ecuador (las hojas son de
             EC) y solo si hay una ficha clara — sin ficha no se dibuja nada,
-            nunca «la más parecida».
-            PLEGADA por defecto (pedido del dueño, 30-ago): abierta ocupaba
-            cuatro párrafos por encima del chat del cliente, que es lo que la
-            asesora necesita ver. Cerrada es UNA línea: transportadora, novedad
-            y qué significa. El «cómo responder» vive detrás del botón de la
-            plantilla oficial y acá, al abrirla. `<details>` nativo a propósito:
-            cero hooks (este componente ya se cayó por un hook debajo del
-            early-return) y la key por novedad hace que una novedad distinta
-            aparezca plegada otra vez. */}
+            nunca «la más parecida». */}
         {esEC && (() => {
           const guia = guiaActual;
           if (!guia) return null;
           return (
-            <details
-              key={`${guia.transportadora}|${guia.novedad}`}
-              className="group rounded-xl border border-border bg-card/40 text-xs"
-            >
-              <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-2 list-none [&::-webkit-details-marker]:hidden">
-                <ChevronRight size={12} className="flex-shrink-0 text-muted-foreground transition-transform group-open:rotate-90" aria-hidden="true" />
-                <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground flex-shrink-0">
-                  Guía Dropi · {guia.transportadora}
-                </span>
-                <span className="min-w-0 truncate text-muted-foreground group-open:hidden">
-                  «{guia.novedad}» — {guia.significado}
-                </span>
-                <span className="min-w-0 truncate text-foreground hidden group-open:inline">
-                  «{guia.novedad}»
-                </span>
-              </summary>
-              <div className="px-3 pb-2.5 pl-8 space-y-1 leading-relaxed">
-                <div><span className="font-semibold text-foreground">Qué significa:</span> {guia.significado}</div>
-                <div><span className="font-semibold text-success">Cómo responder en Dropi:</span> {guia.comoResponder}</div>
-                {guia.queNoHacer && (
-                  <div><span className="font-semibold text-danger">Qué NO hacer:</span> {guia.queNoHacer}</div>
-                )}
-                {guia.observaciones && <div className="text-muted-foreground">{guia.observaciones}</div>}
+            <div className="rounded-2xl border border-border bg-card/40 px-4 py-3 text-xs space-y-1.5">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                Guía oficial de Dropi · {guia.transportadora} · «{guia.novedad}»
               </div>
-            </details>
+              <div><span className="font-semibold text-foreground">Qué significa:</span> {guia.significado}</div>
+              <div><span className="font-semibold text-success">Cómo responder en el panel de Dropi:</span> {guia.comoResponder}</div>
+              {guia.queNoHacer && (
+                <div><span className="font-semibold text-danger">Qué NO hacer:</span> {guia.queNoHacer}</div>
+              )}
+              {guia.observaciones && <div className="text-muted-foreground">{guia.observaciones}</div>}
+            </div>
           );
         })()}
         {o.direccion && (
