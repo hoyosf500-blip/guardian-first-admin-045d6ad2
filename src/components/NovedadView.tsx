@@ -33,7 +33,7 @@ import FingerprintBadge from '@/components/FingerprintBadge';
 import { diasSinMovimiento } from '@/lib/segPulso';
 import ChatClienteCard from '@/components/chat/ChatClienteCard';
 import SectorSinCoberturaChip from '@/components/SectorSinCoberturaChip';
-import { guiaNovedadPorPais, plantillaSolucionPorPais, paisTieneGuia } from '@/lib/novedades/porPais';
+import { guiaNovedadPorPais, plantillaSolucionPorPais, paisTieneGuia, notasTransportadoraPorPais, reglasTransversalesPorPais, respuestaPublicada, fuenteDeFicha } from '@/lib/novedades/porPais';
 
 interface Props {
   items: OrderData[];
@@ -115,6 +115,8 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
   const pais = activeStore?.country_code;
   const guiaActual = o ? guiaNovedadPorPais(pais, o.novedad, o.transportadora) : null;
   const plantilla = o ? plantillaSolucionPorPais(pais, guiaActual, { phone: o.phone, nombre: o.nombre, direccion: o.direccion }, o.transportadora) : null;
+  const notasCarrier = o ? notasTransportadoraPorPais(pais, o.transportadora) : null;
+  const reglasDropi = reglasTransversalesPorPais(pais);
   const maxSolucion = plantilla?.maximo ?? 500;
 
   // Reset local state when the current order changes
@@ -414,14 +416,54 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
                 Guía oficial de Dropi · {guia.transportadora} · «{guia.novedad}»
               </div>
               <div><span className="font-semibold text-foreground">Qué significa:</span> {guia.significado}</div>
-              <div><span className="font-semibold text-success">Cómo responder en el panel de Dropi:</span> {guia.comoResponder}</div>
+              {respuestaPublicada(guia) ? (
+                <div><span className="font-semibold text-success">Cómo responder en el panel de Dropi:</span> {guia.comoResponder}</div>
+              ) : (
+                // Dropi publica el significado pero NO la respuesta (Veloces,
+                // Interrapidísimo en oficina…): se dice, no se inventa una.
+                <div><span className="font-semibold text-warning">Cómo responder:</span> la transportadora no publica una instrucción para esta novedad. Hablá con el cliente y respondé con dirección completa + barrio + referencia, o fecha concreta; nunca «volver a ofrecer» a secas.</div>
+              )}
               {guia.queNoHacer && (
                 <div><span className="font-semibold text-danger">Qué NO hacer:</span> {guia.queNoHacer}</div>
               )}
               {guia.observaciones && <div className="text-muted-foreground">{guia.observaciones}</div>}
+              {fuenteDeFicha(guia) && (
+                <div className="text-[10px] text-muted-foreground/80 break-all">Fuente: {fuenteDeFicha(guia)}</div>
+              )}
             </div>
           );
         })()}
+        {/* Lo que se sabe de la transportadora en este país (oficina, intentos),
+            con fuente detrás: sale aunque la novedad no tenga ficha. Solo CO/GT;
+            Ecuador lo tiene dentro de sus propias fichas. */}
+        {notasCarrier && (notasCarrier.retiroEnOficina || notasCarrier.intentosMax) && (
+          <div className="rounded-2xl border border-border bg-card/40 px-4 py-2.5 text-[11px] text-muted-foreground space-y-1">
+            <div className="text-[10px] font-bold uppercase tracking-wide">{notasCarrier.nombre}</div>
+            {notasCarrier.intentosMax && <div><span className="font-semibold text-foreground">Intentos:</span> {notasCarrier.intentosMax}</div>}
+            {notasCarrier.retiroEnOficina && <div><span className="font-semibold text-foreground">Oficina:</span> {notasCarrier.retiroEnOficina}</div>}
+          </div>
+        )}
+        {/* Las reglas transversales de Dropi para el país (Colombia: mecánica
+            del panel, los 12 tips, plazos). Plegadas: son largas y son las
+            mismas para todas las novedades. */}
+        {reglasDropi.length > 0 && (
+          <details className="rounded-2xl border border-border bg-card/40 px-4 py-2.5 text-[11px]">
+            <summary className="cursor-pointer select-none text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+              Cómo pide Dropi que se respondan las novedades ({reglasDropi.length})
+            </summary>
+            <div className="mt-2 space-y-2">
+              {reglasDropi.map((r) => (
+                <div key={r.novedad}>
+                  <div className="font-semibold text-foreground">{r.novedad}</div>
+                  <div className="text-muted-foreground">{r.significado}</div>
+                  {r.responder && <div><span className="font-semibold text-success">Qué hacer:</span> {r.responder}</div>}
+                  {r.noHacer && <div><span className="font-semibold text-danger">Qué NO hacer:</span> {r.noHacer}</div>}
+                  <div className="text-[10px] text-muted-foreground/80 break-all">Fuente: {r.fuente}</div>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
         {o.direccion && (
           <SectorSinCoberturaChip direccion={o.direccion} ciudad={o.ciudad} countryCode={activeStore?.country_code} />
         )}

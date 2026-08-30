@@ -1,0 +1,711 @@
+{
+ "pais": "CO",
+ "transportadoras": {
+  "SERVIENTREGA": {
+   "nombre": "SERVIENTREGA",
+   "retiroEnOficina": "SÍ. Diccionario Dropi: envío para entrega en oficina / reclamo en oficina (R.O.) queda ~8 días hábiles (5 a 8) y al vencer sale la novedad 'NO RECLAMÓ EN OFICINA' y se devuelve; con empresario satélite queda ~5 días. Efficommerce: 965 oficinas habilitadas, almacenamiento gratuito 7 días en punto cercano. Redirección gratis solo dentro de la misma ciudad (Effi).",
+   "intentosMax": "2 intentos antes de gestionar como novedad (Efficommerce, cartelera jun-2025). Otras fuentes secundarias (enviosycompras.com) dicen 3. El diccionario de Dropi no fija número: 'NO HAY QUIEN RECIBA' se reofrece automáticamente al día siguiente y 'CERRADO SEGUNDA VEZ' ya es novedad para el usuario.",
+   "fichas": [
+    {
+     "novedad": "CERRADO SEGUNDA VEZ",
+     "significado": "Por segunda vez la transportadora ubica la dirección, pero no hay quien reciba el pedido.",
+     "responder": "Contactar al cliente para determinar si va a estar en el domicilio y si es posible hacer un envío adicional. Otra opción: coordinar con el cliente si se traslada el envío para reclamo en oficina de Servientrega.",
+     "noHacer": "No responder la novedad sin antes contactar al cliente, pues la novedad se continuará presentando.",
+     "obs": "Resuelve: usuario Dropi. Regla general de la hoja: 'Siempre debe contactar al cliente para poder dar solución a la novedad'.",
+     "fuente": "https://es.scribd.com/document/736152189/NOVEDADES-SERVIENTREGA (Diccionario de Novedades Dropi, hoja Servientrega; misma tabla en https://es.scribd.com/document/815502319/Servientrega-Significado-Estatus-y-Novedades)",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "DATOS ADICIONALES A LA DIRECCIÓN",
+     "significado": "La transportadora identifica que faltan datos para realizar la entrega: número de apartamento, torre, local, número de piso, etc.",
+     "responder": "Contactar al cliente y solicitar los datos completos de la dirección, teniendo en cuenta las características de cada ciudad, incluyendo el barrio.",
+     "noHacer": "No responder la novedad sin antes contactar al cliente y obtener los datos completos; sin esto no será posible entregar.",
+     "obs": "Resuelve: usuario Dropi.",
+     "fuente": "https://es.scribd.com/document/736152189/NOVEDADES-SERVIENTREGA",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "DIRECCIÓN ERRADA",
+     "significado": "La transportadora identifica que la dirección no existe o tiene información errada.",
+     "responder": "Contactar al cliente y solicitar la dirección completa según las características de cada ciudad, incluyendo el barrio. Si la dirección está bien, dar puntos de referencia cercanos.",
+     "noHacer": "No responder sin antes contactar al cliente y obtener la dirección completa. NO responder con la misma dirección inicial del pedido.",
+     "obs": "Resuelve: usuario Dropi.",
+     "fuente": "https://es.scribd.com/document/736152189/NOVEDADES-SERVIENTREGA",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "DESTINATARIO NO CANCELA C.O.D. LOGÍSTICA",
+     "significado": "No se pudo entregar porque el destinatario se negó a pagar, no tenía dinero, no se logró contactar, no desea el producto o simplemente no estaba.",
+     "responder": "Contactar al cliente para determinar si va a recibir el pedido y tiene la posibilidad de pagarlo. En caso contrario, solicitar DEVOLVER AL REMITENTE.",
+     "noHacer": "No responder sin antes contactar al cliente, pues la novedad se continuará presentando.",
+     "obs": "Se puede poner una fecha tentativa de entrega, pero la transportadora no asegura que entregue exactamente ese día.",
+     "fuente": "https://es.scribd.com/document/736152189/NOVEDADES-SERVIENTREGA",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "M/CIA NO SOLICITADA / PEDIDO REPETIDO",
+     "significado": "El destinatario no lo recibió e informó que no había solicitado el pedido o que ya le había llegado en otra ocasión.",
+     "responder": "Contactar al cliente para determinar el motivo. Si no desea el producto, responder DEVOLVER AL REMITENTE. Solo si cambia de opinión y acepta recibir, solucionar como VOLVER A OFRECER.",
+     "noHacer": "No responder VOLVER A OFRECER sin antes contactar al cliente: la novedad se seguirá presentando porque el cliente manifestó que no lo recibirá.",
+     "obs": "Si este cliente no quiere el paquete y tenés otro cliente en la MISMA ciudad, podés resolver la novedad poniendo dirección, teléfono y nombre del otro destinatario.",
+     "fuente": "https://es.scribd.com/document/736152189/NOVEDADES-SERVIENTREGA",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "NO LO CONOCEN",
+     "significado": "En la dirección suministrada informan que no conocen al destinatario.",
+     "responder": "Contactar al cliente y verificar la dirección (incluyendo barrio). Si otra persona va a recibir, poner sus datos y/o aclarar quién recibe el paquete.",
+     "noHacer": "No responder sin antes contactar al cliente y obtener la dirección nueva y completa.",
+     "obs": "Resuelve: usuario Dropi.",
+     "fuente": "https://es.scribd.com/document/736152189/NOVEDADES-SERVIENTREGA",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "POR SOLICITUD DEL CLIENTE",
+     "significado": "El destinatario informa a la transportadora que desea que se devuelva el producto.",
+     "responder": "En lo posible contactar al cliente para cerrar la venta. En caso contrario, solicitar DEVOLVER AL REMITENTE.",
+     "noHacer": "No responder VOLVER A OFRECER sin antes contactar al cliente; se seguirá presentando la novedad.",
+     "obs": "Resuelve: usuario Dropi.",
+     "fuente": "https://es.scribd.com/document/736152189/NOVEDADES-SERVIENTREGA",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "SE NEGÓ A RECIBIR",
+     "significado": "El destinatario informó a la transportadora que no desea el producto y no lo va a recibir.",
+     "responder": "En lo posible contactar al cliente para cerrar la venta. En caso contrario, solicitar DEVOLVER AL REMITENTE.",
+     "noHacer": "No responder VOLVER A OFRECER sin antes contactar al cliente.",
+     "obs": "Un video de dropshipper (Marcio Barahona) advierte que 'se negó a recibir' a veces lo marca el repartidor sin haber visitado; conviene verificar con el cliente antes de dar por perdida la venta.",
+     "fuente": "https://es.scribd.com/document/736152189/NOVEDADES-SERVIENTREGA",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "SE TRASLADÓ",
+     "significado": "La transportadora ubica la dirección pero informan que el destinatario se trasladó a una ubicación desconocida.",
+     "responder": "Contactar al cliente para determinar su nueva ubicación completa. Si no es posible el contacto, solicitar DEVOLVER AL REMITENTE.",
+     "noHacer": "No responder sin antes obtener la dirección nueva y completa.",
+     "obs": "Resuelve: usuario Dropi.",
+     "fuente": "https://es.scribd.com/document/736152189/NOVEDADES-SERVIENTREGA",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "SOLICITAR CITA PREVIA",
+     "significado": "Ubican la dirección pero informan que el destinatario no se encuentra y la entrega debe programarse en una nueva fecha cercana.",
+     "responder": "Contactar al cliente para saber si estará en el domicilio y si es posible un envío adicional; alternativa: trasladar a oficina para que lo reclame. Se le puede pedir a Servientrega ofrecer nuevamente hasta tres días posteriores.",
+     "noHacer": "No responder sin antes contactar al cliente. No poner una fecha más allá de la ventana: la fecha tentativa es hasta 2 días hábiles después del primer intento.",
+     "obs": "Resuelve: usuario Dropi.",
+     "fuente": "https://es.scribd.com/document/736152189/NOVEDADES-SERVIENTREGA",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "NO RECLAMÓ EN OFICINA",
+     "significado": "La mercancía superó el tiempo máximo permitido en oficina de Servientrega (8 días hábiles) para ser reclamada. Será devuelta al remitente.",
+     "responder": "El pedido será devuelto. En algunas ocasiones podrá solucionarse; en caso contrario, si el cliente desea el producto se debe generar una NUEVA ORDEN.",
+     "noHacer": "No responder sin antes contactar al cliente.",
+     "obs": "Dropi recomienda (tips del panel) recordarle al cliente ir a la oficina si pasaron más de 4 días sin reclamar.",
+     "fuente": "https://es.scribd.com/document/736152189/NOVEDADES-SERVIENTREGA",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "NO HAY QUIEN RECIBA",
+     "significado": "Ubican la dirección pero no hay quien reciba. Servientrega automáticamente hará el ofrecimiento al día siguiente.",
+     "responder": "NO realizar ningún proceso: Servientrega irá al día siguiente.",
+     "noHacer": "No responder esta novedad; su solución es automática.",
+     "obs": "Novedad operativa.",
+     "fuente": "https://es.scribd.com/document/736152189/NOVEDADES-SERVIENTREGA",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "PARA REZONIFICAR - MOVILIZADA",
+     "significado": "La dirección del destinatario no coincide con la ruta/zona del vehículo; deben cambiarlo a otro vehículo con la ruta correcta.",
+     "responder": "NO realizar ningún proceso: Servientrega cambiará el pedido de vehículo. El cambio no es inmediato, puede llevar un par de días según la zona.",
+     "noHacer": "No responder esta novedad; su solución es automática.",
+     "obs": "Novedad operativa.",
+     "fuente": "https://es.scribd.com/document/736152189/NOVEDADES-SERVIENTREGA",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "PROBLEMAS DE ORDEN PÚBLICO",
+     "significado": "Vías cerradas por manifestaciones, derrumbes, retenes, etc.",
+     "responder": "Es una novedad operativa: no es necesario resolver, la transportadora se encarga de hacer los intentos de entrega.",
+     "noHacer": "No gestionar.",
+     "obs": "Novedad operativa.",
+     "fuente": "https://es.scribd.com/document/736152189/NOVEDADES-SERVIENTREGA",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "ENVÍO PARA ENTREGA EN OFICINA / RECLAMO EN OFICINA (R.O.) — movimiento, no novedad",
+     "significado": "Aparece tras 'Zona de distribución - empresario satélite': el envío queda disponible para reclamarlo en la oficina de Servientrega de la población destino, alrededor de 8 días hábiles (R.O.: 5 a 8 días hábiles). Si no se reclama, se genera novedad.",
+     "responder": "El dropshipper debe contactar al cliente para que se acerque a la oficina; con empresario satélite el paquete NO va al domicilio.",
+     "noHacer": "No esperar a la novedad 'NO RECLAMÓ EN OFICINA' para actuar.",
+     "obs": "Empresario satélite (destinos de difícil acceso, trayectos especiales, zonas rojas): la entrega puede demorar 10-20 días hábiles y si no logra entregar lo deja en sus instalaciones ~5 días. Tiempos generales de entrega: 2 días ciudades principales, 3-5 resto del país, 15 trayecto especial.",
+     "fuente": "https://es.scribd.com/document/815502319/Servientrega-Significado-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "GUÍA ANULADA / RECHAZADO / SINIESTRADO — estados, no novedades",
+     "significado": "Guía anulada: solo se puede anular en 'Guía generada' si el paquete no se entregó a la transportadora. Rechazado: guía generada que el dropshipper no puede cancelar, se pide por servicio al cliente y se reintegra el flete. Siniestrado: Servientrega reporta siniestro; si es incautación NO se indemniza.",
+     "responder": "Para que el flete vuelva a la wallet se debe pasar de GUÍA ANULADA a RECHAZADA por chat a Dropi (sujeto a políticas). Siniestro por hurto/espoliación/hurto de vehículo: tramitar PQR para indemnización.",
+     "noHacer": "No entregar a la transportadora un paquete con guía anulada: entra a novedades, se devuelve sin intento de entrega, se cobra el flete y puede extraviarse (sin registro de ingreso a bodega).",
+     "obs": "Si al día siguiente de recogido la guía sigue en el mismo estado, reportar a Dropi con la relación de despacho.",
+     "fuente": "https://es.scribd.com/document/736152189/NOVEDADES-SERVIENTREGA",
+     "confianza": "oficial"
+    }
+   ]
+  },
+  "COORDINADORA": {
+   "nombre": "COORDINADORA",
+   "retiroEnOficina": "SÍ (Punto Droop / oficina principal). Tras agotar los 2 intentos el paquete queda en el punto Coordinadora más cercano al cliente; para saber cuál, escribir a lcolivo@coordinadora.com. Efficommerce: 222 oficinas habilitadas; redirección gratis solo hacia ciudad cubierta por la misma terminal. DÍAS DE GUARDA EN PUNTO: no encontrado en ninguna fuente pública (ni coordinadora.com ni el diccionario). Plazo para gestionar novedades: 15 días calendario desde el despacho (Efficommerce).",
+   "intentosMax": "2 intentos: el estado 'EN PUNTO DROOP' del diccionario Dropi dice 'ya se agotó los 2 intentos de entrega sin éxito'. Efficommerce confirma 2. OJO: la novedad 'SE VISITA, NO SE LOGRA ENTREGA' dice que si ya van más de 2 intentos hay que confirmar con el cliente y 'si ya es el cuarto' se ofrece de nuevo CON COBRO — es decir, se pueden pedir reintentos adicionales pagos.",
+   "fichas": [
+    {
+     "novedad": "SECTOR DE LA POBLACIÓN DE DESTINO QUE NO SE CUBRE",
+     "significado": "Paquete enviado a un corregimiento, finca, vereda o zona roja.",
+     "responder": "Enviar a la oficina principal de Coordinadora más cercana al lugar donde se encuentra el envío para que el cliente lo recoja (no se cubren fincas ni veredas). También se puede brindar una dirección urbana y hacer el ofrecimiento allí.",
+     "noHacer": "No responder VOLVER A OFRECER sin aportar nueva dirección o información adicional.",
+     "obs": "Resuelve: usuario Dropi.",
+     "fuente": "https://www.scribd.com/document/736152196/Coordinadora-Significado-de-Estatus-y-Novedades (Diccionario de Novedades Dropi, hoja Coordinadora)",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "PARA RECLAMAR EN PUNTO DROOP",
+     "significado": "El paquete se envía a oficina de Coordinadora. Solo aplica para guías SIN recaudo y cuando al generar la guía se envía directamente a una oficina.",
+     "responder": "'Unidad se encuentra en un punto Coordinadora para reclamar'.",
+     "noHacer": "No brindar solución de VOLVER A OFRECER, porque el cliente va hasta el punto.",
+     "obs": "Resuelve: usuario Dropi. Para guías con recaudo (COD) el reclamo en punto sale por el estado EN PUNTO DROOP tras los 2 intentos.",
+     "fuente": "https://www.scribd.com/document/736152196/Coordinadora-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "DIRECCIÓN INCOMPLETA",
+     "significado": "Faltan datos de la dirección y no es posible localizar el punto de entrega.",
+     "responder": "Confirmar con el cliente final la nueva dirección completa, incluyendo barrio y ciudad y punto de referencia si es necesario (sobre todo en la región Caribe).",
+     "noHacer": "No brindar solución de ofrecer en la misma dirección, porque faltan datos.",
+     "obs": "Resuelve: usuario Dropi.",
+     "fuente": "https://www.scribd.com/document/736152196/Coordinadora-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "SE VISITA, NO SE LOGRA ENTREGA",
+     "significado": "Van y está cerrado o nadie sale; el cliente no se encuentra y no cuenta con portería. Si ya van más de 2 intentos, confirmar con el cliente; si ya es el cuarto, se ofrece de nuevo con cobro.",
+     "responder": "Confirmar con el destinatario día y jornada (mañana o tarde) para la entrega; máximo cinco días para volver a ofrecer.",
+     "noHacer": "No dar solución de ofrecer sin antes validar con el cliente cuándo se le puede entregar.",
+     "obs": "Resuelve: usuario Dropi.",
+     "fuente": "https://www.scribd.com/document/736152196/Coordinadora-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "NO SE LOCALIZA DIRECCIÓN DEL DESTINATARIO",
+     "significado": "Dirección errada: no se puede ubicar. Si el cliente confirma que es la misma, hay que especificar y dar más información.",
+     "responder": "Confirmar con el cliente final la nueva dirección completa, incluyendo barrio, ciudad y punto de referencia si es necesario.",
+     "noHacer": "Volver a ofrecer en la misma dirección.",
+     "obs": "Resuelve: usuario Dropi.",
+     "fuente": "https://www.scribd.com/document/736152196/Coordinadora-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "EN DIRECCIÓN DE ENTREGA NO CONOCEN DESTINATARIO",
+     "significado": "No hay una persona referente ni nombre de bodega; se visita la dirección de la guía e indican no conocer al destinatario.",
+     "responder": "Confirmar la dirección con el cliente y el nombre de la persona que va a recibir el paquete (puede ser diferente al titular de la guía).",
+     "noHacer": "No dar solución de ofrecer en la misma dirección sin validar los datos primero (sobre todo en la región Caribe).",
+     "obs": "Resuelve: usuario Dropi.",
+     "fuente": "https://www.scribd.com/document/736152196/Coordinadora-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "NO SE ENTREGA, DESTINATARIO SOLICITA OTRA DIRECCIÓN",
+     "significado": "Van a la dirección de la guía y el destinatario pide que se entregue en otra.",
+     "responder": "Confirmar la nueva dirección. Ejemplo: 'Entregar en dirección Cra 53 #13A 147 Apt 202'.",
+     "noHacer": "Solucionar con la misma dirección.",
+     "obs": "Efficommerce: la redirección gratuita solo aplica hacia ciudad cubierta por la misma terminal.",
+     "fuente": "https://www.scribd.com/document/736152196/Coordinadora-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "NO SE ENTREGA, DESTINATARIO SOLICITA INVENTARIO, UNIDADES SELLADAS",
+     "significado": "El destinatario quiere revisar el contenido antes de recibir; Coordinadora entrega unidades selladas.",
+     "responder": "Validar con el cliente que acepta recibir sin hacer inventario y dar solución de VOLVER A OFRECER al mismo destino, informando que no entregan inventariado.",
+     "noHacer": "Ofrecer de nuevo sin que el cliente haya aceptado recibir sin inventario.",
+     "obs": "Resuelve: usuario Dropi.",
+     "fuente": "https://www.scribd.com/document/736152196/Coordinadora-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "CITA PROGRAMADA PARA ENTREGA",
+     "significado": "El cliente confirma día y hora de entrega y se intenta entregar en ese tiempo.",
+     "responder": "Confirmar con el destinatario día y jornada (mañana o tarde); máximo cinco días para volver a ofrecer.",
+     "noHacer": "No dar solución de volver a ofrecer sin validar la cita para entrega.",
+     "obs": "Resuelve: usuario Dropi.",
+     "fuente": "https://www.scribd.com/document/736152196/Coordinadora-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "AGENDAR CITA PARA ENTREGA",
+     "significado": "La transportadora va o llama al cliente para confirmar día y hora.",
+     "responder": "Con destinatarios persona natural NO se agendan citas para entrega / no aplica.",
+     "noHacer": "No dar solución de volver a ofrecer sin validar cita para entrega.",
+     "obs": "Resuelve: usuario Dropi.",
+     "fuente": "https://www.scribd.com/document/736152196/Coordinadora-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "DEVOLUCIÓN EN PROCESO",
+     "significado": "El paquete está en devolución al remitente.",
+     "responder": "El paquete se devolverá. NO responder la novedad.",
+     "noHacer": "Intentar reofrecer: el paquete se devolverá.",
+     "obs": "Resuelve: usuario Dropi (solo informativo).",
+     "fuente": "https://www.scribd.com/document/736152196/Coordinadora-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "INFORMACIÓN SOPORTE DEL ENVÍO CON NOVEDAD NO DETERIORO",
+     "significado": "El cliente solicita factura, o va a reclamar directamente en oficina principal, o desconoce el pedido.",
+     "responder": "Si va a reclamar en oficina: detallar cuál oficina y en lo posible la dirección. Si pide factura: informar que no se entrega y, si acepta, VOLVER A OFRECER. Si desconoce el pedido: confirmar con el destinatario si lo solicitó y VOLVER A OFRECER.",
+     "noHacer": "No dar solución de volver a ofrecer sin validar si lo va a recibir en oficina o que el pedido no se entrega con factura.",
+     "obs": "Resuelve: usuario Dropi.",
+     "fuente": "https://www.scribd.com/document/736152196/Coordinadora-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "PEDIDO CANCELADO",
+     "significado": "El destinatario informa que no quiere el pedido (o no cancela el flete).",
+     "responder": "Llamar al destinatario y validar si se vuelve a ofrecer o se devuelve al remitente.",
+     "noHacer": "Dar solución de VOLVER A OFRECER sin antes validar con el cliente si definitivamente quiere el pedido.",
+     "obs": "Resuelve: usuario Dropi.",
+     "fuente": "https://www.scribd.com/document/736152196/Coordinadora-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "NO SE ENTREGA, EL DESTINATARIO NO CANCELA EL VALOR A RECAUDAR (RCE)",
+     "significado": "RCE = recaudo contra entrega. El cliente no tiene dinero para pagar el valor del producto.",
+     "responder": "Confirmar con el cliente el monto a pagar y recomendar que tenga el dinero en efectivo.",
+     "noHacer": "No dar solución de volver a ofrecer sin antes validar qué día el cliente ya tiene el dinero.",
+     "obs": "Resuelve: usuario Dropi.",
+     "fuente": "https://www.scribd.com/document/736152196/Coordinadora-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "EN PUNTO DROOP — estado, no novedad",
+     "significado": "El paquete está en una oficina de Coordinadora, ya sea porque es para reclamo en oficina o porque ya se agotaron los 2 intentos de entrega sin éxito; queda en el punto más cercano al cliente para ser reclamado.",
+     "responder": "Contactar al cliente para que lo reclame. Para saber en qué dirección está, escribir a lcolivo@coordinadora.com.",
+     "noHacer": "Responder VOLVER A OFRECER (el cliente debe ir al punto).",
+     "obs": "Otros estados: EN REPARTO (población principal = ruta urbana ese día; población lejana = ya lo tiene el aliado), DEVOLUCIÓN = 'cerrado por incidencia / devolución / faltante' (devuelto, será devuelto o indemnizado).",
+     "fuente": "https://www.scribd.com/document/736152196/Coordinadora-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    }
+   ]
+  },
+  "ENVIA": {
+   "nombre": "ENVIA (Colvanes)",
+   "retiroEnOficina": "SÍ, pero SOLO en la oficina PRINCIPAL de cada ciudad/regional (novedad 'PARA ENTREGAR EN BODEGA - RECEPTORÍA'): hay que responder con número de documento y nombre de quien reclama, y esa persona debe ir con el documento. Efficommerce: 148 oficinas habilitadas. NO redirecciona entre ciudades (el estado REDIRECCIONADO tiene costo y Dropi dice no usarlo; solo dentro de la misma ciudad). Días de guarda: Envía habla de 15 días calendario en su aviso (contexto de emergencia) — no hay cifra operativa clara. Plazo para responder novedad: 3 días hábiles (Efficommerce). Reprogramación: el paquete solo se almacena 2 días (máx. 3) en bodega.",
+   "intentosMax": "2 intentos, según Envía misma: 'efectuamos dos (2) intentos de entrega, los cuales quedarán registrados'; después informan al destinatario la fecha para recoger en una oficina de atención al usuario (envia.co/propositocolombia). Efficommerce dice 3. El diccionario Dropi: 'DESTINATARIO NO SE ENCUENTRA' (primera visita) es informativa y la transportadora reofrece sola.",
+   "fichas": [
+    {
+     "novedad": "MERCANCÍA DEBE SER ENTREGADA EN OTRA DIRECCIÓN",
+     "significado": "El destinatario solicita que lo lleven a una nueva dirección (trabajo u otro destino) dentro de la misma ciudad.",
+     "responder": "Confirmar con el cliente la nueva dirección completa incluyendo barrio, ciudad y punto de referencia (sobre todo en la región Caribe). Si es la misma dirección, aclarar que el cliente acepta recibir en la misma y poner todos los detalles. Ejemplo: 'OFRECER A LA DIRECCIÓN CRA 53 #25-32 APT. 203 TORRE K, CONJUNTO LAS ACACIAS, BARRIO EL PORTAL'.",
+     "noHacer": "Responder solamente 'volver a ofrecer' o escribir solamente 'dirección correcta'.",
+     "obs": "Entrega en nueva ubicación solo dentro de la misma ciudad. 'Solución no efectiva' = respuesta que no permite salir a reparto porque no es válida.",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades (Diccionario de Novedades Dropi, hoja Envía)",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "PARA ENTREGAR EN BODEGA - RECEPTORÍA",
+     "significado": "El destinatario informa que desea reclamar en la oficina principal de Envía.",
+     "responder": "Contactar al cliente para validar si lo reclama en la oficina principal de la regional de Envía y anexar número de documento de identificación y nombre de quien reclamará. Si decide recibir en casa, dejar claridad en la respuesta. Especificar a cuál oficina autorizada del listado (solo oficina principal).",
+     "noHacer": "Responder solamente 'volver a ofrecer' o solo 'dirección correcta'.",
+     "obs": "Solo se entregan paquetes en las oficinas principales de cada ciudad; debe ir la persona detallada en la solución con documento de identificación.",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "NO CONOCEN DESTINATARIO EN DIRECCIÓN DESTINO",
+     "significado": "En el destino informan que no conocen al destinatario, por lo tanto no recibirán el producto.",
+     "responder": "Contactar al cliente para validar ciudad y dirección; responder con los datos completos incluyendo barrio. Si la dirección está correcta, validar los datos de quien recibe. Si quien recibe no es el titular de la guía, poner la dirección y 'preguntar por: (nombre de la otra persona)'.",
+     "noHacer": "Responder solamente 'volver a ofrecer' sin haber hablado con el destinatario.",
+     "obs": "",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "DIRECCIÓN DESTINATARIO NO EXISTE",
+     "significado": "La transportadora informa que la dirección no marca o no existe en la ciudad destino.",
+     "responder": "Contactar al cliente, validar la ciudad y que informe la dirección correcta. Si hay nuevos datos, responder con los datos actualizados (barrio, ciudad y dirección). Si confirma que está correcta, validar que sea la misma ciudad y pedir puntos de referencia cerca a la casa. Poner dirección verificada + puntos de referencia o características de la casa + barrio.",
+     "noHacer": "Responder solamente 'volver a ofrecer': quedará como solución no efectiva.",
+     "obs": "A veces la dirección está correcta pero la ciudad no; validar siempre.",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "DESTINATARIO SE TRASLADÓ",
+     "significado": "En el lugar destino informan que se ha trasladado de ubicación.",
+     "responder": "Validar con el cliente y solicitar los datos actualizados de la dirección incluyendo el barrio. Si manifiesta que no se cambió de casa, pedir nuevamente dirección con barrio y responder con esa información.",
+     "noHacer": "Responder solamente 'volver a ofrecer': solución no efectiva.",
+     "obs": "",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "DIRECCIÓN DE DESTINO CORRESPONDE A OTRA CIUDAD",
+     "significado": "La transportadora informa que la dirección es de otra ciudad.",
+     "responder": "Validar con el cliente: si la ciudad es diferente a la de la orden, resolver DEVOLVER A REMITENTE. En caso contrario, pedir puntos de referencia y reportarlos en la novedad.",
+     "noHacer": "Responder solamente 'volver a ofrecer': solución no efectiva.",
+     "obs": "Envía no ofrece redireccionamiento entre ciudades o municipios.",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "MERCANCÍA RETENIDA POR LA ADUANA \"DIAN\"",
+     "significado": "La policía retuvo el pedido y lo llevará a la DIAN; la transportadora envía el acta de incautación a la plataforma.",
+     "responder": "No se debe resolver. El dropshipper puede enviar un nuevo pedido si lo desea. El proveedor puede solicitar a Dropi copia del acta de incautación por el chat flotante.",
+     "noHacer": "No gestionar ninguna respuesta.",
+     "obs": "",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "GUÍA SIN DIRECCIÓN DESTINATARIO",
+     "significado": "Hace falta dirección para hacer la entrega.",
+     "responder": "Confirmar con el cliente la nueva dirección completa, incluyendo barrio, ciudad y punto de referencia (sobre todo en región Caribe y Cúcuta).",
+     "noHacer": "Dejar la novedad sin poner los datos completos y correctos.",
+     "obs": "",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "DESTINATARIO SE REHÚSA A RECIBIR",
+     "significado": "El cliente informa que no solicitó el paquete.",
+     "responder": "Validar con el cliente si desea recibir o no. Si desea recibir, poner: 'CLIENTE DESEA RECIBIR EL PAQUETE' y detallar la dirección de entrega completa.",
+     "noHacer": "Responder VOLVER A OFRECER sin antes verificar con el cliente si desea recibir.",
+     "obs": "",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "PEDIDO CANCELADO",
+     "significado": "El cliente no desea recibir el paquete y lo devuelve.",
+     "responder": "Validar con el cliente. Si desea recibir: 'CLIENTE DESEA RECIBIR EL PAQUETE' + dirección completa. Si definitivamente no desea el producto: DEVOLVER A REMITENTE.",
+     "noHacer": "Responder VOLVER A OFRECER sin antes verificar con el cliente.",
+     "obs": "",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "CIUDAD DESTINO SIN COBERTURA NACIONAL",
+     "significado": "La transportadora no tiene cubrimiento en la dirección y destino de la guía.",
+     "responder": "Validar datos y dar nuevos datos de entrega en zona urbana donde la transportadora tenga servicio, lo más cercano al destino inicial, con dirección, barrio, etc. Si la dirección de destino no coincide con la guía, solicitar devolución al remitente.",
+     "noHacer": "Solucionar con VOLVER A OFRECER, dado que ya informan que no cubren esa zona.",
+     "obs": "Validar la cobertura de destinos de la transportadora antes de responder.",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "COORDINAR LA ENTREGA",
+     "significado": "Puede abarcar varios tipos de novedad.",
+     "responder": "Validar bien la aclaración de la transportadora (lado derecho de la pantalla en la plataforma) y dar una respuesta válida con las opciones ya descritas en el diccionario.",
+     "noHacer": "Solucionar con una respuesta general sin validar qué observaciones da la transportadora.",
+     "obs": "",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "DIRECCIÓN DESTINATARIO INCOMPLETA",
+     "significado": "Faltan datos en la dirección de entrega.",
+     "responder": "Validar con el destinatario y resolver con la dirección completa y datos adicionales (barrio, persona que recibe, etc.). Verificar las observaciones para saber qué hace falta.",
+     "noHacer": "No responder con los mismos datos: siempre entregar datos adicionales. No solucionar con VOLVER A OFRECER sin validar los datos con el destinatario.",
+     "obs": "",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "DESTINATARIO NO TIENE PLATA",
+     "significado": "La persona no tiene dinero para pagar el paquete o desea pagar por otro medio.",
+     "responder": "Validar con el destinatario si desea recibir y acordar fecha de entrega NO mayor a 2 días desde que se resuelva la novedad.",
+     "noHacer": "Si se ofrece link de pago, hacer caso omiso a esa opción: solo pago en efectivo.",
+     "obs": "Confirmar con el cliente que lo va a recibir de nuevo.",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "NO COINCIDE LA MERCANCÍA FÍSICA CON LO DESCRITO EN LA ORDEN DE COMPRA",
+     "significado": "No coincide el producto con el descrito en la guía.",
+     "responder": "La tienda se comunica con el cliente final y aclara la información para que reciba el paquete o lo devuelva al remitente.",
+     "noHacer": "No solicitar VOLVER A OFRECER sin antes contactar al cliente.",
+     "obs": "",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "DESTINATARIO EXIGE INVENTARIO DE MERCANCÍA",
+     "significado": "El cliente solicita revisar el contenido antes de aceptar quedarse con el paquete.",
+     "responder": "La tienda aclara la información para que reciba SIN revisar o lo devuelva al remitente.",
+     "noHacer": "Solicitar que se ofrezca sin que el cliente haya manifestado que recibirá sin revisar.",
+     "obs": "La transportadora no realiza inventario: entrega paquetes sellados.",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "RETENCIÓN POR ORDEN DEL REMITENTE",
+     "significado": "El remitente pide a la transportadora retener el despacho de paquetes que ya entregó.",
+     "responder": "Corregir la información de la guía y poner si se va a entregar o no al cliente con datos correctos; o devolver el paquete al remitente.",
+     "noHacer": "Responder la novedad sin consultar qué se debe hacer con el pedido.",
+     "obs": "No siempre se logra retener porque la transportadora alcanzó a despachar.",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "DESTINATARIO FIJA FECHA Y HORA DE RECIBO MAYOR AL DÍA SIGUIENTE",
+     "significado": "El cliente solicita que le entreguen otro día.",
+     "responder": "Escribir la nueva fecha en la solución (máximo dos días después).",
+     "noHacer": "No solicitar VOLVER A OFRECER sin escribir la nueva fecha. No responder con una fecha superior a tres días.",
+     "obs": "Solo se entrega máximo dos días después: el paquete solo está ese tiempo almacenado en la bodega.",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "SINIESTRO EN CARRETERA / MERCANCÍA HURTADA EN RUTA NACIONAL / FALTÓ GUÍA Y UNIDADES",
+     "significado": "No llegó ni el producto ni la guía al destino.",
+     "responder": "Responder con las características del empaque para que Envía lo busque.",
+     "noHacer": "",
+     "obs": "Averías (entregada con nota de avería, averiada en reparto/recolección/cargue) y 'FCE FLETE MAL LIQUIDADO' (paquete pesa más de 3 kilos) son trámite interno: contactarse con Dropi.",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "NOVEDADES INFORMATIVAS (no se resuelven; la transportadora reofrece sola)",
+     "significado": "DESTINATARIO NO SE ENCUENTRA (primera visita) · EN ESPERA DE RUTA POBLACIÓN ALEDAÑA · CERRADO EN HORAS HÁBILES · DESTINATARIO FIJA FECHA Y HORA DE RECIBO PARA EL DÍA · NO RECIBE EN DÍA SÁBADO · NO TENÍA PLATA PARA CANCELAR F.C.E. REGRESAR MAÑANA · NO TENÍA PLATA GUÍA CON RECAUDO REGRESAR MAÑANA · OBSTRUCCIÓN EN LA VÍA PÚBLICA O AEROPUERTO CERRADO · ACCIDENTE EN CARRETERA · MERCANCÍA NO VIAJA (entregada fuera de tiempo por remitente) · RESTRICCIONES EN EL TRÁNSITO REPARTO URBANO · RETRASO REGIONAL ORIGEN / TRÁNSITO · DESTINATARIO REQUIERE CITA PREVIA · ENTREGA NO EFECTUADA · MERCANCÍA NO SALIÓ A REPARTO / A DESPACHO · MERCANCÍA MAL ENRUTADA · MERCANCÍA ENTREGADA, GUÍA RETENIDA POR EL DESTINATARIO · FALTA CARTAPORTE · CARTAPORTE INCONSISTENTE · MERCANCÍA EN ESPERA DE / EN REEXPEDICIÓN · EN ESPERA PARA RUTA DOMÉSTICA · UNIDADES DE EMPAQUE LLEGAN ABOLLADAS · MERCANCÍA NO SE DESPACHA DE REGIONAL TRÁNSITO · DESTINATARIO RETIENE GUÍA HASTA VERIFICAR.",
+     "responder": "NO se debe resolver: la transportadora la resuelve y ofrece nuevamente al cliente.",
+     "noHacer": "Responder.",
+     "obs": "La hoja tiene 17 páginas y el texto extraído terminó en la pág. 14; puede faltar alguna informativa al final.",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "REDIRECCIONADO / EN ESPERA DE RX / EN REEXPEDICIÓN — estados, no novedades",
+     "significado": "REDIRECCIONADO: guía que se pide cambiar de ciudad (tiene costo adicional). EN ESPERA DE RX: en espera de ruta/camión aliado hacia población lejana. EN REEXPEDICIÓN: población lejana con servicio tercerizado, ya la tiene el tercero.",
+     "responder": "Redireccionar solo dentro de la misma ciudad a una nueva dirección.",
+     "noHacer": "No solicitar redirección entre ciudades (Dropi: 'NO SE DEBE REALIZAR ESTE PROCESO').",
+     "obs": "GUÍA ANULADA se solicita a Dropi; no anular guías después de que la transportadora tenga el paquete. ENTREGADA CON OBSERVACIÓN = entregado con avería (mojado, etc.) y se paga a la tienda.",
+     "fuente": "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades",
+     "confianza": "oficial"
+    }
+   ]
+  },
+  "INTERRAPIDISIMO": {
+   "nombre": "INTERRAPIDISIMO",
+   "retiroEnOficina": "SÍ. Hoja Dropi: 'RECLAME EN OFICINA' / 'PARA RECLAMAR EN OFICINA' = 15 días calendario para reclamar a partir de la fecha de admisión. Efficommerce: 871 oficinas habilitadas (listado en el Drive de Effi); NO permite redireccionamiento. Respuesta a novedad: telemercadeo primero; el texto de solución va con máximo 120 caracteres y la transportadora decide si ofrece según la solución (Effi).",
+   "intentosMax": "Hoja de estatus de Dropi: 'INTENTO DE ENTREGA' = segundo intento y 'REENVÍO' = tercer intento (o sea hasta 3). Efficommerce (cartelera): 2 intentos, salvo rehusado por no pago del contrapago, que genera devolución automática sin telemercadeo. Fuentes secundarias (envioyrastreo.com) dicen 'hasta 3'.",
+   "fichas": [
+    {
+     "novedad": "RECLAME EN OFICINA / PARA RECLAMAR EN OFICINA",
+     "significado": "El envío quedó en una oficina de Interrapidísimo para que el destinatario lo reclame. Se tiene un plazo de 15 días calendario para reclamar a partir de la fecha de admisión.",
+     "responder": "",
+     "noHacer": "",
+     "obs": "Dropi recomienda recordarle al cliente si pasaron más de 4 días sin reclamar.",
+     "fuente": "https://es.scribd.com/document/815503735/Interrapidisimo-Significado-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "INTENTO DE ENTREGA / REENVÍO",
+     "significado": "'INTENTO DE ENTREGA' es el segundo intento de entrega; 'REENVÍO' es el tercer intento. 'EN REPARTO' / 'EN DISTRIBUCIÓN URBANA' = en ciudad destino para el primer intento.",
+     "responder": "Sin acción si no hay novedad abierta; si aparece telemercadeo, ver esa ficha.",
+     "noHacer": "",
+     "obs": "'DEVOLUCIÓN REGIONAL' = en proceso de devolución viajando entre racoles para generar la guía de devolución o hacer telemercadeo. 'DEVOLUCIÓN RATIFICADA' = puede estar en devolución o ya entregada al remitente.",
+     "fuente": "https://es.scribd.com/document/815503735/Interrapidisimo-Significado-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "FÍSICO FALTANTE / NO LLEGÓ EL ENVÍO FÍSICO / SINIESTRO / EN INVESTIGACIÓN",
+     "significado": "FÍSICO FALTANTE: el envío no está físico en el centro de admisión. SINIESTRO: no se entregó ni al cliente ni al remitente, normalmente es un siniestro. EN INVESTIGACIÓN: se reportó siniestro o incautación e inicia investigación. INDEMNIZACIÓN: fue indemnizada por la transportadora; INDEMNIZADA POR DROPI: Dropi la indemnizó.",
+     "responder": "Reportar a Dropi con la relación de despacho; no es una novedad que responda el dropshipper.",
+     "noHacer": "",
+     "obs": "'ANULADA / DOCUMENTO ANULADO' = anulada por la transportadora, el envío no está físicamente. 'ARCHIVADA' = cierre logístico, sin más movimientos. 'RECHAZADO' = guía generada que el dropshipper no puede cancelar; se pide por servicio al cliente, se reintegra el flete (validan que la transportadora no haya recibido el paquete); NO despachar.",
+     "fuente": "https://es.scribd.com/document/815503735/Interrapidisimo-Significado-Estatus-y-Novedades",
+     "confianza": "oficial"
+    }
+   ]
+  },
+  "TCC": {
+   "nombre": "TCC",
+   "retiroEnOficina": "SÍ pero muy limitado: 12 oficinas habilitadas y solo permite pago del recaudo en oficinas principales (Efficommerce). Redirección solo mismo cliente y misma ciudad, sin costo. Plazo para responder novedad: 5 días hábiles desde el reporte. Días de guarda: no encontrado.",
+   "intentosMax": "3 intentos (Efficommerce, cartelera jun-2025). No verificado en tcc.com.co (el centro de ayuda no rinde contenido).",
+   "fichas": []
+  },
+  "DOMINA": {
+   "nombre": "DOMINA",
+   "retiroEnOficina": "SÍ: 23 oficinas habilitadas (Efficommerce, matriz de cubrimiento). Redirección sin costo solo mismo cliente y misma ciudad. Plazo para responder novedad: 3 días hábiles. Anuncio de Dropi (Telegram, 18-mar a 18-abr): Domina responde las novedades directamente con el cliente los primeros 3 días y si no hay solución la reporta a Dropi para que el dropshipper la resuelva. Días de guarda: no encontrado.",
+   "intentosMax": "Condiciones generales de Domina (según extracto indexado): se hace UN solo intento; si se requiere un segundo, se hace el día hábil siguiente. Efficommerce: 3 intentos antes de gestionar como novedad. (No pude abrir el PDF oficial: devuelve 404/HTML.)",
+   "fichas": []
+  },
+  "VELOCES": {
+   "nombre": "VELOCES",
+   "retiroEnOficina": "No encontrado. Veloces es última milla urbana (Cali, Bogotá, Medellín); no publica reclamo en oficina.",
+   "intentosMax": "No fijado públicamente. Hoja de estatus Dropi: 'INTENTO DE ENTREGA' = segundo intento; 'El cliente no estaba en su domicilio' se devuelve y se ofrece automáticamente al día siguiente. Veloces: 'sin costo por devolución en el primer intento' (Colombia).",
+   "fichas": [
+    {
+     "novedad": "EL CLIENTE SE NIEGA A RECIBIR",
+     "significado": "El pedido fue ofrecido y el cliente se negó a recibirlo.",
+     "responder": "(La hoja Dropi de Veloces solo trae el significado, no la respuesta.) Aplicar regla transversal: contactar al cliente; si acepta, volver a ofrecer con datos; si no, devolver al remitente.",
+     "noHacer": "Volver a ofrecer sin hablar con el cliente.",
+     "obs": "Estado 'NOVEDAD' en Dropi = no se pudo entregar y la transportadora está gestionando respuesta o espera la del dropshipper.",
+     "fuente": "https://www.scribd.com/document/815502323/Veloces-Significado-Estatus-y-Novedades (hoja de estatus Dropi)",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "DIRECCIÓN ERRADA",
+     "significado": "La dirección de destino no existe o está incompleta.",
+     "responder": "",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "https://www.scribd.com/document/815502323/Veloces-Significado-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "ZONA DE ALTO RIESGO / DIFÍCIL ACCESO / FUERA DE COBERTURA",
+     "significado": "Zona de alta peligrosidad y difícil acceso; zona donde el Veloz no puede ingresar; la transportadora no cubre la zona de la orden.",
+     "responder": "",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "https://www.scribd.com/document/815502323/Veloces-Significado-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "NO TIENE EL DINERO",
+     "significado": "El destinatario no tiene el dinero para cancelar el total de la orden.",
+     "responder": "",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "https://www.scribd.com/document/815502323/Veloces-Significado-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "NO CONOCEN AL DESTINATARIO",
+     "significado": "Se visitó la dirección pero no se conoce al destinatario.",
+     "responder": "",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "https://www.scribd.com/document/815502323/Veloces-Significado-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "REPROGRAMAR ENTREGA",
+     "significado": "El destinatario solicita entregar el pedido en un día diferente.",
+     "responder": "",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "https://www.scribd.com/document/815502323/Veloces-Significado-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "CLIENTE CANCELÓ EL PEDIDO O NO SOLICITADO / PEDIDO REPETIDO",
+     "significado": "Pedido cancelado por el cliente o no solicitado; o el cliente manifiesta que se le envió 2 veces el mismo pedido.",
+     "responder": "",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "https://www.scribd.com/document/815502323/Veloces-Significado-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "NO CONTESTA CLIENTE / EL CLIENTE NO ESTABA EN SU DOMICILIO",
+     "significado": "Cliente no se encuentra en la dirección dada inicialmente; se ofrece el pedido pero no hay quien reciba: automáticamente se devuelve y se ofrece el día siguiente.",
+     "responder": "Sin acción inmediata (reofrece sola al día siguiente); confirmar disponibilidad con el cliente.",
+     "noHacer": "",
+     "obs": "En la hoja hay 7 nombres y 6 significados en esta página; el emparejamiento de 'No contesta cliente', 'El cliente no estaba en su domicilio' y 'Publicidad engañosa' (sin significado) no es 100% seguro.",
+     "fuente": "https://www.scribd.com/document/815502323/Veloces-Significado-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "DESCONFIANZA DEL PEDIDO",
+     "significado": "Cuando el cliente quiere confirmar el contenido del envío.",
+     "responder": "",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "https://www.scribd.com/document/815502323/Veloces-Significado-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "SINIESTRO",
+     "significado": "Cuando ocurre un robo o una pérdida por parte de Veloces. Estado SINIESTRO: el envío presenta daño, pérdida o afectación; según el caso se destruirá.",
+     "responder": "Reportar a Dropi.",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "https://www.scribd.com/document/815502323/Veloces-Significado-Estatus-y-Novedades",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "NOVEDAD ATRIBUIBLE AL ORDEN PÚBLICO / CONDICIONES ATRIBUIBLES A LA NATURALEZA",
+     "significado": "No pudo ser entregado por disturbios, protestas, cierres de vías, etc.; o por causas naturales.",
+     "responder": "",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "https://www.scribd.com/document/815502323/Veloces-Significado-Estatus-y-Novedades",
+     "confianza": "oficial"
+    }
+   ]
+  }
+ },
+ "transversal": {
+  "fichas": [
+   {
+    "novedad": "MECÁNICA DEL PANEL: Mis pedidos → Novedades → 'Solucionar'",
+    "significado": "El panel muestra la novedad, la aclaración de la transportadora (lado derecho) y pregunta: '¿Si ya validó la información con el cliente, quiere que volvamos a ofrecer el pedido? De lo contrario será devuelto al remitente'.",
+    "responder": "SÍ → se abre el formulario de solución: nombre, dirección de entrega (puede ser una nueva dirección), celular, notas adicionales (fecha específica, barrio, referencias; en algunos pedidos se habilita un campo de fecha) → 'Guardar solución' → la orden vuelve a pendiente/reparto. NO → la novedad queda solucionada como devolución al remitente.",
+    "noHacer": "Poner NO (o 'devolver al remitente') sin haber hablado con el cliente: es la causa #1 de devoluciones evitables según los propios dropshippers.",
+    "obs": "El historial de la orden muestra quién solucionó cada novedad y qué escribió (sirve para auditar a la asesora). Las novedades deben resolverse en máximo 24 h (video Marcando Metas). Formato de respuesta 'Me he comunicado con el cliente al número ___ y me indica que ___' (el de la guía EC) NO aparece en ninguna fuente de Colombia; los ejemplos oficiales CO son del tipo 'OFRECER A LA DIRECCIÓN … BARRIO …' o 'CLIENTE DESEA RECIBIR EL PAQUETE' + dirección.",
+    "fuente": "Transcripciones YouTube: https://www.youtube.com/watch?v=gLtnSPdAX6A (Marcando Metas, incluye el video oficial de Dropi mostrando el panel) · https://www.youtube.com/watch?v=cYUkNUp8AgI (Andrey Business) · https://www.youtube.com/watch?v=PNXa4o0xDvQ (Marcio Barahona) · https://www.youtube.com/watch?v=P-nGyce_-B8 (tecno nakama)",
+    "confianza": "secundaria"
+   },
+   {
+    "novedad": "TIPS DE NOVEDADES DE DROPI (texto que Dropi muestra en el panel, citado literalmente en dos videos)",
+    "significado": "1) La correcta gestión de la novedad permite minimizar devoluciones. 2) Debes contactar a tu cliente para resolver cada una. 3) El panel es un canal directo con los auxiliares que hacen el reparto: expresar claramente cómo resolver. 4) El panel NO es para quejas ni reclamos. 5) Con 'dirección errada' pregúntale al cliente la dirección correcta, no se la escribas vos; pregunta la ciudad, a veces ese es el error. 6) No respondas novedades sin contactar al cliente: un ofrecimiento en vano en ciudades principales afecta la entrega de otro pedido. 7) La transportadora NO llama para convencer ni acordar ofrecimiento; eso es de tu equipo. No respondas con 'llamar al cliente para nuevo ofrecimiento', 'cliente a la espera de llamada', 'cliente va a recibir', 'llamar y coordinar' o 'volver a ofrecer'. 8) Si la dirección es una oficina, validar el archivo de puntos de reclamo (cobertura y punto más cercano). 9) Reclamo en oficina con más de 4 días sin reclamar: recordarle al cliente. 10) Tener equipo que contacte el 100% de las novedades. 11) Si el cliente no quiere el producto, esa misma guía se puede enviar a otro cliente de la misma población con el mismo producto y precio (avisarle que llega con otro nombre). 12) Nunca respondas una novedad sin contactar a tu cliente.",
+    "responder": "Seguir estos 12 puntos al redactar cualquier solución.",
+    "noHacer": "Frases genéricas listadas en el punto 7.",
+    "obs": "Citado literalmente en https://www.youtube.com/watch?v=cYUkNUp8AgI y https://www.youtube.com/watch?v=gLtnSPdAX6A como 'tips que directamente recomienda Dropi'; no encontré la página de Dropi que los aloja (help.dropi.co no aparece indexado).",
+    "fuente": "https://www.youtube.com/watch?v=cYUkNUp8AgI ; https://www.youtube.com/watch?v=gLtnSPdAX6A",
+    "confianza": "secundaria"
+   },
+   {
+    "novedad": "PLAZOS PARA RESPONDER UNA NOVEDAD (por transportadora)",
+    "significado": "Coordinadora: 15 días calendario desde el despacho. TCC: 5 días hábiles desde el reporte. Envía: 3 días hábiles. Domina: 3 días hábiles. Interrapidísimo y Servientrega: sin plazo publicado (telemercadeo primero). Guatemala – Cargo Expreso: 2 días.",
+    "responder": "Responder dentro del plazo; pasado, la transportadora devuelve.",
+    "noHacer": "",
+    "obs": "Tablero de Efficommerce (agregador colombiano, mismas transportadoras); no es de Dropi pero es la única publicación de plazos por transportadora que encontré.",
+    "fuente": "https://www.efficommerce.com/transportadoras/novedades-colombia/ ; https://www.efficommerce.com/transportadoras/novedades-guatemala/",
+    "confianza": "secundaria"
+   }
+  ],
+  "oficina": "Dropi publica en el panel (Archivos → 'Puntos de reclamo / recolección transportadora') el listado de oficinas habilitadas por transportadora (Servientrega, Envía, Domina, Coordinadora, 99minutos) filtrable por ciudad; Dropi pide validar ahí la cobertura y la oficina más cercana antes de responder 'reclamo en oficina', y recordar al cliente si pasan más de 4 días sin reclamar."
+ },
+ "fuentes": [
+  "https://es.scribd.com/document/736152189/NOVEDADES-SERVIENTREGA — Diccionario de Novedades Dropi (hoja Servientrega: estatus + movimientos + novedades con ¿qué significa?/¿cómo se gestiona?/¿qué no hacer?), leído completo con el navegador",
+  "https://es.scribd.com/document/815502319/Servientrega-Significado-Estatus-y-Novedades — misma hoja Servientrega, otra versión (2024)",
+  "https://www.scribd.com/document/736152196/Coordinadora-Significado-de-Estatus-y-Novedades — Diccionario de Novedades Dropi, hoja Coordinadora (7 págs., leída completa)",
+  "https://www.scribd.com/document/736158762/Envia-Significado-de-Estatus-y-Novedades — Diccionario de Novedades Dropi, hoja Envía (17 págs., texto hasta la 14)",
+  "https://es.scribd.com/document/815503735/Interrapidisimo-Significado-Estatus-y-Novedades — hoja de estatus Dropi para Interrapidísimo (solo estados/movimientos, sin tabla de respuesta)",
+  "https://www.scribd.com/document/815502323/Veloces-Significado-Estatus-y-Novedades — hoja de estatus Dropi para Veloces (estados + novedades con significado)",
+  "https://www.efficommerce.com/transportadoras/novedades-colombia/ — plazos para responder novedad por transportadora (Coordinadora 15 d, TCC 5 dh, Envía 3 dh, Domina 3 dh)",
+  "https://www.efficommerce.com/transportadoras/cartelera-transportadoras-colombia-coordinadora/ — 2 intentos, 222 oficinas, redirección",
+  "https://www.efficommerce.com/transportadoras/cartelera-transportadoras-colombia-servientrega/ — 2 intentos, 965 oficinas, 7 días gratis en punto, telemercadeo",
+  "https://www.efficommerce.com/transportadoras/cartelera-transportadoras-colombia-envia/ — 3 intentos, 148 oficinas, sin redirección",
+  "https://www.efficommerce.com/transportadoras/cartelera-transportadoras-colombia-tcc/ — 3 intentos, 12 oficinas, 5 días hábiles",
+  "https://www.efficommerce.com/transportadoras/cartelera-transportadoras-colombia-domina/ — 3 intentos, 23 oficinas, 3 días hábiles",
+  "https://www.efficommerce.com/transportadoras/cartelera-transportadoras-colombia-inter-rapidisimo/ — 2 intentos, 871 oficinas, telemercadeo 120 caracteres, sin redirección",
+  "https://www.efficommerce.com/transportadoras/politicas-pqr-colombia-domina/ — plazos PQR Domina",
+  "https://www.efficommerce.com/transportadoras/novedades-guatemala/ — Cargo Expreso GT: 2 días para gestionar novedad",
+  "https://envia.co/propositocolombia — Envía: 'dos (2) intentos de entrega' y recogida en oficina (oficial)",
+  "https://t.me/s/dropicol?before=3870 — canal Telegram de Dropi CO: Domina responde novedades 3 días; herramienta CAS; aliadas",
+  "https://www.youtube.com/watch?v=gLtnSPdAX6A — Marcando Metas (2024): incluye el video oficial de Dropi mostrando el panel de novedades y los 'tips' de Dropi (transcripción vía yt-dlp)",
+  "https://www.youtube.com/watch?v=cYUkNUp8AgI — Andrey Business (2025): tips de Dropi literales + flujo 'Solucionar'",
+  "https://www.youtube.com/watch?v=WSmA9vjV2rM — Andrey Business (2025): flujo del panel",
+  "https://www.youtube.com/watch?v=PNXa4o0xDvQ — Marcio Barahona (2023): flujo Sí/No del panel, plantillas WhatsApp",
+  "https://www.youtube.com/watch?v=P-nGyce_-B8 — tecno nakama (2023): recorrido por las novedades Servientrega",
+  "https://www.andreybusiness.com/blog/interrapidisimo-reclamos-soporte-2026 — guía de terceros Interrapidísimo",
+  "https://www.andreybusiness.com/guatemala — Dropi GT integra Forza (secundaria)",
+  "https://www.forzadelivery.com/terminos-y-condiciones/ ; https://www.forzadelivery.com/gt/nuestros-servicios/ ; https://www.forzadelivery.com/gt/nuestros-servicios/servicio-cod/ — Forza: 2 intentos, Express Center, COD",
+  "https://guatex.com/condiciones-generales-de-servicio/ ; https://guatex.com/servicio-cod/ — Guatex TyC y COD",
+  "https://cargoexpreso.com/GT-CAEX-TyC.pdf — Cargo Expreso TyC (3 intentos; inaccesible desde esta red)",
+  "https://coordinadora.com/blog/que-significa-novedad-en-un-envio-explicacion-completa/ — definición general de novedad (sin códigos)",
+  "https://veloces.app/ — Veloces: sin costo devolución primer intento, cobertura",
+  "https://domina.com.co/como-evitar-una-novedad-por-direccion-en-tus-envios/ — Domina: 50% fallos por dirección",
+  "https://dropi.co/ ; https://wf.dropi.co/aliados-logisticos ; https://dropi.gt/ — sitios Dropi (sin documentación de novedades)"
+ ]
+}

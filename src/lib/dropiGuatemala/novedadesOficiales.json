@@ -1,0 +1,252 @@
+{
+ "pais": "GT",
+ "transportadoras": {
+  "FORZA": {
+   "nombre": "FORZA DELIVERY EXPRESS",
+   "retiroEnOficina": "SI existe: las agencias 'Express Center' (EXC) ofrecen oficialmente 'Recepcion de Paquetes', 'Retiro de Paquetes' y 'Devolucion de Paquetes' (forzadelivery.com/gt/agencias-express-center, +90 agencias en los 22 departamentos). El estado 'Entregado En Express Center' del xlsx = 'entregado en agencias porque el destino pidio que se dejara alli'. NO ENCONTRADO: cuantos dias se resguarda el paquete en el EXC antes de devolverlo ni si el dropshipper puede pedir el envio a agencia desde Dropi.",
+   "intentosMax": "2 (oficial: 'Servicio COD' y 'Servicio Estandar' de forzadelivery.com/gt dicen '2 Intentos de Entrega' para TODOS los niveles Metro/Local/Capital/Departamental/Regional/Nacional/Foranea Peten/Especial). El xlsx del dueno coincide: '24 a 48 horas y se haran unicamente 2 intentos de entrega' (Local) y '72 horas o sujeto al dia de la cobertura. Puede variar hasta 5 dias' (Cabecera/Departamental/Especial).",
+   "fichas": [
+    {
+     "novedad": "SOLICITADO",
+     "significado": "Guia generada pendiente de ser recolectada.",
+     "responder": "NO NECESITA RESPUESTA (estado de flujo, no novedad). Si lleva dias sin pasar a 'Arribo a las instalaciones', el problema es del proveedor/recoleccion, no del cliente.",
+     "noHacer": "No contactar al cliente por este estado: el paquete todavia no salio.",
+     "obs": "Fuente del significado: hoja 'Hoja2' del xlsx del dueno (archivo 'Plan de Vuelo FD V.1 Cobertura.xlsx', FD = Forza Delivery). Identificado como Forza por: 'Express Center' (nombre registrado de las agencias Forza), 'COD pagado', 'piloto' (repartidor en Guatemala), geografia Local/Cabecera/Departamental y los '2 intentos' que coinciden con el sitio oficial.",
+     "fuente": "xlsx del dueno 'Plan de Vuelo FD V.1 Cobertura.xlsx' (scratchpad/significado-de-estados.txt) + https://www.forzadelivery.com/gt/nuestros-servicios/servicio-cod/",
+     "confianza": "secundaria"
+    },
+    {
+     "novedad": "ARRIBO A LAS INSTALACIONES",
+     "significado": "Llego a cualquiera de nuestras bodegas por primera vez.",
+     "responder": "NO NECESITA RESPUESTA (estado de flujo).",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "xlsx del dueno 'Plan de Vuelo FD V.1 Cobertura.xlsx' (Hoja2, tabla ESTADOS/SIGNIFICADO)",
+     "confianza": "secundaria"
+    },
+    {
+     "novedad": "EN INVENTARIO",
+     "significado": "En inventario en cualquiera de nuestras bodegas o agencias.",
+     "responder": "NO NECESITA RESPUESTA (estado de flujo).",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "xlsx del dueno 'Plan de Vuelo FD V.1 Cobertura.xlsx' (Hoja2)",
+     "confianza": "secundaria"
+    },
+    {
+     "novedad": "EN RUTA",
+     "significado": "En ruta para ser trasladado inter bodegas (NO es reparto al cliente).",
+     "responder": "NO NECESITA RESPUESTA (estado de flujo). Ojo: 'En ruta' en Forza es traslado entre bodegas; el reparto al cliente es 'Programado para entrega'.",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "xlsx del dueno 'Plan de Vuelo FD V.1 Cobertura.xlsx' (Hoja2)",
+     "confianza": "secundaria"
+    },
+    {
+     "novedad": "PROGRAMADO PARA ENTREGA",
+     "significado": "Esta asignado a ruta para ser entregado.",
+     "responder": "NO NECESITA RESPUESTA. Es el momento de avisar al cliente que hoy llega el paquete (esto ultimo es practica del equipo, no instruccion de Forza).",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "xlsx del dueno 'Plan de Vuelo FD V.1 Cobertura.xlsx' (Hoja2)",
+     "confianza": "secundaria"
+    },
+    {
+     "novedad": "INCIDENCIA EN RUTA",
+     "significado": "Piloto marca la incidencia indicando el motivo de la no entrega (= primer o segundo intento fallido). Forza solo hace 2 intentos.",
+     "responder": "",
+     "noHacer": "",
+     "obs": "El xlsx NO trae el catalogo de motivos de incidencia (cliente ausente, direccion incorrecta, rechazo, etc.); no se encontro publicado.",
+     "fuente": "xlsx del dueno (Hoja2) + https://www.forzadelivery.com/terminos-y-condiciones/ (seccion 'Entregas e imposibilidades de entrega')",
+     "confianza": "secundaria"
+    },
+    {
+     "novedad": "INCIDENCIA VALIDADA",
+     "significado": "Call Center valida que efectivamente hay una incidencia en ruta (Forza confirmo que el intento fallido fue real).",
+     "responder": "NO ENCONTRADO como responder en Dropi. Mismo tratamiento que 'Incidencia en ruta': contactar al cliente y corregir datos antes del ultimo intento.",
+     "noHacer": "",
+     "obs": "Util para disputas: si Forza la 'valido', el intento fallido queda respaldado por su call center.",
+     "fuente": "xlsx del dueno 'Plan de Vuelo FD V.1 Cobertura.xlsx' (Hoja2)",
+     "confianza": "secundaria"
+    },
+    {
+     "novedad": "GUIA REVERTIDA PARA ENTREGA",
+     "significado": "Ultimo intento de entrega (el paquete vuelve a salir a ruta por segunda y ultima vez).",
+     "responder": "",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "xlsx del dueno (Hoja2) + https://www.forzadelivery.com/gt/nuestros-servicios/servicio-cod/",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "DECLARADO PARA DEVOLUCION",
+     "significado": "Pedido no se pudo entregar, se cumplieron con los 2 intentos de entrega y se programa la devolucion.",
+     "responder": "NO ENCONTRADO en fuente oficial. Lo que dicen los Terminos: si el destinatario 'no puede ser razonablemente identificado o localizado, o el Destinatario rechaza el envio', Forza devuelve 'al Remitente por cuenta y cargo de este ultimo'. Inferido: ya no se recupera esta guia; si el cliente aun quiere el producto, crear pedido nuevo en Dropi.",
+     "noHacer": "No prometer al cliente que 'vuelven a pasar' con esta misma guia.",
+     "obs": "",
+     "fuente": "xlsx del dueno (Hoja2) + https://www.forzadelivery.com/terminos-y-condiciones/",
+     "confianza": "secundaria"
+    },
+    {
+     "novedad": "DEVUELTO",
+     "significado": "Recibido en sus bodegas como devolucion (ya volvio al remitente/proveedor).",
+     "responder": "NO NECESITA RESPUESTA (terminal). Solo queda medirlo como devolucion.",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "xlsx del dueno 'Plan de Vuelo FD V.1 Cobertura.xlsx' (Hoja2)",
+     "confianza": "secundaria"
+    },
+    {
+     "novedad": "ENTREGADO EN EXPRESS CENTER",
+     "significado": "Entregado en agencias porque el destino pidio que se dejara alli (el cliente pidio recoger en una agencia Express Center de Forza).",
+     "responder": "NO ENCONTRADO plazo oficial de resguardo ni instruccion de Dropi. Inferido: avisar al cliente en que EXC esta el paquete (horarios oficiales por agencia en forzadelivery.com/gt/agencias-express-center, ej. 'Lunes a Viernes 08:00 a 18:00 Sabado 08:00 a 13:00').",
+     "noHacer": "",
+     "obs": "Ambiguo si este estado ya cuenta como ENTREGADO (cobrado) o si es 'disponible para retiro'. El texto dice 'entregado en agencias', pero no dice si el COD ya se cobro. Verificar en la app con un caso real antes de tratarlo como terminal.",
+     "fuente": "xlsx del dueno (Hoja2) + https://www.forzadelivery.com/gt/agencias-express-center/",
+     "confianza": "secundaria"
+    },
+    {
+     "novedad": "COD PAGADO",
+     "significado": "Dinero acreditado a sus cuentas bancarias (Forza ya liquido el recaudo al remitente).",
+     "responder": "NO NECESITA RESPUESTA (terminal financiero, posterior a Entregado).",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "xlsx del dueno 'Plan de Vuelo FD V.1 Cobertura.xlsx' (Hoja2)",
+     "confianza": "secundaria"
+    }
+   ]
+  },
+  "CARGO EXPRESO": {
+   "nombre": "CARGO EXPRESO",
+   "retiroEnOficina": "Tiene agencias, y hay plazo oficial: 'Los envios que no sean recogidos dentro de los Seis (6) dias habiles despues de la fecha de arribo, seran considerados imposibles de entregar y se trabajaran como devolucion' (Terminos y Condiciones Servicio Nacional GT). NO ENCONTRADO si el dropshipper puede pedir 'retiro en agencia' desde Dropi.",
+   "intentosMax": "Hasta 3: 'Los envios incluyen hasta tres (3) intentos de entrega conforme a la promesa de servicio'. PERO 'la devolucion podra realizarse desde el primer intento o sin intento, sin que sea obligatorio agotar la totalidad de los mismos' cuando: '(i) Cliente no quiso recibir; (ii) direccion incorrecta, incompleta o inexistente' (la lista sigue con (iii)... pero no se pudo leer: el PDF oficial rechaza conexiones; texto tomado de los extractos del buscador sobre cargoexpreso.com/GT-CAEX-TyC.pdf).",
+   "fichas": [
+    {
+     "novedad": "PENDIENTE DE RECOLECTAR (GUIA GENERADA)",
+     "significado": "Hay una guia generada y esta esperando que llegue una unidad de Cargo Expreso a recolectar.",
+     "responder": "NO NECESITA RESPUESTA. Nota oficial via integrador: 'La opcion de anulacion de guia solo puede realizarse si Cargo Expreso no ha hecho una recoleccion' — es la unica ventana para cancelar sin costo.",
+     "noHacer": "",
+     "obs": "Nombres de estado y significados tomados de la 'Ampliacion de Terminos de Rastreo' que publica un comercio cliente de Cargo Expreso (seir.com.gt); Cargo Expreso no publica el glosario. Los nombres pueden diferir de como Dropi los muestre.",
+     "fuente": "https://seir.com.gt/tracking/ + https://faq.ebi.com.gt/mall-bi-para-comercios/seccion-13-integracion-operacion-logistica-cargo-expreso/ (14.6)",
+     "confianza": "secundaria"
+    },
+    {
+     "novedad": "RECOLECTADO",
+     "significado": "Cuando el paquete fue recolectado ya con el remitente.",
+     "responder": "NO NECESITA RESPUESTA (estado de flujo).",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "https://seir.com.gt/tracking/",
+     "confianza": "secundaria"
+    },
+    {
+     "novedad": "ALMACENADO (EN BODEGA)",
+     "significado": "Cuando el paquete esta ingresado en la bodega temporal esperando salir a destino.",
+     "responder": "NO NECESITA RESPUESTA (estado de flujo).",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "https://seir.com.gt/tracking/",
+     "confianza": "secundaria"
+    },
+    {
+     "novedad": "RUTA BODEGA DESTINO (EN TRANSITO)",
+     "significado": "Cuando el paquete esta siendo movilizado entre bodegas temporales hacia su destino.",
+     "responder": "NO NECESITA RESPUESTA (estado de flujo).",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "https://seir.com.gt/tracking/",
+     "confianza": "secundaria"
+    },
+    {
+     "novedad": "RUTA ENTREGA FINAL (EN VEHICULO)",
+     "significado": "Cuando el paquete se encuentra ya en el vehiculo que hara la entrega al destinatario ese mismo dia.",
+     "responder": "NO NECESITA RESPUESTA. Promesa oficial del Servicio Estandar: 'Entregamos tu envio en el transcurso del siguiente dia habil'.",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "https://seir.com.gt/tracking/ + https://cargoexpreso.com/servicios/",
+     "confianza": "secundaria"
+    },
+    {
+     "novedad": "EN AGENCIA SIN RECOGER (ARRIBO A AGENCIA)",
+     "significado": "El paquete llego a agencia destino para que lo recojan. 'Los envios que no sean recogidos dentro de los Seis (6) dias habiles despues de la fecha de arribo, seran considerados imposibles de entregar y se trabajaran como devolucion.'",
+     "responder": "NO ENCONTRADO como se responde en Dropi. Regla dura oficial: 6 dias habiles desde el arribo; avisar al cliente antes de ese plazo.",
+     "noHacer": "No esperar mas de 6 dias habiles: pasa a devolucion automaticamente.",
+     "obs": "",
+     "fuente": "https://cargoexpreso.com/GT-CAEX-TyC.pdf (extracto del buscador)",
+     "confianza": "oficial"
+    },
+    {
+     "novedad": "DEVOLUCION",
+     "significado": "Esto indica que se realizaron varios intentos de entrega y el cliente destino no recibio o no acepto el paquete.",
+     "responder": "NO NECESITA RESPUESTA (ya va de regreso al remitente). Si el cliente aun quiere el producto, pedido nuevo.",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "https://seir.com.gt/tracking/",
+     "confianza": "secundaria"
+    },
+    {
+     "novedad": "DEVOLUCION ENTREGADA",
+     "significado": "Esto indica que el remitente recibio su paquete que se encontraba en devolucion.",
+     "responder": "NO NECESITA RESPUESTA (terminal).",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "https://seir.com.gt/tracking/",
+     "confianza": "secundaria"
+    },
+    {
+     "novedad": "ENTREGADO",
+     "significado": "Cuando el paquete ha sido entregado al destinatario.",
+     "responder": "NO NECESITA RESPUESTA (terminal).",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "https://seir.com.gt/tracking/",
+     "confianza": "secundaria"
+    },
+    {
+     "novedad": "ENTREGADO LIQUIDADO (COD)",
+     "significado": "El destino recibio su paquete y al remitente le liquidaron por parte de gestion administrativa. Servicio C.O.D. oficial: 'Cobramos el valor completo de la mercaderia al destinatario, para luego enviarlo a ti descontando el servicio de comision'; tope oficial: no aceptan C.O.D. 'en Piezas con un valor mayor a Cinco Mil Quetzales (Q. 5000.00)'.",
+     "responder": "NO NECESITA RESPUESTA (terminal financiero).",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "https://seir.com.gt/tracking/ + https://cargoexpreso.com/servicios/ + https://cargoexpreso.com/GT-CAEX-TyC.pdf (extracto)",
+     "confianza": "secundaria"
+    }
+   ]
+  },
+  "GUATEX": {
+   "nombre": "GUATEX",
+   "retiroEnOficina": "Red de '+119 agencias y 165 agentes' (LinkedIn oficial). Plazos oficiales en bodega: numeral 13 de las Condiciones Generales: 'cualquier envio que permanezca mas de setenta y dos horas en sus bodegas por negligencia del destinatario, del remitente o cualquier otra parte... estara sujeto a un cobro adicional' y si permanece 'mas de sesenta dias en nuestras bodegas sin ser reclamado, TEASA podra disponer de la mercaderia'. NO ENCONTRADO cuando lo devuelven al remitente.",
+   "intentosMax": "NO ENCONTRADO. Ni guatex.com/servicio-cod ni las 'Condiciones Generales de Servicio' ni las 'Preguntas frecuentes' dicen cuantos intentos hace.",
+   "fichas": [
+    {
+     "novedad": "PAQUETE EN BODEGA/AGENCIA SIN RECLAMAR",
+     "significado": "El envio llego a agencia y nadie lo recoge. Oficial: mas de 72 h 'por negligencia del destinatario' genera 'cobro adicional'; mas de 60 dias sin reclamar, Guatex 'podra disponer de la mercaderia'.",
+     "responder": "NO ENCONTRADO como responder en Dropi. Regla oficial: avisar al cliente dentro de las primeras 72 h para no generar cobro extra.",
+     "noHacer": "",
+     "obs": "",
+     "fuente": "https://guatex.com/condiciones-generales-de-servicio/ (numeral 13)",
+     "confianza": "oficial"
+    }
+   ]
+  }
+ },
+ "transversal": null,
+ "fuentes": [
+  "xlsx del dueno: 'Plan de Vuelo FD V.1 Cobertura.xlsx', hoja 'Hoja2' (volcado en C:/Users/hoyos/AppData/Local/Temp/claude/c--Users-hoyos-Desktop-guardian-first-admin-90d8e5be/869d3c57-3ee3-41b2-82cc-20e19899b1c6/scratchpad/significado-de-estados.txt) — identificado como FORZA DELIVERY EXPRESS, GUATEMALA",
+  "https://www.forzadelivery.com/gt/nuestros-servicios/servicio-cod/ (oficial: '2 Intentos de Entrega' en todos los niveles; acreditacion COD <30 min; comision 4.0% o Q4)",
+  "https://www.forzadelivery.com/gt/agencias-express-center/ (oficial: Express Center = agencias Forza; servicios Recepcion/Retiro/Devolucion de paquetes; horarios por agencia)",
+  "https://www.forzadelivery.com/gt/nuestros-servicios/servicio-cod-anticipado/ (oficial: checkpoint 'Recibido en EXC'; envios no entregados 'procederan como devolucion al remitente')",
+  "https://www.forzadelivery.com/terminos-y-condiciones/ (oficial: entrega fallida, opciones alternativas, devolucion al remitente, reclamos 48 h, responsabilidad Q800)",
+  "https://forzadelivery.com/servicio-estandar/ y https://www.forzadelivery.com/gt/nuestros-servicios/servicio-de-agencia-a-agencia/ (oficial: 24-48 h, 2 intentos, +90 Express Center)",
+  "https://cargoexpreso.com/GT-CAEX-TyC.pdf (oficial; SOLO via extractos del buscador: el host 186.189.211.214 rechazo WebFetch, curl, PowerShell, Exa y r.jina.ai)",
+  "https://cargoexpreso.com/servicios/ (oficial: definicion Servicio C.O.D. y Estandar)",
+  "https://seir.com.gt/tracking/ (secundaria: comercio cliente que publica 'Ampliacion de Terminos de Rastreo' de Cargo Expreso)",
+  "https://faq.ebi.com.gt/mall-bi-para-comercios/seccion-13-integracion-operacion-logistica-cargo-expreso/ (secundaria: integrador; anulacion solo antes de recoleccion)",
+  "https://guatex.com/servicio-cod/ (oficial)",
+  "https://guatex.com/condiciones-generales-de-servicio/ (oficial; numerales 6 y 13)",
+  "https://guatex.com/preguntas-frecuentes/ y https://servicios.guatex.gt/Guatex/Tracking/ (oficial; sin glosario de estados)",
+  "https://dropi.gt/ , https://dropi.gt/blog/ , https://dropi.gt/dropshippers/ , https://wf.dropi.co/dropi-academy (oficial Dropi; NADA sobre novedades GT)",
+  "https://www.andreybusiness.com/guatemala/dropi y https://www.andreybusiness.com/guatemala (terceros: Dropi GT opera con Forza (integrada, default), Cargo Expreso y Guatex)",
+  "https://www.andreybusiness.com/guatemala/herramientas/guia-novedades-dropi-guatemala (terceros: solo 4 categorias genericas Ausencia/Rechazo/Direccion incorrecta/Dano detras de registro; sin transportadora ni plazos)"
+ ]
+}
