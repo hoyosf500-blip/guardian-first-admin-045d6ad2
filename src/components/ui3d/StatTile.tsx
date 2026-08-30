@@ -19,7 +19,9 @@ const TONE: Record<StatTone, { chip: string; text: string; stroke: string; glow:
 interface StatTileProps {
   icon: LucideIcon;
   label: string;
-  value: number;
+  /** `null` = TODAVÍA NO SE MIDIÓ. Se dibuja "—" en tono neutro, nunca un 0:
+   *  un cero afirma un hecho sobre datos que no llegaron (CLAUDE.md REGLA #2). */
+  value: number | null;
   tone: StatTone;
   /** Serie para la línea de tendencia. Con menos de 2 puntos no se dibuja. */
   spark?: number[];
@@ -44,6 +46,7 @@ export default function StatTile({
   wrapperClassName = '', duration = 1100,
 }: StatTileProps) {
   const t = TONE[tone];
+  const sinDato = value === null;
   const isZero = value === 0;
 
   return (
@@ -53,7 +56,7 @@ export default function StatTile({
       className={[
         'rounded-2xl p-4 h-full flex flex-col justify-between shadow-card3d',
         'bg-card/40 border',
-        isZero ? 'border-border/50 opacity-75' : 'border-border',
+        isZero || sinDato ? 'border-border/50 opacity-75' : 'border-border',
       ].join(' ')}
     >
       {/* Anatomía del handoff: chip + delta arriba · cifra · rótulo ·
@@ -68,8 +71,8 @@ export default function StatTile({
           {extra && <div className="text-right min-w-0">{extra}</div>}
         </div>
 
-        <div className={`text-[34px] font-bold leading-none mt-3 tilt-layer-3 ${isZero ? 'text-muted-foreground' : t.text}`}>
-          <CountUp value={value} duration={duration} />
+        <div className={`text-[34px] font-bold leading-none mt-3 tilt-layer-3 ${isZero || sinDato ? 'text-muted-foreground' : t.text}`}>
+          {sinDato ? <span aria-label="sin dato">—</span> : <CountUp value={value} duration={duration} />}
         </div>
 
         <div className="hud-label text-subtle mt-2 tilt-layer-1">{label}</div>

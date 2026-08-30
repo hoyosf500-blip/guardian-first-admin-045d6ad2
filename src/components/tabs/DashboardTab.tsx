@@ -1,3 +1,4 @@
+import { paginarQuery } from '@/lib/paginarQuery';
 import { pollWhenVisible } from '@/lib/pollWhenVisible';
 import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -35,6 +36,12 @@ const fadeUp = (delay = 0) => ({
   transition: { duration: 0.35, delay, ease: 'easeOut' as const },
 });
 
+/** Colchón sobre la ventana del selector para la descarga de `orders`.
+ *  El desglose por ESTADO mira dónde está HOY un pedido que pudo entrar antes
+ *  del rango (un pedido de hace 40 días que recién ahora se devolvió). Sin el
+ *  colchón esa fila desaparecería del desglose. */
+const VENTANA_COLCHON_DIAS = 60;
+
 export default function DashboardTab() {
   // `counter` = tienda entera (pool compartido); `myCounter` = solo lo que
   // gestionó QUIEN ESTÁ MIRANDO. Todo lo que la operadora firma o lee como
@@ -51,7 +58,11 @@ export default function DashboardTab() {
   // pantalla rotulaba "Total pedidos" sobre una muestra truncada; si fallaba la
   // página 1, mostraba 0 y todos los KPIs en cero. Se recuerda qué pasó para
   // poder decirlo en pantalla en vez de hacer pasar el corte por un total.
-  const [dbOrdersCarga, setDbOrdersCarga] = useState<'ok' | 'parcial' | 'error'>('ok');
+  // ⛔ Arranca en 'cargando', NO en 'ok'. Mientras se paginan las N páginas la
+  // tarjeta grande decía "Total pedidos 0 · 0 pendientes" con el rótulo de
+  // universo completo: un cero AFIRMADO sobre datos que todavía no llegaron
+  // (CLAUDE.md REGLA #2). Se lee como "la tienda no tiene pedidos".
+  const [dbOrdersCarga, setDbOrdersCarga] = useState<'cargando' | 'ok' | 'parcial' | 'error'>('cargando');
   const [lastSync, setLastSync] = useState<SyncLog | null>(null);
   /** Última corrida que REALMENTE sincronizo (status success). Ver el comentario
    *  de `syncStatus`: el ultimo intento puede ser una postergacion normal. */
@@ -320,15 +331,28 @@ export default function DashboardTab() {
   useEffect(() => {
     if (!user || !activeStoreId) return;
     let cancelled = false;
+    setDbOrdersCarga('cargando');
+    setDbOrders([]);
     const fetchAllOrders = async () => {
       const allData: Array<{ producto: string; estado: string; valor: number; ciudad: string; transportadora: string }> = [];
       let from = 0;
       const pageSize = 1000;
       let fallo = false;
+      // ⛔ VENTANA DE FECHA. Antes esto bajaba el histórico COMPLETO en cada
+      // montaje —~9 round-trips de 1000 filas en una tienda de 9.000 pedidos,
+      // creciendo sin techo— para dibujar una torta de productos y un desglose
+      // por estado del período que el selector ya acota. Lo pagaba la asesora
+      // en espera y el equipo entero en carga de base mientras trabaja.
+      // El colchón sobre `period` existe porque el desglose por ESTADO mira
+      // dónde está hoy un pedido que pudo entrar antes del rango.
+      const desde = new Date();
+      desde.setDate(desde.getDate() - Math.max(period, 30) - VENTANA_COLCHON_DIAS);
+      const desdeStr = desde.toISOString().split('T')[0];
       while (true) {
         if (cancelled) return;
         const { data, error } = await supabase.from('orders').select('producto, estado, valor, ciudad, transportadora')
           .eq('store_id', activeStoreId)
+          .gte('fecha', desdeStr)
           // Borrados (REEMPLAZADA = pedido re-emitido con otro id; ARCHIVADO
           // GHOST = borrado en Dropi) NO son pedidos: inflaban el total de cada
           // producto (deflactando su "Efect.") y sumaban su valor a la torta.
@@ -359,23 +383,47 @@ export default function DashboardTab() {
     };
     fetchAllOrders();
     return () => { cancelled = true; };
-  }, [user, activeStoreId]);
+    // `period` entra a propósito: acota la ventana de la consulta (ver arriba).
+  }, [user, activeStoreId, period]);
 
+  // ⛔ PAGINADO. Esta lectura alimenta las 4 tarjetas del modo "Yo" y el
+  // gráfico de barras. Antes era un SELECT crudo: PostgREST corta en 1000 filas
+  // SIN avisar y, como venía ordenado ASCENDENTE, lo que se perdía eran los
+  // días MÁS RECIENTES. Una asesora activa abría /dashboard con "7d" y veía
+  // Confirmados / Cancelados / No respondió en 0 mientras el chip del cierre
+  // —que sale de otra fuente— mostraba sus gestiones de hoy: dos cifras
+  // contradictorias en la misma pantalla, que se leen como "no trabajé".
+  //
+  // Es exactamente lo que este MISMO archivo declara prohibido en el comentario
+  // del bloque de equipo ("leer order_results crudo acá sería un error"): el
+  // camino del equipo se blindó con RPC agregada y el camino "Yo" quedó sin
+  // contraparte. `historialCorte` marca el tope duro para poder DECIRLO.
+  const [historialCorte, setHistorialCorte] = useState<'ok' | 'truncado' | 'error'>('ok');
   useEffect(() => {
     if (!user || !activeStoreId) return;
     let cancelled = false;
+    setHistoryData([]);
+    setHistorialCorte('ok');
     const since = new Date(); since.setDate(since.getDate() - 30);
-    // store_id agregado: sin él, un usuario con gestiones en Colombia Y Ecuador
-    // veía las dos tiendas sumadas en el mismo gráfico, sin poder notarlo.
-    supabase.from('order_results').select('result_date, result, order_id')
-      .eq('operator_id', user.id).eq('store_id', activeStoreId)
-      .gte('result_date', since.toISOString().split('T')[0])
-      .order('result_date', { ascending: true })
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error) console.error('Error loading history:', error.message);
-        if (data) setHistoryData(data);
-      });
+    const desde = since.toISOString().split('T')[0];
+    void (async () => {
+      // store_id: sin él, un usuario con gestiones en Colombia Y Ecuador veía
+      // las dos tiendas sumadas en el mismo gráfico, sin poder notarlo.
+      const { filas, error, truncado } = await paginarQuery<DailyResult>(
+        () => supabase.from('order_results').select('result_date, result, order_id')
+          .eq('operator_id', user.id).eq('store_id', activeStoreId)
+          .gte('result_date', desde)
+          // Orden ESTABLE (fecha + id): sin desempate, dos páginas pueden
+          // repetir una fila y omitir otra — ver el doc de paginarQuery.
+          .order('result_date', { ascending: true })
+          .order('order_id', { ascending: true }) as never,
+        { cancelado: () => cancelled },
+      );
+      if (cancelled) return;
+      if (error) { console.error('Error loading history:', error); setHistorialCorte('error'); return; }
+      setHistoryData(filas);
+      if (truncado) setHistorialCorte('truncado');
+    })();
     return () => { cancelled = true; };
   }, [user, activeStoreId]);
 
@@ -667,6 +715,8 @@ export default function DashboardTab() {
   // paginación no se cortó; en cualquier otro caso es una muestra y se rotula
   // como tal.
   const totalEsUniverso = allOrders.length === 0 && dbOrdersCarga === 'ok';
+  /** Todavía no se puede afirmar NADA sobre el universo de pedidos. */
+  const cargandoPedidos = allOrders.length === 0 && dbOrdersCarga === 'cargando';
 
   const prods = useMemo(() => {
     // `devol` es nuevo y NO cambia ninguna cifra existente: se usa solo para
@@ -720,9 +770,18 @@ export default function DashboardTab() {
     if (!user || !activeStoreId) return;
     const since = new Date(); since.setDate(since.getDate() - period);
     const sinceStr = since.toISOString().split('T')[0];
-    const { data, error } = await supabase.from('order_results').select('result_date, result_time, phone, result, reason, module')
-      .eq('operator_id', user.id).eq('store_id', activeStoreId).gte('result_date', sinceStr).order('result_date', { ascending: false });
-    if (error || !data?.length) { toast.error(error ? 'Error' : 'Sin datos'); return; }
+    // Paginado: el CSV salía silenciosamente cortado en 1000 filas y se
+    // entregaba como "el histórico". Un export incompleto que se presenta como
+    // completo es peor que no tener export.
+    interface FilaCsv { result_date: string; result_time: string | null; phone: string; result: string; reason: string | null; module: string }
+    const { filas: data, error, truncado } = await paginarQuery<FilaCsv>(
+      () => supabase.from('order_results').select('result_date, result_time, phone, result, reason, module')
+        .eq('operator_id', user.id).eq('store_id', activeStoreId).gte('result_date', sinceStr)
+        .order('result_date', { ascending: false })
+        .order('phone', { ascending: true }) as never,
+    );
+    if (error || !data.length) { toast.error(error ? 'Error' : 'Sin datos'); return; }
+    if (truncado) toast.warning('El archivo llegó al tope y puede estar incompleto — pedí un rango más corto.');
     downloadCsv(`historico_${sinceStr}.csv`, ['Fecha', 'Hora', 'Teléfono', 'Resultado', 'Razón', 'Módulo'],
       data.map(r => [r.result_date, r.result_time || '', r.phone, r.result === 'conf' ? 'Confirmado' : r.result === 'canc' ? 'Cancelado' : 'No respondió', r.reason || '', r.module]));
   };
@@ -1044,7 +1103,41 @@ export default function DashboardTab() {
           pantalla la presentaba como si fuera el universo completo. Solo aplica
           cuando esas cifras SALEN de `dbOrders` (con `allOrders` en memoria, la
           fuente es otra y el corte no las afecta). */}
-      {allOrders.length === 0 && dbOrdersCarga !== 'ok' && (
+      {/* 'cargando' NO es un fallo: mientras se paginan las páginas la pantalla
+          decía "Total pedidos 0". Aviso NEUTRO (nunca rojo ni amarillo: no hay
+          nada malo, todavía no sabemos). */}
+      {/* Modo "Yo": las 4 tarjetas y el gráfico salen de `historyData`. Si esa
+          lectura se cortó o falló, los números son una muestra, no la medición. */}
+      {!verEquipo && historialCorte !== 'ok' && (
+        <motion.div {...fadeUp(0.03)} className={`mb-5 flex items-start gap-3 rounded-2xl border px-4 py-3 ${
+          historialCorte === 'error' ? 'border-danger/30 bg-danger/10' : 'border-warning/30 bg-warning/10'
+        }`}>
+          <CloudOff size={16} className={`mt-0.5 flex-shrink-0 ${historialCorte === 'error' ? 'text-danger' : 'text-warning'}`} aria-hidden="true" />
+          <div className="text-[11px] leading-relaxed">
+            <span className={`font-semibold ${historialCorte === 'error' ? 'text-danger' : 'text-warning'}`}>
+              {historialCorte === 'error'
+                ? 'No se pudieron cargar tus gestiones.'
+                : 'Tenés tantas gestiones que no entraron todas.'}
+            </span>{' '}
+            <span className="text-muted-foreground">
+              Confirmados, Cancelados, No respondió y el gráfico de abajo salen de esa lectura:
+              tomalos como una muestra, no como tu día. El chip del cierre sí es tu número real.
+            </span>
+          </div>
+        </motion.div>
+      )}
+
+      {allOrders.length === 0 && dbOrdersCarga === 'cargando' && (
+        <motion.div {...fadeUp(0.04)} className="mb-5 flex items-start gap-3 rounded-2xl border border-border bg-card/40 px-4 py-3">
+          <CloudOff size={16} className="mt-0.5 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
+          <div className="text-[11px] leading-relaxed text-muted-foreground">
+            <span className="font-semibold text-foreground">Cargando los pedidos…</span>{' '}
+            Las cifras de &quot;Pedidos cargados&quot;, el detalle por producto y el desglose por
+            estado todavía no están medidas — no las leas como ceros.
+          </div>
+        </motion.div>
+      )}
+      {allOrders.length === 0 && (dbOrdersCarga === 'parcial' || dbOrdersCarga === 'error') && (
         <motion.div {...fadeUp(0.04)} className={`mb-5 flex items-start gap-3 rounded-2xl border px-4 py-3 ${
           dbOrdersCarga === 'error' ? 'border-danger/30 bg-danger/10' : 'border-warning/30 bg-warning/10'
         }`}>
@@ -1281,7 +1374,9 @@ export default function DashboardTab() {
               // se mantiene el universo cargado, rotulado como siempre.
               ...(verEquipo
                 ? [{ icon: Package, label: period === 1 ? 'Entraron hoy' : `Entraron (${period}d)`, value: tileEntraron, prev: null, tone: 'accent' as const, spark: period === 1 ? undefined : sparkData.entrantes, extra: `${cohortePend} del día sin desenlace`, title: 'Pedidos que ENTRARON en la ventana (sin las ediciones REEMPLAZADA de Dropi). Es la DEMANDA del día — contexto, NO el denominador de la Confirmación del día (esa divide por lo gestionado). Debajo: cuántos de estos aún no tienen desenlace.' }]
-                : [{ icon: Package, label: totalEsUniverso ? 'Total pedidos' : 'Pedidos cargados', value: totalOrders, prev: null, tone: 'accent' as const, spark: period === 1 ? undefined : sparkData.total, extra: `${statusBreakdown.pendientes} pendientes`, title: undefined as string | undefined }]),
+                // `cargandoPedidos` → "—" en vez de 0: un cero acá se lee como
+                // "la tienda no tiene pedidos" sobre datos que no llegaron.
+                : [{ icon: Package, label: totalEsUniverso ? 'Total pedidos' : cargandoPedidos ? 'Pedidos' : 'Pedidos cargados', value: cargandoPedidos ? null : totalOrders, prev: null, tone: 'accent' as const, spark: period === 1 || cargandoPedidos ? undefined : sparkData.total, extra: cargandoPedidos ? 'cargando…' : `${statusBreakdown.pendientes} pendientes`, title: undefined as string | undefined }]),
             ].map((k) => (
               <StatTile
                 key={k.label}
@@ -1766,7 +1861,15 @@ export default function DashboardTab() {
                         // se lee "este producto no entrega" cuando lo cierto es
                         // "todavía no se resolvió ninguno". Mismo criterio de
                         // madurez que CarrierStatsTable (deriveDeliveryMaturity).
-                        const mad = deriveDeliveryMaturity(d.entreg, d.devol, d.total);
+                        // El denominador de MADUREZ va sin cancelados: un
+                        // cancelado jamás va a concluir logísticamente, así que
+                        // contarlo hace que el cohorte nunca "madure" y con ~30%
+                        // de cancelación la tabla entera queda gris "·pr" para
+                        // siempre — la tabla que existe para decidir qué producto
+                        // sostener no decidía nada. Mismo arreglo que ya se hizo
+                        // en /logistica → Finanzas (FinanzasTab.tsx). La FÓRMULA
+                        // de "Efect." no cambia: cambia cuándo se emite veredicto.
+                        const mad = deriveDeliveryMaturity(d.entreg, d.devol, Math.max(0, d.total - d.canc));
                         const sinConcluidos = mad.resueltos === 0;
                         const prelim = !sinConcluidos && isRatePreliminary(mad);
                         const ec = sinConcluidos || prelim

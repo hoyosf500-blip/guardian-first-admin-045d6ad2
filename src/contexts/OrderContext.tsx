@@ -155,6 +155,22 @@ interface OrderState {
   coverageError: boolean;
   coverageConfirmError: boolean;
   coverageSegError: boolean;
+  /** ¿Ya hubo UNA lectura buena de los contadores del día (`counter` /
+   *  `myCounter`)? Mismo contrato que `gestionCargada`: mientras sea `false`,
+   *  un `{conf:0, canc:0, noresp:0}` NO significa "hoy no se trabajó" —
+   *  significa que no sabemos. Los consumidores pintan "—" en tono neutro.
+   *
+   *  Existe porque estos dos contadores son los que la operadora FIRMA en el
+   *  cierre del día: un cero inventado ahí es un reclamo injusto por un dato
+   *  que nunca se midió. */
+  counterCargado: boolean;
+  /** ¿Falló la ÚLTIMA lectura de la cola de Confirmar (`loadWorkQueue`)?
+   *
+   *  Una cola que dejó de refrescarse se ve EXACTAMENTE igual que una cola al
+   *  día: sin toast, sin spinner, sin bandera. La asesora sigue llamando sobre
+   *  una foto vieja. Con esto el hero puede decir "—" en vez de un número que
+   *  aparenta estar medido. */
+  colaConfirmarError: boolean;
 }
 
 const OrderContext = createContext<OrderState | undefined>(undefined);
@@ -231,6 +247,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     sinRespuestaRef.current = null;
     pedidosVivosRef.current = null;
     setGestionCargada(false);
+    // Misma razón que `gestionCargada`: los contadores de la tienda anterior no
+    // describen a la nueva, y un 0 heredado se leería como "acá no se trabajó".
+    setCounterCargado(false);
+    setColaConfirmarError(false);
     // Tienda VIGENTE, para que un fetch en vuelo sepa que ya no le corresponde
     // aterrizar. Ver el guard de `loadWorkQueue`.
     storeVigenteRef.current = activeStoreId;
@@ -243,6 +263,9 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const [coverageConfirmError, setCoverageConfirmError] = useState(false);
   const [coverageSegError, setCoverageSegError] = useState(false);
   const coverageError = coverageConfirmError || coverageSegError;
+  // Ver el doc de `counterCargado` / `colaConfirmarError` en OrderState.
+  const [counterCargado, setCounterCargado] = useState(false);
+  const [colaConfirmarError, setColaConfirmarError] = useState(false);
 
   // Extracted hooks for data loading and novedades — ahora reciben storeId
   // para filtrar por la tienda activa (multi-tenant).
@@ -280,6 +303,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         // Solo llamadas reales — mismo filtro que el recompute (isCallOutcome).
         // Un día de tienda (~150 filas) queda lejos del tope de 1000 filas.
         .in('result', ['conf', 'canc', 'noresp']);
+      // ⛔ Un fallo acá NO puede dejar los contadores en 0 haciéndose pasar por
+      // medidos: `counterCargado` sigue en false y los consumidores pintan "—".
       if (cancelled || error || !data) return;
       const rows = data as Array<Parameters<typeof computeDailyCounter>[0][number] & { operator_id: string | null }>;
       const next = computeDailyCounter(rows, todayLocal);
@@ -296,6 +321,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
           ? prev
           : mine
       ));
+      // Recién ACÁ un cero es un cero medido.
+      setCounterCargado(true);
     })();
     return () => { cancelled = true; };
   }, [user, activeStoreId]);
@@ -316,7 +343,20 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     // Y otra vez al aterrizar: `cancelado` se mira ENTRE páginas, así que la
     // última puede llegar justo después del cambio.
     if (storeVigenteRef.current !== activeStoreId) return;
-    if (error) return;
+    // ⛔ Antes esto era `if (error) return;` a secas: la cola dejaba de
+    // refrescarse y se veía EXACTAMENTE igual que una cola al día — sin toast,
+    // sin spinner, sin bandera. La asesora seguía llamando sobre una foto vieja.
+    // Los otros dos consumidores del mismo helper (ConfirmarTab) ya avisaban;
+    // este camino era el único mudo.
+    if (error) {
+      setColaConfirmarError(true);
+      toast.error('No se pudo refrescar la cola de pedidos — puede estar mostrando datos viejos', {
+        id: 'work-queue-load-error', // sonner dedup por id → no se apilan
+        duration: 8000,
+      });
+      return;
+    }
+    setColaConfirmarError(false);
     if (truncado) toast.warning('Hay tantos pendientes que no caben todos en pantalla. Avisá para subir el tope.');
     const orders = dbOrders.map((o, idx) => dbToOrderData(o, idx));
     // smartMerge (no reemplazo directo): en un refresh de realtime que trae los
@@ -424,8 +464,26 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     // ⛔ Si falla, NO se toca nada: ni se quitan filas, ni se marca la cola como
     // fresca. Un parche fallido nunca puede convertirse en un vacío en pantalla.
     if (error || !Array.isArray(data)) return;
-    const frescos = (data as unknown as DbOrderRow[]).map((r, i) => dbToOrderData(r, i));
+    const filas = data as unknown as DbOrderRow[];
+    const frescos = filas.map((r, i) => dbToOrderData(r, i));
     dataLoader.setSegData((prev) => aplicarPedidosTocados(prev, frescos));
+    // ⛔ El parche dirigido solo sabía aterrizar en la cola de SEGUIMIENTO.
+    // Confirmar se salva de casualidad (`onResultChange` recarga la cola cada
+    // vez que alguien marca algo), pero Novedades no tiene equivalente: la
+    // transportadora abría una novedad a las 9:05 y la pantalla seguía
+    // mostrando la lista anterior hasta el poll de 60 min. La asesora la veía
+    // cuando el cliente ya había perdido la ventana de contacto del día.
+    //
+    // Misma población que `useNovedades.loadNovedades` (estado con NOVEDAD o
+    // INTENTO DE ENTREGA + `novedad_sol` distinto de true). Solo se recarga si
+    // alguna fila fresca CALIFICA: un pedido que se movió en tránsito no puede
+    // costar una recarga de novedades.
+    const esNovedadViva = (r: DbOrderRow) => {
+      const e = String((r as { estado?: string | null }).estado ?? '').toUpperCase();
+      if (!e.includes('NOVEDAD') && !e.includes('INTENTO DE ENTREGA')) return false;
+      return (r as { novedad_sol?: boolean | null }).novedad_sol !== true;
+    };
+    if (filas.some(esNovedadViva)) void refreshFnsRef.current.loadNovedades(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, activeStoreId]);
 
@@ -1091,7 +1149,31 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             // React no re-renderiza la cola → mata el parpadeo. Los cambios
             // reales (result/reason/retryCount) pasan porque ya están en
             // fieldsChanged de smartMerge.
-            setWorkQueue(prev => smartMerge(prev, updated));
+            setWorkQueue(prev => {
+              // ⛔ CARRY-OVER, igual que la fase síncrona. Esta lectura NO es
+              // autoritativa sobre lo que la asesora acaba de marcar: cualquier
+              // `buildWorkQueue` que ya estuviera en vuelo cuando ella tocó
+              // "Confirmó" resuelve DESPUÉS con filas anteriores a su marca, y
+              // sin esto el pedido volvía a aparecer "Pendiente" un instante
+              // después del toast. Si lo re-gestionaba salía "Confirmación local
+              // falló: pedido no encontrado" sobre un pedido bien confirmado.
+              // Un result que ya está en `prev` solo puede irse por `undoLast`.
+              const prevById = new Map(prev.filter(x => x.dbId).map(x => [x.dbId, x]));
+              const conservado = updated.map(o => {
+                const old = o.dbId ? prevById.get(o.dbId) : undefined;
+                return (!o.result && old?.result)
+                  ? { ...o, result: old.result, reason: old.reason }
+                  : o;
+              });
+              // Y RE-ORDENAR: `compareConfirmar` mira `retryCount` y
+              // `nextReminderAt`, que no existían todavía en el sort de la fase
+              // síncrona (se calculan acá). Sin esto el reintento listo se
+              // habilitaba a la hora exacta pero quedaba enterrado por su edad
+              // —a veces en la zona "por cancelar" del fondo— y solo se
+              // encontraba tocando el banner naranja. Medido: se habilita a la
+              // hora y se llama con mediana de 2,6 h.
+              return smartMerge(prev, [...conservado].sort((a, b) => compareConfirmar(a, b)));
+            });
 
             // Avisar SOLO por teléfonos nuevos (no re-mostrar en cada poll → no spam).
             // El banner naranja arriba de la lista ya muestra el conteo en vivo.
@@ -1195,6 +1277,9 @@ export function OrderProvider({ children }: { children: ReactNode }) {
                 ? prev
                 : next;
             });
+            // Los dos contadores salieron de una lectura buena: a partir de acá
+            // un cero es un cero MEDIDO. Ver `counterCargado` en OrderState.
+            setCounterCargado(true);
           }
         })
         .catch(() => {
@@ -1598,11 +1683,24 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     const { order, result, resultId, touchpointId } = lastMark;
 
     setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result: undefined, reason: undefined } : o));
+    // `Math.max(0, …)` igual que `myCounter`: sin piso, deshacer la PRIMERA
+    // marca del día antes de que aterrice la siembra dejaba el contador del
+    // equipo en -1 y la barra de proporción descuadrada.
     setCounter(prev => ({
-      conf: prev.conf - (result === 'conf' ? 1 : 0),
-      canc: prev.canc - (result === 'canc' ? 1 : 0),
-      noresp: prev.noresp - (result === 'noresp' ? 1 : 0),
+      conf: Math.max(0, prev.conf - (result === 'conf' ? 1 : 0)),
+      canc: Math.max(0, prev.canc - (result === 'canc' ? 1 : 0)),
+      noresp: Math.max(0, prev.noresp - (result === 'noresp' ? 1 : 0)),
     }));
+    // El pedido deshecho DEJA de estar "tocado hoy": sin esto el toggle "Solo
+    // los que nadie llamó" lo seguía escondiendo, así que deshacer lo sacaba
+    // de la cola en vez de devolverlo. El realtime no lo arregla solo — solo
+    // escucha INSERT, y esto es un DELETE.
+    if (order.dbId) {
+      setMyConfirmTouchedToday(prev => {
+        if (!prev.has(order.dbId!)) return prev;
+        const n = new Set(prev); n.delete(order.dbId!); return n;
+      });
+    }
     // Deshacer es siempre sobre una marca propia (lastMark es de esta sesión).
     setMyCounter(prev => ({
       conf: Math.max(0, prev.conf - (result === 'conf' ? 1 : 0)),
@@ -1634,6 +1732,11 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
     setLastMark(null);
     toast.success('Deshecho');
+    // Y que el contador vuelva a salir de la BASE en vez de quedar con la resta
+    // hecha a mano: el realtime de `order_results` solo escucha INSERT, así que
+    // un borrado no dispara ningún recálculo y el número quedaba mal hasta el
+    // próximo poll (30 min).
+    void refreshFnsRef.current.loadWorkQueue();
   }, [lastMark, user]);
 
   const resetOrders = useCallback(() => {
@@ -1664,7 +1767,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
     loadNovedades: novedades.loadNovedades, resolveNovedad: novedades.resolveNovedad,
     myConfirmTouchedToday, mySegTouchedToday, gestionPorPedido, gestionCargada, gestionSegPorTelefono, ultimaGestionSeg, resumenAsesorasHoy, sinRespuestaHoy,
-    coverageError, coverageConfirmError, coverageSegError,
+    coverageError, coverageConfirmError, coverageSegError, counterCargado, colaConfirmarError,
   }), [
     allOrders, workQueue,
     dataLoader.segData, dataLoader.segLoaded, dataLoader.segLoading,
@@ -1674,7 +1777,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     loading, excelLoaded, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
     novedades.loadNovedades, novedades.resolveNovedad,
     myConfirmTouchedToday, mySegTouchedToday, gestionPorPedido, gestionCargada, gestionSegPorTelefono, ultimaGestionSeg, resumenAsesorasHoy, sinRespuestaHoy,
-    coverageError, coverageConfirmError, coverageSegError,
+    coverageError, coverageConfirmError, coverageSegError, counterCargado, colaConfirmarError,
   ]);
 
   return (

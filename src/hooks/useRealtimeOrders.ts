@@ -143,7 +143,14 @@ export function useRealtimeOrders(
               ? (payload.new as { id?: unknown } | null)?.id
               : null;
             if (idTocado != null && touchedCb.current) {
-              touchedCb.current(String(idTocado));
+              // Mismo filtro de visibilidad que `fireOrder`: con la pestaña
+              // oculta el parche dirigido igual consultaba la base (y con una
+              // barrida grande del cron llegaba a disparar una recarga
+              // completa). La asesora tiene Guardian, Dropi e ImporChat
+              // abiertos: eran pestañas de fondo comiéndose el mismo pool del
+              // que depende la ficha que ella está mirando en la otra.
+              // No cuesta frescura: `onVisibleCatchUp` ya recarga al volver.
+              if (!shouldSuppress()) touchedCb.current(String(idTocado));
             } else {
               fireOrder();
             }
