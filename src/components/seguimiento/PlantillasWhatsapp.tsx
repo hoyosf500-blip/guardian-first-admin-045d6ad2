@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { Send, Lock, AlertTriangle, FileText } from 'lucide-react';
+import { Send, Lock, AlertTriangle, FileText, Search, ChevronRight, ChevronDown, ArrowLeft } from 'lucide-react';
 import { usePlantillasMeta, useEnviarPlantilla } from '@/hooks/usePlantillasMeta';
 import type { ModuloEnvio } from '@/hooks/useEnviarWhatsapp';
 import {
   renderizar, faltantes, sugerirValores,
   type PlantillaMeta, type DatosPedido,
 } from '@/lib/plantillasMeta';
-import { partirPlantillas, etiquetaPlantilla } from '@/lib/accionSeguimiento';
+import {
+  partirPlantillas, agruparPlantillas, filtrarPlantillas, faseEnPalabras, nombreVisible,
+} from '@/lib/accionSeguimiento';
 import { conRastreo } from '@/lib/datosPlantilla';
 import { cn } from '@/lib/utils';
 
@@ -30,48 +32,80 @@ import { cn } from '@/lib/utils';
  * 3. **Lo que no se puede mandar se dice, no se esconde.** Las plantillas con
  *    video, imagen o botón-con-enlace aparecen bloqueadas y con el motivo: si
  *    desaparecieran, la asesora creería que no existen.
- */
-/**
- * Un botón de plantilla. Muestra el nombre HUMANO cuando lo reconocemos
- * (`retiro_agencia_k1` → "Avisarle que llegó a la agencia") y el crudo cuando
- * no: inventarle un rótulo genérico a una desconocida haría que dos plantillas
- * distintas se vieran iguales, y la asesora mandaría la equivocada.
  *
- * El nombre técnico no se pierde — va en el `title` junto al cuerpo, para quien
- * necesite saber exactamente cuál es.
+ * ── Cómo se ve (30-ago-2026, pedido del dueño) ─────────────────────────────
+ * *"Las plantillas se ven muy feas en comparación con Chatea Pro o Lucid
+ * Bot; que salgan las predefinidas según dónde esté el asesor y si quiere
+ * otra, que la busque."* Antes: 3 botones grandes + una nube de 40 chips con
+ * el mismo rótulo repetido cinco veces ("Volver a ofrecerle el producto" ×5).
+ * Ahora es una LISTA de filas —como la de Lucid Bot—, cada una con su nombre
+ * en español y, debajo, el mensaje tal como le llegaría a ESTE cliente (eso
+ * es lo que distingue dos plantillas con el mismo nombre). Arriba las de la
+ * fase del pedido; el resto agrupado por fase detrás de "Ver todas"; y un
+ * buscador que mira nombre y cuerpo. La plantilla elegida se queda sola en
+ * pantalla con su formulario: la lista se pliega para no competir con el
+ * mensaje que se va a mandar.
  */
-function BotonPlantilla({ p, activa, destacada, onClick }: {
+
+/** Cómo se ve una plantilla en la lista: el nombre en español y, debajo, el
+ *  mensaje ya armado con los datos de este pedido (truncado a una línea).
+ *  El nombre técnico de Meta va en el `title`, para quien lo necesite. */
+function FilaPlantilla({ p, previa, activa, destacada, onClick }: {
   p: PlantillaMeta;
+  previa: string;
   activa: boolean;
   destacada?: boolean;
   onClick: () => void;
 }) {
   const bloqueada = !!p.noSoportada;
-  const humano = etiquetaPlantilla(p.nombre);
   return (
     <button
       type="button"
       disabled={bloqueada}
-      title={p.noSoportada ?? `${p.nombre}\n\n${p.cuerpo.slice(0, 160)}`}
+      title={p.noSoportada ?? p.nombre}
       onClick={onClick}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-lg border font-semibold transition-colors',
-        destacada ? 'px-3 py-2 text-xs text-left' : 'px-2.5 py-1 text-[11px]',
+        'w-full min-w-0 overflow-hidden text-left flex items-center gap-3 rounded-xl border px-3 py-2 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
         bloqueada
-          ? 'border-border/60 bg-card/20 text-muted-foreground/50 cursor-not-allowed'
+          ? 'border-border/60 bg-card/20 cursor-not-allowed opacity-60'
           : activa
-          ? 'border-accent/50 bg-accent/15 text-accent'
+          ? 'border-accent/60 bg-accent/15'
           : destacada
-          ? 'border-accent/30 bg-accent/8 text-foreground hover:bg-accent/15 hover:border-accent/50'
-          : 'border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong',
+          ? 'border-accent/25 bg-accent/8 hover:bg-accent/15 hover:border-accent/50'
+          : 'border-border bg-card/40 hover:border-border-strong hover:bg-card/60',
       )}
     >
-      {bloqueada && <Lock size={10} className="shrink-0" aria-hidden="true" />}
-      <span className={destacada ? 'flex-1 min-w-0' : undefined}>{humano ?? p.nombre.replace(/_/g, ' ')}</span>
+      <span className="min-w-0 flex-1">
+        <span className={cn('block text-xs font-semibold truncate', activa ? 'text-accent' : 'text-foreground')}>
+          {nombreVisible(p.nombre)}
+        </span>
+        <span className="block text-[11px] text-muted-foreground truncate">
+          {bloqueada ? p.noSoportada : previa}
+        </span>
+      </span>
       {p.categoria === 'MARKETING' && !bloqueada && (
-        <span className="text-[9px] font-bold opacity-60 shrink-0" title="Plantilla de promoción: Meta la cobra más caro y la restringe más que una de logística.">PROMO</span>
+        <span
+          className="shrink-0 rounded-md border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[9px] font-bold text-warning"
+          title="Plantilla de promoción: Meta la cobra más caro y la restringe más que una de logística."
+        >
+          PROMO
+        </span>
       )}
+      {bloqueada
+        ? <Lock size={12} className="shrink-0 text-muted-foreground" aria-hidden="true" />
+        : <ChevronRight size={14} className="shrink-0 text-muted-foreground/70" aria-hidden="true" />}
     </button>
+  );
+}
+
+function TituloGrupo({ children, deLaFase }: { children: React.ReactNode; deLaFase?: boolean }) {
+  return (
+    <p className={cn(
+      'px-1 pt-1.5 pb-0.5 text-[10px] font-bold uppercase tracking-wide',
+      deLaFase ? 'text-accent' : 'text-muted-foreground',
+    )}>
+      {children}
+    </p>
   );
 }
 
@@ -95,6 +129,7 @@ export default function PlantillasWhatsapp({ externalId, fase, estadoPedido, pho
   const [elegida, setElegida] = useState<PlantillaMeta | null>(null);
   const [valores, setValores] = useState<Record<number, string>>({});
   const [verTodas, setVerTodas] = useState(false);
+  const [busqueda, setBusqueda] = useState('');
 
   // ⛔ 40 botones con el nombre CRUDO de Meta (`retiro_agencia_k1`,
   // `remarketin3 ecomm`) no es una lista, es un volcado de identificadores —
@@ -103,10 +138,20 @@ export default function PlantillasWhatsapp({ externalId, fase, estadoPedido, pho
   // resto queda a un clic. NINGUNA se esconde: la regla de este archivo sigue
   // siendo que esconder una plantilla aprobada es decidir por la asesora con
   // una regexp.
-  const { recomendadas, resto } = useMemo(
+  const { recomendadas } = useMemo(
     () => partirPlantillas(plantillas, estadoPedido),
     [plantillas, estadoPedido],
   );
+  const grupos = useMemo(() => agruparPlantillas(plantillas, estadoPedido), [plantillas, estadoPedido]);
+  // En "Ver todas" las recomendadas ya están arriba: repetirlas dentro de su
+  // grupo era ver la misma fila dos veces (visto en pantalla el 30-ago).
+  const gruposSinRecomendadas = useMemo(() => {
+    const arriba = new Set(recomendadas.map((p) => p.nombre));
+    return grupos
+      .map((g) => ({ ...g, plantillas: g.plantillas.filter((p) => !arriba.has(p.nombre)) }))
+      .filter((g) => g.plantillas.length > 0);
+  }, [grupos, recomendadas]);
+  const enPalabras = useMemo(() => faseEnPalabras(estadoPedido), [estadoPedido]);
 
   // ⛔ La dependencia es el CONTENIDO de `datos`, no su identidad.
   //
@@ -125,11 +170,44 @@ export default function PlantillasWhatsapp({ externalId, fase, estadoPedido, pho
     if (elegida) setValores(sugerirValores(elegida, conRastreo(JSON.parse(claveDatos) as DatosPedido)));
   }, [elegida, claveDatos]);
 
+  // La línea de abajo de cada fila: el mensaje como le llegaría a ESTE
+  // cliente, con los datos que Guardian ya sabe. Es lo que hace distinguibles
+  // dos plantillas con el mismo nombre en español (la cuenta tiene cinco
+  // "Volver a ofrecerle el producto"). Un hueco que no se sabe llenar queda
+  // como "____", que también es información: "ésta te va a pedir un dato".
+  const previas = useMemo(() => {
+    const d = conRastreo(JSON.parse(claveDatos) as DatosPedido);
+    const m = new Map<string, string>();
+    for (const p of plantillas) {
+      const texto = renderizar(p.cuerpo, sugerirValores(p, d)).replace(/\{\{\d+\}\}/g, '____').replace(/\s+/g, ' ').trim();
+      m.set(p.nombre, texto);
+    }
+    return m;
+  }, [plantillas, claveDatos]);
+
   const huecos = useMemo(() => (elegida ? faltantes(elegida, valores) : []), [elegida, valores]);
   const previa = useMemo(
     () => (elegida ? renderizar(elegida.cuerpo, valores) : ''),
     [elegida, valores],
   );
+
+  // Con búsqueda se mira TODA la cuenta, agrupada igual, sin la sección de
+  // recomendadas: la asesora ya dijo qué quiere.
+  const buscando = busqueda.trim().length > 0;
+  const gruposFiltrados = useMemo(() => {
+    if (!buscando) return grupos;
+    const permitidas = new Set(filtrarPlantillas(plantillas, busqueda).map((p) => p.nombre));
+    return grupos
+      .map((g) => ({ ...g, plantillas: g.plantillas.filter((p) => permitidas.has(p.nombre)) }))
+      .filter((g) => g.plantillas.length > 0);
+  }, [buscando, busqueda, grupos, plantillas]);
+  const coincidencias = useMemo(
+    () => gruposFiltrados.reduce((n, g) => n + g.plantillas.length, 0),
+    [gruposFiltrados],
+  );
+  // Sin recomendadas (fase sin acción obvia) la lista completa sale de una:
+  // no hay nada mejor que mostrar primero.
+  const mostrarTodas = verTodas || recomendadas.length === 0;
 
   const mandar = async () => {
     if (!elegida) return;
@@ -150,21 +228,39 @@ export default function PlantillasWhatsapp({ externalId, fase, estadoPedido, pho
   // vacío y parezca roto.
   if (estado === 'sin_config') return null;
 
+  const fila = (p: PlantillaMeta, destacada?: boolean) => (
+    <FilaPlantilla
+      key={p.nombre}
+      p={p}
+      previa={previas.get(p.nombre) ?? ''}
+      activa={elegida?.nombre === p.nombre}
+      destacada={destacada}
+      onClick={() => setElegida(elegida?.nombre === p.nombre ? null : p)}
+    />
+  );
+
   return (
-    <div className="rounded-xl border border-border bg-card/30 p-3 space-y-3">
+    // ⛔ `min-w-0`: el DialogContent de shadcn es un GRID, y un hijo de grid
+    // tiene `min-width: auto` — con las filas en una sola línea (`truncate` =
+    // nowrap) el ancho mínimo del selector pasaba a ser el del mensaje más
+    // largo y la caja entera se salía del diálogo hacia la derecha (visto el
+    // 30-ago en el dev server). Con min-w-0 el grid lo deja encoger y el
+    // truncado hace su trabajo.
+    <div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card/30 p-3 space-y-2.5">
       <div className="flex items-center gap-2">
         <FileText size={13} className="text-muted-foreground shrink-0" aria-hidden="true" />
         <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
           Mandarle una plantilla
         </span>
+        {estado === 'ok' && plantillas.length > 0 && (
+          <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">{plantillas.length} aprobadas</span>
+        )}
       </div>
 
       {estado === 'inicial' || estado === 'cargando' ? (
         // ⛔ Acá NO puede decir "no hay plantillas": todavía no se sabe.
-        <div className="space-y-2" aria-label="Leyendo las plantillas">
-          <div className="flex gap-1.5">
-            {[0, 1, 2].map((i) => <div key={i} className="h-6 w-28 rounded-lg bg-muted/40 animate-pulse" />)}
-          </div>
+        <div className="space-y-1.5" aria-label="Leyendo las plantillas">
+          {[0, 1, 2].map((i) => <div key={i} className="h-11 rounded-xl bg-muted/40 animate-pulse" />)}
           <p className="text-[11px] text-muted-foreground">Buscando las plantillas aprobadas…</p>
         </div>
       ) : estado === 'error' ? (
@@ -181,54 +277,25 @@ export default function PlantillasWhatsapp({ externalId, fase, estadoPedido, pho
         <p className="text-[11px] text-muted-foreground">
           Esta cuenta todavía no tiene plantillas aprobadas por Meta.
         </p>
-      ) : (
-        <>
-          {/* Las que sirven para ESTE pedido: grandes, en fila propia y con el
-              nombre en español. Es lo que la asesora va a tocar el 90% de las
-              veces. */}
-          {recomendadas.length > 0 && (
-            <div className="flex flex-col gap-1.5">
-              {recomendadas.map((p) => (
-                <BotonPlantilla
-                  key={p.nombre}
-                  p={p}
-                  activa={elegida?.nombre === p.nombre}
-                  destacada
-                  onClick={() => setElegida(elegida?.nombre === p.nombre ? null : p)}
-                />
-              ))}
-            </div>
-          )}
-
-          {resto.length > 0 && (recomendadas.length === 0 || verTodas ? (
-            <div className="flex flex-wrap gap-1.5">
-              {resto.map((p) => (
-                <BotonPlantilla
-                  key={p.nombre}
-                  p={p}
-                  activa={elegida?.nombre === p.nombre}
-                  onClick={() => setElegida(elegida?.nombre === p.nombre ? null : p)}
-                />
-              ))}
-            </div>
-          ) : (
-            // El resto NO desaparece: queda a un clic. Si se borrara, una
-            // asesora con un caso raro (un reclamo, un rescate) se quedaría sin
-            // la plantilla que necesita y sin saber que existe.
+      ) : elegida ? (
+        // La elegida, sola. La lista se pliega: lo que importa ahora es el
+        // mensaje que va a salir, no las otras 42.
+        <div className="space-y-2.5">
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setVerTodas(true)}
-              className="text-[11px] font-semibold text-muted-foreground hover:text-foreground underline hover:no-underline"
+              onClick={() => setElegida(null)}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground"
             >
-              Ver las otras {resto.length}
+              <ArrowLeft size={12} aria-hidden="true" />
+              Elegir otra
             </button>
-          ))}
+          </div>
+          {fila(elegida)}
 
-          {elegida?.noSoportada && (
+          {elegida.noSoportada ? (
             <p className="text-[11px] text-warning">{elegida.noSoportada}</p>
-          )}
-
-          {elegida && !elegida.noSoportada && (
+          ) : (
             <div className="space-y-2.5 pt-1">
               {elegida.variables.length > 0 && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -282,6 +349,73 @@ export default function PlantillasWhatsapp({ externalId, fase, estadoPedido, pho
                 </button>
               </div>
             </div>
+          )}
+        </div>
+      ) : (
+        <>
+          {/* El buscador va siempre: "si quiere enviar otra, que la busque". */}
+          <label className="relative block">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+            <input
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Buscar una plantilla… (agencia, guía, novedad, descuento)"
+              aria-label="Buscar una plantilla"
+              className="w-full rounded-lg border border-border bg-card/40 pl-8 pr-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </label>
+
+          {buscando ? (
+            coincidencias === 0 ? (
+              <p className="text-[11px] text-muted-foreground px-1">
+                Ninguna plantilla dice «{busqueda.trim()}». Probá con otra palabra: agencia, guía, novedad, reparto…
+              </p>
+            ) : (
+              <div className="max-h-[340px] overflow-y-auto pr-0.5 space-y-1">
+                {gruposFiltrados.map((g) => (
+                  <div key={g.clave} className="space-y-1">
+                    <TituloGrupo deLaFase={g.deLaFase}>{g.titulo}</TituloGrupo>
+                    {g.plantillas.map((p) => fila(p, g.deLaFase))}
+                  </div>
+                ))}
+              </div>
+            )
+          ) : (
+            <>
+              {/* Las que sirven para ESTE pedido, primero y marcadas. Es lo
+                  que la asesora va a tocar el 90% de las veces. */}
+              {recomendadas.length > 0 && (
+                <div className="space-y-1">
+                  <TituloGrupo deLaFase>
+                    Para este pedido{enPalabras ? ` · ${enPalabras}` : ''}
+                  </TituloGrupo>
+                  {recomendadas.map((p) => fila(p, true))}
+                </div>
+              )}
+
+              {mostrarTodas ? (
+                <div className="max-h-[340px] overflow-y-auto pr-0.5 space-y-1">
+                  {gruposSinRecomendadas.map((g) => (
+                    <div key={g.clave} className="space-y-1">
+                      <TituloGrupo deLaFase={g.deLaFase}>{g.titulo}</TituloGrupo>
+                      {g.plantillas.map((p) => fila(p, g.deLaFase))}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                // El resto NO desaparece: queda a un clic. Si se borrara, una
+                // asesora con un caso raro (un reclamo, un rescate) se quedaría
+                // sin la plantilla que necesita y sin saber que existe.
+                <button
+                  type="button"
+                  onClick={() => setVerTodas(true)}
+                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground hover:border-border-strong"
+                >
+                  <ChevronDown size={12} aria-hidden="true" />
+                  Ver todas las plantillas ({plantillas.length})
+                </button>
+              )}
+            </>
           )}
         </>
       )}

@@ -301,3 +301,140 @@ export function plantillaParaAccion<T extends PlantillaOrdenable>(
   const { recomendadas } = partirPlantillas(plantillas, estado, completable);
   return recomendadas.find(completable) ?? null;
 }
+
+// ── Las plantillas, agrupadas por la fase que atienden ─────────────────────
+// (30-ago-2026, pedido del dueño: *"que salgan las plantillas predefinidas
+// dependiendo de dónde esté el asesor: si está en retiro en oficina que le
+// salgan esas primero, si está en guía generada lo mismo, si está en reparto
+// que le salga esa; y si quiere enviar otra, que la busque"*.)
+//
+// Antes del grupo, la lista completa era una nube de 40 chips planos: la
+// asesora tenía que leer las 40 para encontrar la de agencia. Ahora cada
+// plantilla pertenece a UN grupo (primera regla que matchea, mismo molde que
+// `ETIQUETAS`) y el grupo de la fase del pedido va primero.
+
+export type GrupoPlantillaClave =
+  | 'agencia' | 'guia' | 'reparto' | 'novedad' | 'rescate'
+  | 'confirmacion' | 'entregado' | 'promo' | 'otras';
+
+interface ReglaGrupo { clave: GrupoPlantillaClave; titulo: string; prueba: RegExp }
+
+/** ORDENADA: la primera que matchea gana. `antes_generar_guia` cae en «guía»
+ *  aunque también diga "generar"; `remarketing_despacho_listo` cae en «en
+ *  camino» porque habla del despacho, no de la promoción. */
+const GRUPOS: readonly ReglaGrupo[] = [
+  { clave: 'agencia', titulo: 'Retiro en agencia', prueba: /retiro|agencia|oficina/ },
+  { clave: 'guia', titulo: 'Guía y despacho', prueba: /guia/ },
+  { clave: 'reparto', titulo: 'En camino y entrega', prueba: /en_camino|zona_entrega|transito|despacho_listo/ },
+  { clave: 'novedad', titulo: 'Novedad y dirección', prueba: /novedad|direccion/ },
+  { clave: 'rescate', titulo: 'Rescate y devolución', prueba: /rescate|reactivar|ultima_oportunidad/ },
+  { clave: 'confirmacion', titulo: 'Confirmación del pedido', prueba: /confirmacion|reconfirmacion/ },
+  { clave: 'entregado', titulo: 'Entregado', prueba: /entregado/ },
+  { clave: 'promo', titulo: 'Promoción y reactivación', prueba: /remarketing|remarketin|carrito|descuento|envio_gratis|stock|ecommerce/ },
+];
+const GRUPO_OTRAS: ReglaGrupo = { clave: 'otras', titulo: 'Otras', prueba: /./ };
+
+export function grupoPlantilla(nombre: string | null | undefined): ReglaGrupo {
+  const n = sinTildes(String(nombre || ''));
+  return GRUPOS.find((g) => g.prueba.test(n)) ?? GRUPO_OTRAS;
+}
+
+/** El grupo que atiende cada fase del kanban. Sin entrada = la fase no tiene
+ *  un grupo propio (otros, cancelado, indemnizada): los grupos salen en el
+ *  orden de siempre. */
+const GRUPO_POR_FASE: Partial<Record<SegStatusKey, GrupoPlantillaClave>> = {
+  oficina: 'agencia',
+  guia: 'guia',
+  bodega_trans: 'guia',
+  procesamiento: 'guia',
+  transito: 'reparto',
+  reparto: 'reparto',
+  novedad: 'novedad',
+  novedad_sol: 'novedad',
+  devolucion: 'rescate',
+  devolucion_transito: 'rescate',
+  rechazado: 'rescate',
+  entregado: 'entregado',
+};
+
+/** Cómo se dice la fase en el encabezado del selector ("Para este pedido ·
+ *  en agencia"). Va en minúscula porque sigue a un punto medio. */
+const FASE_EN_PALABRAS: Partial<Record<SegStatusKey, string>> = {
+  oficina: 'en agencia',
+  guia: 'con guía generada',
+  bodega_trans: 'en bodega de la transportadora',
+  procesamiento: 'en procesamiento',
+  transito: 'en tránsito',
+  reparto: 'en reparto',
+  novedad: 'con novedad',
+  novedad_sol: 'con novedad solucionada',
+  devolucion: 'en devolución',
+  devolucion_transito: 'devolviéndose',
+  rechazado: 'rechazado',
+  entregado: 'entregado',
+};
+
+export function faseEnPalabras(estado: string | null | undefined): string | null {
+  if (!estado) return null;
+  return FASE_EN_PALABRAS[classifySegEstado(estado)] ?? null;
+}
+
+export interface GrupoDePlantillas<T> {
+  clave: GrupoPlantillaClave;
+  titulo: string;
+  /** Es el grupo de la FASE de este pedido: va primero y se marca. */
+  deLaFase: boolean;
+  plantillas: T[];
+}
+
+/**
+ * Parte la lista en grupos, con el de la fase del pedido PRIMERO y el resto
+ * en el orden de `GRUPOS`. Dentro de cada grupo se respeta el orden de
+ * entrada (que ya viene de `ordenarParaFase`), salvo que las bloqueadas van
+ * al final: no sirven para tocar, solo para saber que existen.
+ * Los grupos vacíos no salen — un encabezado sin filas es ruido.
+ */
+export function agruparPlantillas<T extends PlantillaOrdenable>(
+  plantillas: readonly T[],
+  estado: string | null | undefined,
+): GrupoDePlantillas<T>[] {
+  const claveFase = estado ? GRUPO_POR_FASE[classifySegEstado(estado)] ?? null : null;
+  const porClave = new Map<GrupoPlantillaClave, T[]>();
+  for (const p of plantillas) {
+    const g = grupoPlantilla(p.nombre).clave;
+    const arr = porClave.get(g) ?? [];
+    arr.push(p);
+    porClave.set(g, arr);
+  }
+  const orden: ReglaGrupo[] = [...GRUPOS, GRUPO_OTRAS];
+  if (claveFase) {
+    const i = orden.findIndex((g) => g.clave === claveFase);
+    if (i > 0) orden.unshift(...orden.splice(i, 1));
+  }
+  const bloqueadaAlFinal = (a: T, b: T) => Number(!!a.noSoportada) - Number(!!b.noSoportada);
+  return orden
+    .map((g) => ({
+      clave: g.clave,
+      titulo: g.titulo,
+      deLaFase: g.clave === claveFase,
+      plantillas: [...(porClave.get(g.clave) ?? [])].sort(bloqueadaAlFinal),
+    }))
+    .filter((g) => g.plantillas.length > 0);
+}
+
+/**
+ * Buscar por lo que la asesora escribe: el nombre en español, el nombre de
+ * Meta o un pedazo del cuerpo. Sin tildes ni mayúsculas. Vacío = todas.
+ */
+export function filtrarPlantillas<T extends PlantillaOrdenable & { cuerpo?: string }>(
+  plantillas: readonly T[],
+  consulta: string,
+): T[] {
+  const q = sinTildes(consulta).trim();
+  if (!q) return [...plantillas];
+  const palabras = q.split(/\s+/).filter(Boolean);
+  return plantillas.filter((p) => {
+    const pajar = sinTildes(`${nombreVisible(p.nombre)} ${p.nombre} ${p.cuerpo ?? ''}`);
+    return palabras.every((w) => pajar.includes(w));
+  });
+}

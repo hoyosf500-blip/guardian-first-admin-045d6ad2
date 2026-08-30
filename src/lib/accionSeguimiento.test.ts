@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   accionPrincipal, etiquetaPlantilla, nombreVisible, partirPlantillas,
   plantillaParaAccion, MAX_RECOMENDADAS,
+  grupoPlantilla, agruparPlantillas, filtrarPlantillas, faseEnPalabras,
 } from './accionSeguimiento';
 import { metodosParaEstado } from './segMetodosEstado';
 
@@ -241,5 +242,80 @@ describe('plantillaParaAccion', () => {
       );
       expect(elegida).not.toBeNull();
     });
+  });
+});
+
+describe('agruparPlantillas — el grupo de la fase va primero', () => {
+  it('cada plantilla real cae en UN grupo con nombre en español', () => {
+    for (const p of CUENTA_EC) {
+      const g = grupoPlantilla(p.nombre);
+      expect(g.titulo).not.toBe('');
+      expect(g.clave).not.toBe('otras');
+    }
+  });
+
+  it('un pedido en agencia ve primero "Retiro en agencia", y solo las de agencia ahí', () => {
+    const grupos = agruparPlantillas(CUENTA_EC, 'PARA RETIRO EN AGENCIA SERVIENTREGA');
+    expect(grupos[0].clave).toBe('agencia');
+    expect(grupos[0].deLaFase).toBe(true);
+    expect(grupos[0].plantillas.map((p) => p.nombre)).toEqual(
+      CUENTA_EC.filter((p) => /retiro/.test(p.nombre)).map((p) => p.nombre),
+    );
+    expect(grupos.filter((g) => g.deLaFase)).toHaveLength(1);
+  });
+
+  it('guía generada y reparto tienen su grupo propio adelante', () => {
+    expect(agruparPlantillas(CUENTA_EC, 'GUIA_GENERADA')[0].clave).toBe('guia');
+    expect(agruparPlantillas(CUENTA_EC, 'EN REPARTO')[0].clave).toBe('reparto');
+    expect(agruparPlantillas(CUENTA_EC, 'NOVEDAD')[0].clave).toBe('novedad');
+  });
+
+  it('⛔ ninguna plantilla se pierde al agrupar', () => {
+    const grupos = agruparPlantillas(CUENTA_EC, 'EN REPARTO');
+    const todas = grupos.flatMap((g) => g.plantillas.map((p) => p.nombre)).sort();
+    expect(todas).toEqual(CUENTA_EC.map((p) => p.nombre).sort());
+  });
+
+  it('una fase sin grupo propio deja el orden de siempre y ningún grupo marcado', () => {
+    const grupos = agruparPlantillas(CUENTA_EC, 'ESTADO RARO');
+    expect(grupos[0].clave).toBe('agencia');
+    expect(grupos.every((g) => !g.deLaFase)).toBe(true);
+  });
+
+  it('las bloqueadas van al final de su grupo, no desaparecen', () => {
+    const lista = [
+      { nombre: 'retiro_agencia_k1', noSoportada: 'tiene imagen' },
+      { nombre: 'retiro_agencia_v1' },
+    ];
+    const [g] = agruparPlantillas(lista, 'EN OFICINA');
+    expect(g.plantillas.map((p) => p.nombre)).toEqual(['retiro_agencia_v1', 'retiro_agencia_k1']);
+  });
+
+  it('el encabezado dice la fase en palabras', () => {
+    expect(faseEnPalabras('PARA RETIRO EN AGENCIA SERVIENTREGA')).toBe('en agencia');
+    expect(faseEnPalabras('EN REPARTO')).toBe('en reparto');
+    expect(faseEnPalabras(null)).toBeNull();
+  });
+});
+
+describe('filtrarPlantillas — la búsqueda de la asesora', () => {
+  const lista = [
+    { nombre: 'retiro_agencia_v1', cuerpo: 'Estimado/a {{1}}, su {{2}} ya está esperándolo en la agencia' },
+    { nombre: 'guia_generada_v1', cuerpo: 'Su pedido ya tiene guía y salió de bodega' },
+    { nombre: 'en_camino_hoy_v2', cuerpo: '¡hoy es el día! sale a entrega' },
+  ];
+  it('encuentra por el nombre en español, sin tildes ni mayúsculas', () => {
+    expect(filtrarPlantillas(lista, 'AGENCIA').map((p) => p.nombre)).toEqual(['retiro_agencia_v1']);
+    expect(filtrarPlantillas(lista, 'guía').map((p) => p.nombre)).toEqual(['guia_generada_v1']);
+  });
+  it('encuentra por un pedazo del cuerpo', () => {
+    expect(filtrarPlantillas(lista, 'hoy es el dia').map((p) => p.nombre)).toEqual(['en_camino_hoy_v2']);
+  });
+  it('varias palabras = todas tienen que estar', () => {
+    expect(filtrarPlantillas(lista, 'llega hoy').map((p) => p.nombre)).toEqual(['en_camino_hoy_v2']);
+    expect(filtrarPlantillas(lista, 'agencia hoy')).toEqual([]);
+  });
+  it('vacío devuelve todas', () => {
+    expect(filtrarPlantillas(lista, '   ')).toHaveLength(3);
   });
 });
