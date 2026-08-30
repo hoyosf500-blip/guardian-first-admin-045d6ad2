@@ -61,6 +61,7 @@ interface LocalOrder {
   phone: string;
   direccion: string;
   guia: string;
+  transportadora: string;
 }
 
 async function loadLocalOrder(
@@ -76,7 +77,7 @@ async function loadLocalOrder(
   // de OTRA empresa.
   let q = sb
     .from("orders")
-    .select("id, store_id, external_id, nombre, phone, direccion, guia")
+    .select("id, store_id, external_id, nombre, phone, direccion, guia, transportadora")
     .eq("external_id", externalId);
   if (storeId) q = q.eq("store_id", storeId);
   const { data, error } = await q
@@ -96,6 +97,7 @@ async function loadLocalOrder(
     phone: String(data.phone || ""),
     direccion: String(data.direccion || ""),
     guia: String((data as { guia?: string | null }).guia || ""),
+    transportadora: String((data as { transportadora?: string | null }).transportadora || "").toUpperCase(),
   };
 }
 
@@ -178,6 +180,7 @@ function buildReofferBody(
   local: LocalOrder | null,
   prep: PrepPanel = {},
 ): Record<string, unknown> {
+  const esGintracom = (local?.transportadora ?? "").includes("GINTRACOM");
   return {
     data: [
       {
@@ -185,7 +188,11 @@ function buildReofferBody(
         solution: solution,
         essolucion: 1,
         tipocategoria: 0,
-        selectValueConfirma: "1",
+        // Gintracom (EC/GT) NO usa el select "1": el panel manda el OBJETO de
+        // tiposSolucion ({value:1 «Volver a ofrecer», 2, 3 «Efectuar devolución»})
+        // y exige fecha de reoferta (`dateToSend`, YYYY-MM-DD) para 1 y 2.
+        // Capturado del chunk de novedades de app.dropi.ec (30-ago-2026).
+        selectValueConfirma: esGintracom ? { value: 1, descripcion: "Volver a ofrecer" } : "1",
         nombreConfirma: local?.nombre ?? "",
         telefonoBaseConfirma: local?.phone ?? "",
         direccionConfirma: local?.direccion ?? "",
@@ -196,10 +203,16 @@ function buildReofferBody(
         location_url: null,
         // Ecuador (bundle del panel): my_confirmations + dateToSend van en el body.
         my_confirmations: prep.my_confirmations ?? null,
-        dateToSend: "",
+        dateToSend: esGintracom ? manana() : "",
       },
     ],
   };
+}
+
+/** Mañana en fecha Ecuador (UTC-5), YYYY-MM-DD: la reoferta más temprana que Gintracom acepta. */
+function manana(): string {
+  const d = new Date(Date.now() - 5 * 3600_000 + 24 * 3600_000);
+  return d.toISOString().slice(0, 10);
 }
 
 function buildReturnBody(externalId: string, prep: PrepPanel = {}): Record<string, unknown> {
@@ -403,7 +416,7 @@ Deno.serve(async (req: Request) => {
     // edge functions solas y ya desplegó código viejo diciendo que era main).
     if (body.ping === true) {
       return new Response(
-        JSON.stringify({ ok: true, fn: "dropi-resolve-incidence", version: "2026-08-30.1", panel: "clickbtnsolve+my_confirmations" }),
+        JSON.stringify({ ok: true, fn: "dropi-resolve-incidence", version: "2026-08-30.2", panel: "clickbtnsolve+my_confirmations+gintracom" }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
