@@ -58,7 +58,7 @@ describe('classifyNovedad — transportadora', () => {
 
 describe('classifyNovedad — genérica / catch-all / ruido', () => {
   it('vacío y null → genérica', () => {
-    expect(classifyNovedad('')).toEqual({ categoria: 'otro', culpa: 'generica', esGenerica: true });
+    expect(classifyNovedad('')).toEqual({ categoria: 'sin_texto', culpa: 'generica', esGenerica: true });
     expect(classifyNovedad(null).esGenerica).toBe(true);
     expect(classifyNovedad(undefined).esGenerica).toBe(true);
   });

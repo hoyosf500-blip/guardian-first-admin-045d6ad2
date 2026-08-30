@@ -43,7 +43,10 @@ function pct(n: number | null): string {
 
 /** Etiqueta legible de categoría (snake_case → Texto). */
 function catLabel(categoria: string): string {
-  if (categoria === 'otro') return 'Sin clasificar';
+  // Los dos catch-alls tienen nombre PROPIO: con la misma etiqueta la tabla
+  // mostraba dos filas idénticas y no se sabía cuál era cuál.
+  if (categoria === 'sin_texto') return 'El carrier no escribió nada';
+  if (categoria === 'otro') return 'Sin clasificar (falta la regla)';
   return categoria.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 }
 

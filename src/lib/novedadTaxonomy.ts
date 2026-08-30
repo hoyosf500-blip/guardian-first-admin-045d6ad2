@@ -33,7 +33,11 @@ import { stripAccents } from './novedadGestion';
 export type Culpa = 'datos_nuestros' | 'cliente' | 'transportadora' | 'generica' | 'sin_clasificar' | 'no_es_novedad';
 
 export interface NovedadClass {
-  /** Subtipo fino, ej. 'direccion_errada'. 'otro' cuando cae al catch-all. */
+  /** Subtipo fino, ej. 'direccion_errada'.
+   *  Dos catch-alls DISTINTOS, y tienen que serlo: `sin_texto` (el carrier no
+   *  escribió nada) y `otro` (escribió algo y no lo supimos leer). Con el mismo
+   *  valor, la tabla «Motivos más frecuentes» mostraba DOS filas idénticas
+   *  llamadas «Sin clasificar» — visto en producción el 30-ago (120 y 8). */
   categoria: string;
   culpa: Culpa;
   /** true cuando el texto no aporta info útil (vago/ruido) o no clasificó. */
@@ -287,7 +291,7 @@ export function classifyNovedad(text: string | null | undefined): NovedadClass {
   const n = norm(text || '');
   // El carrier NO dijo nada: culpa suya, y el dato no existe.
   if (!n || n.length < 4 || GENERIC_NOISE.has(n)) {
-    return { categoria: 'otro', culpa: 'generica', esGenerica: true };
+    return { categoria: 'sin_texto', culpa: 'generica', esGenerica: true };
   }
   for (const r of RULES) {
     if (ruleMatches(n, r)) {
