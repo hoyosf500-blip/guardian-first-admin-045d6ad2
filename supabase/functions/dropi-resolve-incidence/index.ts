@@ -60,6 +60,7 @@ interface LocalOrder {
   nombre: string;
   phone: string;
   direccion: string;
+  guia: string;
 }
 
 async function loadLocalOrder(
@@ -75,7 +76,7 @@ async function loadLocalOrder(
   // de OTRA empresa.
   let q = sb
     .from("orders")
-    .select("id, store_id, external_id, nombre, phone, direccion")
+    .select("id, store_id, external_id, nombre, phone, direccion, guia")
     .eq("external_id", externalId);
   if (storeId) q = q.eq("store_id", storeId);
   const { data, error } = await q
@@ -94,13 +95,88 @@ async function loadLocalOrder(
     nombre: String(data.nombre || ""),
     phone: String(data.phone || ""),
     direccion: String(data.direccion || ""),
+    guia: String((data as { guia?: string | null }).guia || ""),
   };
+}
+
+// Lo que el PANEL de Dropi hace ANTES de guardar una solución — capturado del
+// bundle de app.dropi.ec (chunk de novedades, 30-ago-2026), no supuesto:
+//   1. POST /api/orders/clickbtnsolve {shipping_guide}. Si la transportadora
+//      trabaja por «MEC» (Servientrega EC) y responde
+//      confirmacionConsulta = "NO ESTA EN CONFIRMACIONES", el panel NI ABRE el
+//      formulario: «Esta guía ya fue gestionada o aún no está en el área de
+//      confirmación». Es exactamente el caso de las 70 de 85 novedades que
+//      Dropi rechaza (memoria novedades_84_vs_14). Acá se devuelve ese motivo
+//      en vez de postear a ciegas y leer un error críptico.
+//   2. GET /api/orders/myorders/v2/{id}?warranty=false → el pedido con
+//      `my_confirmations`, que el panel mete DENTRO del payload (reoffer y
+//      return) y que el backend usa para cerrar la confirmación en Servientrega
+//      (`confirmacionActualizarServ`). La versión anterior de esta función no lo
+//      mandaba.
+// Ambas viven en el plano /api/* (session token). Sin token no se bloquea nada:
+// se sigue como antes, con el payload sin my_confirmations (degradación, no
+// bloqueo). Nunca se reintenta el POST final.
+interface PrepPanel {
+  bloqueo?: string;
+  my_confirmations?: unknown;
+}
+
+async function preparacionDelPanel(
+  sb: SB,
+  cfg: StoreDropiConfig,
+  externalId: string,
+  guia: string,
+): Promise<PrepPanel> {
+  let tok = "";
+  try {
+    tok = await ensureFreshSessionToken(sb, cfg);
+  } catch (e) {
+    console.warn("dropi-resolve-incidence: sin session token para el pre-chequeo:", e instanceof Error ? e.message : String(e));
+    return {};
+  }
+  if (!tok) return {};
+  const web = { base: cfg.base, sessionToken: tok, storeUrl: cfg.storeUrl };
+  const out: PrepPanel = {};
+  if (guia) {
+    try {
+      const { status, body } = await dropiWebFetch(web, "/api/orders/clickbtnsolve", {
+        method: "POST",
+        body: { shipping_guide: guia },
+      });
+      const b = (body ?? {}) as Record<string, unknown>;
+      const consulta = String(b.confirmacionConsulta ?? "").trim().toUpperCase();
+      if (status < 300 && consulta === "NO ESTA EN CONFIRMACIONES") {
+        out.bloqueo = "Dropi: esta guía ya fue gestionada o aún no está en el área de confirmación de la transportadora — la incidencia no está abierta, el panel tampoco la deja solucionar.";
+        return out;
+      }
+      if (status < 300 && b.isSuccess === false) {
+        out.bloqueo = `Dropi no encuentra la guía para solucionar: ${String(b.message || "sin detalle").slice(0, 200)}`;
+        return out;
+      }
+    } catch (e) {
+      // Un fallo del pre-chequeo no bloquea: el POST final dirá lo suyo.
+      console.warn("dropi-resolve-incidence: clickbtnsolve falló:", e instanceof Error ? e.message : String(e));
+    }
+  }
+  try {
+    const { status, body } = await dropiWebFetch(web, `/api/orders/myorders/v2/${externalId}?warranty=false`, {
+      method: "GET",
+      retryOnThrottle: true,
+    });
+    const b = (body ?? {}) as Record<string, unknown>;
+    const obj = (b.objects ?? null) as Record<string, unknown> | null;
+    if (status < 300 && obj && obj.my_confirmations != null) out.my_confirmations = obj.my_confirmations;
+  } catch (e) {
+    console.warn("dropi-resolve-incidence: myorders/v2 falló:", e instanceof Error ? e.message : String(e));
+  }
+  return out;
 }
 
 function buildReofferBody(
   externalId: string,
   solution: string,
   local: LocalOrder | null,
+  prep: PrepPanel = {},
 ): Record<string, unknown> {
   return {
     data: [
@@ -118,17 +194,21 @@ function buildReofferBody(
         timeStart: "",
         timeEnd: "",
         location_url: null,
+        // Ecuador (bundle del panel): my_confirmations + dateToSend van en el body.
+        my_confirmations: prep.my_confirmations ?? null,
+        dateToSend: "",
       },
     ],
   };
 }
 
-function buildReturnBody(externalId: string): Record<string, unknown> {
+function buildReturnBody(externalId: string, prep: PrepPanel = {}): Record<string, unknown> {
   return {
     data: [
       {
         order_id: Number(externalId),
         CLIENTE_CANCELA_ENTREGA_ENVIO: true,
+        my_confirmations: prep.my_confirmations ?? null,
         solution: "DEVOLVER AL REMITENTE",
         essolucion: 1,
         tipocategoria: 1,
@@ -319,6 +399,15 @@ Deno.serve(async (req: Request) => {
       /* no body */
     }
 
+    // Marca de versión para saber QUÉ está desplegado (Lovable no redespliega
+    // edge functions solas y ya desplegó código viejo diciendo que era main).
+    if (body.ping === true) {
+      return new Response(
+        JSON.stringify({ ok: true, fn: "dropi-resolve-incidence", version: "2026-08-30.1", panel: "clickbtnsolve+my_confirmations" }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     const dryRun = body.dryRun === true;
     const externalId =
       typeof body.externalId === "string" ? body.externalId.trim() : "";
@@ -412,11 +501,30 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // ---- Lo que hace el panel antes de guardar (pre-chequeo + my_confirmations) ----
+    const prep = await preparacionDelPanel(sb, cfg, externalId, local.guia);
+    if (prep.bloqueo) {
+      await sb.from("sync_logs").insert({
+        source: "dropi-resolve-incidence",
+        status: "error",
+        synced_count: 0,
+        duplicates_count: 0,
+        total_count: 1,
+        triggered_by: user.id,
+        store_id: local.storeId,
+        error_message: prep.bloqueo.slice(0, 500),
+      });
+      return new Response(
+        JSON.stringify({ ok: false, error: prep.bloqueo, externalId, action, dropiHttpStatus: 409 }),
+        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     // ---- Build body per action ----
     const payload =
       action === "reoffer"
-        ? buildReofferBody(externalId, solution, local)
-        : buildReturnBody(externalId);
+        ? buildReofferBody(externalId, solution, local, prep)
+        : buildReturnBody(externalId, prep);
 
     // ---- Call Dropi (cadena session → re-login → api_key) ----
     const res = await dropiPostIncidenceChain(sb, cfg, payload);
