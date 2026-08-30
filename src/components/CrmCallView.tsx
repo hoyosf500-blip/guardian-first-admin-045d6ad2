@@ -12,6 +12,7 @@ import { formatCOP } from '@/lib/utils';
 import { getAlertLevel } from '@/lib/alertSystem';
 import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
+import SectorSinCoberturaChip from '@/components/SectorSinCoberturaChip';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
 import SegActionButtons from '@/components/SegActionButtons';
 import { useRecordGestion } from '@/hooks/useRecordGestion';
@@ -867,6 +868,7 @@ export default function CrmCallView({
                     countryCode={countryCode}
                   />
                 </div>
+                <SectorSinCoberturaChip direccion={o.direccion} ciudad={o.ciudad} countryCode={countryCode} />
                 {/* Validador-direcciones v2 (legacy view): solo lectura del
                     feedback estructurado de la edge function — sin autocomplete
                     ni override aplicable, esta vista no maneja la confirmación. */}

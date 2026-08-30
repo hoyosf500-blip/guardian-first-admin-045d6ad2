@@ -32,6 +32,8 @@ import {
 import FingerprintBadge from '@/components/FingerprintBadge';
 import { diasSinMovimiento } from '@/lib/segPulso';
 import ChatClienteCard from '@/components/chat/ChatClienteCard';
+import SectorSinCoberturaChip from '@/components/SectorSinCoberturaChip';
+import { guiaOficialNovedad } from '@/lib/dropiEcuador/logisticaOficial';
 
 interface Props {
   items: OrderData[];
@@ -356,6 +358,33 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
               <div className="text-xs text-foreground leading-relaxed">{o.novedad}</div>
             </div>
           </div>
+        )}
+
+        {/* La ficha OFICIAL de Dropi para esa novedad (hoja «Estados y Novedades»
+            de cada transportadora, Drive de Dropi ago-2026): qué significa, cómo
+            pide Dropi que se responda en su panel y qué NO hacer. Antes esto
+            vivía en la memoria de cada asesora. Solo Ecuador (las hojas son de
+            EC) y solo si hay una ficha clara — sin ficha no se dibuja nada,
+            nunca «la más parecida». */}
+        {activeStore?.country_code === 'EC' && (() => {
+          const guia = guiaOficialNovedad(o.novedad, o.transportadora);
+          if (!guia) return null;
+          return (
+            <div className="rounded-2xl border border-border bg-card/40 px-4 py-3 text-xs space-y-1.5">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                Guía oficial de Dropi · {guia.transportadora} · «{guia.novedad}»
+              </div>
+              <div><span className="font-semibold text-foreground">Qué significa:</span> {guia.significado}</div>
+              <div><span className="font-semibold text-success">Cómo responder en el panel de Dropi:</span> {guia.comoResponder}</div>
+              {guia.queNoHacer && (
+                <div><span className="font-semibold text-danger">Qué NO hacer:</span> {guia.queNoHacer}</div>
+              )}
+              {guia.observaciones && <div className="text-muted-foreground">{guia.observaciones}</div>}
+            </div>
+          );
+        })()}
+        {o.direccion && (
+          <SectorSinCoberturaChip direccion={o.direccion} ciudad={o.ciudad} countryCode={activeStore?.country_code} />
         )}
 
         {/* El WhatsApp REAL del cliente, a la vista — la asesora ve qué dijo el

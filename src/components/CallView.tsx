@@ -19,6 +19,7 @@ import { hotkeysHabilitados } from '@/lib/hotkeys';
 import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Lock, UserCog, MessageSquare, Loader2, CalendarClock } from 'lucide-react';
 import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
+import SectorSinCoberturaChip from '@/components/SectorSinCoberturaChip';
 import { ProductoTile } from '@/components/ProductoTile';
 import { useRecordGestion } from '@/hooks/useRecordGestion';
 import { useReagendarPedido } from '@/hooks/useReagendarPedido';
@@ -1499,6 +1500,10 @@ export default function CallView({ items, alerts }: Props) {
               loading={Boolean(o.dbId && validatingOrderIds.has(o.dbId))}
               lookupLoading={lookupLoading}
             />
+            {/* Sector oficial sin cobertura de Servientrega (solo EC): la asesora
+                ofrece el retiro en agencia ANTES de despachar, no cuando llega
+                la novedad. Puro, no toca el pipeline de validación. */}
+            <SectorSinCoberturaChip direccion={o.direccion} ciudad={o.ciudad} countryCode={countryCode} />
           </div>
         ) : (
           o.direccion && (
@@ -1512,6 +1517,7 @@ export default function CallView({ items, alerts }: Props) {
                 departamento={o.departamento}
                 countryCode={countryCode}
               />
+              <SectorSinCoberturaChip direccion={o.direccion} ciudad={o.ciudad} countryCode={countryCode} />
             </div>
           )
         )}
