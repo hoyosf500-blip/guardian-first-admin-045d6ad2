@@ -441,7 +441,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
         </div>
 
         {/* Columna B: panel de resolución (mockup: flex 1 1 300px) */}
-        <div className="relative flex flex-col gap-3 lg:flex-1 lg:basis-[300px] lg:min-w-[260px]">
+        <div className="relative flex flex-col gap-3 lg:flex-1 lg:basis-[300px] lg:min-w-[260px] lg:self-start">
         {/* Gestión: marca local (la colaboradora ya resolvió en Dropi). */}
         {submitting ? (
           <div className="text-center py-4 text-sm font-semibold inline-flex items-center gap-2 justify-center w-full text-success">
@@ -450,8 +450,14 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
           </div>
         ) : (
           <>
-            {/* Nota opcional (solo aplica a "Resuelta") */}
-            <div className="flex flex-1 flex-col min-h-0">
+            {/* Solución / nota. SIN flex-1 (30-ago, pedido del dueño): con
+                flex-1 el cuadro rellenaba toda la altura de la columna — que
+                estira hasta la de la izquierda (huella + pedido + ficha + chat)
+                — y salía un textarea de 700 px vacío con los botones perdidos
+                al fondo. Ahora mide 5 líneas, con tope, y la asesora lo puede
+                estirar a mano (resize-y) si escribe largo. Los botones quedan
+                pegados debajo, donde se buscan. */}
+            <div className="flex flex-col">
               <label className="block hud-label font-bold text-muted-foreground mb-1.5">
                 {incidenciaAbierta !== false
                   ? <>Solución para Dropi <span className="text-muted-foreground/60 normal-case font-normal">(obligatoria en «Resuelta»: es lo que lee la transportadora)</span></>
@@ -481,9 +487,9 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
                 placeholder={incidenciaAbierta !== false
                   ? 'Ej: Cliente confirma dirección: Mz 5 villa 8, Cdla Los Esteros, frente a la escuela. Recibe mañana 2-5pm, tel. correcto.'
                   : 'Ej: Cliente confirma estar en casa mañana entre 2-5pm.'}
-                rows={2}
+                rows={5}
                 disabled={submitting}
-                className="w-full flex-1 min-h-[120px] rounded-xl bg-muted/50 border border-border p-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 resize-none disabled:opacity-60 transition-colors"
+                className="w-full min-h-[120px] max-h-[320px] rounded-xl bg-muted/50 border border-border p-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 resize-y disabled:opacity-60 transition-colors"
               />
               <div className="flex justify-end mt-1">
                 <span className={`text-[10px] font-mono tabular-nums ${solution.length > maxSolucion * 0.9 ? 'text-attention' : 'text-muted-foreground'}`}>
