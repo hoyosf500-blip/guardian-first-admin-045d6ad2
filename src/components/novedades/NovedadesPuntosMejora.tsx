@@ -1,5 +1,5 @@
 import { useNovedadesSeguimiento, SeguimientoRange, DimensionRow } from '@/hooks/useNovedadesSeguimiento';
-import { CULPA_LABEL, CULPA_ORDER, Culpa } from '@/lib/novedadTaxonomy';
+import { CULPA_LABEL, CULPA_ORDER_REAL, Culpa } from '@/lib/novedadTaxonomy';
 import AvisoLecturaNovedades from './AvisoLecturaNovedades';
 import { Stat } from '@/components/novedades/Stat';
 import {
@@ -27,7 +27,13 @@ const CULPA_COLOR: Record<Culpa, string> = {
   datos_nuestros: SEMANTIC_COLORS.danger,
   cliente: SEMANTIC_COLORS.warning,
   transportadora: SEMANTIC_COLORS.info,
+  // ⛔ Los dos "sin info" ya NO son el mismo bucket (30-ago-2026): `generica`
+  // es "el carrier no dijo nada" y `sin_clasificar` es "nos falta la regla".
+  // Mezclados, un hueco NUESTRO se leía como que la transportadora no informa.
   generica: SEMANTIC_COLORS.muted,
+  sin_clasificar: SEMANTIC_COLORS.muted,
+  // No es una novedad (un «EN RUTA» de Guatemala): queda fuera del gráfico.
+  no_es_novedad: SEMANTIC_COLORS.muted,
 };
 
 function pct(n: number | null): string {
@@ -89,13 +95,22 @@ export default function NovedadesPuntosMejora() {
   const s = useNovedadesSeguimiento();
 
   // Agregación por culpa (suma de las filas categoría → culpa) para el donut + KPIs.
-  const culpaTotals = CULPA_ORDER
+  // ⛔ `CULPA_ORDER_REAL`, no `CULPA_ORDER`: los estados de flujo («EN RUTA»,
+  // «ENTREGADO» — 20 de las 23 fichas de Guatemala) NO son novedades, y
+  // contarlos distorsiona el denominador de toda la pantalla.
+  const culpaTotals = CULPA_ORDER_REAL
     .map((culpa) => ({ culpa, count: s.porCulpa.filter((r) => r.culpa === culpa).reduce((a, r) => a + r.count, 0) }))
     .filter((c) => c.count > 0);
-  const totalNov = s.porCulpa.reduce((a, r) => a + r.count, 0);
+  const totalNov = culpaTotals.reduce((a, c) => a + c.count, 0);
   const countOf = (c: Culpa) => culpaTotals.find((x) => x.culpa === c)?.count ?? 0;
   const pctDatos = totalNov ? countOf('datos_nuestros') / totalNov : null;
+  // ⛔ SEPARADAS (30-ago-2026). Antes las dos iban en un solo KPI rotulado
+  // «Texto genérico / sin info · el carrier no dice el motivo», y en Colombia
+  // ese bucket dominaba: 51 de las 66 novedades del propio diccionario oficial
+  // caían ahí por FALTA DE REGLAS NUESTRAS, no porque la transportadora callara.
+  // El dueño leía que no había nada que corregir de su lado. Justo al revés.
   const pctGenerica = totalNov ? countOf('generica') / totalNov : null;
+  const pctSinClasificar = totalNov ? countOf('sin_clasificar') / totalNov : null;
 
   const donutData = culpaTotals.map((c) => ({ name: CULPA_LABEL[c.culpa], value: c.count, culpa: c.culpa }));
   const topCategorias = [...s.porCulpa].sort((a, b) => b.count - a.count).slice(0, 8);
@@ -130,8 +145,14 @@ export default function NovedadesPuntosMejora() {
           tone={pctDatos != null && pctDatos > 0.2 ? 'danger' : 'default'} hint="lo corregible por nosotros"
         />
         <Stat
-          icon={<ShieldQuestion size={17} />} label="Texto genérico / sin info" value={pct(pctGenerica)}
-          tone={pctGenerica != null && pctGenerica > 0.3 ? 'warning' : 'default'} hint="el carrier no dice el motivo"
+          icon={<ShieldQuestion size={17} />} label="El carrier no dijo nada" value={pct(pctGenerica)}
+          tone={pctGenerica != null && pctGenerica > 0.3 ? 'warning' : 'default'}
+          hint="viene vacío: no hay dato que analizar"
+        />
+        <Stat
+          icon={<ShieldQuestion size={17} />} label="Todavía sin clasificar" value={pct(pctSinClasificar)}
+          tone={pctSinClasificar != null && pctSinClasificar > 0.15 ? 'warning' : 'default'}
+          hint="el carrier SÍ lo dijo y nos falta la regla — se arregla acá, no allá"
         />
       </motion.div>
 

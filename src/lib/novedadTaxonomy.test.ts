@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { classifyNovedad, CULPA_LABEL, CULPA_ORDER, Culpa } from './novedadTaxonomy';
+import coOficial from './dropiColombia/novedadesOficiales.json';
+import { classifyNovedad, CULPA_LABEL, CULPA_ORDER, Culpa, CULPA_HINT, CULPA_ORDER_REAL } from './novedadTaxonomy';
 
 describe('classifyNovedad — datos_nuestros', () => {
   it('dirección errada', () => {
@@ -92,10 +93,92 @@ describe('classifyNovedad — robustez', () => {
 });
 
 describe('metadata de culpa', () => {
-  it('CULPA_LABEL cubre todas las culpas y CULPA_ORDER no tiene huecos', () => {
-    const all: Culpa[] = ['datos_nuestros', 'cliente', 'transportadora', 'generica'];
-    for (const c of all) expect(CULPA_LABEL[c]).toBeTruthy();
-    expect([...CULPA_ORDER].sort()).toEqual([...all].sort());
+  // La lista ya NO se escribe a mano: `CULPA_LABEL` es un Record<Culpa, …>, así
+  // que TypeScript obliga a completarlo y sus claves SON el universo de culpas.
+  // Escrita a mano, agregar una culpa nueva rompía esta prueba por la razón
+  // equivocada (la lista quedaba vieja) en vez de vigilar lo que importa.
+  it('CULPA_ORDER cubre exactamente las culpas que existen, sin huecos ni repetidos', () => {
+    const universo = Object.keys(CULPA_LABEL) as Culpa[];
+    expect([...CULPA_ORDER].sort()).toEqual([...universo].sort());
+    expect(new Set(CULPA_ORDER).size).toBe(CULPA_ORDER.length);
+  });
+
+  it('cada culpa tiene etiqueta Y explicación — el rótulo solo no alcanza', () => {
+    for (const c of Object.keys(CULPA_LABEL) as Culpa[]) {
+      expect(CULPA_LABEL[c], c).toBeTruthy();
+      expect(CULPA_HINT[c], c).toBeTruthy();
+    }
+  });
+
+  it('⛔ CULPA_ORDER_REAL saca lo que no es una novedad, y solo eso', () => {
+    // Los estados de flujo («EN RUTA», «ENTREGADO») no son novedades: contarlos
+    // distorsiona el denominador de toda la pantalla de Puntos de Mejora.
+    expect(CULPA_ORDER_REAL).not.toContain('no_es_novedad');
+    for (const c of CULPA_ORDER_REAL) expect(CULPA_ORDER).toContain(c);
+    expect(CULPA_ORDER_REAL.length).toBe(CULPA_ORDER.length - 1);
+  });
+
+  it('⛔ «el carrier no dijo nada» y «no supimos leerlo» NO son el mismo bucket', () => {
+    // Mezclados, un hueco de reglas NUESTRO se pintaba como una acusación a la
+    // transportadora — y en Colombia era el bucket dominante (51 de 66).
+    expect(classifyNovedad('-').culpa).toBe('generica');
+    expect(classifyNovedad('SIN INFORMACION').culpa).toBe('generica');
+    expect(classifyNovedad('UN TEXTO QUE NADIE PREVIO TODAVIA').culpa).toBe('sin_clasificar');
+    expect(CULPA_LABEL.generica).not.toBe(CULPA_LABEL.sin_clasificar);
+  });
+});
+
+/**
+ * ⛔ GUARDIÁN — las novedades OFICIALES de Colombia tienen que clasificar.
+ *
+ * Medido el 30-ago-2026: 51 de las 66 novedades del propio diccionario CO caían
+ * en el catch-all, y como ese bucket se rotulaba «Sin info / genérica · el
+ * carrier no dice el motivo», el dueño leía que la transportadora no informa y
+ * que no hay nada que corregir del lado propio. Justo al revés.
+ *
+ * Las reglas se habían escrito con vocabulario COD genérico y probado con texto
+ * de ECUADOR — el encabezado del módulo lo declaraba "PUNTO DE PARTIDA" — y
+ * nadie las afinó al abrir Colombia.
+ *
+ * Este umbral es el KPI del módulo: baja agregando reglas, no ignorándolo.
+ */
+describe('⛔ cobertura sobre el diccionario oficial de Colombia', () => {
+  const oficiales = Object.values<{ fichas?: { novedad: string }[] }>(
+    (coOficial as { transportadoras: Record<string, { fichas?: { novedad: string }[] }> }).transportadoras,
+  ).flatMap((c) => (c.fichas ?? []).map((f) => f.novedad));
+
+  it('el diccionario trae las 66 novedades esperadas (si cambió, revisar el umbral)', () => {
+    expect(oficiales.length).toBeGreaterThanOrEqual(60);
+  });
+
+  it('a lo sumo 8 quedan sin clasificar (eran 51 el 30-ago, antes del arreglo)', () => {
+    const sin = oficiales.filter((n) => classifyNovedad(n).culpa === 'sin_clasificar');
+    expect(
+      sin.length,
+      `novedades oficiales de Colombia sin regla: ${sin.join(' | ')}`,
+    ).toBeLessThanOrEqual(8);
+  });
+
+  it('las de dirección clasifican aunque lleven palabras intercaladas', () => {
+    // El defecto de fondo no era la falta de entradas sino el `includes()` de
+    // FRASES pegadas: «DIRECCIÓN DESTINATARIO NO EXISTE» no contiene
+    // «DIRECCION NO EXISTE», y esa palabra en el medio rompía el match.
+    expect(classifyNovedad('DIRECCIÓN DESTINATARIO NO EXISTE').culpa).toBe('datos_nuestros');
+    expect(classifyNovedad('DIRECCIÓN DESTINATARIO INCOMPLETA').culpa).toBe('datos_nuestros');
+    expect(classifyNovedad('NO SE LOCALIZA DIRECCIÓN DEL DESTINATARIO').culpa).toBe('datos_nuestros');
+  });
+
+  it('«no conocen al destinatario» es culpa NUESTRA, no del cliente', () => {
+    // Si nadie lo conoce en esa dirección, la dirección que cargamos está mal.
+    for (const s of ['NO LO CONOCEN', 'EN DIRECCIÓN DE ENTREGA NO CONOCEN DESTINATARIO', 'NO CONOCEN AL DESTINATARIO']) {
+      expect(classifyNovedad(s).culpa, s).toBe('datos_nuestros');
+    }
+  });
+
+  it('un estado de flujo de Guatemala NO es una novedad de nadie', () => {
+    for (const s of ['EN RUTA', 'RECOLECTADO', 'ENTREGADO', 'PROGRAMADO PARA ENTREGA']) {
+      expect(classifyNovedad(s).culpa, s).toBe('no_es_novedad');
+    }
   });
 });
 

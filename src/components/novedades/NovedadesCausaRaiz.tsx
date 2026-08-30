@@ -29,7 +29,13 @@ const CULPA_COLOR: Record<Culpa, string> = {
   datos_nuestros: SEMANTIC_COLORS.danger,
   cliente: SEMANTIC_COLORS.warning,
   transportadora: SEMANTIC_COLORS.info,
+  // ⛔ Los dos "sin info" ya NO son el mismo bucket (30-ago-2026): `generica`
+  // es "el carrier no dijo nada" y `sin_clasificar` es "nos falta la regla".
+  // Mezclados, un hueco NUESTRO se leía como que la transportadora no informa.
   generica: SEMANTIC_COLORS.muted,
+  sin_clasificar: SEMANTIC_COLORS.muted,
+  // No es una novedad (un «EN RUTA» de Guatemala): queda fuera del gráfico.
+  no_es_novedad: SEMANTIC_COLORS.muted,
 };
 
 const REASON_META: Record<EvitableReason, { label: string; color: string }> = {
