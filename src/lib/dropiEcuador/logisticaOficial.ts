@@ -363,3 +363,56 @@ export function medirCobertura(filas: FilaEnvio[], ciudad: string, sector: strin
     mejorAlternativa: candidatas[0]?.transportadora ?? null,
   };
 }
+
+// ───────────── Plantilla de solución según la guía oficial ─────────────
+//
+// Dropi pide que la solución de una novedad diga QUÉ acordó la tienda con el
+// cliente (número, día, quién recibe, dirección con referencia); «solo VOLVER A
+// OFRECER» cuenta como solución no efectiva. Las hojas «Estados y Novedades»
+// traen un ejemplo por novedad con asteriscos donde va el dato. Esto convierte
+// ese ejemplo en un borrador con el teléfono del pedido puesto y huecos `____`
+// para lo que solo la asesora sabe. Gintracom limita la solución a 50
+// caracteres: ahí el borrador es corto por diseño.
+
+export interface PlantillaSolucion {
+  texto: string;
+  /** Tope de caracteres que acepta la transportadora (Gintracom 50; el resto sin tope práctico). */
+  maximo: number;
+  /** De dónde salió: la ficha oficial de esa novedad o el genérico de la transportadora. */
+  origen: 'oficial' | 'generica';
+}
+
+const NOVEDAD_LIMITE: Partial<Record<TransportadoraEC, number>> = { GINTRACOM: 50 };
+
+export function plantillaSolucion(
+  guia: GuiaNovedad | null,
+  pedido: { phone?: string | null; nombre?: string | null; direccion?: string | null },
+  transportadora?: string | null,
+): PlantillaSolucion {
+  const t = guia?.transportadora ?? normalizarTransportadora(transportadora) ?? null;
+  const maximo = (t && NOVEDAD_LIMITE[t]) || 500;
+  const tel = (pedido.phone ?? '').trim() || '____';
+  const nombre = (pedido.nombre ?? '').trim() || '____';
+  const responder = (guia?.comoResponder ?? '').replace(/\s+/g, ' ').trim();
+  // Ejemplo literal («Me he comunicado con el cliente al numero ****…»): se rellena.
+  if (guia && /^me he comunicado/i.test(responder)) {
+    let texto = responder
+      .replace(/\((?:no mayor|una vez|se reconfirma|confirmando|agregar|direccion)[^)]*\)/gi, '') // notas para la asesora, no para la transportadora
+      .replace(/\*{3,}/, tel)          // el primer grupo de asteriscos es el teléfono del pedido
+      .replace(/preguntar por \*+/i, `preguntar por ${nombre}`)
+      .replace(/\*{3,}/g, '____')
+      .replace(/x{3,}/gi, '____')
+      .replace(/…+|\.\.\./g, '____')
+      .replace(/\s+/g, ' ')
+      .replace(/\s+([,.])/g, '$1')
+      .trim();
+    if (texto.length > maximo) texto = texto.slice(0, maximo);
+    return { texto, maximo, origen: 'oficial' };
+  }
+  // Instrucción (Gintracom: «Ingresar nueva fecha… máximo 50 caracteres»): borrador corto.
+  if (t === 'GINTRACOM') {
+    return { texto: `Cliente confirma recibir el ____ en ${pedido.direccion ? 'la dirección' : '____'}`.slice(0, maximo), maximo, origen: guia ? 'oficial' : 'generica' };
+  }
+  const texto = `Me he comunicado con el cliente al numero ${tel} y me indica que ____ (día y hora en que recibe, quién recibe, dirección con referencia). No mayor a 24 horas.`;
+  return { texto, maximo, origen: guia ? 'oficial' : 'generica' };
+}

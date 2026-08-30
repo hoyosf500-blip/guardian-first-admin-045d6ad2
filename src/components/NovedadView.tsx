@@ -33,7 +33,7 @@ import FingerprintBadge from '@/components/FingerprintBadge';
 import { diasSinMovimiento } from '@/lib/segPulso';
 import ChatClienteCard from '@/components/chat/ChatClienteCard';
 import SectorSinCoberturaChip from '@/components/SectorSinCoberturaChip';
-import { guiaOficialNovedad } from '@/lib/dropiEcuador/logisticaOficial';
+import { guiaOficialNovedad, plantillaSolucion } from '@/lib/dropiEcuador/logisticaOficial';
 
 interface Props {
   items: OrderData[];
@@ -103,6 +103,15 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
 
   const callIdx = Math.max(0, Math.min(derivedIdx, visibleItems.length - 1));
   const o = visibleItems[callIdx];
+  // Borrador de solución según la guía OFICIAL de Dropi para esa transportadora
+  // y esa novedad (hojas «Estados y Novedades»): con el teléfono del pedido
+  // puesto y huecos para lo que acordó la asesora. Solo Ecuador. Nunca se
+  // envía solo: la asesora lo completa — «solo VOLVER A OFRECER» es solución
+  // no efectiva para Dropi.
+  const esEC = activeStore?.country_code === 'EC';
+  const guiaActual = esEC && o ? guiaOficialNovedad(o.novedad, o.transportadora) : null;
+  const plantilla = esEC && o ? plantillaSolucion(guiaActual, { phone: o.phone, nombre: o.nombre, direccion: o.direccion }, o.transportadora) : null;
+  const maxSolucion = plantilla?.maximo ?? 500;
 
   // Reset local state when the current order changes
   useEffect(() => {
@@ -383,8 +392,8 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
             vivía en la memoria de cada asesora. Solo Ecuador (las hojas son de
             EC) y solo si hay una ficha clara — sin ficha no se dibuja nada,
             nunca «la más parecida». */}
-        {activeStore?.country_code === 'EC' && (() => {
-          const guia = guiaOficialNovedad(o.novedad, o.transportadora);
+        {esEC && (() => {
+          const guia = guiaActual;
           if (!guia) return null;
           return (
             <div className="rounded-2xl border border-border bg-card/40 px-4 py-3 text-xs space-y-1.5">
@@ -448,9 +457,27 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
                   ? <>Solución para Dropi <span className="text-muted-foreground/60 normal-case font-normal">(obligatoria en «Resuelta»: es lo que lee la transportadora)</span></>
                   : <>Nota de la gestión <span className="text-muted-foreground/60 normal-case font-normal">(opcional)</span></>}
               </label>
+              {plantilla && incidenciaAbierta !== false && (
+                <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSolution(plantilla.texto.slice(0, maxSolucion))}
+                    disabled={submitting}
+                    className="min-h-9 px-3 rounded-lg border border-success/30 bg-success/10 text-xs font-semibold text-success hover:bg-success/15 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  >
+                    {plantilla.origen === 'oficial' ? 'Usar la plantilla oficial de Dropi' : 'Usar plantilla base'}
+                  </button>
+                  <span className="text-[10px] text-muted-foreground">
+                    {plantilla.origen === 'oficial'
+                      ? `Formato que pide Dropi para «${guiaActual?.novedad}» en ${guiaActual?.transportadora}. Completá los ____ con lo que acordaste.`
+                      : 'Sin ficha oficial para esta novedad: completá los ____ con lo que acordaste con el cliente.'}
+                    {maxSolucion < 500 && ` Máximo ${maxSolucion} caracteres (lo exige la transportadora).`}
+                  </span>
+                </div>
+              )}
               <textarea
                 value={solution}
-                onChange={(e) => setSolution(e.target.value.slice(0, 500))}
+                onChange={(e) => setSolution(e.target.value.slice(0, maxSolucion))}
                 placeholder={incidenciaAbierta !== false
                   ? 'Ej: Cliente confirma dirección: Mz 5 villa 8, Cdla Los Esteros, frente a la escuela. Recibe mañana 2-5pm, tel. correcto.'
                   : 'Ej: Cliente confirma estar en casa mañana entre 2-5pm.'}
@@ -459,8 +486,8 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
                 className="w-full flex-1 min-h-[120px] rounded-xl bg-muted/50 border border-border p-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 resize-none disabled:opacity-60 transition-colors"
               />
               <div className="flex justify-end mt-1">
-                <span className={`text-[10px] font-mono tabular-nums ${solution.length > 450 ? 'text-attention' : 'text-muted-foreground'}`}>
-                  {solution.length}/500
+                <span className={`text-[10px] font-mono tabular-nums ${solution.length > maxSolucion * 0.9 ? 'text-attention' : 'text-muted-foreground'}`}>
+                  {solution.length}/{maxSolucion}
                 </span>
               </div>
             </div>

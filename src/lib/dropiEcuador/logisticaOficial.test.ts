@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  plantillaSolucion,
   medirCobertura,
   patronesIlikeSector,
   agenciasServientrega,
@@ -194,5 +195,35 @@ describe('cobertura MEDIDA con los pedidos de la tienda (manda sobre la lista de
     expect(patronesIlikeSector('COOP. RUMIÑAHUI LA LOZA')[0]).toBe('%R_M___H__%');
     // Un sector sin palabra usable no manda a la base a buscar «todo».
     expect(patronesIlikeSector('7')).toEqual([]);
+  });
+});
+
+describe('plantilla de solución según la guía oficial de Dropi', () => {
+  const pedido = { phone: '0991234567', nombre: 'Ana Pérez', direccion: 'Calle 4A Mz 6' };
+
+  it('rellena el ejemplo oficial de Servientrega con el teléfono y deja huecos para lo que decide la asesora', () => {
+    const g = guiaOficialNovedad('NO HAY QUIEN RECIBA', 'SERVIENTREGA');
+    expect(g).not.toBeNull();
+    const p = plantillaSolucion(g, pedido, 'SERVIENTREGA');
+    expect(p.origen).toBe('oficial');
+    expect(p.texto).toMatch(/^Me he comunicado con el cliente, al numero 0991234567/);
+    expect(p.texto).toContain('preguntar por Ana Pérez');
+    expect(p.texto).not.toMatch(/\*{3,}/);
+    expect(p.texto).not.toMatch(/no mayor a 24 horas la proxima/i);
+    expect(p.maximo).toBe(500);
+  });
+
+  it('Gintracom: borrador corto porque Dropi limita a 50 caracteres', () => {
+    const g = guiaOficialNovedad('DESTINATARIO NO CONTESTA LLAMADAS NI WHATSAPP', 'GINTRACOM');
+    const p = plantillaSolucion(g, pedido, 'GINTRACOM');
+    expect(p.maximo).toBe(50);
+    expect(p.texto.length).toBeLessThanOrEqual(50);
+  });
+
+  it('sin ficha (LAAR con novedad vacía) da el genérico con el teléfono, nunca vacío', () => {
+    const p = plantillaSolucion(null, pedido, 'LAARCOURIER');
+    expect(p.origen).toBe('generica');
+    expect(p.texto).toContain('0991234567');
+    expect(p.texto).toContain('____');
   });
 });
