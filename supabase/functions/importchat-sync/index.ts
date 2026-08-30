@@ -381,6 +381,8 @@ Deno.serve(async (req) => {
     return fila;
   };
 
+  /** ¿Alguna llamada a `log()` escribió ya un 'error'? Ver el guard en `log`. */
+  let huboError = false;
   const traza = async (fase: string, n: number | null = null) => {
     try {
       if (trazaId == null) {
@@ -405,6 +407,15 @@ Deno.serve(async (req) => {
     // Se escribe SIEMPRE, incluso con 0 cambios. Un badge que solo mira la hora
     // no distingue "corrió bien y no había nada" de "no corrió" — esa confusión
     // ya tuvo la billetera muerta semanas en verde (ver CLAUDE.md).
+    //
+    // ⛔ UN 'success' NO PUEDE PISAR UN 'error' YA ESCRITO (30-ago-2026).
+    // `log()` está diseñado para CERRAR la corrida, pero se usaba también a
+    // mitad del bucle como si fuera un registro por tienda: la fila salía en
+    // 'error' y el cierre de más abajo la devolvía a 'success'. Las ramas que
+    // lo hacían ya están corregidas (usan traza + parciales); esto es el
+    // cinturón, para que el mismo error no pueda reaparecer en otra rama.
+    if (status === "success" && huboError) status = "warn";
+    if (status === "error") huboError = true;
     try {
       // Cierra la fila 'running' si existe (una corrida = una fila), o inserta
       // una nueva si murió antes de poder abrirla.
@@ -501,8 +512,20 @@ Deno.serve(async (req) => {
         // Fail-closed y RUIDOSO: sin token la señal se apaga, y una señal
         // apagada en silencio es peor que no tenerla — la pantalla mostraría
         // "sin dato" para todo y nadie sabría por qué.
-        await log("error", "Falta session_token de ImporChat para esta tienda", null);
+        //
+        // ⛔ `traza` + `parciales`, NO `log("error")` (30-ago-2026). `log()`
+        // CIERRA la corrida (una corrida = una fila): llamarlo a mitad del
+        // bucle escribía 'error'… y el `log()` del cierre, unas líneas más
+        // abajo, lo pisaba con 'success' porque `parciales` seguía vacío. La
+        // corrida quedaba VERDE con 0 actualizados mientras `confirmo_boton_at`
+        // —el mejor predictor de cancelación que tiene la operación: 57,7%
+        // cancela sin botón vs 10,4% con botón— estaba muerta para esa tienda.
+        // El control de flujo contradecía al comentario de arriba.
+        // Las otras dos ramas de error del bucle sobreviven justamente porque
+        // además hacen `parciales.push(...)`.
+        await traza(`Falta session_token de ImporChat para la tienda ${storeId}`);
         resumen.push({ store_id: storeId, ok: false, error: "sin token" });
+        parciales.push(`tienda ${storeId}: falta session_token de ImporChat`);
         continue;
       }
 
@@ -538,8 +561,10 @@ Deno.serve(async (req) => {
       if (cfg.token_expira_at && new Date(cfg.token_expira_at).getTime() < Date.now() && token === String(cfg.session_token || "")) {
         // Solo se rinde si SIGUE vencida tras intentar renovar (la renovación
         // ya habría cambiado el token y actualizado token_expira_at).
-        await log("error", `El token de ImporChat venció el ${cfg.token_expira_at} y no se pudo renovar`, null);
+        // Mismo motivo que arriba: `log()` acá se lo comía el cierre en verde.
+        await traza(`Token de ImporChat vencido el ${cfg.token_expira_at} en la tienda ${storeId}`);
         resumen.push({ store_id: storeId, ok: false, error: "token vencido" });
+        parciales.push(`tienda ${storeId}: token de ImporChat vencido el ${cfg.token_expira_at} y no se pudo renovar`);
         continue;
       }
 

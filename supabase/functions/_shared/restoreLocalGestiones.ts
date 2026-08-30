@@ -27,6 +27,10 @@
  */
 
 export const RESTORE_WINDOW_DAYS = 7;
+/** PostgREST corta cada SELECT en ~1000 filas y NO avisa. */
+const PAGINA = 1000;
+/** Freno anti-runaway. 20.000 gestiones en 7 días es un escenario irreal. */
+const MAX_PAGINAS = 20;
 
 export interface RestoreResultado {
   /** Gestiones EVALUADAS (no filas escritas): el update no devuelve count y la
@@ -45,23 +49,56 @@ export async function restoreLocalGestiones(
   windowFrom.setUTCDate(windowFrom.getUTCDate() - RESTORE_WINDOW_DAYS);
   const fromDate = windowFrom.toISOString().split("T")[0];
 
-  const { data: gestiones, error } = await sb
-    .from("order_results")
-    .select("order_id, result, created_at")
-    .eq("store_id", storeId)
-    .in("result", ["conf", "canc"])
-    .gte("result_date", fromDate)
-    .order("created_at", { ascending: true });
+  // ⛔ PAGINADO (30-ago-2026). Antes era un SELECT sin `.range()`: PostgREST
+  // corta en ~1000 filas sin avisar y, como el orden es ASCENDENTE, lo que se
+  // perdía eran las gestiones MÁS NUEVAS — justo las que esta función existe
+  // para preservar. Con la tienda por encima de mil gestiones en 7 días, un
+  // pedido confirmado hoy REAPARECÍA en /confirmar y la asesora volvía a llamar
+  // a un cliente que ya había dicho que sí; en el peor caso una cancelación de
+  // hoy perdía contra una confirmación vieja y el pedido salía a despacho.
+  //
+  // El orden ASC no se puede invertir sin más: el "gana la más reciente" de
+  // abajo depende de él. Así que se lee TODO, en páginas.
+  //
+  // Desempate por `order_id`: sin un orden total, dos páginas pueden repetir
+  // una fila y omitir otra — se leerían 2000 filas y faltarían gestiones igual,
+  // que es peor que el bug original porque además parece que funciona.
+  const gestiones: Array<{ order_id: string; result: string }> = [];
+  for (let pagina = 0; pagina < MAX_PAGINAS; pagina++) {
+    const desde = pagina * PAGINA;
+    const { data, error } = await sb
+      .from("order_results")
+      .select("order_id, result, created_at")
+      .eq("store_id", storeId)
+      .in("result", ["conf", "canc"])
+      .gte("result_date", fromDate)
+      .order("created_at", { ascending: true })
+      .order("order_id", { ascending: true })
+      .range(desde, desde + PAGINA - 1);
 
-  if (error) {
-    // Fallar acá y seguir en silencio dejaría gestiones pisadas sin que nadie se
-    // entere: se devuelve el motivo para que el caller lo surfacee.
-    return { confCandidates: 0, cancCandidates: 0, error: error.message || String(error) };
+    if (error) {
+      // Fallar acá y seguir en silencio dejaría gestiones pisadas sin que nadie
+      // se entere: se devuelve el motivo para que el caller lo surfacee.
+      return { confCandidates: 0, cancCandidates: 0, error: error.message || String(error) };
+    }
+    const filas = (data ?? []) as Array<{ order_id: string; result: string }>;
+    gestiones.push(...filas);
+    if (filas.length < PAGINA) break;
+    if (pagina === MAX_PAGINAS - 1) {
+      // Se llegó al freno: NO se aplica un restore a medias. Con el universo
+      // truncado, las gestiones que no entraron quedarían sin restaurar y
+      // volverían a la cola — el bug de arriba, con otro nombre.
+      return {
+        confCandidates: 0,
+        cancCandidates: 0,
+        error: `restoreLocalGestiones: más de ${MAX_PAGINAS * PAGINA} gestiones en ${RESTORE_WINDOW_DAYS} días — no se restaura con el universo cortado`,
+      };
+    }
   }
 
   // Orden ascendente ⇒ el último set() por order_id es la gestión más reciente.
   const winner = new Map<string, string>();
-  for (const r of (gestiones ?? []) as Array<{ order_id: string; result: string }>) {
+  for (const r of gestiones) {
     winner.set(r.order_id, r.result);
   }
 

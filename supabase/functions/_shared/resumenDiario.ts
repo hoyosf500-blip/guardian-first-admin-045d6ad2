@@ -46,12 +46,15 @@ export interface DatosResumen {
   cierres: CierreDeAsesora[];
   /** Cuántas personas del equipo podrían haber cerrado. */
   asesorasDelTurno: number;
-  novedadesAbiertas: number;
+  /** `null` = no se pudo contar. Un 0 acá se lee como BUENA NOTICIA
+   *  ("no quedan novedades") y el dueño no revisa la cola. */
+  novedadesAbiertas: number | null;
   /** `null` = no se pudo contar. NUNCA 0 por un error — ver el guardián. */
   entregadosHoy: number | null;
   canceladosHoy: number | null;
-  /** Pedidos vivos sin fecha de último movimiento: fuera de toda alarma. */
-  sinFechaDeMovimiento: number;
+  /** Pedidos vivos sin fecha de último movimiento: fuera de toda alarma.
+   *  `null` = no se pudo contar. */
+  sinFechaDeMovimiento: number | null;
   /** Minutos desde la última sincronización con Dropi. `null` = no se sabe. */
   minutosDesdeSync: number | null;
 }
@@ -89,8 +92,14 @@ export function titularDe(d: DatosResumen): string {
   if (sinCerrar > 0) {
     return `Seguimiento en cero, pero ${plural(sinCerrar, 'persona no cerró', 'personas no cerraron')} su día.`;
   }
-  if (d.novedadesAbiertas > 0) {
+  if (d.novedadesAbiertas != null && d.novedadesAbiertas > 0) {
     return `Seguimiento cerró en cero. Quedan ${plural(d.novedadesAbiertas, 'novedad abierta', 'novedades abiertas')}.`;
+  }
+  // ⛔ Con `novedadesAbiertas` en null NO se puede titular "cerró en cero": no
+  // se sabe si quedaron novedades. Un titular tranquilizador sobre un dato que
+  // no se midió es lo mismo que mentir.
+  if (d.novedadesAbiertas == null) {
+    return 'Seguimiento cerró en cero, pero no se pudo contar cuántas novedades quedaron abiertas.';
   }
   return 'Seguimiento cerró en cero.';
 }
@@ -140,8 +149,8 @@ export function construirResumen(d: DatosResumen): Resumen {
   // contó.
   L.push(`  Entregados hoy: ${cifra(d.entregadosHoy)}`);
   L.push(`  Cancelados hoy: ${cifra(d.canceladosHoy)}`);
-  L.push(`  Novedades abiertas ahora: ${d.novedadesAbiertas}`);
-  if (d.sinFechaDeMovimiento > 0) {
+  L.push(`  Novedades abiertas ahora: ${cifra(d.novedadesAbiertas)}`);
+  if (d.sinFechaDeMovimiento != null && d.sinFechaDeMovimiento > 0) {
     L.push(
       `  Sin fecha de movimiento: ${d.sinFechaDeMovimiento} ` +
       '(no aparecen en ninguna alarma — se arreglan refrescándolos desde Dropi)',

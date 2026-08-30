@@ -373,10 +373,6 @@ function variantLabel(p: Record<string, unknown>): string {
 
 function mapOrder(o: Record<string, unknown>, userId: string, today: string, storeId: string) {
   const products = (o.orderdetails as Array<Record<string, unknown>>) || [];
-  const productName = products
-    .map((p) => (p.product as Record<string, unknown>)?.name || "")
-    .filter(Boolean)
-    .join(", ");
 
   // Detalle por línea (talla/color/cantidad/precio) para la ficha de la
   // asesora. El cron es el ÚNICO pipe que toca TODOS los pedidos cada 5 min:
@@ -400,6 +396,23 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string, sto
     })
     .filter((d) => d.nombre || d.variante);
   const productosDetalle = detalle.some((d) => d.variante) ? detalle : null;
+
+  // ⛔ NOMBRES SIN REPETIR (30-ago-2026). Antes esto era un `.join(", ")` sobre
+  // TODAS las líneas: un pedido de dos tallas del mismo zapato quedaba con
+  // `producto = "Sneakers 2801, Sneakers 2801"`, que en logistics_by_product y
+  // product_profitability es un producto DISTINTO de "Sneakers 2801" — el mismo
+  // zapato partido en dos, con la efectividad y la rentabilidad repartidas.
+  //
+  // El mapper compartido (`_shared/dropiOrderMapper.ts`) ya deduplicaba y su
+  // comentario describe exactamente este bug; a `dropi-cron` —que tiene su
+  // propio `mapOrder` desde antes— solo se le copió `variantLabel`. Como los
+  // dos escriben la MISMA columna, el valor alternaba entre uno y otro en cada
+  // corrida, y cada cambio disparaba un evento de realtime a todos los
+  // navegadores abiertos.
+  //
+  // Las variantes NO van acá a propósito (volverían a fragmentar, una fila por
+  // talla): viven en `productosDetalle`.
+  const productName = [...new Set(detalle.map((d) => d.nombre).filter(Boolean))].join(", ");
   const cantidad = products.reduce(
     (sum, p) => sum + (parseFloat(String(p.quantity || "1")) || 1),
     0,

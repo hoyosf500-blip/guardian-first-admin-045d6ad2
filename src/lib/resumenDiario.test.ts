@@ -143,3 +143,56 @@ describe('GUARDIÁN: un conteo que falló NO se imprime como cero', () => {
     expect(r.texto).toContain('Entregados hoy: 0');
   });
 });
+
+/**
+ * ⛔ GUARDIÁN — los CUATRO conteos del correo dicen "sin dato", no 0.
+ *
+ * El arreglo de "null en vez de 0" se había aplicado solo a `entregadosHoy` y
+ * `canceladosHoy`. Los otros dos del MISMO Promise.all quedaron con `?? 0`, así
+ * que el correo de las 21:00 podía decirle al dueño «Novedades abiertas: 0»
+ * sobre un día que nunca se pudo medir. A diferencia de un 0 en entregados —que
+ * al menos alarma— un 0 en novedades abiertas se lee como BUENA NOTICIA, y el
+ * dueño no revisa la cola.
+ */
+describe('⛔ resumen-diario: los cuatro conteos, no dos', () => {
+  // Con la cola CERRADA en cero (todos gestionaron todo): así el titular llega
+  // hasta la rama de novedades en vez de cortar antes con "nadie cerró".
+  const base: DatosResumen = {
+    tienda: 'Rushmira EC',
+    dia: 'viernes, 30 de agosto',
+    cierres: [cierre('Ana', 10, 10), cierre('Luis', 8, 8)],
+    asesorasDelTurno: 2,
+    novedadesAbiertas: null,
+    entregadosHoy: null,
+    canceladosHoy: null,
+    sinFechaDeMovimiento: null,
+    minutosDesdeSync: 12,
+  };
+
+  it('«Novedades abiertas» sin dato NO se imprime como 0', () => {
+    const r = construirResumen(base);
+    expect(r.texto).toContain('Novedades abiertas ahora: sin dato');
+    expect(r.texto).not.toContain('Novedades abiertas ahora: 0');
+  });
+
+  it('«Sin fecha de movimiento» sin dato no inventa una línea tranquilizadora', () => {
+    const r = construirResumen(base);
+    expect(r.texto).not.toContain('Sin fecha de movimiento: 0');
+  });
+
+  it('el TITULAR no puede decir "cerró en cero" a secas si no se contaron las novedades', () => {
+    const r = construirResumen(base);
+    expect(r.titular).toMatch(/no se pudo contar/i);
+  });
+
+  it('con los datos medidos sigue diciendo lo de siempre', () => {
+    const r = construirResumen({ ...base, novedadesAbiertas: 0, entregadosHoy: 5, canceladosHoy: 1, sinFechaDeMovimiento: 0 });
+    expect(r.texto).toContain('Novedades abiertas ahora: 0');
+    expect(r.titular).toBe('Seguimiento cerró en cero.');
+  });
+
+  it('y con novedades abiertas de verdad, las nombra', () => {
+    const r = construirResumen({ ...base, novedadesAbiertas: 3, entregadosHoy: 5, canceladosHoy: 1, sinFechaDeMovimiento: 0 });
+    expect(r.titular).toContain('3 novedades abiertas');
+  });
+});

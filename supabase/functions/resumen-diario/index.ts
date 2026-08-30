@@ -127,12 +127,18 @@ async function juntarDatos(sb: SB, store: { id: string; name: string }): Promise
     // Los `owner` no se cuentan como turno: el dueño mira, no trabaja la cola.
     // Contarlo haría que el correo le reclame a él por no cerrar todos los días.
     asesorasDelTurno: miembros.filter((m) => m.role !== "owner").length,
-    novedadesAbiertas: novedadesRes.count ?? 0,
     // Si la consulta falló, va `null` y el correo dice "sin dato". Un 0 acá se
     // lee como un día sin entregas, que es una afirmación que nadie midió.
+    //
+    // ⛔ El arreglo se había aplicado a DOS de los cuatro conteos del mismo
+    // Promise.all (30-ago-2026). Los otros dos quedaron con `?? 0`, así que el
+    // correo de las 21:00 podía decirle al dueño «Novedades abiertas: 0» sobre
+    // un día que nunca se pudo medir — y eso se lee como buena noticia, así que
+    // no revisa la cola.
+    novedadesAbiertas: novedadesRes.error ? null : (novedadesRes.count ?? 0),
     entregadosHoy: entregadosRes.error ? null : (entregadosRes.count ?? 0),
     canceladosHoy: canceladosRes.error ? null : (canceladosRes.count ?? 0),
-    sinFechaDeMovimiento: sinFechaRes.count ?? 0,
+    sinFechaDeMovimiento: sinFechaRes.error ? null : (sinFechaRes.count ?? 0),
     minutosDesdeSync: ultimoSync
       ? Math.floor((Date.now() - new Date(ultimoSync.created_at).getTime()) / 60_000)
       : null,

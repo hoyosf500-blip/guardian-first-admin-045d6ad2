@@ -335,12 +335,32 @@ async function reconcileStore(
     }
 
     let applied = 0;
+    // ⛔ EL ERROR DEL UPSERT SE DEVUELVE, NO SE TRAGA (30-ago-2026).
+    //
+    // Antes solo iba a console.error, así que una noche en la que NO se aplicó
+    // NADA quedaba registrada como noche limpia: el badge de reconciliación en
+    // /logistica se veía bien (sin error_message) mientras estados, guías y
+    // transportadoras divergentes no se corregían ni una sola noche, y las
+    // asesoras trabajaban con guías congeladas sin ninguna señal.
+    //
+    // Es exactamente la clase de bug que `dropi-cron` ya cerró con su
+    // `upsertErrMsg` —cuyo comentario dice "la misma clase de bug que congeló
+    // la billetera semanas"—. El nightly nunca recibió esa corrección.
+    //
+    // Se guarda el PRIMER error: el resto suele ser el mismo, y el mensaje
+    // tiene que caber en la fila de resultados.
+    let upsertErrMsg: string | undefined;
+    const anotarError = (donde: string, e: { message?: string } | null) => {
+      if (!e) return;
+      if (!upsertErrMsg) upsertErrMsg = `${donde}: ${e.message || String(e)}`;
+      console.error(`reconcile ${donde} error:`, e);
+    };
     if (upsertBatch.length > 0) {
       for (let i = 0; i < upsertBatch.length; i += 50) {
         const batch = upsertBatch.slice(i, i + 50);
         const { data: changed, error } = await sb.rpc("upsert_orders_from_dropi", { p_orders: batch });
         if (!error) applied += (changed as number) || 0;
-        else console.error(`reconcile upsert error:`, error);
+        else anotarError("upsert", error);
       }
     }
 
@@ -362,6 +382,9 @@ async function reconcileStore(
       for (let i = 0; i < orphans.length; i += 50) {
         const batch = orphans.slice(i, i + 50);
         const { error } = await sb.from("orders").update({ estado: "CANCELADO" }).in("id", batch.map(o => o.id));
+        // `if (!error)` sin rama else: un UPDATE que falla solo se veía como un
+        // contador que no sube — indistinguible de "no había nada que cancelar".
+        anotarError("cancelar huérfanos", error);
         if (!error) {
           orphanCancelled += batch.length;
           cancelledIds.orphans.push(...batch.map(o => String(o.external_id)));
@@ -406,6 +429,7 @@ async function reconcileStore(
           // `_estado_bucket` en SQL → bucket 'borrado' → excluido de TODAS las
           // RPCs de logística. Con guion bajo NO lo excluye: no cambiar.
           const { error } = await sb.from("orders").update({ estado: "ARCHIVADO GHOST" }).in("id", batch.map(g => g.id));
+          anotarError("archivar borrados", error);
           if (!error) {
             deletedCancelled += batch.length;
             cancelledIds.deleted.push(...batch.map(g => String(g.external_id)));
@@ -480,6 +504,7 @@ async function reconcileStore(
           const { error } = await sb.from("orders")
             .update({ estado: "ARCHIVADO GHOST" })
             .in("id", batch.map((g) => g.id));
+          anotarError("archivar repesca", error);
           if (!error) {
             repescaArchivados += batch.length;
             cancelledIds.deleted.push(...batch.map((g) => String(g.external_id)));
@@ -518,13 +543,14 @@ async function reconcileStore(
       console.warn(`reconcile ${storeId}: ${repescaMotivo}`);
     }
 
-    return { divergent: divergences.length, applied, orphanCancelled, deletedCancelled, deletedCheckComplete, dropiCreatedCount, cancelledIds, repescaArchivados, repescaRefrescados, repescaMotivo };
+    return { divergent: divergences.length, applied, orphanCancelled, deletedCancelled, deletedCheckComplete, dropiCreatedCount, cancelledIds, repescaArchivados, repescaRefrescados, repescaMotivo, upsertErrMsg };
   } catch (err) {
     return {
       divergent: 0, applied: 0, orphanCancelled: 0, deletedCancelled: 0,
       deletedCheckComplete: null, dropiCreatedCount: null,
       cancelledIds: { orphans: [], deleted: [] },
       repescaArchivados: 0, repescaRefrescados: 0, repescaMotivo: null,
+      upsertErrMsg: undefined as string | undefined,
       error: err instanceof Error ? err.message : String(err),
     };
   }
@@ -643,7 +669,10 @@ Deno.serve(async (req) => {
       // La repesca archiva por el MISMO motivo (borrado en Dropi), así que suma
       // acá: si no, el contador diría 0 en una noche que sí limpió rezagados.
       orphan_cancelled: r.orphanCancelled + r.deletedCancelled + r.repescaArchivados,
-      error_message: r.error || null,
+      // El error del upsert VA acá: sin esto, una noche que no aplicó nada
+      // quedaba con error_message en null, o sea indistinguible de una noche
+      // sin divergencias que corregir.
+      error_message: r.error || r.upsertErrMsg || null,
     };
     const { error: logErr } = await sb.from("nightly_reconcile_results").insert({
       ...baseLog,
