@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, isStoreOwner } from "../_shared/dropiStoreConfig.ts";
 import { mapDropiOrderToRow } from "../_shared/dropiOrderMapper.ts";
+import { restoreLocalGestiones } from "../_shared/restoreLocalGestiones.ts";
 
 const MAX_CHUNK_DAYS = 89;
 const PAGE_SIZE = 100;
@@ -206,86 +207,6 @@ async function probeConnection(
   }
 }
 
-/** Map a Dropi order to our DB schema. Delega a `_shared/dropiOrderMapper.ts`
- *  para que dropi-refresh-order (single-order) use la misma lógica. */
-function mapOrder(o: Record<string, unknown>, userId: string, today: string, storeId: string) {
-  return mapDropiOrderToRow(o, userId, today, storeId);
-}
-
-// Ventana del restore = la MISMA que el retry del cron (result_date ≥ hoy−7d).
-const RESTORE_WINDOW_DAYS = 7;
-
-/**
- * Re-aplica sobre `orders` la gestión LOCAL que el upsert de Dropi pudo pisar
- * (Dropi puede seguir en "PENDIENTE CONFIRMACION" si el PUT falló o demora).
- *
- * Se resuelve en UNA sola pasada porque conf y canc compiten por el mismo
- * pedido: con dos queries independientes el UPDATE de conf dejaba el pedido en
- * PENDIENTE y el de canc ya no matcheaba su WHERE, así que una cancelación de
- * las 11am perdía contra una confirmación de las 9am — y el retry del cron
- * terminaba CONFIRMANDO en Dropi un pedido que el cliente rechazó (guía,
- * despacho y devolución de ~$22k). Acá manda la gestión MÁS RECIENTE y cada
- * pedido va a UN solo update. Espejo exacto de dropi-refresh-batch (está
- * duplicado a propósito: `_shared/` no puede cambiar sin redeployar las 14
- * funciones que lo importan).
- *
- * El WHERE estado='PENDIENTE CONFIRMACION' es el guard real: lo que Dropi ya
- * refleja (PENDIENTE / CANCELADO) no se toca.
- */
-async function restoreLocalGestiones(
-  // deno-lint-ignore no-explicit-any
-  sb: any,
-  storeId: string,
-): Promise<{ confCandidates: number; cancCandidates: number; error: string | null }> {
-  const windowFrom = new Date();
-  windowFrom.setUTCDate(windowFrom.getUTCDate() - RESTORE_WINDOW_DAYS);
-  const fromDate = windowFrom.toISOString().split("T")[0];
-
-  const { data: gestiones, error } = await sb
-    .from("order_results")
-    .select("order_id, result, created_at")
-    .eq("store_id", storeId)
-    .in("result", ["conf", "canc"])
-    .gte("result_date", fromDate)
-    .order("created_at", { ascending: true });
-
-  if (error) {
-    return { confCandidates: 0, cancCandidates: 0, error: error.message || String(error) };
-  }
-
-  // Orden ascendente ⇒ el último set() por order_id es la gestión más reciente.
-  const winner = new Map<string, string>();
-  for (const r of (gestiones ?? []) as Array<{ order_id: string; result: string }>) {
-    winner.set(r.order_id, r.result);
-  }
-
-  const confIds: string[] = [];
-  const cancIds: string[] = [];
-  for (const [orderId, result] of winner) {
-    (result === "canc" ? cancIds : confIds).push(orderId);
-  }
-
-  // Los contadores son CANDIDATOS (gestiones evaluadas), no filas escritas.
-  for (let i = 0; i < confIds.length; i += 50) {
-    const { error: upErr } = await sb.from("orders").update({ estado: "PENDIENTE" })
-      .in("id", confIds.slice(i, i + 50))
-      .eq("store_id", storeId)
-      .eq("estado", "PENDIENTE CONFIRMACION");
-    if (upErr) {
-      return { confCandidates: confIds.length, cancCandidates: cancIds.length, error: upErr.message || String(upErr) };
-    }
-  }
-  for (let i = 0; i < cancIds.length; i += 50) {
-    const { error: upErr } = await sb.from("orders").update({ estado: "CANCELADO" })
-      .in("id", cancIds.slice(i, i + 50))
-      .eq("store_id", storeId)
-      .eq("estado", "PENDIENTE CONFIRMACION");
-    if (upErr) {
-      return { confCandidates: confIds.length, cancCandidates: cancIds.length, error: upErr.message || String(upErr) };
-    }
-  }
-  return { confCandidates: confIds.length, cancCandidates: cancIds.length, error: null };
-}
 
 Deno.serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);

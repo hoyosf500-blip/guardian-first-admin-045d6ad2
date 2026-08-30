@@ -17,6 +17,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, isStoreMember } from "../_shared/dropiStoreConfig.ts";
 import { mapDropiOrderToRow, extractStatusHistoryRows } from "../_shared/dropiOrderMapper.ts";
+import { restoreLocalGestiones } from "../_shared/restoreLocalGestiones.ts";
 
 interface BatchBody {
   store_id?: string;
@@ -40,93 +41,6 @@ function jsonResp(body: unknown, status = 200, headers: Record<string, string> =
   });
 }
 
-/** YYYY-MM-DD para una fecha desplazada `daysBack` días respecto a hoy (UTC). */
-function ymd(daysBack: number): string {
-  const d = new Date(Date.now() - daysBack * 86_400_000);
-  return d.toISOString().split("T")[0];
-}
-
-// Ventana del restore = la MISMA que el retry del cron (result_date ≥ hoy−7d).
-// Antes las conf "atascadas" no tenían corte de fecha y las canc solo miraban
-// HOY: esa asimetría resucitaba como CONFIRMADAS cancelaciones de días
-// anteriores cuyo push a Dropi había fallado (token CO vencido, 429 en EC).
-const RESTORE_WINDOW_DAYS = 7;
-
-/**
- * Re-aplica sobre `orders` la gestión LOCAL que el upsert de Dropi pudo pisar:
- * Dropi puede seguir en "PENDIENTE CONFIRMACION" cuando la asesora ya
- * confirmó/canceló acá y el PUT falló o demora. Sin esto el pedido gestionado
- * REAPARECE en /confirmar y la asesora re-llama a un cliente que ya respondió.
- *
- * Se resuelve en UNA sola pasada porque conf y canc compiten por el mismo
- * pedido: con dos queries independientes el UPDATE de conf dejaba el pedido en
- * PENDIENTE y el de canc ya no matcheaba su WHERE, así que una cancelación de
- * las 11am perdía contra una confirmación de las 9am — y el retry del cron
- * terminaba CONFIRMANDO en Dropi un pedido que el cliente rechazó (guía,
- * despacho y devolución de ~$22k). Acá manda la gestión MÁS RECIENTE y cada
- * pedido va a UN solo update.
- *
- * El WHERE estado='PENDIENTE CONFIRMACION' es el guard real: lo que Dropi ya
- * refleja (PENDIENTE / CANCELADO) no se toca.
- */
-async function restoreLocalGestiones(
-  // deno-lint-ignore no-explicit-any
-  sb: any,
-  storeId: string,
-): Promise<{ confCandidates: number; cancCandidates: number; error: string | null }> {
-  const windowFrom = new Date();
-  windowFrom.setUTCDate(windowFrom.getUTCDate() - RESTORE_WINDOW_DAYS);
-  const fromDate = windowFrom.toISOString().split("T")[0];
-
-  const { data: gestiones, error } = await sb
-    .from("order_results")
-    .select("order_id, result, created_at")
-    .eq("store_id", storeId)
-    .in("result", ["conf", "canc"])
-    .gte("result_date", fromDate)
-    .order("created_at", { ascending: true });
-
-  if (error) {
-    // Fallar acá y seguir en silencio dejaría gestiones pisadas sin que nadie se
-    // entere: se devuelve el motivo para que el caller lo surfacee.
-    return { confCandidates: 0, cancCandidates: 0, error: error.message || String(error) };
-  }
-
-  // Orden ascendente ⇒ el último set() por order_id es la gestión más reciente.
-  const winner = new Map<string, string>();
-  for (const r of (gestiones ?? []) as Array<{ order_id: string; result: string }>) {
-    winner.set(r.order_id, r.result);
-  }
-
-  const confIds: string[] = [];
-  const cancIds: string[] = [];
-  for (const [orderId, result] of winner) {
-    (result === "canc" ? cancIds : confIds).push(orderId);
-  }
-
-  // Los contadores son CANDIDATOS (gestiones evaluadas), no filas escritas: el
-  // update no devuelve count y la mayoría no matchea el WHERE porque Dropi ya
-  // refleja la gestión. No confundirlos con "pedidos corregidos".
-  for (let i = 0; i < confIds.length; i += 50) {
-    const { error: upErr } = await sb.from("orders").update({ estado: "PENDIENTE" })
-      .in("id", confIds.slice(i, i + 50))
-      .eq("store_id", storeId)
-      .eq("estado", "PENDIENTE CONFIRMACION");
-    if (upErr) {
-      return { confCandidates: confIds.length, cancCandidates: cancIds.length, error: upErr.message || String(upErr) };
-    }
-  }
-  for (let i = 0; i < cancIds.length; i += 50) {
-    const { error: upErr } = await sb.from("orders").update({ estado: "CANCELADO" })
-      .in("id", cancIds.slice(i, i + 50))
-      .eq("store_id", storeId)
-      .eq("estado", "PENDIENTE CONFIRMACION");
-    if (upErr) {
-      return { confCandidates: confIds.length, cancCandidates: cancIds.length, error: upErr.message || String(upErr) };
-    }
-  }
-  return { confCandidates: confIds.length, cancCandidates: cancIds.length, error: null };
-}
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);

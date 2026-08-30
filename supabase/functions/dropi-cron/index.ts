@@ -13,6 +13,7 @@ import { confirmLiveSibling, webConfirmFallback } from "../_shared/dropiConfirmO
 // en variantLabel), pero la derivación de fecha_conf SÍ se comparte: si cron y
 // refresh calcularan fechas distintas para el mismo pedido, flapearían entre sí.
 import { deriveFechaConf } from "../_shared/dropiOrderMapper.ts";
+import { restoreLocalGestiones } from "../_shared/restoreLocalGestiones.ts";
 import { marcarLeidos } from "../_shared/marcarLeidos.ts";
 
 /**
@@ -983,22 +984,22 @@ Deno.serve(async (req: Request) => {
 
     // Restaurar PRIMERO (rápido) — evita que si el reintento consume todo el
     // presupuesto del edge, queden pedidos confirmados reapareciendo en /confirmar.
-    const todayDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" }).format(new Date());
-    const { data: confirmedToday } = await sb
-      .from("order_results").select("order_id").eq("result", "conf").eq("result_date", todayDate);
-    const { data: confirmedStuck } = await sb
-      .from("order_results").select("order_id").eq("result", "conf").in("dropi_sync_status", ["failed", "pending"]);
-    const idsToRestore = new Set<string>();
-    (confirmedToday || []).forEach((r: { order_id: string }) => idsToRestore.add(r.order_id));
-    (confirmedStuck || []).forEach((r: { order_id: string }) => idsToRestore.add(r.order_id));
-    if (idsToRestore.size > 0) {
-      const confirmedIds = Array.from(idsToRestore);
-      for (let i = 0; i < confirmedIds.length; i += 50) {
-        const batch = confirmedIds.slice(i, i + 50);
-        await sb.from("orders").update({ estado: "PENDIENTE" })
-          .in("id", batch).eq("estado", "PENDIENTE CONFIRMACION");
+    // ⛔ Antes esto leía SOLO `result='conf'` (y sin cota de fecha en las
+    // "trabadas"): una cancelación de las 11am perdía contra una confirmación
+    // de las 9am, el pedido volvía a PENDIENTE y el retry de más abajo le
+    // mandaba PUT PENDIENTE a Dropi — guía, despacho y devolución de ~$22k
+    // sobre un pedido que el cliente rechazó. dropi-sync y dropi-refresh-batch
+    // ya resolvían conf+canc en una pasada; a este cron —el único que corre
+    // solo cada 10-20 min, sin que nadie mire— nunca le llegó el arreglo.
+    // Ahora los tres usan la MISMA función. Ver `_shared/restoreLocalGestiones.ts`.
+    for (const c of activeConfigs) {
+      const storeId = String(c.store_id);
+      const r = await restoreLocalGestiones(sb, storeId);
+      if (r.error) {
+        console.error(`dropi-cron: restoreLocalGestiones falló para ${storeId}: ${r.error}`);
+      } else if (r.confCandidates || r.cancCandidates) {
+        console.log(`dropi-cron: restore ${storeId} → ${r.confCandidates} conf / ${r.cancCandidates} canc evaluadas`);
       }
-      console.log(`dropi-cron: Restored ${confirmedIds.length} locally confirmed orders (today + stuck-failed)`);
     }
 
     // Reintento de confirmaciones cuyo push a Dropi falló en su momento
