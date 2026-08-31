@@ -21,7 +21,7 @@ import { useActiveStoreId } from '@/contexts/StoreContext';
 // RLS: SELECT solo admin global u owner/supervisor de la tienda. Sin permiso la
 // query devuelve [] → 'hidden' → el badge se oculta (igual que OrdersSyncBadge).
 
-export type NightlyStatus = 'verified' | 'unverified' | 'error' | 'hidden';
+export type NightlyStatus = 'verified' | 'unverified' | 'stale' | 'error' | 'hidden';
 
 export interface NightlyReconcileHealth {
   status: NightlyStatus;
@@ -47,7 +47,19 @@ export interface NightlyRow {
   error_message: string | null;
 }
 
-const RUN_STALE_HOURS = 27; // corre cada 24h; 3h de gracia
+// ⛔ NO es "cada 24 h + gracia". El nightly va POR TURNOS desde el 18-ago-2026:
+// tiene un presupuesto global de 110 s, hace las tiendas que le entran y guarda
+// un cursor para que la postergada de hoy sea la PRIMERA de mañana. Con 6
+// tiendas activas entran ~4 por noche, así que a una tienda le toca cada 1,5–2
+// noches: entre 36 y 48 h SIN QUE NADA ESTÉ MAL.
+//
+// El umbral viejo (27 h) se escribió ANTES de que existiera esa rotación, y
+// pintaba de rojo lo normal. Medido el 31-ago-2026 a las 06:23 UTC: el nightly
+// había corrido a las 03:17 sobre 4 tiendas, Colombia entre ellas y sin
+// divergencias; a Ecuador no le tocó turno, su última verificación quedó en
+// 27,1 h y el badge dijo «Verificación vs Dropi caída». Rojo por SEIS MINUTOS,
+// con la función sana y el turno de Ecuador agendado para esa misma noche.
+const RUN_STALE_HOURS = 52; // 2 noches completas de rotación + 4 h de gracia
 
 /** Deriva el estado a partir de las últimas corridas (desc). PURA y testeable. */
 export function deriveNightlyStatus(
@@ -74,8 +86,18 @@ export function deriveNightlyStatus(
     consecutiveUnverified++;
   }
 
+  // ⛔ 'stale' NO es 'error', y la diferencia importa. Con las filas de ESTA
+  // tienda es IMPOSIBLE distinguir "el trabajo nocturno murió" de "corrió y no
+  // le tocó turno a esta tienda": una tienda postergada por presupuesto no deja
+  // ninguna fila. Decir «caída» afirma una causa que nadie midió — el mismo
+  // vicio que este proyecto viene corrigiendo en todos lados. 'stale' dice lo
+  // único que sí se sabe: hace cuánto que esta tienda no se contrasta.
+  //
+  // Un `error_message` SÍ es una falla medida, y manda sobre la antigüedad:
+  // que haya fallado hace tres días no lo vuelve un problema de turnos.
   let status: NightlyStatus;
-  if (ageHrs > RUN_STALE_HOURS || last.error_message) status = 'error';
+  if (last.error_message) status = 'error';
+  else if (ageHrs > RUN_STALE_HOURS) status = 'stale';
   else if (last.deleted_check_complete === false) status = 'unverified';
   else status = 'verified';
 

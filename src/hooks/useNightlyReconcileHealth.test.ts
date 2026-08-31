@@ -52,11 +52,44 @@ describe('deriveNightlyStatus', () => {
     expect(r.lastVerifiedAt?.toISOString()).toBe('2026-07-01T03:00:00.000Z');
   });
 
-  it('última corrida hace más de 27h → error (el nightly no está corriendo)', () => {
+  it('⛔ 28 h sin verificar es NORMAL: el nightly va por turnos, no todas las noches', () => {
+    // El caso REAL que motivó el cambio (31-ago-2026, 06:23 UTC): el nightly
+    // corrió a las 03:17 sobre 4 de las 6 tiendas — Colombia entre ellas, sin
+    // divergencias. A Ecuador no le tocó turno, quedó en 27,1 h, y el umbral
+    // viejo de 27 h pintó «Verificación vs Dropi caída». Rojo por SEIS MINUTOS,
+    // con la función sana y el turno de Ecuador agendado para esa misma noche.
     const r = deriveNightlyStatus([
-      row({ created_at: '2026-07-01T03:00:00Z', deleted_check_complete: true }),
+      row({ created_at: '2026-07-02T08:00:00Z', deleted_check_complete: true }), // 28 h
+    ], NOW);
+    expect(r.status).toBe('verified');
+  });
+
+  it('48 h tampoco alarma: con 6 tiendas y ~4 por noche, a una le toca cada 2 noches', () => {
+    const r = deriveNightlyStatus([
+      row({ created_at: '2026-07-01T12:00:00Z', deleted_check_complete: true }), // 48 h
+    ], NOW);
+    expect(r.status).toBe('verified');
+  });
+
+  it('pasadas las 52 h → stale, y stale NO es error', () => {
+    // Con las filas de ESTA tienda no se puede saber si el trabajo murió o si
+    // solo no le tocó turno: una tienda postergada no deja fila. Por eso el
+    // estado dice lo medido ("hace tanto que no se verifica") y NO afirma una
+    // causa. La distinción es la que separa un aviso útil de un lobo.
+    const r = deriveNightlyStatus([
+      row({ created_at: '2026-07-01T03:00:00Z', deleted_check_complete: true }), // 57 h
+    ], NOW);
+    expect(r.status).toBe('stale');
+    expect(r.lastErrorMessage).toBeNull();
+  });
+
+  it('un error MEDIDO manda sobre la antigüedad: viejo + error_message → error', () => {
+    // Que haya fallado hace tres días no lo convierte en un problema de turnos.
+    const r = deriveNightlyStatus([
+      row({ created_at: '2026-06-30T03:00:00Z', error_message: 'boom' }), // 81 h
     ], NOW);
     expect(r.status).toBe('error');
+    expect(r.lastErrorMessage).toBe('boom');
   });
 
   it('error_message en la última corrida → error, y no cuenta como verificada', () => {

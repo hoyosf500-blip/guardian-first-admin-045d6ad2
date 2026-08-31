@@ -22,12 +22,16 @@ interface Props {
 const TONE_CLS: Record<Exclude<NightlyStatus, 'hidden'>, string> = {
   verified: 'border-success/40 bg-success/10 text-success',
   unverified: 'border-orange/40 bg-orange/10 text-orange',
+  // 'stale' va en ÁMBAR, no en rojo: casi siempre significa "todavía no le tocó
+  // turno a esta tienda", no una falla. El rojo se reserva para un fallo medido.
+  stale: 'border-orange/40 bg-orange/10 text-orange',
   error: 'border-danger/40 bg-danger/10 text-danger',
 };
 
 const TONE_ICON: Record<Exclude<NightlyStatus, 'hidden'>, React.ElementType> = {
   verified: ShieldCheck,
   unverified: ShieldAlert,
+  stale: ShieldAlert,
   error: ShieldX,
 };
 
@@ -65,7 +69,7 @@ export default function NightlyCheckBadge({ size = 'sm', className = '' }: Props
   // Sin corridas / sin permiso RLS / error de query → ocultar (no alarmar en falso).
   if (q.isError || !q.data || q.data.status === 'hidden') return null;
 
-  const { status, lastVerifiedAt, consecutiveUnverified, lastCancelled, lastApplied, lastErrorMessage } = q.data;
+  const { status, lastRunAt, lastVerifiedAt, consecutiveUnverified, lastCancelled, lastApplied, lastErrorMessage } = q.data;
   const tone = status as Exclude<NightlyStatus, 'hidden'>;
   const Icon = TONE_ICON[tone];
   const padding = size === 'md' ? 'px-2.5 py-1 text-xs' : 'px-2 py-0.5 text-[11px]';
@@ -83,11 +87,22 @@ export default function NightlyCheckBadge({ size = 'sm', className = '' }: Props
     const noches = Math.max(1, consecutiveUnverified);
     text = `Sin verificar vs Dropi (${noches} noche${noches > 1 ? 's' : ''})`;
     title = `Dropi limitó las consultas (rate limit) y la verificación nocturna no pudo completarse. Se reintenta esta noche. Última verificación completa: ${formatRelative(lastVerifiedAt)}.`;
+  } else if (status === 'stale') {
+    // NO dice "caída": desde esta tienda no se puede saber si el trabajo murió o
+    // si simplemente no le tocó turno (va por turnos, con presupuesto por noche,
+    // y una tienda postergada no deja fila). Se afirma solo lo medido.
+    text = `Sin verificar ${formatRelative(lastRunAt)}`;
+    title =
+      'La verificación nocturna va por turnos entre las tiendas: cada noche hace ' +
+      'las que le entran en su presupuesto y la que queda afuera es la primera de ' +
+      'la noche siguiente. A esta tienda no le toca hace un rato. Si pasan varios ' +
+      'días seguidos, avisá para revisarla. Ojo: esto NO dice que los datos estén ' +
+      'desactualizados — eso lo mide el indicador de pedidos, aparte.';
   } else {
-    text = 'Verificación vs Dropi caída';
+    text = 'Verificación vs Dropi falló';
     title = lastErrorMessage
-      ? `La verificación nocturna falló: ${lastErrorMessage}`
-      : 'La verificación nocturna no corre hace más de un día. Avisá para revisarla.';
+      ? `La última verificación nocturna de esta tienda falló: ${lastErrorMessage}`
+      : 'La última verificación nocturna de esta tienda falló. Avisá para revisarla.';
   }
 
   return (
