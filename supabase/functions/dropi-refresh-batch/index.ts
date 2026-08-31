@@ -15,6 +15,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { respuestaPing } from "../_shared/versionEdge.ts";
 import { loadStoreConfig, isStoreMember } from "../_shared/dropiStoreConfig.ts";
 import { mapDropiOrderToRow, extractStatusHistoryRows } from "../_shared/dropiOrderMapper.ts";
 import { restoreLocalGestiones } from "../_shared/restoreLocalGestiones.ts";
@@ -42,9 +43,21 @@ function jsonResp(body: unknown, status = 200, headers: Record<string, string> =
 }
 
 
+/**
+ * Marca de versión desplegada. Se contesta con `?ping=1` y NO toca la base.
+ * ⛔ Subila en TODO commit que cambie esta función o algo que importa: es lo
+ *    único que distingue "Lovable dijo que desplegó" de "está desplegado".
+ *    El guardián `src/test/edgeVersionPing.test.ts` exige que exista y que el
+ *    ping se conteste ANTES de cualquier auth.
+ */
+const VERSION = "dropi-refresh-batch 2026-08-30.1 auditoria-44";
+
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  // Antes de auth y sin tocar la base: "¿qué versión está desplegada?".
+  { const p = respuestaPing(req, VERSION, corsHeaders); if (p) return p; }
   if (req.method !== "POST") return jsonResp({ error: "POST only" }, 405, corsHeaders);
 
   try {

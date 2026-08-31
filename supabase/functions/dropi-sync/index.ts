@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { respuestaPing } from "../_shared/versionEdge.ts";
 import { loadStoreConfig, isStoreOwner } from "../_shared/dropiStoreConfig.ts";
 import { mapDropiOrderToRow } from "../_shared/dropiOrderMapper.ts";
 import { restoreLocalGestiones } from "../_shared/restoreLocalGestiones.ts";
@@ -208,12 +209,24 @@ async function probeConnection(
 }
 
 
+/**
+ * Marca de versión desplegada. Se contesta con `?ping=1` y NO toca la base.
+ * ⛔ Subila en TODO commit que cambie esta función o algo que importa: es lo
+ *    único que distingue "Lovable dijo que desplegó" de "está desplegado".
+ *    El guardián `src/test/edgeVersionPing.test.ts` exige que exista y que el
+ *    ping se conteste ANTES de cualquier auth.
+ */
+const VERSION = "dropi-sync 2026-08-30.1 auditoria-44";
+
 Deno.serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);
 
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
+
+  // Antes de auth y sin tocar la base: "¿qué versión está desplegada?".
+  { const p = respuestaPing(req, VERSION, corsHeaders); if (p) return p; }
 
   // Hoisted para que el catch pueda dejar rastro del fallo en sync_logs.
   let logStoreId = "";

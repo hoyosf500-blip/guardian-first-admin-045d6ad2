@@ -16,6 +16,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { respuestaPing } from "../_shared/versionEdge.ts";
 import { dropiHostFor } from "../_shared/dropiHosts.ts";
 import { mapDropiOrderToRow } from "../_shared/dropiOrderMapper.ts";
 import {
@@ -564,9 +565,21 @@ interface StoreCfgRow {
   dropi_store_url: string | null;
 }
 
+/**
+ * Marca de versión desplegada. Se contesta con `?ping=1` y NO toca la base.
+ * ⛔ Subila en TODO commit que cambie esta función o algo que importa: es lo
+ *    único que distingue "Lovable dijo que desplegó" de "está desplegado".
+ *    El guardián `src/test/edgeVersionPing.test.ts` exige que exista y que el
+ *    ping se conteste ANTES de cualquier auth.
+ */
+const VERSION = "dropi-nightly-reconcile 2026-08-30.1 auditoria-44";
+
 Deno.serve(async (req) => {
   const CORS = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+
+  // Antes de auth y sin tocar la base: "¿qué versión está desplegada?".
+  { const p = respuestaPing(req, VERSION, CORS); if (p) return p; }
 
   const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 

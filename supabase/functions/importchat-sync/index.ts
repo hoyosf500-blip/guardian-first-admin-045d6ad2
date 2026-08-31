@@ -69,6 +69,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { Unzip, UnzipInflate } from "https://esm.sh/fflate@0.8.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { respuestaPing } from "../_shared/versionEdge.ts";
 import {
   derivarActividadChat,
   derivarSenal,
@@ -97,7 +98,7 @@ const SOURCE = "importchat-sync";
  * `{"ping":true}` la devuelve SIN tocar ImporChat, sin leer la base y sin
  * escribir en sync_logs. Un `curl` y se sabe.
  */
-const VERSION = "2026-08-29.4-boton-confirmar-plantilla-nueva";
+const VERSION = "importchat-sync 2026-08-30.2 botones-novedad-registrados";
 const PAGE_SIZE = 200;
 const MAX_PAGES = 15;
 const DIAS_DEFAULT = 10;
@@ -342,6 +343,11 @@ async function traerMensajes(
 Deno.serve(async (req) => {
   const cors = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+
+  // El mismo ping que las demás, por query string: así UN solo comando
+  // pregunta la versión de las seis. La forma vieja (`{"ping":true}` en el
+  // body) sigue andando más abajo — hay tableros que la usan.
+  { const pg = respuestaPing(req, VERSION, cors); if (pg) return pg; }
 
   const t0 = Date.now();
   const sb = createClient(
