@@ -81,6 +81,36 @@ describe("el botón de CADA plantilla cableada, no el de una sola", () => {
     expect(apreta("Corregir un dato")).toBe(false);
   });
 
+  it('⛔ "Confirmo recepción" NO es confirmar el pedido, por más que empiece igual', () => {
+    // Medido el 30-ago-2026: importchat-sync lo venía denunciando ×26 por
+    // corrida como botón desconocido. Su plantilla es el aviso de NOVEDAD que
+    // manda Dropi ("Enviado por Dropi Status … conforme a la ley 67 del 2022 …
+    // necesitamos programar un nuevo intento de entrega"), con dos botones:
+    // "Confirmo recepción" / "Reprogramar entrega" — y el segundo YA estaba en
+    // BOTONES_OTRAS_PLANTILLAS, o sea el par estaba registrado a medias.
+    //
+    // El cliente se compromete a recibir un paquete que YA salió, con guía
+    // puesta. Meterlo en BOTONES_CONFIRMAR marcaría "confirmado para despacho"
+    // a pedidos en novedad: el incidente del 27-29 de agosto otra vez, al revés.
+    expect(apreta("Confirmo recepción")).toBe(false);
+    expect(apreta("CONFIRMO RECEPCION")).toBe(false);
+    expect(esBotonConocido(msg({ tipo: "button", texto: "Confirmo recepción" }))).toBe(true);
+  });
+
+  it('⛔ la red de seguridad `includes("CONFIRMAR")` NO alcanza para "CONFIRMO"', () => {
+    // Esta es la razón por la que la lista explícita tiene que existir: el
+    // fallback compara contra "CONFIRMAR" y "CONFIRMO" no lo contiene. Si
+    // alguien algún día lo afloja a "CONFIRM", "Confirmo recepción" se colaría
+    // como un sí — salvo que esté en BOTONES_NO_CONFIRMAR, que se mira PRIMERO.
+    expect("CONFIRMO RECEPCION".includes("CONFIRMAR")).toBe(false);
+    expect(BOTONES_NO_CONFIRMAR).toContain("CONFIRMO RECEPCION");
+  });
+
+  it('"Cancelar pedido" no confirma nada y ya no dispara la alarma', () => {
+    expect(apreta("Cancelar pedido")).toBe(false);
+    expect(esBotonConocido(msg({ tipo: "button", texto: "Cancelar pedido" }))).toBe(true);
+  });
+
   it("los botones de las OTRAS plantillas tampoco confirman nada", () => {
     // Todas caen dentro de la ventana del pedido (creación +7 días), así que
     // llegan hasta acá. Ninguna dice nada sobre la confirmación.

@@ -61,14 +61,43 @@ export const BOTONES_CONFIRMAR = [
 /** @deprecated Quedó por compatibilidad; la lista de arriba es la fuente. */
 export const BOTON_CONFIRMAR = BOTONES_CONFIRMAR[0];
 
-/** El OTRO botón de esas mismas plantillas. Apretarlo NO es confirmar: los que
- *  apretaron "ACTUALIZAR INFORMACIÓN" cancelaron 42,9% (n=14) — del lado malo.
- *  Se miran ANTES que los de confirmar para que ninguna coincidencia parcial
- *  los dé por buenos. */
+/** Botones que JAMÁS pueden leerse como una confirmación de pedido.
+ *
+ *  Se miran ANTES que los de confirmar, y ese orden es la defensa: por más que
+ *  alguien afloje el matcher de abajo, nada de esta lista puede colarse como un
+ *  "sí". Es la barrera contra el incidente del 27-29 de agosto de 2026, cuando
+ *  el bot dio por confirmado lo que no lo estaba y generó guías solas.
+ *
+ *  1. Los DOS primeros son el otro botón de las plantillas de confirmación:
+ *     los que apretaron "ACTUALIZAR INFORMACIÓN" cancelaron 42,9% (n=14) — del
+ *     lado malo.
+ *  2. "CONFIRMO RECEPCIÓN" NO es confirmar el pedido, y por eso está acá y no
+ *     en `BOTONES_CONFIRMAR`. Medido el 30-ago-2026: `importchat-sync` lo venía
+ *     reportando como desconocido ×26 por corrida. Su plantilla es el aviso de
+ *     NOVEDAD que manda Dropi ("Enviado por Dropi Status … conforme a la ley 67
+ *     del 2022 … necesitamos programar un nuevo intento de entrega"), y sus dos
+ *     botones son "Confirmo recepción" / "Reprogramar entrega". O sea: el
+ *     cliente se compromete a recibir un paquete que YA salió, con guía puesta.
+ *     Meterlo en la lista de confirmar habría marcado como "confirmado para
+ *     despacho" a pedidos en novedad — el error de 2026 otra vez, al revés.
+ *     Ojo: la red de seguridad de abajo (`includes("CONFIRMAR")`) NO lo agarra,
+ *     porque "CONFIRMO" no contiene "CONFIRMAR".
+ *  3. "CANCELAR PEDIDO" es un rechazo explícito. Hoy solo sirve para que el
+ *     detector de ceguera no lo cante como botón nuevo; como SEÑAL de
+ *     cancelación todavía no se usa (ver el TODO más abajo).
+ */
 export const BOTONES_NO_CONFIRMAR = [
   "ACTUALIZAR INFORMACION", // confirmacion_pedido_k1
   "CORREGIR UN DATO",       // confirmacion_datos_v1
+  "CONFIRMO RECEPCION",     // aviso de novedad de Dropi ("ley 67")
+  "CANCELAR PEDIDO",        // rechazo explícito del cliente
 ] as const;
+
+/* TODO (no se hizo acá a propósito): "CANCELAR PEDIDO" es la señal de
+ * cancelación más limpia que existe — el cliente la dice él mismo, sin
+ * interpretación. Hoy el modelo solo sabe "confirma / no confirma", así que
+ * cablearla es una función nueva, no un ajuste de lista. Se anota para que no
+ * se pierda: n=1 en la ventana medida el 30-ago-2026. */
 /** @deprecated Ver `BOTONES_NO_CONFIRMAR`. */
 export const BOTON_ACTUALIZAR = "ACTUALIZAR INFORMACIÓN";
 
