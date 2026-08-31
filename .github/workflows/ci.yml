@@ -36,6 +36,25 @@ jobs:
       - name: Hooks rules (blocking)
         run: node scripts/check-hooks.mjs
 
+      # Edge functions: `no-undef` BLOQUEANTE (sin continue-on-error).
+      # Las de `supabase/functions` son Deno y NO pasan por tsc, ni por Vitest,
+      # ni por el lint de arriba (que solo mira 3 carpetas de src/). Un
+      # identificador usado y nunca declarado no se nota hasta que revienta en
+      # produccion -- y ni ahi, porque Lovable no las redespliega al publicar.
+      #
+      # Paso el 30-ago-2026: al mover `restoreLocalGestiones` a `_shared/`, el
+      # commit se llevo puestos `ymd()` (dropi-refresh-batch) y `mapOrder()`
+      # (dropi-sync), que el resto de esos archivos SEGUIA usando. Las dos
+      # funciones quedaron tirando "X is not defined": el boton «Sincronizar»
+      # de Seguimiento devolvia 500. Estuvo roto desde el 30-ago y solo se vio
+      # al desplegarlas esa noche.
+      #
+      # La regla `no-undef` para supabase/functions/** YA existia en
+      # eslint.config.js desde el 4-ago-2026. El agujero no era la regla: era
+      # que NADIE la corria. Este paso la arma.
+      - name: Edge functions no-undef (blocking)
+        run: npx eslint supabase/functions --no-warn-ignored
+
       - name: Unit tests
         run: npm test
 

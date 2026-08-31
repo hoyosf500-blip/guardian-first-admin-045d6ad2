@@ -50,7 +50,21 @@ function jsonResp(body: unknown, status = 200, headers: Record<string, string> =
  *    El guardián `src/test/edgeVersionPing.test.ts` exige que exista y que el
  *    ping se conteste ANTES de cualquier auth.
  */
-const VERSION = "dropi-refresh-batch 2026-08-30.1 auditoria-44";
+const VERSION = "dropi-refresh-batch 2026-08-30.3 ymd-restaurada";
+
+/** YYYY-MM-DD para una fecha desplazada `daysBack` días respecto a hoy (UTC).
+ *
+ *  ⛔ Vivía dentro del bloque que `f5a31ab` borró al mover `restoreLocalGestiones`
+ *  a `_shared/`, pero lo usa el RESTO del archivo (4 sitios: la ventana del
+ *  refresco y el corte por fecha de EC). Al sacarlo, la función entera quedó
+ *  tirando "ymd is not defined": el botón «Sincronizar» de Seguimiento devolvía
+ *  500 y no sincronizaba NADA. No se notó hasta el 30-ago-2026 porque esta
+ *  función no se había vuelto a desplegar desde entonces. */
+function ymd(daysBack: number): string {
+  const d = new Date(Date.now() - daysBack * 86_400_000);
+  return d.toISOString().split("T")[0];
+}
+
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);

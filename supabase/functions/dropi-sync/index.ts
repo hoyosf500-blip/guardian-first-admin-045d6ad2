@@ -216,7 +216,7 @@ async function probeConnection(
  *    El guardián `src/test/edgeVersionPing.test.ts` exige que exista y que el
  *    ping se conteste ANTES de cualquier auth.
  */
-const VERSION = "dropi-sync 2026-08-30.1 auditoria-44";
+const VERSION = "dropi-sync 2026-08-30.3 mapOrder-restaurada";
 
 Deno.serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);
@@ -437,7 +437,11 @@ Deno.serve(async (req: Request) => {
 
       if (dropiOrders.length === 0) continue;
 
-      const dbOrders = dropiOrders.map((o) => mapOrder(o, user.id, today, storeId));
+      // `mapOrder` era un wrapper de UNA línea sobre `mapDropiOrderToRow`, y se lo
+      // llevó puesto `f5a31ab` al mover `restoreLocalGestiones` a `_shared/`. Se
+      // llama al mapper directo en vez de resucitar el wrapper: es lo mismo con un
+      // nombre menos. Sin esto la función tiraba "mapOrder is not defined".
+      const dbOrders = dropiOrders.map((o) => mapDropiOrderToRow(o, user.id, today, storeId));
 
       // RPC upsert_orders_from_dropi: ON CONFLICT DO UPDATE WHERE
       // IS DISTINCT FROM. Filas idénticas no se reescriben → no se
