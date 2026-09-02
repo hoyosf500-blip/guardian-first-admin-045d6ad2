@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { fnCanal } from '@/lib/canalChat';
 import { useStore } from '@/contexts/StoreContext';
 import type { MensajeConversacion } from '@/lib/conversacion';
 import { motivoEdge, cuerpoDelError } from '@/lib/errorEdge';
@@ -84,7 +85,10 @@ export function useConversacion(externalId: string | null | undefined, activo: b
       setError('');
     }
     try {
-      const { data, error: err } = await supabase.functions.invoke('importchat-chat', {
+      // EC lee por ImporChat, CO por Chatea Pro. La respuesta tiene la MISMA
+      // forma en las dos, así que de acá para abajo no cambia nada.
+      const fn = await fnCanal(activeStoreId, 'chat');
+      const { data, error: err } = await supabase.functions.invoke(fn, {
         body: { store_id: activeStoreId, external_id: externalId },
       });
       if (turno !== turnoRef.current) return;

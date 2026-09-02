@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { fnCanal } from '@/lib/canalChat';
 import { useStore } from '@/contexts/StoreContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { emitirGestion } from '@/lib/eventosGestion';
@@ -73,7 +74,8 @@ export function useEnviarWhatsapp() {
     if (!texto) return { ok: false, error: 'Escribí un mensaje' };
     setEnviando(true);
     try {
-      const { data, error } = await supabase.functions.invoke('importchat-send', {
+      const fn = await fnCanal(activeStoreId, 'send');
+      const { data, error } = await supabase.functions.invoke(fn, {
         // `accion` es ADITIVO: un servidor viejo (Lovable no redespliega edge
         // functions con un push) lo ignora y escribe el texto genérico de
         // siempre. Sigue contando como gestión; solo se pierde el detalle.

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { fnCanal } from '@/lib/canalChat';
 import { useStore } from '@/contexts/StoreContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { ordenarParaFase, type PlantillaMeta } from '@/lib/plantillasMeta';
@@ -61,7 +62,8 @@ async function traer(storeId: string): Promise<PlantillaMeta[]> {
       // exactamente las mismas 43 plantillas— y la asesora esperaba en cada
       // fase nueva que tocaba. Ahora es una sola por tienda y el orden se
       // calcula acá, gratis.
-      const { data, error } = await supabase.functions.invoke('importchat-plantillas', {
+      const fn = await fnCanal(storeId, 'plantillas');
+      const { data, error } = await supabase.functions.invoke(fn, {
         body: { store_id: storeId, accion: 'listar' },
       });
       if (error) throw error;
@@ -192,7 +194,8 @@ export function useEnviarPlantilla() {
     if (!activeStoreId) return { ok: false, error: 'No hay tienda activa' };
     setEnviando(true);
     try {
-      const { data, error } = await supabase.functions.invoke('importchat-plantillas', {
+      const fn = await fnCanal(activeStoreId, 'plantillas');
+      const { data, error } = await supabase.functions.invoke(fn, {
         // `gestion` es ADITIVO: un servidor sin redesplegar lo ignora y escribe
         // "Mandé la plantilla X" como siempre. Ver `useEnviarWhatsapp`.
         body: { store_id: activeStoreId, accion: 'enviar', external_id: externalId, nombre, valores, modulo, gestion: gestion?.accion },
