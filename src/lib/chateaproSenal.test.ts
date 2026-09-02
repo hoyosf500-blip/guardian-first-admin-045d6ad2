@@ -105,6 +105,36 @@ describe('senalDeHilo', () => {
     expect(s.riesgo).not.toBe('confirmado');
   });
 
+  /**
+   * ⛔ Sin plantilla enviada NO hay señal del botón — el hallazgo del
+   * 2-sep-2026.
+   *
+   * La primera corrida real en Colombia leyó 30 pedidos y solo 2 habían
+   * recibido la plantilla de confirmación (en Ecuador la reciben 622 de 765).
+   * El bot colombiano confirma CONVERSANDO dentro de la ventana de 24 h. Con
+   * la escalera tal cual, esos 28 salían `tibio` = "escribió pero nunca apretó
+   * el botón · llamalo" — falso, y encima `tibio` tiene MÁS prioridad que
+   * `sin_dato` en la cola de Confirmar: 33 pedidos sin información real se le
+   * adelantaban a todo.
+   */
+  it('escribió pero NUNCA se le ofreció el botón → sin_dato, no tibio', () => {
+    const s = senalDeHilo([msg({ texto: 'quiero dos pares' })], CONFIRMA);
+    expect(s.riesgo).toBe('sin_dato');
+    expect(s.recibioPlantilla).toBe(false);
+  });
+
+  it('pero `mudo` SÍ vale aunque no se le haya mandado plantilla', () => {
+    // A esa persona el chat no le llega: hay que llamarla, se le haya ofrecido
+    // un botón o no. Es el peor grupo de Ecuador (66% cancela).
+    const soloBot = msg({ de: 'negocio', texto: 'Hola, ya salió tu pedido' });
+    expect(senalDeHilo([soloBot], CONFIRMA).riesgo).toBe('mudo');
+  });
+
+  it('y `confirmado` no puede existir sin plantilla, pero si existe manda', () => {
+    const s = senalDeHilo([PLANTILLA_CONF, msg({ tipo: 'postback', texto: 'CONFIRMAR PEDIDO' })], CONFIRMA);
+    expect(s.riesgo).toBe('confirmado');
+  });
+
   it('⛔ un hilo que no se pudo leer es `sin_dato`, nunca «tranquilo»', () => {
     const s = senalDeHilo(null, CONFIRMA);
     expect(s.riesgo).toBe('sin_dato');

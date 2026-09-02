@@ -175,8 +175,40 @@ export function senalDeHilo(
     conocidos.add(m.texto.trim());
   }
 
+  /**
+   * ⛔ SIN PLANTILLA ENVIADA NO HAY SEÑAL DEL BOTÓN — medido el 2-sep-2026.
+   *
+   * La primera corrida real en Colombia leyó 30 pedidos y **solo 2 habían
+   * recibido la plantilla de confirmación**. En Ecuador la reciben 622 de 765
+   * (81%): allá el bot la manda siempre, acá el bot confirma CONVERSANDO
+   * dentro de la ventana de 24 h y casi nunca la manda.
+   *
+   * Con la escalera tal cual, esos 28 salían **`tibio`** — que en la pantalla
+   * dice "escribió pero nunca apretó el botón · 34% cancela · llamalo". Es
+   * falso dos veces: nunca se le ofreció ningún botón, y haber conversado con
+   * el bot no es una señal de riesgo. Y hace daño de verdad: `tibio` tiene
+   * MÁS prioridad que `sin_dato` en la cola de Confirmar
+   * (`PRIORIDAD_RIESGO`), así que 33 pedidos sin información real se le
+   * adelantaban a todo, tapando a los pocos que sí importan.
+   *
+   * Entonces: sin plantilla, `sin_dato` — el neutro, que no reordena nada y
+   * la pantalla dice en la cara ("no se pudo leer / no sabemos"). Se
+   * conservan las dos señales que SÍ valen sin plantilla:
+   *   · `confirmado`, imposible sin haberla recibido, y
+   *   · `mudo`, que se mide sobre el historial completo: a esa persona el chat
+   *     no le llega y hay que llamarla, se le haya ofrecido un botón o no.
+   *
+   * ⚠️ Esto NO se tocó en Ecuador. Allá la escalera está medida sobre 765
+   * pedidos resueltos y el caso sin plantilla es el 19%, no el 93%. Cambiarla
+   * de este lado no da derecho a cambiarla del otro.
+   */
+  const riesgoBruto = clasificar({ apreto: !!boton, escribio: !!palabra, recibioPlantilla, mudo });
+  const riesgo = (!recibioPlantilla && riesgoBruto !== "mudo" && riesgoBruto !== "confirmado")
+    ? "sin_dato" as NivelRiesgo
+    : riesgoBruto;
+
   return {
-    riesgo: clasificar({ apreto: !!boton, escribio: !!palabra, recibioPlantilla, mudo }),
+    riesgo,
     apretoBotonAt: boton?.fecha ?? null,
     clienteEscribioAt: palabra?.fecha ?? null,
     recibioPlantilla,

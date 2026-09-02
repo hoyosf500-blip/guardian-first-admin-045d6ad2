@@ -49,7 +49,7 @@ import { cambiosDeChat, type ContactoCp, type PedidoCruce } from "../_shared/cha
 
 const SOURCE = "chateapro-sync";
 /** ⛔ Subirla en el mismo commit que cambie algo: si no, el ping miente. */
-const VERSION = "chateapro-sync 2026-09-02.3 los-de-hoy-primero";
+const VERSION = "chateapro-sync 2026-09-02.4 sin-plantilla-no-hay-senal";
 
 /** Tope de la API (lo dice la spec; más devuelve 400). */
 const PAGINA = 100;
