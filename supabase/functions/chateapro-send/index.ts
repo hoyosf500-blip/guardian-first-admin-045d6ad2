@@ -29,7 +29,7 @@ import {
   ChateaproError,
 } from "../_shared/chateaproApi.ts";
 
-const VERSION = "chateapro-send 2026-09-02.3 transcripcion-de-audio";
+const VERSION = "chateapro-send 2026-09-02.4 autor-y-cuerpo-de-plantilla";
 
 /** ¿El texto que mandamos aparece en el hilo releído? Comparación floja a
  *  propósito: Chatea Pro puede recortar espacios o normalizar saltos de línea,

@@ -171,15 +171,22 @@ export interface MensajeConversacion {
 interface MensajeCp {
   id?: number | string;
   mid?: string;
-  /** "in" = del cliente · "out" = nuestro · "note" = nota interna del asesor. */
+  /** "in" = del cliente · "out" = del bot · "agent" = lo escribió una PERSONA
+   *  desde el panel o desde Guardian · "note" = nota interna del asesor. */
   type?: string;
   /** text · image · audio · video · file · wa_template */
   msg_type?: string;
   /** El texto. Vacío en los adjuntos. */
   content?: string;
-  /** `{type, url, title, transcribed_text, wa_conv_id}` — la URL del adjunto y
-   *  la transcripción de la nota de voz viven ACÁ. */
-  payload?: { url?: string; title?: string | null; transcribed_text?: string | null } | null;
+  /** Todo lo bueno vive ACÁ: la URL del adjunto, la transcripción de la nota de
+   *  voz y —en una plantilla— el texto YA ARMADO que leyó el cliente. */
+  payload?: {
+    url?: string;
+    title?: string | null;
+    transcribed_text?: string | null;
+    /** Plantilla: el mensaje renderizado, con los huecos rellenos. */
+    body?: string | null;
+  } | null;
   /** "bot" o el `user_ns` del cliente. */
   sender_id?: string;
   /** 0 = no lo escribió una persona. */
@@ -217,9 +224,15 @@ function normalizarMensaje(m: MensajeCp): MensajeConversacion {
   // 2-sep-2026. Pintarlo como texto le muestra a la asesora un código donde
   // debería ver un mensaje, y peor: parece que eso fue lo que se le dijo al
   // cliente. Se marca como marcador, igual que un adjunto.
+  // ⛔ En un `wa_template`, `content` es el NOMBRE de la plantilla
+  // ("ES seguimiento_guia_generada_v2_utilidad") — un código, no un mensaje.
+  // Pero `payload.body` trae el texto YA ARMADO que el cliente leyó, con la
+  // guía y el nombre puestos. Medido el 2-sep-2026. Se muestra ese: la asesora
+  // necesita saber qué se le dijo al cliente, no cómo se llama la plantilla.
   const esPlantilla = tipo === "wa_template";
-  const texto = esPlantilla ? "" : String(m.content ?? "").trim();
-  const nombrePlantilla = esPlantilla ? String(m.content ?? "").trim() : "";
+  const cuerpoPlantilla = esPlantilla ? String(m.payload?.body ?? "").trim() : "";
+  const texto = esPlantilla ? cuerpoPlantilla : String(m.content ?? "").trim();
+  const nombrePlantilla = esPlantilla && !cuerpoPlantilla ? String(m.content ?? "").trim() : "";
   const archivoUrl = m.payload?.url || null;
   // Chatea Pro transcribe las notas de voz solo. Se guarda tal cual: es la
   // diferencia entre leer la cola de un vistazo y tener que escuchar 14 audios.
@@ -228,13 +241,16 @@ function normalizarMensaje(m: MensajeCp): MensajeConversacion {
   // pinte como adjunto y no como algo que alguien escribió.
   const esMarcador = !texto && !!MARCADOR[tipo];
   const fechaMs = typeof m.ts === "number" ? m.ts * 1000 : null;
-  // Quién escribió. Acá NO se está adivinando: Chatea Pro dice `sender_id:"bot"`
-  // explícitamente, así que marcarlo como Bot es una medición. Cuando no dice
-  // nada se deja en null — no saber quién escribió no es lo mismo que saber
-  // que fue el bot.
-  const autor = m.sender_id === "bot"
-    ? "Bot"
-    : ((m.agent_id ?? 0) > 0 ? (m.username || null) : null);
+  // ⛔ Quién escribió. El orden IMPORTA y lo tenía al revés. Un mensaje que
+  // manda una PERSONA (desde Guardian o desde el panel) vuelve con
+  // `type:"agent"`, `agent_id:<id real>`, `username:"Fabián"` … **y
+  // `sender_id:"bot"`**. Preguntando primero por `sender_id` se perdía el
+  // nombre de la asesora y todo salía firmado "Bot" — que es exactamente la
+  // pregunta que el dueño hizo desde el principio: ¿lo escribió el bot o una
+  // persona? Medido con un envío real el 2-sep-2026.
+  const autor = (m.agent_id ?? 0) > 0
+    ? (m.username || "Asesor")
+    : (m.sender_id === "bot" ? "Bot" : null);
   return {
     id: String(m.id ?? m.mid ?? `${fechaMs ?? 0}-${texto.slice(0, 12)}`),
     fechaMs,

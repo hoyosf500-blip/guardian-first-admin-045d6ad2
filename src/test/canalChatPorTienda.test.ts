@@ -292,3 +292,31 @@ describe('audio, foto y video del cliente', () => {
     ).toBe(true);
   });
 });
+
+/**
+ * ¿Lo escribió el bot o una persona?
+ *
+ * Es la pregunta con la que empezó todo el módulo de chat. Medido con un envío
+ * REAL el 2-sep-2026: cuando escribe una persona, Chatea Pro devuelve
+ * `type:"agent"`, `agent_id:<id>`, `username:"Fabián"` **y `sender_id:"bot"`**.
+ * Preguntar primero por `sender_id` firma todo como "Bot" y borra el nombre de
+ * la asesora.
+ */
+describe('el autor del mensaje y el cuerpo de la plantilla', () => {
+  it('una persona gana sobre el "bot" del sender_id', () => {
+    const i = cpApi.indexOf('m.agent_id ?? 0) > 0');
+    const j = cpApi.indexOf('m.sender_id === "bot"');
+    expect(i > -1 && j > -1, 'no se encontró el cálculo del autor').toBe(true);
+    expect(
+      i < j,
+      'preguntar por sender_id primero borra el nombre de quien escribió: todo sale firmado "Bot"',
+    ).toBe(true);
+  });
+
+  it('la plantilla muestra lo que el cliente LEYÓ, no el nombre del archivo', () => {
+    expect(
+      /payload\?\.body/.test(cpApi),
+      '`content` en un wa_template es un código; `payload.body` es el mensaje armado',
+    ).toBe(true);
+  });
+});
