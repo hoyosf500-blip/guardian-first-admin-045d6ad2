@@ -79,7 +79,7 @@ export function leerChat(
     // con la respuesta de la lectura SIGUIENTE y cruzar los datos. Con `once`
     // (se auto-quita al disparar) + `off` en el timeout, cada lectura queda
     // aislada. `let t` primero evita cualquier TDZ entre los dos closures.
-    const t: ReturnType<typeof setTimeout>;
+    let t: ReturnType<typeof setTimeout>;
     const onResp = (data: unknown) => {
       clearTimeout(t);
       // La respuesta bien formada es un array de UN objeto con `mensajes`:
