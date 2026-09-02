@@ -49,6 +49,20 @@ import {
 } from "../_shared/plantillasMeta.ts";
 import { ensureFreshImporchatToken, decodeJwtExp, IMPORCHAT_BASE_DEFAULT } from "../_shared/imporchatSession.ts";
 import { fechaHoraLocal } from "../_shared/horaLocal.ts";
+import { respuestaPing } from "../_shared/versionEdge.ts";
+
+/**
+ * ⛔ MARCA DE LA VERSIÓN DESPLEGADA. Subirla en el MISMO commit que cambie algo,
+ * o el ping miente.
+ *
+ * Las tres funciones de ImporChat eran las únicas del repo que NO podían
+ * contestar "¿qué código estás corriendo?" — verificado el 2-sep-2026: al
+ * pedirles `?ping=1` devolvían el error de validación de siempre. Lovable no
+ * redespliega edge functions al publicar, y sin esto la única forma de saber si
+ * un deploy llegó era adivinar comparando comportamientos. Ese agujero ya costó
+ * dos rondas enteras en agosto (ver `lovable_despliega_codigo_viejo`).
+ */
+const VERSION = "importchat-plantillas 2026-09-02.1 primer-ping";
 
 const BASE_IC = "https://chat.imporfactory.app/api/v1";
 const TIMEOUT_MS = 25_000;
@@ -86,6 +100,7 @@ async function postIC(ruta: string, token: string, cuerpo: unknown): Promise<{ o
 Deno.serve(async (req) => {
   const cors = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  { const p = respuestaPing(req, VERSION, cors); if (p) return p; }
 
   const sb = createClient(
     Deno.env.get("SUPABASE_URL") ?? "",

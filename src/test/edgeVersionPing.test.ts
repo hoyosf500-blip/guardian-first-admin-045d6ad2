@@ -32,6 +32,18 @@ const REQUERIDAS = [
   "importchat-sync",
   "resumen-diario",
   "dropi-open-incidences",
+  // Las seis del chat. Las tres de ImporChat eran las únicas del repo que NO
+  // podían contestar qué versión corrían — verificado el 2-sep-2026 pidiéndoles
+  // `?ping=1` en producción: devolvían el error de validación de siempre. Y
+  // justo ese día hubo que redesplegar `importchat-plantillas` por un cambio en
+  // `_shared/plantillasMeta.ts`, sin ninguna forma de comprobar que llegó.
+  "importchat-chat",
+  "importchat-send",
+  "importchat-plantillas",
+  "chateapro-chat",
+  "chateapro-send",
+  "chateapro-plantillas",
+  "chateapro-sync",
 ] as const;
 
 /** Lo primero que aparece en el handler y ya es "auth". El ping va antes. */
