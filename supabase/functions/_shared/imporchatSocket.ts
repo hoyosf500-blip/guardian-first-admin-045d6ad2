@@ -79,6 +79,23 @@ export function leerChat(
     // con la respuesta de la lectura SIGUIENTE y cruzar los datos. Con `once`
     // (se auto-quita al disparar) + `off` en el timeout, cada lectura queda
     // aislada. `let t` primero evita cualquier TDZ entre los dos closures.
+    //
+    // ⛔⛔ NO CAMBIAR A `const`, Y NO CORRER `eslint --fix` SOBRE ESTA LÍNEA.
+    //
+    // `prefer-const` cree que `t` nunca se reasigna porque la asignación vive
+    // DENTRO de un closure de más abajo. Pero `const t: T;` sin inicializador
+    // **no es JavaScript válido**: el módulo no compila y la función ni siquiera
+    // arranca. Y como el CI corre `eslint supabase/functions` de forma
+    // BLOQUEANTE, la regla empuja a escribir el código que revienta producción.
+    //
+    // Ya pasó: el commit `2e9d879` (30-ago-2026) hizo exactamente ese cambio y
+    // dejó `importchat-chat` e `importchat-send` sin poder bootear **durante
+    // tres días**, sin que nadie se enterara — `tsc` no mira
+    // `supabase/functions/` y el resto del lint pasaba en verde. Se descubrió
+    // recién el 2-sep, al redesplegarlas por primera vez desde entonces.
+    //
+    // El guardián `src/test/edgeConstSinValor.test.ts` vigila que no vuelva.
+    // eslint-disable-next-line prefer-const
     let t: ReturnType<typeof setTimeout>;
     const onResp = (data: unknown) => {
       clearTimeout(t);
