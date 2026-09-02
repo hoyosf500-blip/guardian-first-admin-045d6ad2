@@ -220,7 +220,12 @@ describe('noSoportada — decir por qué, en vez de mandar algo roto', () => {
   it('marca la que lleva video y explica dónde mandarla', () => {
     const [p] = parsearPlantillas([CON_VIDEO]);
     expect(p.noSoportada).toMatch(/video/i);
-    expect(p.noSoportada).toMatch(/ImporChat/);
+    // ⛔ El motivo dice DÓNDE mandarla, pero sin nombrar un canal: desde el
+    // 2-sep-2026 esta función también sirve a Colombia, que atiende por Chatea
+    // Pro. Mandar a una asesora colombiana a ImporChat la manda a la app de
+    // otro país.
+    expect(p.noSoportada).toMatch(/panel de chat/);
+    expect(p.noSoportada).not.toMatch(/ImporChat/);
   });
 
   it('marca la que tiene un botón con enlace variable', () => {

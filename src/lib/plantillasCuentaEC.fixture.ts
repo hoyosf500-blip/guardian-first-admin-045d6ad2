@@ -80,7 +80,7 @@ export const PLANTILLAS_EC: readonly PlantillaMeta[] = [
   {
     nombre: 'guia_generada_k1', categoria: 'UTILITY', idioma: 'es',
     botones: ['Descargar Guía', 'Seguimiento del pedido'],
-    noSoportada: 'Tiene un botón con un enlace personalizado (guía o carrito) que Guardian no arma. Esta se manda desde ImporChat.',
+    noSoportada: 'Tiene un botón con un enlace personalizado (guía o carrito) que Guardian no arma. Esta hay que mandarla desde el panel de chat.',
     variables: [],
     cuerpo: 'La guía de envío de tu pedido ha sido generada. El tiempo estimado de entrega es de 2 a 3 días hábiles.',
   },

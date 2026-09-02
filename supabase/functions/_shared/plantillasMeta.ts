@@ -151,11 +151,15 @@ export function parsearPlantillas(crudas: unknown): PlantillaMeta[] {
     const formatoHeader = texto(header?.format).toUpperCase();
     let noSoportada: string | null = null;
     if (["IMAGE", "VIDEO", "DOCUMENT"].includes(formatoHeader)) {
-      noSoportada = `Lleva ${formatoHeader === "IMAGE" ? "una imagen" : formatoHeader === "VIDEO" ? "un video" : "un archivo"} adjunto. Esta se manda desde ImporChat.`;
+      // ⛔ El texto NO puede nombrar a ImporChat. Desde el 2-sep-2026 esta misma
+      // función sirve a Colombia, que atiende por Chatea Pro: mandar a una
+      // asesora colombiana a ImporChat la manda a la app de OTRO PAÍS. "El panel
+      // de chat" es cierto en los dos lados.
+      noSoportada = `Lleva ${formatoHeader === "IMAGE" ? "una imagen" : formatoHeader === "VIDEO" ? "un video" : "un archivo"} adjunto. Esta hay que mandarla desde el panel de chat.`;
     } else if (formatoHeader === "TEXT" && /\{\{\d+\}\}/.test(texto(header?.text))) {
-      noSoportada = "Su título lleva un dato variable que Guardian todavía no llena. Esta se manda desde ImporChat.";
+      noSoportada = "Su título lleva un dato variable que Guardian todavía no llena. Esta hay que mandarla desde el panel de chat.";
     } else if (crudosBotones.some((b) => /\{\{\d+\}\}/.test(texto(b?.url)))) {
-      noSoportada = "Tiene un botón con un enlace personalizado (guía o carrito) que Guardian no arma. Esta se manda desde ImporChat.";
+      noSoportada = "Tiene un botón con un enlace personalizado (guía o carrito) que Guardian no arma. Esta hay que mandarla desde el panel de chat.";
     }
 
     out.push({

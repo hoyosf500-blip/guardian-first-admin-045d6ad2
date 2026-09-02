@@ -42,7 +42,7 @@ export interface ResultadoEnvio {
  * queda sin saber si el cliente recibió el mensaje o no.
  */
 export const FALTA_DESPLEGAR =
-  'El envío desde Guardian todavía no está activado en el servidor. Escribile desde ImporChat y avisá para que lo activen.';
+  'El envío desde Guardian todavía no está activado en el servidor. Escribile desde el panel de chat de tu tienda y avisá para que lo activen.';
 
 /**
  * Datos para que la gestión que el SERVIDOR registra se vea en la pantalla al

@@ -23,7 +23,7 @@ export type EstadoPlantillas = 'inicial' | 'cargando' | 'ok' | 'sin_config' | 'e
 /** Lovable no redespliega edge functions con un push: la función puede no
  *  existir todavía en el servidor y el gateway contesta NOT_FOUND. */
 export const PLANTILLAS_SIN_DESPLEGAR =
-  'El envío de plantillas todavía no está activado en el servidor. Mandala desde ImporChat y avisá para que lo activen.';
+  'El envío de plantillas todavía no está activado en el servidor. Mandala desde el panel de chat de tu tienda y avisá para que lo activen.';
 
 async function motivoReal(error: unknown, porDefecto: string) {
   return motivoEdge(error, await cuerpoDelError(error), PLANTILLAS_SIN_DESPLEGAR, porDefecto);

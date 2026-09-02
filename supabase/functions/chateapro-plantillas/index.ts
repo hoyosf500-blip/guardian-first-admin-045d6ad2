@@ -29,7 +29,7 @@ import {
   ChateaproError,
 } from "../_shared/chateaproApi.ts";
 
-const VERSION = "chateapro-plantillas 2026-09-02.2 medido-contra-la-api";
+const VERSION = "chateapro-plantillas 2026-09-02.3 motivo-sin-nombrar-canal";
 
 /** Lo que `/whatsapp-template/list` devuelve de verdad (medido 2-sep-2026). */
 interface PlantillaCruda {

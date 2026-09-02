@@ -40,7 +40,7 @@ interface Respuesta {
  * la asesora veía el texto crudo en inglés de supabase-js al abrir una tarjeta.
  */
 const FALTA_LEER =
-  'La lectura del chat todavía no está activada en el servidor. Abrí ImporChat para ver la conversación y avisá para que la activen.';
+  'La lectura del chat todavía no está activada en el servidor. Abrí el panel de chat de tu tienda para ver la conversación y avisá para que la activen.';
 
 /**
  * Caché del hilo, compartido entre montajes.
