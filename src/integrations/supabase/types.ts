@@ -1721,6 +1721,41 @@ export type Database = {
           },
         ]
       }
+      store_chateapro_config: {
+        Row: {
+          api_base: string
+          api_key: string
+          created_at: string
+          habilitado: boolean
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          api_base?: string
+          api_key: string
+          created_at?: string
+          habilitado?: boolean
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          api_base?: string
+          api_key?: string
+          created_at?: string
+          habilitado?: boolean
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_chateapro_config_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: true
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       store_dropi_config: {
         Row: {
           country_code: string
@@ -2055,6 +2090,7 @@ export type Database = {
       stores: {
         Row: {
           brand_logo_url: string | null
+          canal_chat: string | null
           country_code: string
           created_at: string
           created_by: string | null
@@ -2068,6 +2104,7 @@ export type Database = {
         }
         Insert: {
           brand_logo_url?: string | null
+          canal_chat?: string | null
           country_code?: string
           created_at?: string
           created_by?: string | null
@@ -2081,6 +2118,7 @@ export type Database = {
         }
         Update: {
           brand_logo_url?: string | null
+          canal_chat?: string | null
           country_code?: string
           created_at?: string
           created_by?: string | null
