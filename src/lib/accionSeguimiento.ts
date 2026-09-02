@@ -236,12 +236,28 @@ const ETIQUETAS: readonly ReglaEtiqueta[] = [
   { prueba: /en_camino_hoy/, etiqueta: 'Avisarle que le llega hoy' },
   { prueba: /zona_entrega/, etiqueta: 'Avisarle que el repartidor va en camino' },
   { prueba: /en_transito|transito/, etiqueta: 'Avisarle que su pedido va en camino' },
+  { prueba: /en_reparto|reparto/, etiqueta: 'Avisarle que ya salió a entrega' },
   { prueba: /direccion_incompleta|direccion/, etiqueta: 'Pedirle la dirección completa' },
   { prueba: /novedad/, etiqueta: 'Avisarle que no lo pudieron entregar' },
+  // ⛔ VA DESPUÉS DE `novedad` A PROPÓSITO. Colombia tiene
+  // `novedad_reclamo_oficina_1_utilidad`, que se llama "oficina" pero es un
+  // aviso de NOVEDAD ("se registra una novedad en el proceso de entrega"). Si
+  // esta fila subiera, se anunciaría como "llegó a la agencia" — una noticia
+  // buena sobre un problema.
+  { prueba: /oficina/, etiqueta: 'Avisarle que llegó a la agencia' },
+  // El nombre solo dice "seguimiento" + "recordatorio", así que la etiqueta
+  // dice exactamente eso y nada más. La de Colombia habla de un retiro en
+  // oficina, pero eso está en el CUERPO y acá solo se lee el nombre:
+  // deducirlo sería inventarle el tema a un mensaje que le llega a un cliente.
+  { prueba: /^seguimiento_recordatorio/, etiqueta: 'Recordarle que lo tiene pendiente' },
   { prueba: /rescate_devolucion|rescate/, etiqueta: 'Ofrecerle reenviárselo antes de que se devuelva' },
   { prueba: /seguimiento_reactivar|reactivar/, etiqueta: 'Retomar el pedido que quedó frío' },
   { prueba: /ultima_oportunidad/, etiqueta: 'Última oportunidad antes de cancelar' },
-  { prueba: /reconfirmacion|recordatorio_confirmacion/, etiqueta: 'Volver a pedirle que confirme' },
+  // Ecuador la nombra `recordatorio_confirmacion`; Colombia, al revés
+  // (`confirmacion_recordatorio_1_v2_utilidad`). Sin las dos formas, 4 de las 8
+  // de confirmación de la cuenta colombiana se leían "Pedirle que confirme el
+  // pedido" — o sea, el primer aviso y el recordatorio con el mismo nombre.
+  { prueba: /reconfirmacion|recordatorio_confirmacion|confirmacion(es)?_recordatorio/, etiqueta: 'Volver a pedirle que confirme' },
   { prueba: /confirmacion_datos/, etiqueta: 'Pedirle que confirme sus datos' },
   { prueba: /confirmacion_pedido|confirmacion/, etiqueta: 'Pedirle que confirme el pedido' },
   { prueba: /entregado_gracias|entregado/, etiqueta: 'Agradecerle la compra' },
@@ -413,15 +429,34 @@ export type GrupoPlantillaClave =
   | 'agencia' | 'guia' | 'reparto' | 'novedad' | 'rescate'
   | 'confirmacion' | 'entregado' | 'promo' | 'otras';
 
-interface ReglaGrupo { clave: GrupoPlantillaClave; titulo: string; prueba: RegExp }
+interface ReglaGrupo {
+  clave: GrupoPlantillaClave;
+  titulo: string;
+  prueba: RegExp;
+  /** Aunque `prueba` matchee, esta fila NO gana si el nombre matchea acá.
+   *  Existe para las plantillas cuyo nombre nombra DOS cosas — ver `agencia`. */
+  excepto?: RegExp;
+}
 
 /** ORDENADA: la primera que matchea gana. `antes_generar_guia` cae en «guía»
  *  aunque también diga "generar"; `remarketing_despacho_listo` cae en «en
  *  camino» porque habla del despacho, no de la promoción. */
 const GRUPOS: readonly ReglaGrupo[] = [
-  { clave: 'agencia', titulo: 'Retiro en agencia', prueba: /retiro|agencia|oficina/ },
+  // ⛔ `excepto` en vez de reordenar la lista (2-sep-2026). Colombia tiene
+  // `novedad_reclamo_oficina_1_utilidad`: se llama "oficina" pero avisa una
+  // NOVEDAD, y caía en «Retiro en agencia», donde la asesora la agarraría
+  // creyendo que le dice al cliente que su paquete está listo para recoger.
+  //
+  // El primer arreglo fue subir la fila de `novedad` arriba de esta — y rompió
+  // Ecuador, porque ESTA MISMA LISTA es también el orden en que se DIBUJAN los
+  // grupos (`agruparPlantillas`): las pantallas sin fase propia pasaban a
+  // abrir con "Novedad y dirección" en vez de "Retiro en agencia". Lo agarró
+  // `accionSeguimiento.test.ts`. Son dos cosas distintas y ahora se tratan
+  // distinto: el orden de la lista es el de PANTALLA, y la excepción de
+  // clasificación vive en la fila que la necesita.
+  { clave: 'agencia', titulo: 'Retiro en agencia', prueba: /retiro|agencia|oficina/, excepto: /novedad/ },
   { clave: 'guia', titulo: 'Guía y despacho', prueba: /guia/ },
-  { clave: 'reparto', titulo: 'En camino y entrega', prueba: /en_camino|zona_entrega|transito|despacho_listo/ },
+  { clave: 'reparto', titulo: 'En camino y entrega', prueba: /en_camino|zona_entrega|transito|despacho_listo|reparto/ },
   { clave: 'novedad', titulo: 'Novedad y dirección', prueba: /novedad|direccion/ },
   { clave: 'rescate', titulo: 'Rescate y devolución', prueba: /rescate|reactivar|ultima_oportunidad/ },
   { clave: 'confirmacion', titulo: 'Confirmación del pedido', prueba: /confirmacion|reconfirmacion/ },
@@ -432,7 +467,7 @@ const GRUPO_OTRAS: ReglaGrupo = { clave: 'otras', titulo: 'Otras', prueba: /./ }
 
 export function grupoPlantilla(nombre: string | null | undefined): ReglaGrupo {
   const n = sinTildes(String(nombre || ''));
-  return GRUPOS.find((g) => g.prueba.test(n)) ?? GRUPO_OTRAS;
+  return GRUPOS.find((g) => g.prueba.test(n) && !g.excepto?.test(n)) ?? GRUPO_OTRAS;
 }
 
 /** El grupo que atiende cada fase del kanban. Sin entrada = la fase no tiene

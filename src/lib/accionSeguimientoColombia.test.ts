@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { sugerirValores, faltantes, renderizar, type DatosPedido, type PlantillaMeta } from '../../supabase/functions/_shared/plantillasMeta';
-import { plantillaParaAccion, accionDePlantilla } from './accionSeguimiento';
+import { sugerirValores, faltantes, renderizar, ordenarParaFase, type DatosPedido, type PlantillaMeta } from '../../supabase/functions/_shared/plantillasMeta';
+import { plantillaParaAccion, accionDePlantilla, grupoPlantilla, etiquetaPlantilla } from './accionSeguimiento';
 import { PLANTILLAS_CO } from './plantillasCuentaCO.fixture';
 import { PLANTILLAS_EC } from './plantillasCuentaEC.fixture';
 
@@ -134,6 +134,62 @@ describe('las fases sin plantilla en la cuenta se apagan, no inventan', () => {
     const guias = PLANTILLAS_CO.filter((p) => /guia_generada/.test(p.nombre));
     expect(guias.length).toBe(3);
     for (const g of guias) expect(g.noSoportada).toBeTruthy();
+  });
+});
+
+/**
+ * El SELECTOR es la otra mitad del pedido del dueño (30-ago-2026): *"que salgan
+ * las plantillas dependiendo de dónde esté el asesor: si está en retiro en
+ * oficina que le salgan esas primero"*. En Colombia no pasaba.
+ */
+describe('el selector de plantillas, con los nombres de Colombia', () => {
+  it('⛔ en la columna de oficina ya no suben las de CONFIRMACIÓN', () => {
+    // `POR_FASE.oficina` buscaba `retiro_agencia|retiro|agencia` y ninguna
+    // plantilla colombiana se llama así: la fase quedaba sin match y arriba
+    // salían las de confirmar, en la columna más grande del tablero.
+    const orden = ordenarParaFase([...PLANTILLAS_CO], 'oficina').slice(0, 2).map((p) => p.nombre);
+    expect(orden).toEqual(['seguimiento_reclamo_oficina_1_utilidad', 'seguimiento_en_oficina_v2']);
+  });
+
+  it('en reparto suben las de reparto', () => {
+    expect(ordenarParaFase([...PLANTILLAS_CO], 'reparto')[0].nombre).toBe('seguimiento_en_reparto_v2');
+  });
+
+  /**
+   * ⛔ `novedad_reclamo_oficina_1_utilidad` se llama "oficina" y NO es de
+   * agencia: dice "se registra una novedad en el proceso de entrega". Estaba
+   * cayendo en el grupo «Retiro en agencia», donde la asesora la agarraría
+   * creyendo que le avisa al cliente que su paquete está listo para recoger.
+   */
+  it('la que se llama «oficina» pero avisa una novedad, va en Novedad', () => {
+    expect(grupoPlantilla('novedad_reclamo_oficina_1_utilidad').clave).toBe('novedad');
+    expect(etiquetaPlantilla('novedad_reclamo_oficina_1_utilidad')).toBe('Avisarle que no lo pudieron entregar');
+    // Y las que SÍ son de agencia siguen en agencia.
+    expect(grupoPlantilla('seguimiento_reclamo_oficina_1_utilidad').clave).toBe('agencia');
+    expect(grupoPlantilla('seguimiento_en_oficina_v2').clave).toBe('agencia');
+  });
+
+  it('las de reparto salen del cajón «Otras»', () => {
+    expect(grupoPlantilla('seguimiento_en_reparto_v2').clave).toBe('reparto');
+    expect(grupoPlantilla('seguimiento_en_reparto_v2_utilidad').clave).toBe('reparto');
+  });
+
+  /**
+   * Ecuador nombra el recordatorio `recordatorio_confirmacion`; Colombia, al
+   * revés. Sin las dos formas, 4 de las 8 de confirmación se leían igual que el
+   * primer aviso: la asesora no podía distinguir cuál era cuál.
+   */
+  it('el recordatorio de confirmación no se llama igual que el primer aviso', () => {
+    expect(etiquetaPlantilla('confirmacion_recordatorio_1_v2_utilidad')).toBe('Volver a pedirle que confirme');
+    expect(etiquetaPlantilla('confirmaciones_recordatorio_2_v2')).toBe('Volver a pedirle que confirme');
+    expect(etiquetaPlantilla('confirmacion_sin_imagen_v2')).toBe('Pedirle que confirme el pedido');
+  });
+
+  it('⛔ ninguna operativa se le muestra a la asesora con el nombre crudo de Meta', () => {
+    // Dos quedan afuera a propósito y se dicen por nombre: `interrapidisimo_bucle`
+    // es de una transportadora puntual y su nombre no dice qué hace.
+    const crudas = PLANTILLAS_CO.filter((p) => !etiquetaPlantilla(p.nombre)).map((p) => p.nombre);
+    expect(crudas).toEqual(['interrapidisimo_bucle']);
   });
 });
 

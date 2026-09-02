@@ -472,7 +472,14 @@ export function sugerirValores(p: PlantillaMeta, d: DatosPedido): Record<number,
 // que reconoce la cola de Confirmar por su estado real y la manda a
 // `procesamiento`, que es la fila de acá abajo con la regex correcta.
 const POR_FASE: Record<string, RegExp> = {
-  oficina: /retiro_agencia|retiro|agencia/,
+  // ⛔ `seguimiento_*_oficina` es como Colombia nombra las de agencia, y sin
+  // ellas esta fila no matcheaba NINGUNA de esa cuenta: en la columna "RECLAME
+  // EN OFICINA" —la más grande del tablero— el selector subía primero las de
+  // CONFIRMACIÓN. Medido el 2-sep-2026.
+  //
+  // No se pone `oficina` a secas porque `novedad_reclamo_oficina_1_utilidad`
+  // se llama así y NO es de agencia: avisa una novedad.
+  oficina: /retiro_agencia|retiro|agencia|seguimiento_\w*oficina/,
   novedad: /novedad/,
   novedad_sol: /novedad/,
   reparto: /zona_entrega|en_transito|transito|reparto/,
