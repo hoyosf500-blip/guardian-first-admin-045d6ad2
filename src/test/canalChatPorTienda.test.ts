@@ -249,6 +249,32 @@ describe('ninguna pantalla nombra el canal del otro país', () => {
     ).toBe(true);
   });
 
+  /**
+   * ⛔ Verificado EN PRODUCCIÓN el 2-sep-2026, con Rushmira (Colombia) abierta
+   * y el pedido 87992083 de PATRICIA MURILLO: mientras cargaba, el hilo decía
+   * «Leyendo la conversación en ImporChat…». ImporChat es la app de ECUADOR.
+   *
+   * Los tres archivos de acá son los que la asesora colombiana tiene delante
+   * todo el turno: el hilo, el `title` de la rayita de actividad del tablero y
+   * la bandeja de "Escribieron". Ninguno puede escribir el nombre de un canal a
+   * mano — se pregunta con `nombreCanal(useCanalChat())`.
+   */
+  it('el hilo, el tablero y la bandeja preguntan el canal en vez de clavarlo', () => {
+    const pantallas: [string, string][] = [
+      ['el hilo de la conversación', 'src/components/seguimiento/ConversacionChat.tsx'],
+      ['el tablero de Seguimiento', 'src/components/seguimiento/SegBoard.tsx'],
+      ['la bandeja de Escribieron', 'src/pages/InboxPage.tsx'],
+    ];
+    for (const [que, ruta] of pantallas) {
+      const src = sinComentarios(leer(ruta));
+      expect(/nombreCanal\(/.test(src), `${que} debe usar nombreCanal(useCanalChat())`).toBe(true);
+      expect(
+        /ImporChat/.test(src),
+        `${que} clava "ImporChat" en un texto visible: en Colombia el canal es Chatea Pro`,
+      ).toBe(false);
+    }
+  });
+
   it('el motivo de una plantilla bloqueada no nombra un canal', () => {
     expect(/panel de chat/.test(motivos)).toBe(true);
     expect(

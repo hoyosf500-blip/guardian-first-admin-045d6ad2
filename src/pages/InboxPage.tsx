@@ -4,6 +4,7 @@ import { MessageSquare, Phone, MapPin, Package, Clock, Inbox, CheckCircle2, Load
 import { useStore } from '@/contexts/StoreContext';
 import { useInboxEsperando, type InboxItem } from '@/hooks/useInboxEsperando';
 import { useImporchatSyncHealth } from '@/hooks/useImporchatSyncHealth';
+import { useCanalChat, nombreCanal } from '@/hooks/useCanalChat';
 import { haceCuantoMs } from '@/lib/actividadChat';
 import { getWhatsAppPhone, formatPhone } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
@@ -49,6 +50,10 @@ export default function InboxPage() {
   const { activeStoreId, activeStore } = useStore();
   const { items, status } = useInboxEsperando(activeStoreId);
   const salud = useImporchatSyncHealth(activeStoreId);
+  // El canal se pregunta por tienda: Ecuador atiende por ImporChat y Colombia
+  // por Chatea Pro. Escribirlo a mano mandaba a la asesora colombiana a revisar
+  // la app de otro país.
+  const canalNombre = nombreCanal(useCanalChat());
   const recordContacto = useRecordGestion();
 
   // Las plantillas aprobadas se piden AL ENTRAR, no cuando la asesora ya apretó
@@ -94,7 +99,7 @@ export default function InboxPage() {
 
       {feedDudoso && (
         <div className="mb-4 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
-          ⚠️ El sync de ImporChat está fallando o lleva mucho sin correr — esta lista puede estar
+          ⚠️ El sync de {canalNombre} está fallando o lleva mucho sin correr — esta lista puede estar
           <strong> incompleta</strong>. Si dice "nadie esperando", puede que sí haya clientes esperando.
           Avisá para revisar la conexión.
         </div>
@@ -114,7 +119,7 @@ export default function InboxPage() {
 
       {status === 'not_ready' && (
         <div className="rounded-2xl border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
-          La bandeja se prende cuando ImporChat esté configurado en esta tienda.
+          La bandeja se prende cuando {canalNombre} esté configurado en esta tienda.
         </div>
       )}
 

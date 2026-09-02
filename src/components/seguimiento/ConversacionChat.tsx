@@ -3,6 +3,7 @@ import { RefreshCw, AlertTriangle, MessagesSquare } from 'lucide-react';
 import type { MensajeConversacion } from '@/lib/conversacion';
 import type { EstadoHilo } from '@/hooks/useConversacion';
 import { cn } from '@/lib/utils';
+import { useCanalChat, nombreCanal } from '@/hooks/useCanalChat';
 
 /**
  * La conversación de WhatsApp tal como pasó, dentro de Guardian.
@@ -136,6 +137,11 @@ function Adjunto({ url, tipo, transcripcion }: { url: string; tipo: string | nul
 
 export default function ConversacionChat({ mensajes, estado, error, onRecargar, className, mostrarEncabezado = true, altoClase = 'min-h-[120px] max-h-[260px]' }: Props) {
   const finRef = useRef<HTMLDivElement>(null);
+  // ⛔ El nombre del canal NO se puede escribir a mano: EC lee por ImporChat y
+  // CO por Chatea Pro. Visto en producción el 2-sep-2026 con una tienda de
+  // Colombia abierta: mientras cargaba decía «Leyendo la conversación en
+  // ImporChat…» sobre un chat que vive en otra app, de otro país.
+  const canal = useCanalChat();
 
   // Lo último es lo que importa: el hilo se abre abajo, como cualquier chat.
   useEffect(() => {
@@ -190,7 +196,7 @@ export default function ConversacionChat({ mensajes, estado, error, onRecargar, 
                 className={cn('h-8 rounded-xl bg-muted/40 animate-pulse', i % 2 ? 'ml-auto w-1/2' : 'w-2/3')}
               />
             ))}
-            <p className="text-[11px] text-muted-foreground text-center pt-1">Leyendo la conversación en ImporChat…</p>
+            <p className="text-[11px] text-muted-foreground text-center pt-1">Leyendo la conversación en {nombreCanal(canal)}…</p>
           </div>
         ) : estado === 'error' || estado === 'sin_chat' ? (
           <div className="flex items-start gap-2 text-[11px] text-warning py-2">

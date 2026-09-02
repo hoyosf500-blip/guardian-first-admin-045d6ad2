@@ -27,6 +27,7 @@ import BotonLlamar from '@/components/seguimiento/BotonLlamar';
 import { tocaLlamar } from '@/lib/escalarLlamada';
 import { ventanaWhatsapp, MOTIVO_VENTANA } from '@/lib/ventanaWhatsapp';
 import { cn, formatCOP } from '@/lib/utils';
+import { useCanalChat, nombreCanal } from '@/hooks/useCanalChat';
 
 /**
  * SegBoard — tablero estilo Kommo para /seguimiento. Columnas por estado de
@@ -489,10 +490,15 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   // El detalle SÍ se conserva, pero en el `title`: las dos fuentes (lo que
   // ImporChat registró y lo que declaró la asesora) y quién lo tocó. Era lo que
   // ocupaba cuatro renglones en la cara de la tarjeta.
+  // ⛔ El canal se PREGUNTA, no se escribe a mano: Ecuador atiende por ImporChat
+  // y las dos de Colombia por Chatea Pro. Este `title` decía «ImporChat» en las
+  // tres tiendas, o sea nombraba la app de otro país. `canalDeTienda` cachea una
+  // promesa por tienda, así que las ~400 tarjetas comparten una sola consulta.
+  const canalNombre = nombreCanal(useCanalChat());
   const detalleCiclo = [
     actividad?.salienteAt != null
-      ? `ImporChat: ${actividad.salienteTipo === 'directo' ? 'mensaje' : 'plantilla'} ${haceCuantoMs(actividad.salienteAt)}`
-      : actividad ? 'ImporChat: no registra ningún mensaje del negocio' : 'ImporChat: conversación sin leer',
+      ? `${canalNombre}: ${actividad.salienteTipo === 'directo' ? 'mensaje' : 'plantilla'} ${haceCuantoMs(actividad.salienteAt)}`
+      : actividad ? `${canalNombre}: no registra ningún mensaje del negocio` : `${canalNombre}: conversación sin leer`,
     actividad?.entranteAt != null ? `El cliente escribió ${haceCuantoMs(actividad.entranteAt)}` : null,
     gEquipo
       ? `${nombreDe ? nombreDe(gEquipo.ultimoPor) : 'Una asesora'}: ${gEquipo.ultimoResult} ${haceCuanto(gEquipo.ultimoAt) || 'hoy'}${gEquipo.intentos > 1 ? ` · ${gEquipo.intentos} gestiones hoy` : ''}`
