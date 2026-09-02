@@ -14,9 +14,10 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 import { isStoreMember } from "../_shared/dropiStoreConfig.ts";
 import { loadShopifyConfig, getShopifyAccessToken } from "../_shared/shopifyStoreConfig.ts";
 import { respuestaPing } from "../_shared/versionEdge.ts";
+import { elegirPedidoDropi, estaCancelado } from "../_shared/reconcileMatch.ts";
 
 // Subir esta marca EN EL MISMO COMMIT que el cambio, o el ping miente.
-const VERSION = "shopify-reconcile 2026-09-02.1 cuadre-del-dia";
+const VERSION = "shopify-reconcile 2026-09-02.2 empareja-el-vivo";
 
 const SHOPIFY_API_VERSION = "2024-10";
 
@@ -239,18 +240,12 @@ Deno.serve(async (req: Request) => {
     };
 
     const usedDropi = new Set<number>();
+    /** Ver `_shared/reconcileMatch.ts`: elige el pedido VIVO más cercano, no el
+     *  primero de la lista. Probado en `src/lib/reconcileMatch.test.ts`. */
     function matchDropi(tel: string, shopT: number): number {
-      const lo = shopT - 1 * 86400000;
-      // +45d (antes +6d): al subir pedidos viejos en bloque, la orden de Dropi se
-      // crea HOY aunque el pedido Shopify sea de hace semanas → con +6d quedaban
-      // como falsos "sin pasar" aunque YA estuvieran en Dropi. 45d cubre el catch-up.
-      const hi = shopT + 45 * 86400000;
-      for (let i = 0; i < dropiList.length; i++) {
-        if (usedDropi.has(i)) continue;
-        const d = dropiList[i];
-        if (d.tel === tel && d.t >= lo && d.t <= hi) { usedDropi.add(i); return i; }
-      }
-      return -1;
+      const i = elegirPedidoDropi(dropiList, tel, shopT, usedDropi);
+      if (i >= 0) usedDropi.add(i);
+      return i;
     }
 
     // Emparejar del más viejo al más nuevo (asignación estable). En los pares
@@ -311,7 +306,7 @@ Deno.serve(async (req: Request) => {
     for (let i = 0; i < dropiList.length; i++) {
       if (usedDropi.has(i)) continue;
       const d = dropiList[i];
-      if (d.estado.toUpperCase().startsWith("CANCELAD")) continue;
+      if (estaCancelado(d.estado)) continue;
       const ventaCubierta = telsMatched.get(d.tel);
       if (!ventaCubierta) continue;
       duplicates.push({
