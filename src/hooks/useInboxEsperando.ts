@@ -41,7 +41,18 @@ export interface InboxItem {
   diasEnEstado: number | null;
 }
 
-export type InboxStatus = 'cargando' | 'ok' | 'not_ready' | 'error';
+/**
+ * `sin_medir` NO es lo mismo que `ok` con la lista vacía.
+ *
+ * ⛔ Visto en producción el 2-sep-2026 con Rushmira (Colombia): la pantalla
+ * decía «Nadie esperando respuesta — todos los que escribieron ya fueron
+ * atendidos 🎉» mientras 39 clientes esperaban de verdad en Chatea Pro, 22 de
+ * ellos hacía más de un día. La tienda tenía CERO pedidos con
+ * `chat_entrante_at` (Ecuador tenía 2.196 de 3.426) porque el sync de ese canal
+ * todavía no existía. Un cero afirmado sobre un dato que nunca se midió se lee
+ * como una buena noticia, y es el peor error que puede cometer esta pantalla.
+ */
+export type InboxStatus = 'cargando' | 'ok' | 'sin_medir' | 'not_ready' | 'error';
 
 // Estados terminales: un pedido entregado/cancelado no es una mano levantada que
 // haya que atender ya. Se filtran client-side (los borrados incluidos).
@@ -120,7 +131,9 @@ export function useInboxEsperando(storeId: string | null) {
     // Quien lleva MÁS esperando, primero: es a quien más urge no dejar enfriar.
     out.sort((a, b) => a.entranteAt - b.entranteAt);
     setItems(out);
-    setStatus('ok');
+    // Ni una sola fila con dato de chat en toda la tienda = nadie lo está
+    // midiendo. No se puede afirmar «todos atendidos» sobre eso.
+    setStatus(filas.length === 0 ? 'sin_medir' : 'ok');
   }, [storeId]);
 
   useEffect(() => { void load(); }, [load]);

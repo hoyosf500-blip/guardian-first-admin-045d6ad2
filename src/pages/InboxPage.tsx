@@ -123,6 +123,17 @@ export default function InboxPage() {
         </div>
       )}
 
+      {status === 'sin_medir' && (
+        <div className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+          <p className="font-semibold">Todavía no puedo medir quién está esperando en esta tienda.</p>
+          <p className="text-xs mt-1 opacity-90">
+            Ningún pedido tiene registrada la actividad del chat, así que esta lista estaría vacía
+            aunque hubiera clientes esperando. <strong>No quiere decir que no haya nadie.</strong>{' '}
+            Mirá {canalNombre} directamente hasta que la sincronización esté corriendo.
+          </p>
+        </div>
+      )}
+
       {status === 'ok' && items.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
           <span className="w-12 h-12 rounded-2xl bg-success/14 border border-success/30 text-success flex items-center justify-center" aria-hidden="true">

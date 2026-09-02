@@ -98,6 +98,29 @@ export interface Suscriptor {
 }
 
 /**
+ * Una página del padrón de contactos (`GET /subscribers` sin filtro).
+ *
+ * Se usa desde `chateapro-sync` para la pregunta que la asesora no puede
+ * responder sola: **quién escribió y sigue sin respuesta**. La lista trae por
+ * contacto `last_message_at` y `last_message_type`, así que con una llamada
+ * por cada 100 contactos se sabe de todos, sin abrir una sola conversación.
+ *
+ * ⛔ `limit` tope 100 (lo dice la spec, y más devuelve 400). Nada de subirlo
+ * "para ir más rápido": es el mismo error que ya costó una tarde con el
+ * `pageSize` de Dropi.
+ */
+export async function listarSuscriptores(
+  cfg: ChateaproConfig,
+  page = 1,
+  limit = 100,
+): Promise<Array<Record<string, unknown>>> {
+  const r = await llamar<{ data?: Array<Record<string, unknown>> }>(cfg, "GET", "/subscribers", {
+    query: { page, limit: Math.min(100, Math.max(1, limit)) },
+  });
+  return Array.isArray(r?.data) ? r.data : [];
+}
+
+/**
  * Encuentra al cliente por teléfono.
  *
  * ⛔ MEDIDO el 2-sep-2026 contra la cuenta real, y NO es lo que yo había

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { CheckCircle2, AlertTriangle, AlertCircle, Loader2, Clock, KeyRound } from 'lucide-react';
 import { useImporchatSyncHealth, type ImporchatSyncStatus } from '@/hooks/useImporchatSyncHealth';
 import { useStore } from '@/contexts/StoreContext';
-import { useCanalChat } from '@/hooks/useCanalChat';
+import { useCanalChat, nombreCanal } from '@/hooks/useCanalChat';
 
 // Badge de salud de ImporChat (lo que el cliente nos escribe). Verde/amarillo/rojo
 // según corrió-y-guardó, MÁS un aviso propio de la llave de 7 días: si vence y no
@@ -44,18 +44,16 @@ function useMinuteTick(): void {
 
 export default function ImporchatSyncBadge({ size = 'sm', className = '' }: Props) {
   const { activeStoreId } = useStore();
-  const q = useImporchatSyncHealth(activeStoreId);
   const canal = useCanalChat();
+  // ⛔ Cada tienda vigila SU sync. Este badge decía «ImporChat sin correr» en
+  // Colombia —una alarma de la app de otro país— y por un rato se lo escondió
+  // ahí; esconderlo era peor: si el sync de Colombia se cuelga, la bandeja
+  // «Escribieron» se queda quieta y la pantalla se ve igual de tranquila que
+  // si no hubiera nadie esperando. Ese silencio dejó 39 clientes sin contestar,
+  // 22 de ellos por más de un día (medido el 2-sep-2026).
+  const nombre = nombreCanal(canal);
+  const q = useImporchatSyncHealth(activeStoreId, canal === 'chateapro' ? 'chateapro-sync' : 'importchat-sync');
   useMinuteTick();
-
-  // ⛔ Este badge habla de ImporChat, que es el canal de ECUADOR. En Colombia
-  // (Chatea Pro) decía «ImporChat sin correr» sobre un sync que ni siquiera
-  // corresponde a esa tienda: la asesora leía una alarma de una app que no es
-  // la suya. Visto en producción el 2-sep-2026 con una tienda de Colombia.
-  //
-  // El guard va DESPUÉS de todos los hooks a propósito: un `return` antes de
-  // ellos rompe el orden de hooks y tumba la pantalla (React #300/#308).
-  if (canal !== null && canal !== 'importchat') return null;
 
   if (q.isLoading) {
     return (
@@ -76,7 +74,7 @@ export default function ImporchatSyncBadge({ size = 'sm', className = '' }: Prop
   if (restante != null && restante <= 0) {
     return (
       <span className={`inline-flex items-center gap-1.5 rounded-full border border-danger/40 bg-danger/10 text-danger ${padding} ${className}`}
-        title="La llave de ImporChat venció y no se renovó. El WhatsApp del cliente NO está entrando. Hay que renovarla.">
+        title={`La llave de ${nombre} venció y no se renovó. El WhatsApp del cliente NO está entrando. Hay que renovarla.`}>
         <KeyRound size={size === 'md' ? 12 : 10} /> Llave vencida
       </span>
     );
@@ -84,7 +82,7 @@ export default function ImporchatSyncBadge({ size = 'sm', className = '' }: Prop
   if (restante != null && restante < 24) {
     return (
       <span className={`inline-flex items-center gap-1.5 rounded-full border border-orange/40 bg-orange/10 text-orange ${padding} ${className}`}
-        title={`La llave de ImporChat vence en ~${Math.max(1, Math.round(restante))}h y no se está renovando sola. Revisá la configuración.`}>
+        title={`La llave de ${nombre} vence en ~${Math.max(1, Math.round(restante))}h y no se está renovando sola. Revisá la configuración.`}>
         <KeyRound size={size === 'md' ? 12 : 10} /> Llave vence en {Math.max(1, Math.round(restante))}h
       </span>
     );
@@ -100,20 +98,20 @@ export default function ImporchatSyncBadge({ size = 'sm', className = '' }: Prop
   // Además la última corrida pudo terminar BIEN: las colgadas son las de antes.
   const colgado = q.data.colgadas > 0;
   const text = colgado
-    ? 'ImporChat: se está colgando'
+    ? `${nombre}: se está colgando`
     : status === 'failing'
-      ? 'ImporChat: falla al sincronizar'
+      ? `${nombre}: falla al sincronizar`
       : status === 'never'
-        ? 'ImporChat sin correr'
-        : `ImporChat ${formatRelative(hours)}`;
+        ? `${nombre} sin correr`
+        : `${nombre} ${formatRelative(hours)}`;
   const title = colgado
-    ? `${q.data.colgadas} de las últimas ${q.data.corridasVistas} corridas del sync de ImporChat arrancaron y nunca terminaron. `
+    ? `${q.data.colgadas} de las últimas ${q.data.corridasVistas} corridas del sync de ${nombre} arrancaron y nunca terminaron. `
       + 'Durante esas ventanas el WhatsApp del cliente NO entró: puede haber gente esperando respuesta que no aparece en ninguna pantalla.'
     : status === 'failing'
-      ? `La última corrida del sync de ImporChat falló${q.data.lastErrorMessage ? `: ${q.data.lastErrorMessage}` : ''}. Puede que el inbound no esté entrando.`
+      ? `La última corrida del sync de ${nombre} falló${q.data.lastErrorMessage ? `: ${q.data.lastErrorMessage}` : ''}. Puede que el inbound no esté entrando.`
       : q.data.lastSyncAt
-        ? `Último sync de ImporChat: ${q.data.lastSyncAt.toLocaleString('es-CO')}`
-        : 'Sin corridas del sync de ImporChat';
+        ? `Último sync de ${nombre}: ${q.data.lastSyncAt.toLocaleString('es-CO')}`
+        : `Sin corridas del sync de ${nombre}`;
 
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full border tabular-nums ${STATUS_CLS[status]} ${padding} ${className}`} title={title}>

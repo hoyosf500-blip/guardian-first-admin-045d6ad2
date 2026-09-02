@@ -99,9 +99,17 @@ export function deriveStatus(
 
 // `storeId` scopea a la tienda activa (un admin ve todas por RLS; sin esto vería
 // la corrida más reciente de CUALQUIER tienda y el badge mentiría "fresh").
-export function useImporchatSyncHealth(storeId?: string | null) {
+/**
+ * `source` = el sync que hay que vigilar en esta tienda: `importchat-sync` en
+ * Ecuador, `chateapro-sync` en Colombia. Se parametriza porque el badge no
+ * puede quedarse mudo en el canal nuevo: si el sync se cuelga, la bandeja
+ * «Escribieron» se queda quieta y la pantalla se ve igual de tranquila que si
+ * de verdad no hubiera nadie esperando. Ese silencio ya costó 39 clientes sin
+ * contestar, 22 de ellos por más de un día.
+ */
+export function useImporchatSyncHealth(storeId?: string | null, source = 'importchat-sync') {
   return useQuery<ImporchatSyncHealth>({
-    queryKey: ['importchat_sync_health', storeId ?? 'all'],
+    queryKey: ['importchat_sync_health', storeId ?? 'all', source],
     queryFn: async () => {
       // 1) Las últimas corridas — la fuente de verdad de "¿corrió y guardó?".
       //
@@ -111,7 +119,7 @@ export function useImporchatSyncHealth(storeId?: string | null) {
       let runQ = supabase
         .from('sync_logs')
         .select('created_at, status, error_message')
-        .eq('source', 'importchat-sync')
+        .eq('source', source)
         .order('created_at', { ascending: false })
         .limit(6);
       if (storeId) runQ = runQ.eq('store_id', storeId);
@@ -122,7 +130,9 @@ export function useImporchatSyncHealth(storeId?: string | null) {
       //    si la migración no corrió, queda null y el badge sigue vivo con el sync.
       const [runRes, tokRes] = await Promise.all([
         runQ,
-        storeId
+        // La llave de Chatea Pro es permanente: no hay vencimiento que avisar,
+        // y preguntar por él devolvería siempre null.
+        storeId && source === 'importchat-sync'
           // `as never`: types.ts (autogenerado) todavía no conoce esta RPC (la
           // migración es nueva). Se casan los ARGS, NO se desbindea supabase.rpc
           // (perder `this` rompe la llamada — ver rpc_supabase_binding_pattern).

@@ -39,6 +39,7 @@ const cpChat = sinComentarios(leer('supabase/functions/chateapro-chat/index.ts')
 const cpSend = sinComentarios(leer('supabase/functions/chateapro-send/index.ts'));
 const cpPlant = sinComentarios(leer('supabase/functions/chateapro-plantillas/index.ts'));
 const cpApi = sinComentarios(leer('supabase/functions/_shared/chateaproApi.ts'));
+const cpSync = sinComentarios(leer('supabase/functions/chateapro-sync/index.ts'));
 
 describe('canal de chat por tienda', () => {
   it('ningún hook vuelve a clavar el nombre de la función de ImporChat', () => {
@@ -235,18 +236,27 @@ describe('ninguna pantalla nombra el canal del otro país', () => {
     ).toBe(false);
   });
 
-  it('el badge de ImporChat no se dibuja en tiendas que no lo usan', () => {
+  /**
+   * El badge de salud del sync vigila EL SYNC DE SU TIENDA.
+   *
+   * Primero decía «ImporChat sin correr» en Colombia —la alarma de la app de
+   * otro país— y se lo escondió ahí. Esconderlo resultó peor: si el sync de
+   * Colombia se cuelga, la bandeja «Escribieron» se queda quieta y la pantalla
+   * se ve tan tranquila como si de verdad no hubiera nadie esperando. Ese
+   * silencio es justo lo que dejó 39 clientes sin contestar (22 por más de un
+   * día), medido el 2-sep-2026. Ahora se dibuja en las dos, con el nombre y el
+   * `source` que corresponden.
+   */
+  it('el badge mira el sync de SU canal, no uno fijo', () => {
+    expect(/nombreCanal\(/.test(badge), 'el texto visible debe salir de nombreCanal()').toBe(true);
     expect(
-      /canal !== 'importchat'/.test(badge),
-      'sin el guard, Colombia ve una alarma de un sync que no le corresponde',
+      /'chateapro-sync'/.test(badge) && /'importchat-sync'/.test(badge),
+      'tiene que elegir el source por canal: en Colombia vigila chateapro-sync',
     ).toBe(true);
-    // El guard va DESPUÉS de los hooks: un return antes tumba la pantalla.
-    const iHooks = badge.lastIndexOf('useMinuteTick()');
-    const iGuard = badge.indexOf("canal !== 'importchat'");
     expect(
-      iHooks < iGuard,
-      'un early-return arriba de los hooks rompe el orden de hooks (React #300/#308)',
-    ).toBe(true);
+      /ImporChat/.test(badge),
+      'ningún texto del badge puede clavar el nombre de un canal',
+    ).toBe(false);
   });
 
   /**
@@ -372,5 +382,91 @@ describe('alcanzar al cliente que nunca escribió', () => {
       /"\+" \+ conIndicativo/.test(cpApi),
       'un contacto creado por la API queda como +57XXXXXXXXXX: sin esa forma, el chat recién abierto sale como "nunca escribió"',
     ).toBe(true);
+  });
+});
+
+
+/**
+ * El sync que hace que la bandeja «Escribieron» funcione en Colombia.
+ *
+ * Nació de una medición, no de una idea: el 2-sep-2026 había 39 clientes que
+ * habían escrito y nadie contestó —22 hacía más de un día, el más viejo 97 h—
+ * y Guardian mostraba «todos los que escribieron ya fueron atendidos 🎉».
+ * Colombia tenía 0 de 589 pedidos con `chat_entrante_at`; Ecuador, 2.196 de
+ * 3.426. Lo que faltaba era exactamente este cron.
+ */
+describe('chateapro-sync: escribe poco y deja rastro', () => {
+  it('dice qué versión está corriendo', () => {
+    expect(/respuestaPing\(/.test(cpSync)).toBe(true);
+    expect(/const VERSION = "chateapro-sync /.test(cpSync)).toBe(true);
+  });
+
+  it('⛔ NO pasa por upsert_orders_from_dropi (REGLA #1)', () => {
+    // Esa función es la que mezcló Ecuador con Colombia durante 2h30. Un sync
+    // de chat no tiene por qué tocarla.
+    expect(/upsert_orders_from_dropi/.test(cpSync)).toBe(false);
+  });
+
+  it('solo escribe columnas de chat: nada de estado, valor ni guía', () => {
+    const update = cpSync.slice(cpSync.indexOf('.from("orders").update('));
+    const cuerpo = update.slice(0, update.indexOf('.eq("store_id"'));
+    for (const prohibida of ['estado:', 'valor:', 'guia:', 'transportadora:', 'nombre:']) {
+      expect(cuerpo.includes(prohibida), `el sync de chat no manda sobre ${prohibida}`).toBe(false);
+    }
+    expect(/chat_entrante_at|chat_saliente_at/.test(cuerpo)).toBe(true);
+  });
+
+  it('el UPDATE va dirigido por (store_id, external_id)', () => {
+    // `external_id` es único POR TIENDA desde la migración de agosto: sin el
+    // store_id al lado, un mismo número de pedido pisa la fila de otro país.
+    expect(/\.eq\("store_id", sid\)\.eq\("external_id"/.test(cpSync)).toBe(true);
+  });
+
+  it('deja rastro en sync_logs aunque la plataforma lo mate', () => {
+    expect(/from\("sync_logs"\)/.test(cpSync)).toBe(true);
+    expect(/"running"/.test(cpSync), 'abre la fila al arrancar para que un cuelgue deje señal').toBe(true);
+    expect(/SOURCE = "chateapro-sync"/.test(cpSync)).toBe(true);
+  });
+
+  it('una tienda que falla no deja a las demás sin sincronizar', () => {
+    expect(/continue;/.test(cpSync)).toBe(true);
+    expect(/huboError/.test(cpSync), 'y la corrida no puede cerrar en success tapando el fallo').toBe(true);
+  });
+
+  it('respeta un presupuesto de reloj para poder cerrar el log', () => {
+    expect(/BUDGET_MS/.test(cpSync)).toBe(true);
+  });
+
+  it('la página de contactos no pasa de 100 (la API devuelve 400)', () => {
+    expect(/const PAGINA = 100;/.test(cpSync)).toBe(true);
+    expect(/Math\.min\(100/.test(cpApi), 'listarSuscriptores tiene que topearlo también').toBe(true);
+  });
+});
+
+/**
+ * ⛔ Un cero que nadie midió NO es una buena noticia.
+ *
+ * La bandeja decía «Nadie esperando respuesta — todos los que escribieron ya
+ * fueron atendidos 🎉» sobre una tienda donde NINGÚN pedido tenía dato de chat.
+ * Es la misma familia de error que el estado vacío que no mira `loading`.
+ */
+describe('la bandeja no puede afirmar un cero sobre datos que no existen', () => {
+  const hook = sinComentarios(leer('src/hooks/useInboxEsperando.ts'));
+  const pagina = sinComentarios(leer('src/pages/InboxPage.tsx'));
+
+  it('sin una sola fila con dato de chat, el estado es `sin_medir`, no `ok`', () => {
+    expect(/'sin_medir'/.test(hook)).toBe(true);
+    expect(
+      /filas\.length === 0 \? 'sin_medir' : 'ok'/.test(hook),
+      'el `ok` final tiene que depender de que haya llegado alguna fila',
+    ).toBe(true);
+  });
+
+  it('y la pantalla lo dice en vez de celebrar', () => {
+    expect(/status === 'sin_medir'/.test(pagina)).toBe(true);
+    const i = pagina.indexOf("status === 'sin_medir'");
+    const bloque = pagina.slice(i, i + 700);
+    expect(/No quiere decir que no haya nadie/.test(bloque)).toBe(true);
+    expect(/🎉/.test(bloque), 'el estado sin medir no puede felicitar a nadie').toBe(false);
   });
 });
