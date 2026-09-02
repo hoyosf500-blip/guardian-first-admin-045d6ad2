@@ -147,10 +147,43 @@ export function parsearPlantillas(crudas: unknown): PlantillaMeta[] {
     const botones = crudosBotones.map((b) => texto(b?.text)).filter(Boolean);
 
     // ── Qué NO se puede mandar desde acá, y por qué ────────────────────────
+    //
+    // ⛔ La pregunta correcta NO es "¿lleva una imagen?" sino "¿TENEMOS con qué
+    // llenarla?". Medido el 2-sep-2026 sobre las 30 plantillas de Colombia: de
+    // las 7 que quedaban bloqueadas, una —`remarketing_neuroestres`— trae la
+    // imagen como URL FIJA de la propia plantilla
+    // (`https://media.chateapro.app/…/banner.jpg`). Esa se puede mandar tal
+    // cual y estaba prohibida por nada.
+    //
+    // Las otras seis siguen bloqueadas, y con razón: su `HEADER_IMAGE` o su
+    // `URL_1` apuntan a una VARIABLE del contacto en Chatea Pro
+    // (`{{f209801v8628885}}`), que Guardian no controla. En las tres de guía,
+    // ese valor es el nombre del PDF en CloudFront: mandarlo a ciegas puede
+    // llevarle al cliente la guía de OTRA persona, o un 404. Y `remarketing_tenis`
+    // directamente no tiene imagen guardada — Meta la rechazaría.
+    //
+    // `valorFijo` es esa pregunta: hay dato, y es literal (no un `{{…}}`).
+    // ⚠️ ImporChat no manda `default_values`, así que allá todo esto es
+    // `undefined` y el comportamiento queda EXACTAMENTE como estaba.
+    const defaults = (() => {
+      let dv = c.default_values as unknown;
+      if (typeof dv === "string") { try { dv = JSON.parse(dv); } catch { dv = null; } }
+      const params = (dv as { params?: Record<string, unknown> } | null)?.params;
+      return params && typeof params === "object" ? params as Record<string, unknown> : {};
+    })();
+    const valorFijo = (clave: string): boolean => {
+      const v = texto(defaults[clave]);
+      return !!v && !/\{\{.*\}\}/.test(v);
+    };
+
     const header = componentes.find((x) => texto(x?.type).toUpperCase() === "HEADER");
     const formatoHeader = texto(header?.format).toUpperCase();
     let noSoportada: string | null = null;
-    if (["IMAGE", "VIDEO", "DOCUMENT"].includes(formatoHeader)) {
+    if (["IMAGE", "VIDEO", "DOCUMENT"].includes(formatoHeader) && valorFijo(`HEADER_${formatoHeader}`)) {
+      // El adjunto es fijo y ya lo trae la plantilla: sale igual que cualquier
+      // otra. `paramsChateapro` lo conserva porque parte de `default_values`.
+      noSoportada = null;
+    } else if (["IMAGE", "VIDEO", "DOCUMENT"].includes(formatoHeader)) {
       // ⛔ El texto NO puede nombrar a ImporChat. Desde el 2-sep-2026 esta misma
       // función sirve a Colombia, que atiende por Chatea Pro: mandar a una
       // asesora colombiana a ImporChat la manda a la app de OTRO PAÍS. "El panel
@@ -158,7 +191,7 @@ export function parsearPlantillas(crudas: unknown): PlantillaMeta[] {
       noSoportada = `Lleva ${formatoHeader === "IMAGE" ? "una imagen" : formatoHeader === "VIDEO" ? "un video" : "un archivo"} adjunto. Esta hay que mandarla desde el panel de chat.`;
     } else if (formatoHeader === "TEXT" && /\{\{\d+\}\}/.test(texto(header?.text))) {
       noSoportada = "Su título lleva un dato variable que Guardian todavía no llena. Esta hay que mandarla desde el panel de chat.";
-    } else if (crudosBotones.some((b) => /\{\{\d+\}\}/.test(texto(b?.url)))) {
+    } else if (crudosBotones.some((b) => /\{\{\d+\}\}/.test(texto(b?.url))) && !valorFijo("URL_1")) {
       noSoportada = "Tiene un botón con un enlace personalizado (guía o carrito) que Guardian no arma. Esta hay que mandarla desde el panel de chat.";
     }
 

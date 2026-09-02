@@ -142,6 +142,8 @@ export default function ConversacionChat({ mensajes, estado, error, onRecargar, 
   // Colombia abierta: mientras cargaba decía «Leyendo la conversación en
   // ImporChat…» sobre un chat que vive en otra app, de otro país.
   const canal = useCanalChat();
+  /** Qué bloques de avisos abrió la asesora. Por defecto todos plegados. */
+  const [abiertos, setAbiertos] = useState<Set<string>>(() => new Set());
 
   // Lo último es lo que importa: el hilo se abre abajo, como cualquier chat.
   useEffect(() => {
@@ -158,6 +160,40 @@ export default function ConversacionChat({ mensajes, estado, error, onRecargar, 
       return { m, separador: nuevo };
     });
   }, [mensajes]);
+
+  /**
+   * Los avisos automáticos, agrupados en bloques plegables.
+   *
+   * ⛔ MEDIDO el 2-sep-2026 sobre tres conversaciones reales de Colombia:
+   * **16, 16 y 20 avisos de sistema por hilo** — hasta el 28% de los mensajes.
+   * Son cosas como «Ⓜ️ Evento de Meta enviado con éxito», «🔍 Validando valor
+   * del flete en 3… 2… 1…» o «🎉 Felicidades por la nueva venta #97»: el flujo
+   * de Chatea Pro hablándose a sí mismo. Ninguno lo escribió una persona y
+   * ninguno lo vio el cliente. Entre ellos se pierden los mensajes que sí
+   * importan.
+   *
+   * ⛔ Se PLIEGAN, no se esconden. Esa distinción ya se pagó una vez en esta
+   * app: entre esos avisos aparecen «❌ No se encontraron transportadoras
+   * disponibles» y «¡Hubo un problema al subir tu producto a Dropi!», que son
+   * exactamente lo que una asesora necesita ver cuando el pedido no avanza.
+   * Un clic los abre.
+   */
+  const bloques = useMemo(() => {
+    const out: Array<{ tipo: 'msg'; item: typeof conSeparador[number] } | { tipo: 'sistema'; items: typeof conSeparador; clave: string }> = [];
+    for (const it of conSeparador) {
+      const ultimo = out[out.length - 1];
+      // Un separador de día CORTA el grupo: si no, un bloque plegado se comería
+      // la línea que dice de qué día es lo que sigue.
+      if (it.m.de === 'sistema' && !it.separador && ultimo?.tipo === 'sistema') {
+        ultimo.items.push(it);
+      } else if (it.m.de === 'sistema') {
+        out.push({ tipo: 'sistema', items: [it], clave: it.m.id });
+      } else {
+        out.push({ tipo: 'msg', item: it });
+      }
+    }
+    return out;
+  }, [conSeparador]);
 
   // Una tienda sin ImporChat (los otros dueños, que usan otras IA) no ve nada:
   // mejor que no exista a que exista vacío y parezca roto.
@@ -215,7 +251,42 @@ export default function ConversacionChat({ mensajes, estado, error, onRecargar, 
             Esta conversación está abierta pero todavía no tiene mensajes.
           </p>
         ) : (
-          conSeparador.map(({ m, separador }) => (
+          bloques.map((b) => b.tipo === 'sistema' ? (
+            <div key={`sis-${b.clave}`}>
+              {b.items[0].separador && (
+                <div className="flex items-center gap-2 my-2" aria-hidden="true">
+                  <div className="h-px flex-1 bg-border/60" />
+                  <span className="text-[10px] text-muted-foreground font-mono">{b.items[0].separador}</span>
+                  <div className="h-px flex-1 bg-border/60" />
+                </div>
+              )}
+              {abiertos.has(b.clave) ? (
+                <>
+                  {b.items.map(({ m }) => (
+                    <p key={m.id} className="text-[10px] text-muted-foreground/70 text-center italic px-4">{m.texto}</p>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setAbiertos((s) => { const n = new Set(s); n.delete(b.clave); return n; })}
+                    className="block mx-auto text-[10px] text-muted-foreground/70 hover:text-foreground underline"
+                  >
+                    ocultar
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setAbiertos((s) => new Set(s).add(b.clave))}
+                  className="block mx-auto text-[10px] text-muted-foreground/60 hover:text-foreground italic px-4 py-0.5"
+                >
+                  {b.items.length === 1
+                    ? '1 aviso automático del sistema'
+                    : `${b.items.length} avisos automáticos del sistema`} · ver
+                </button>
+              )}
+            </div>
+          ) : (
+            (({ m, separador }) => (
             <div key={m.id}>
               {separador && (
                 <div className="flex items-center gap-2 my-2" aria-hidden="true">
@@ -225,9 +296,7 @@ export default function ConversacionChat({ mensajes, estado, error, onRecargar, 
                 </div>
               )}
 
-              {m.de === 'sistema' ? (
-                <p className="text-[10px] text-muted-foreground/70 text-center italic px-4">{m.texto}</p>
-              ) : (
+              {(
                 <div className={cn('flex', m.de === 'cliente' ? 'justify-start' : 'justify-end')}>
                   <div
                     className={cn(
@@ -263,6 +332,7 @@ export default function ConversacionChat({ mensajes, estado, error, onRecargar, 
                 </div>
               )}
             </div>
+            ))(b.item)
           ))
         )}
         <div ref={finRef} />

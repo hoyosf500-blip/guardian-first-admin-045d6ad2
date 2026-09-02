@@ -304,3 +304,102 @@ describe('primerNombre', () => {
     expect(primerNombre(null)).toBe('');
   });
 });
+
+
+/**
+ * ⛔ La pregunta no es "¿lleva una imagen?" sino "¿TENEMOS con qué llenarla?".
+ *
+ * Medido el 2-sep-2026 sobre las 30 plantillas de la cuenta de Colombia: de las
+ * 7 bloqueadas, `remarketing_neuroestres` traía la imagen como URL FIJA de la
+ * propia plantilla y estaba prohibida por nada. Las otras seis apuntan a una
+ * variable del contacto en Chatea Pro, que Guardian no controla — y en las tres
+ * de guía ese valor es el nombre del PDF en CloudFront: mandarlo a ciegas puede
+ * llevarle al cliente la guía de OTRA persona.
+ */
+describe('adjuntos y enlaces: se bloquea por no tener el dato, no por el formato', () => {
+  const base = (extra: Record<string, unknown>) => ([{
+    name: 'p', status: 'APPROVED', language: 'es', category: 'MARKETING',
+    components: [{ type: 'BODY', text: 'Hola {{1}}' }],
+    ...extra,
+  }]);
+
+  it('imagen FIJA de la plantilla → se puede mandar', () => {
+    const [p] = parsearPlantillas(base({
+      components: [
+        { type: 'HEADER', format: 'IMAGE' },
+        { type: 'BODY', text: 'Hola {{1}}' },
+      ],
+      default_values: { params: { HEADER_IMAGE: 'https://media.chateapro.app/workspace/225189/banner.jpg' } },
+    }));
+    expect(p.noSoportada).toBeNull();
+  });
+
+  it('imagen que sale de una VARIABLE del contacto → sigue bloqueada', () => {
+    const [p] = parsearPlantillas(base({
+      components: [
+        { type: 'HEADER', format: 'IMAGE' },
+        { type: 'BODY', text: 'Hola {{1}}' },
+      ],
+      default_values: { params: { HEADER_IMAGE: '{{f209801v8628779}}' } },
+    }));
+    expect(p.noSoportada).toMatch(/imagen/i);
+  });
+
+  it('imagen sin ningún valor guardado → bloqueada (Meta la rechazaría)', () => {
+    const [p] = parsearPlantillas(base({
+      components: [
+        { type: 'HEADER', format: 'IMAGE' },
+        { type: 'BODY', text: 'Hola {{1}}' },
+      ],
+      default_values: { params: {} },
+    }));
+    expect(p.noSoportada).toMatch(/imagen/i);
+  });
+
+  it('⛔ el botón de la GUÍA sigue bloqueado: su URL sale de una variable', () => {
+    // `URL_1 = {{f209801v8628885}}` es el nombre del PDF en CloudFront. Mandarlo
+    // a ciegas puede llevarle al cliente la guía de otra persona, o un 404.
+    const [p] = parsearPlantillas(base({
+      components: [
+        { type: 'BODY', text: 'Tu guía {{1}}' },
+        { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Ver guia', url: 'https://d39ru7awumhhs2.cloudfront.net/{{1}}' }] },
+      ],
+      default_values: { params: { URL_1: '{{f209801v8628885}}' } },
+    }));
+    expect(p.noSoportada).toMatch(/enlace personalizado/i);
+  });
+
+  it('un enlace FIJO en el botón no bloquea', () => {
+    const [p] = parsearPlantillas(base({
+      components: [
+        { type: 'BODY', text: 'Hola {{1}}' },
+        { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Ver', url: 'https://x.com/{{1}}' }] },
+      ],
+      default_values: { params: { URL_1: 'promo-septiembre' } },
+    }));
+    expect(p.noSoportada).toBeNull();
+  });
+
+  it('⚠️ ImporChat NO manda default_values: allá nada cambia', () => {
+    // Sin `default_values` el comportamiento tiene que ser exactamente el de
+    // antes — una imagen sin dato se sigue bloqueando.
+    const [p] = parsearPlantillas(base({
+      components: [
+        { type: 'HEADER', format: 'IMAGE' },
+        { type: 'BODY', text: 'Hola {{1}}' },
+      ],
+    }));
+    expect(p.noSoportada).toMatch(/imagen/i);
+  });
+
+  it('aguanta default_values como texto JSON', () => {
+    const [p] = parsearPlantillas(base({
+      components: [
+        { type: 'HEADER', format: 'IMAGE' },
+        { type: 'BODY', text: 'Hola {{1}}' },
+      ],
+      default_values: JSON.stringify({ params: { HEADER_IMAGE: 'https://media.chateapro.app/b.jpg' } }),
+    }));
+    expect(p.noSoportada).toBeNull();
+  });
+});
