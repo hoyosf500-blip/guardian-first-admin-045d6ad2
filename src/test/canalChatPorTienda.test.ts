@@ -526,6 +526,41 @@ describe('la señal de confirmación no puede quedarse ciega en silencio', () =>
     expect(/BUDGET_MS - RESERVA_HILOS_MS/.test(cpSync)).toBe(true);
   });
 
+  /**
+   * ⛔ Los pedidos de HOY primero. La primera versión los dejaba últimos.
+   *
+   * Estaba `fecha ascending`, copiando la idea de "reanudable" del sync de
+   * Ecuador. Verificado en producción el 2-sep-2026: la corrida escribió 30
+   * señales y los DOS pedidos que se habían medido a mano —88110734 CANDIDA
+   * VILORIA, que apretó el botón, y 88111168 DEYANIR BARRERA, que no— quedaron
+   * los dos en `null`. Son de hoy, y con más de 30 pedidos en la ventana los de
+   * hoy nunca llegaban al cupo. Justo los que importan: la mediana del apretón
+   * es 0,0 h y esta señal existe para ordenar la cola de Confirmar de HOY.
+   */
+  it('⛔ los pedidos de HOY se miran primero, no últimos', () => {
+    expect(
+      /ascending: true/.test(cpSync),
+      'ordenar por el más viejo deja los pedidos de hoy fuera del cupo para siempre',
+    ).toBe(false);
+    expect(/\.is\("chat_riesgo", null\)/.test(cpSync), 'primero los que no tienen señal').toBe(true);
+    expect(/ascending: false/.test(cpSync)).toBe(true);
+  });
+
+  it('los que ya tienen señal se refrescan, salvo los confirmados', () => {
+    // Alguien puede apretar el botón dos horas después; sin refresco quedaría
+    // marcado "mudo" para siempre. Y `confirmado` no se deshace: releerlo
+    // gastaría el cupo que necesitan los que todavía no.
+    expect(/neq\("chat_riesgo", "confirmado"\)/.test(cpSync)).toBe(true);
+  });
+
+  it('se reporta a cuántos se les llegó a OFRECER el botón', () => {
+    // La tasa que hace valiosa la señal (10% vs 58%) se midió sobre pedidos que
+    // SÍ recibieron la plantilla. Si en esta tienda casi nadie la recibe, la
+    // mayoría de los "tibio" no significan "no confirmó" sino "nunca se le
+    // preguntó" — y eso tiene que verse en el log.
+    expect(/recibieron_plantilla_confirmacion/.test(cpSync)).toBe(true);
+  });
+
   it('un pedido sin contacto NO se marca como "no confirmó"', () => {
     // No poder mirar no es haber mirado. Si no hay suscriptor, se salta y el
     // pedido queda sin señal (sin_dato), nunca clasificado por omisión.

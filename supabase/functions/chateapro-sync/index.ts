@@ -49,7 +49,7 @@ import { cambiosDeChat, type ContactoCp, type PedidoCruce } from "../_shared/cha
 
 const SOURCE = "chateapro-sync";
 /** ⛔ Subirla en el mismo commit que cambie algo: si no, el ping miente. */
-const VERSION = "chateapro-sync 2026-09-02.2 senal-del-boton-confirmar";
+const VERSION = "chateapro-sync 2026-09-02.3 los-de-hoy-primero";
 
 /** Tope de la API (lo dice la spec; más devuelve 400). */
 const PAGINA = 100;
@@ -253,6 +253,17 @@ Deno.serve(async (req) => {
       // nada) y un tope por corrida. Lo que no entra hoy entra en la próxima:
       // se ordena por lo más viejo sin leer.
       let conSenal = 0;
+      /**
+       * De los que se miraron, a cuántos se les llegó a OFRECER el botón.
+       *
+       * Se cuenta y se reporta porque la tasa que hace valiosa a esta señal
+       * (10% contra 58%) se midió sobre pedidos que SÍ recibieron la plantilla.
+       * Si en esta tienda casi nadie la recibe —el bot de Colombia es
+       * conversacional, no siempre manda plantilla—, entonces la mayoría de los
+       * "tibio" no significan "no confirmó": significan "nunca se le preguntó".
+       * Eso hay que verlo en el log, no descubrirlo con la cola mal ordenada.
+       */
+      let conPlantilla = 0;
       const ciegos: string[] = [];
       if (Date.now() - t0 < BUDGET_MS - RESERVA_HILOS_MS) {
         try {
@@ -266,16 +277,50 @@ Deno.serve(async (req) => {
           }
 
           const desdeSenal = new Date(Date.now() - DIAS_SENAL * 86_400_000).toISOString().slice(0, 10);
-          // Se saltan los que ya están confirmados: ese estado no se deshace, y
-          // releerlos gastaría el cupo que necesitan los que todavía no.
-          const { data: aMirar } = await sb.from("orders")
-            .select("external_id, phone, chat_riesgo")
+          /**
+           * ⛔ EL ORDEN ES LA DECISIÓN, y la primera versión lo tenía AL REVÉS.
+           *
+           * Estaba `fecha ascending` —los más viejos primero— copiando la idea
+           * de "reanudable" del sync de Ecuador. Verificado en producción el
+           * 2-sep-2026 con la función ya desplegada: escribió 30 señales y los
+           * dos pedidos que yo había medido a mano (88110734 CANDIDA VILORIA,
+           * que APRETÓ el botón, y 88111168 DEYANIR BARRERA, que no) quedaron
+           * los dos en `null`. Son de hoy, y con más de 30 pedidos en la
+           * ventana los de hoy nunca llegan al cupo.
+           *
+           * Y son justo los que importan: la mediana entre que sale la
+           * plantilla y que aprietan es 0,0 h, y esta señal existe para ordenar
+           * la cola de Confirmar de HOY. Un pedido de hace tres días ya se
+           * despachó o se cayó.
+           *
+           * Por eso van dos consultas y no un `order` compuesto:
+           *   1. Los que NO tienen señal todavía, del más nuevo al más viejo.
+           *   2. Con lo que sobre del cupo, refrescar los que ya la tienen pero
+           *      no están confirmados — alguien puede apretar el botón dos
+           *      horas después, y sin este paso quedaría marcado "mudo" para
+           *      siempre.
+           * Un pedido ya `confirmado` no se relee: ese estado no se deshace.
+           */
+          const nuevos = await sb.from("orders")
+            .select("external_id, phone")
             .eq("store_id", sid).gte("fecha", desdeSenal)
-            .or("chat_riesgo.is.null,chat_riesgo.neq.confirmado")
-            .order("fecha", { ascending: true })
+            .is("chat_riesgo", null)
+            .order("fecha", { ascending: false })
             .limit(HILOS_POR_CORRIDA);
 
-          for (const o of (aMirar ?? []) as Array<{ external_id: string; phone: string | null }>) {
+          const aMirar = [...((nuevos.data ?? []) as Array<{ external_id: string; phone: string | null }>)];
+          if (aMirar.length < HILOS_POR_CORRIDA) {
+            const refresco = await sb.from("orders")
+              .select("external_id, phone")
+              .eq("store_id", sid).gte("fecha", desdeSenal)
+              .not("chat_riesgo", "is", null)
+              .neq("chat_riesgo", "confirmado")
+              .order("fecha", { ascending: false })
+              .limit(HILOS_POR_CORRIDA - aMirar.length);
+            aMirar.push(...((refresco.data ?? []) as Array<{ external_id: string; phone: string | null }>));
+          }
+
+          for (const o of aMirar) {
             if (Date.now() - t0 > BUDGET_MS) break;
             if (!o.phone) continue;
             const sus = await buscarSuscriptorPorTelefono(cfg, String(o.phone), String(tienda?.country_code || "CO"));
@@ -285,6 +330,7 @@ Deno.serve(async (req) => {
             const hilo = await leerHilo(cfg, sus.user_ns);
             const senal = senalDeHilo(hilo.mensajes, confirmadoras);
             if (senal.botonesDesconocidos.length) ciegos.push(...senal.botonesDesconocidos);
+            if (senal.recibioPlantilla) conPlantilla++;
             const { error } = await sb.from("orders").update({
               chat_riesgo: senal.riesgo,
               chat_mudo: senal.riesgo === "mudo",
@@ -314,7 +360,8 @@ Deno.serve(async (req) => {
         console.error(`[${SOURCE}] ${sid}: botones que no sé leer → ${[...new Set(ciegos)].join(" | ")}`);
       }
       detalle.push({
-        store_id: sid, contactos: contactos.length, esperando, escritos, con_senal: conSenal,
+        store_id: sid, contactos: contactos.length, esperando, escritos,
+        con_senal: conSenal, recibieron_plantilla_confirmacion: conPlantilla,
         ...(ciegos.length ? { botones_desconocidos: [...new Set(ciegos)] } : {}),
       });
     }
