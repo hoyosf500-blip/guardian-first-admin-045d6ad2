@@ -212,3 +212,48 @@ describe('los campos que Chatea Pro devuelve de verdad', () => {
     ).toBe(true);
   });
 });
+
+/**
+ * Ninguna pantalla puede nombrar un canal que esa tienda NO usa.
+ *
+ * ⛔ Visto en producción el 2-sep-2026 con una tienda de Colombia abierta: el
+ * encabezado decía «ImporChat sin correr» y el cuadro de escribir, «este pedido
+ * no tiene conversación en ImporChat». ImporChat es el canal de ECUADOR. A la
+ * asesora colombiana se la mandaba a la app de otro país, a buscar un chat que
+ * ahí no existe.
+ */
+describe('ninguna pantalla nombra el canal del otro país', () => {
+  const dialogo = sinComentarios(leer('src/components/seguimiento/EscribirWhatsappDialog.tsx'));
+  const badge = sinComentarios(leer('src/components/chat/ImporchatSyncBadge.tsx'));
+  const motivos = sinComentarios(leer('supabase/functions/_shared/plantillasMeta.ts'));
+
+  it('el cuadro de escribir nombra el canal de la tienda, no uno fijo', () => {
+    expect(/nombreCanal\(/.test(dialogo), 'debe usar nombreCanal(canalChat)').toBe(true);
+    expect(
+      /ImporChat/.test(dialogo),
+      'el texto visible no puede clavar "ImporChat": en Colombia es Chatea Pro',
+    ).toBe(false);
+  });
+
+  it('el badge de ImporChat no se dibuja en tiendas que no lo usan', () => {
+    expect(
+      /canal !== 'importchat'/.test(badge),
+      'sin el guard, Colombia ve una alarma de un sync que no le corresponde',
+    ).toBe(true);
+    // El guard va DESPUÉS de los hooks: un return antes tumba la pantalla.
+    const iHooks = badge.lastIndexOf('useMinuteTick()');
+    const iGuard = badge.indexOf("canal !== 'importchat'");
+    expect(
+      iHooks < iGuard,
+      'un early-return arriba de los hooks rompe el orden de hooks (React #300/#308)',
+    ).toBe(true);
+  });
+
+  it('el motivo de una plantilla bloqueada no nombra un canal', () => {
+    expect(/panel de chat/.test(motivos)).toBe(true);
+    expect(
+      /ImporChat/.test(motivos),
+      'esta función ahora sirve a los dos países: el motivo no puede nombrar el canal de uno',
+    ).toBe(false);
+  });
+});

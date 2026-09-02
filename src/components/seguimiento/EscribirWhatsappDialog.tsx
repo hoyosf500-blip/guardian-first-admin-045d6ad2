@@ -4,6 +4,7 @@ import { MessageCircle, Send, Clock, X, Package } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useEnviarWhatsapp, type ModuloEnvio } from '@/hooks/useEnviarWhatsapp';
 import { useConversacion } from '@/hooks/useConversacion';
+import { useCanalChat, nombreCanal } from '@/hooks/useCanalChat';
 import ConversacionChat from '@/components/seguimiento/ConversacionChat';
 import PlantillasWhatsapp from '@/components/seguimiento/PlantillasWhatsapp';
 import { plantillasPara } from '@/lib/plantillasChat';
@@ -86,6 +87,9 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
   );
 
   const hilo = useConversacion(externalId, open);
+  // Para nombrar el canal REAL de la tienda: mandar a una asesora colombiana a
+  // ImporChat es mandarla a la app de Ecuador, donde ese chat no existe.
+  const canalChat = useCanalChat();
 
   // La ventana la decide el hilo RECIÉN leído. La columna sincronizada puede
   // tener media hora, y en una ventana de 24 h eso es la diferencia entre que
@@ -213,7 +217,7 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
           <div className="flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
             <X size={13} aria-hidden="true" className="shrink-0 mt-0.5" />
             <span>{sinConversacion
-              ? 'Este pedido todavía no tiene conversación en ImporChat, así que un mensaje escrito a mano no le llega. Se le puede mandar una plantilla aprobada, o llamarlo.'
+              ? `Este pedido todavía no tiene conversación en ${nombreCanal(canalChat)}, así que un mensaje escrito a mano no le llega. Se le puede mandar una plantilla aprobada, o llamarlo.`
               : MOTIVO_VENTANA[v.estado]}</span>
           </div>
         )}

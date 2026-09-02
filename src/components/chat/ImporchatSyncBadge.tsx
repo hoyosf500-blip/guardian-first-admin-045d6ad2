@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { CheckCircle2, AlertTriangle, AlertCircle, Loader2, Clock, KeyRound } from 'lucide-react';
 import { useImporchatSyncHealth, type ImporchatSyncStatus } from '@/hooks/useImporchatSyncHealth';
 import { useStore } from '@/contexts/StoreContext';
+import { useCanalChat } from '@/hooks/useCanalChat';
 
 // Badge de salud de ImporChat (lo que el cliente nos escribe). Verde/amarillo/rojo
 // según corrió-y-guardó, MÁS un aviso propio de la llave de 7 días: si vence y no
@@ -44,7 +45,17 @@ function useMinuteTick(): void {
 export default function ImporchatSyncBadge({ size = 'sm', className = '' }: Props) {
   const { activeStoreId } = useStore();
   const q = useImporchatSyncHealth(activeStoreId);
+  const canal = useCanalChat();
   useMinuteTick();
+
+  // ⛔ Este badge habla de ImporChat, que es el canal de ECUADOR. En Colombia
+  // (Chatea Pro) decía «ImporChat sin correr» sobre un sync que ni siquiera
+  // corresponde a esa tienda: la asesora leía una alarma de una app que no es
+  // la suya. Visto en producción el 2-sep-2026 con una tienda de Colombia.
+  //
+  // El guard va DESPUÉS de todos los hooks a propósito: un `return` antes de
+  // ellos rompe el orden de hooks y tumba la pantalla (React #300/#308).
+  if (canal !== null && canal !== 'importchat') return null;
 
   if (q.isLoading) {
     return (
