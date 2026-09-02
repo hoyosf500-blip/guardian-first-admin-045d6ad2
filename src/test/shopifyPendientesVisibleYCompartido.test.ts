@@ -84,4 +84,46 @@ describe('panel de pendientes de Shopify: se ve y se comparte', () => {
       'sin refrescar las marcas, el dueño ve la marca de la asesora recién al recargar',
     ).toBe(true);
   });
+
+  // ⛔ El bug del 2-sep-2026: "40 en Dropi" no lo medía nadie, era `45 - 5`,
+  // donde el 5 salía del localStorage de ESE navegador. Dos personas mirando la
+  // misma tienda al mismo segundo veían números distintos, y el dueño regañaba
+  // por la diferencia. `shopify-reconcile` YA devuelve los conteos reales.
+  it('los "en Dropi" salen del servidor, no de restar lo escondido en el navegador', () => {
+    expect(
+      /data\.matchedCount/.test(codigo),
+      'periodMatched debe salir de data.matchedCount (dato medido), no de una resta',
+    ).toBe(true);
+    expect(
+      /data\.todayMatched/.test(codigo),
+      'todayMatched debe salir de data.todayMatched (dato medido), no de una resta',
+    ).toBe(true);
+    // La forma exacta que causó el daño no puede volver.
+    expect(
+      /periodShopify\s*-\s*count/.test(codigo),
+      '`periodShopify - count` mezcla un total del servidor con el localStorage local',
+    ).toBe(false);
+    expect(
+      /todayShopify\s*-\s*todayPendingVisible/.test(codigo),
+      '`todayShopify - todayPendingVisible` es la misma resta mentirosa por día',
+    ).toBe(false);
+  });
+
+  it('la tira de reconciliación muestra el pendiente del servidor, igual para todos', () => {
+    expect(/const periodPending\s*=\s*data\.pendingCount/.test(codigo)).toBe(true);
+    expect(/const todayPending\s*=\s*data\.todayPending/.test(codigo)).toBe(true);
+    expect(
+      /yaResueltos/.test(codigo),
+      'si el titular difiere del servidor hay que decir cuántos ya marcó el equipo, no dejar dos números peleando',
+    ).toBe(true);
+  });
+
+  it('"Quitar del CRM" también se comparte con el equipo', () => {
+    const fn = codigo.match(/const quitarDelCrm = useCallback\([\s\S]{0,700}?\n  \}, \[[^\]]*\]\);/);
+    expect(fn, 'no se encontró quitarDelCrm').not.toBeNull();
+    expect(
+      /markEntered\(/.test(fn![0]),
+      'si solo llama a markDone, lo que la asesora saca de la cola sigue en rojo para el dueño',
+    ).toBe(true);
+  });
 });

@@ -269,9 +269,19 @@ export default function ShopifyPendingPanel() {
     toast.success('Marcado como no-duplicado — ya podés enviarlo');
   }, [activeStoreId, user]);
 
-  // "Quitar del CRM": el pedido ya está en Dropi → solo lo escondemos local para
-  // que deje de molestar (NO crea nada). El sobrante en Dropi se borra a mano.
-  const quitarDelCrm = useCallback((id: string) => { markDone(id); }, [markDone]);
+  // "Quitar del CRM": el pedido YA está en Dropi → sale de la cola (NO crea nada;
+  // el sobrante en Dropi se borra a mano).
+  //
+  // 2026-09-02: antes solo escondía en localStorage, así que la asesora lo sacaba
+  // de SU cola y en la del dueño seguía ahí. Ahora se guarda como marca en
+  // `shopify_manual_marks`, igual que "Ya lo metí": el equipo entero ve la misma
+  // lista y queda con autor, hora y botón de revertir en el Historial.
+  const quitarDelCrm = useCallback(async (p: ShopifyPendingItem) => {
+    if (!activeStoreId || done.has(p.id) || markedIds.has(p.id)) return;
+    markDone(p.id);
+    const r = await markEntered({ id: p.id, name: p.name, customer: p.customer, phone: p.phone, total: p.total, city: p.city });
+    if (!r.ok) toast.error('No se pudo compartir con el equipo: ' + (r.error || ''));
+  }, [activeStoreId, done, markedIds, markDone, markEntered]);
 
   // "Ya lo corregí" (valor distinto): la operadora ya ajustó el precio en Dropi →
   // lo sacamos de la lista (dismiss local por tienda). Al re-sincar con el valor
@@ -453,17 +463,33 @@ export default function ShopifyPendingPanel() {
     );
   }
 
-  // Números (consistentes con el decremento local "ya lo metí").
+  // ⛔ 2026-09-02 — LA TIRA DE RECONCILIACIÓN ES DATO DEL SERVIDOR, NO UNA RESTA.
+  //
+  // Antes decía `periodMatched = periodShopify - count` y
+  // `todayMatched = todayShopify - todayPendingVisible`, donde `count` sale de
+  // `visible`, que está filtrado por el `done` de ESTE navegador. O sea: el
+  // número "en Dropi" no lo medía nadie — era una resta de lo que cada quien
+  // tenía escondido en su localStorage. La asesora con 16 pedidos marcados veía
+  // "420 en Dropi · 5 sin pasar" y el dueño, en la misma tienda y al mismo
+  // segundo, "403 en Dropi · 21 sin pasar". El dueño regañó por esa diferencia.
+  //
+  // `shopify-reconcile` YA devuelve los conteos reales (`matchedCount`,
+  // `pendingCount`, `todayMatched`, `todayPending`). Se usan esos. La tira es
+  // idéntica para todos; lo único personal es el titular (lo que a esa persona
+  // le queda por hacer), y si difiere se explica abajo con `yaResueltos`.
   const count = visible.length;
   const allClear = count === 0;
   const days = data.days ?? 3;
   const periodShopify = data.shopifyTotal ?? 0;
-  const periodMatched = Math.max(0, periodShopify - count);
+  const periodPending = data.pendingCount ?? count;
+  const periodMatched = data.matchedCount ?? Math.max(0, periodShopify - periodPending);
   const todayShopify = data.todayShopify ?? 0;
-  const todayPendingVisible = data.today
-    ? visible.filter(p => localDay(p.created_at) === data.today).length
-    : (data.todayPending ?? 0);
-  const todayMatched = Math.max(0, todayShopify - todayPendingVisible);
+  const todayPending = data.todayPending ?? 0;
+  const todayMatched = data.todayMatched ?? Math.max(0, todayShopify - todayPending);
+  // Cuántos de los pendientes del servidor ya los resolvió alguien del equipo
+  // (marca compartida en `shopify_manual_marks`). Sin esto, el titular y la tira
+  // se contradicen y nadie sabe cuál creer.
+  const yaResueltos = Math.max(0, periodPending - count);
   const cancelled = data.cancelledCount ?? 0;
 
   const accent = allClear ? 'success' : 'warning';
@@ -672,14 +698,17 @@ export default function ShopifyPendingPanel() {
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
             <span>
               <span className="font-medium text-foreground">Hoy:</span> {todayShopify} en Shopify · {todayMatched} en Dropi ·{' '}
-              <span className={todayPendingVisible > 0 ? 'font-semibold text-warning' : ''}>{todayPendingVisible} sin pasar</span>
+              <span className={todayPending > 0 ? 'font-semibold text-warning' : ''}>{todayPending} sin pasar</span>
             </span>
             <span className="opacity-50">|</span>
             <span>
               <span className="font-medium text-foreground">Últimos {days}d:</span> {periodShopify} en Shopify · {periodMatched} en Dropi ·{' '}
-              <span className={count > 0 ? 'font-semibold text-warning' : ''}>{count} sin pasar</span>
+              <span className={periodPending > 0 ? 'font-semibold text-warning' : ''}>{periodPending} sin pasar</span>
             </span>
             {cancelled > 0 && <span className="opacity-70">· {cancelled} cancelados</span>}
+            {yaResueltos > 0 && (
+              <span className="opacity-70">· {yaResueltos} ya los marcó el equipo</span>
+            )}
           </div>
         </div>
         <button onClick={() => setShowHistory(true)} aria-label="Ver historial de lo que metí"
@@ -919,8 +948,8 @@ export default function ShopifyPendingPanel() {
                                 className="h-7 px-2.5 rounded-lg border border-border bg-card text-xs font-medium text-foreground hover:bg-muted/40 flex items-center gap-1">
                                 <ShieldCheck size={12} /> No es duplicado
                               </button>
-                              <button onClick={() => quitarDelCrm(p.id)}
-                                title="Ya está en Dropi — sacarlo de esta cola"
+                              <button onClick={() => { void quitarDelCrm(p); }}
+                                title="Ya está en Dropi — sacarlo de esta cola (lo ve todo el equipo)"
                                 className="h-7 px-2.5 rounded-lg border border-destructive/40 bg-card text-xs font-medium text-destructive hover:bg-destructive/10 flex items-center gap-1">
                                 Quitar del CRM
                               </button>
