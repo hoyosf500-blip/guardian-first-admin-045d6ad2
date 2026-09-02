@@ -194,6 +194,10 @@ export interface MensajeConversacion {
   /** Lo que DICE la nota de voz. Chatea Pro la transcribe sola. `null` = no es
    *  audio o no vino transcripción — nunca se inventa. */
   transcripcion?: string | null;
+  /** Nombre de la plantilla enviada ("ES confirmacion_sin_imagen_v2"). No se
+   *  muestra; lo usa `chateapro-sync` para saber si al cliente se le llegó a
+   *  ofrecer el botón de confirmar. */
+  plantilla?: string | null;
 }
 
 /**
@@ -296,6 +300,13 @@ function normalizarMensaje(m: MensajeCp): MensajeConversacion {
     esMarcador,
     archivoUrl,
     transcripcion,
+    // Qué plantilla se mandó. `content` la nombra SIEMPRE en un `wa_template`
+    // (con prefijo de idioma: "ES confirmacion_sin_imagen_v2"), aunque
+    // `payload.body` traiga además el texto ya armado. La UI muestra el texto;
+    // `chateapro-sync` necesita el nombre para saber si a ese cliente se le
+    // llegó a OFRECER el botón de confirmar — sin plantilla enviada, exigir el
+    // botón sería exigir algo que nunca se ofreció.
+    plantilla: esPlantilla ? String(m.content ?? "").trim() || null : null,
   };
 }
 

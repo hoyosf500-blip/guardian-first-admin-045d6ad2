@@ -36,12 +36,20 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { respuestaPing } from "../_shared/versionEdge.ts";
-import { cargarConfigChateapro, listarSuscriptores, ChateaproError } from "../_shared/chateaproApi.ts";
+import {
+  cargarConfigChateapro,
+  listarSuscriptores,
+  listarPlantillas,
+  buscarSuscriptorPorTelefono,
+  leerHilo,
+  ChateaproError,
+} from "../_shared/chateaproApi.ts";
+import { plantillasQueConfirman, senalDeHilo } from "../_shared/chateaproSenal.ts";
 import { cambiosDeChat, type ContactoCp, type PedidoCruce } from "../_shared/chateaproCruce.ts";
 
 const SOURCE = "chateapro-sync";
 /** ⛔ Subirla en el mismo commit que cambie algo: si no, el ping miente. */
-const VERSION = "chateapro-sync 2026-09-02.1 la-bandeja-deja-de-mentir";
+const VERSION = "chateapro-sync 2026-09-02.2 senal-del-boton-confirmar";
 
 /** Tope de la API (lo dice la spec; más devuelve 400). */
 const PAGINA = 100;
@@ -52,6 +60,27 @@ const DIAS = 45;
 /** Presupuesto de reloj por debajo del límite del edge, para que SIEMPRE
  *  alcance a cerrar la fila de `sync_logs`. Mismo criterio que dropi-cron. */
 const BUDGET_MS = 110_000;
+/**
+ * ⛔ CUÁNTO TIEMPO HAY QUE TENER LIBRE PARA EMPEZAR A LEER HILOS.
+ *
+ * La pregunta correcta NO es "¿queda algo de tiempo?" sino "¿queda SUFICIENTE
+ * para lo que viene?". Con 1 ms libre, el sync de Ecuador se metía igual en una
+ * operación de decenas de segundos, la plataforma lo mataba a mitad y la fila
+ * de `sync_logs` quedaba en `running` para siempre: desde afuera, idéntico a
+ * "nunca corrió". Fueron 82 corridas colgadas de 197 y CERO errores.
+ */
+const RESERVA_HILOS_MS = 25_000;
+/**
+ * Cuántos pedidos leer por corrida. Cada uno son 2 llamadas (buscar el contacto
+ * + leer el hilo), así que 30 son ~60 llamadas cada 10 min. Es un tope de
+ * cortesía con la API, no un límite del problema: lo que no entra hoy entra en
+ * la corrida siguiente, porque la selección se ordena por lo más viejo sin leer.
+ */
+const HILOS_POR_CORRIDA = 30;
+/** Solo se mira la señal en la ventana donde todavía sirve para algo: la
+ *  mediana entre que sale la plantilla y que aprietan es 0,0 h, y a los 3 días
+ *  el pedido ya se despachó o se cayó. */
+const DIAS_SENAL = 3;
 
 /** Colombia y Ecuador comparten huso; el resto se resuelve cuando exista. */
 const OFFSET: Record<string, number> = { CO: -5, EC: -5, GT: -6 };
@@ -212,12 +241,93 @@ Deno.serve(async (req) => {
       }
       escritosTotal += escritos;
 
+      // ── FASE 4: la señal del botón CONFIRMAR PEDIDO ───────────────────
+      // Es lo que más plata mueve de todo este archivo. Medido en Ecuador
+      // (765 pedidos resueltos de agosto-2026): quien aprieta el botón cancela
+      // 10,4%; quien no lo aprieta, 57,7% — $3.928, el 62% de toda la plata
+      // cancelada del mes. Y se sabe enseguida: la mediana entre que sale la
+      // plantilla y que aprietan es 0,0 h.
+      //
+      // Acá SÍ hay que abrir conversaciones, así que va con dos frenos: solo
+      // los pedidos de los últimos días (después la señal ya no sirve para
+      // nada) y un tope por corrida. Lo que no entra hoy entra en la próxima:
+      // se ordena por lo más viejo sin leer.
+      let conSenal = 0;
+      const ciegos: string[] = [];
+      if (Date.now() - t0 < BUDGET_MS - RESERVA_HILOS_MS) {
+        try {
+          // ⛔ Las plantillas que confirman se DESCUBREN, no se escriben a mano.
+          // En Ecuador cambiar la plantilla en el panel apagó la señal dos días
+          // enteros sin un solo error en el log (58% → 2% → 0%).
+          const confirmadoras = plantillasQueConfirman(await listarPlantillas(cfg));
+          if (confirmadoras.size === 0) {
+            huboError = true;
+            console.error(`[${SOURCE}] ${sid}: NINGUNA plantilla ofrece el botón de confirmar — la señal quedaría en cero`);
+          }
+
+          const desdeSenal = new Date(Date.now() - DIAS_SENAL * 86_400_000).toISOString().slice(0, 10);
+          // Se saltan los que ya están confirmados: ese estado no se deshace, y
+          // releerlos gastaría el cupo que necesitan los que todavía no.
+          const { data: aMirar } = await sb.from("orders")
+            .select("external_id, phone, chat_riesgo")
+            .eq("store_id", sid).gte("fecha", desdeSenal)
+            .or("chat_riesgo.is.null,chat_riesgo.neq.confirmado")
+            .order("fecha", { ascending: true })
+            .limit(HILOS_POR_CORRIDA);
+
+          for (const o of (aMirar ?? []) as Array<{ external_id: string; phone: string | null }>) {
+            if (Date.now() - t0 > BUDGET_MS) break;
+            if (!o.phone) continue;
+            const sus = await buscarSuscriptorPorTelefono(cfg, String(o.phone), String(tienda?.country_code || "CO"));
+            // Sin contacto no hay conversación que leer. NO es "no confirmó":
+            // es que no se pudo mirar, y eso se llama `sin_dato`.
+            if (!sus) continue;
+            const hilo = await leerHilo(cfg, sus.user_ns);
+            const senal = senalDeHilo(hilo.mensajes, confirmadoras);
+            if (senal.botonesDesconocidos.length) ciegos.push(...senal.botonesDesconocidos);
+            const { error } = await sb.from("orders").update({
+              chat_riesgo: senal.riesgo,
+              chat_mudo: senal.riesgo === "mudo",
+              confirmo_boton_at: senal.apretoBotonAt ? senal.apretoBotonAt.toISOString() : null,
+              chat_cliente_escribio_at: senal.clienteEscribioAt ? senal.clienteEscribioAt.toISOString() : null,
+              chat_leido_at: new Date().toISOString(),
+            }).eq("store_id", sid).eq("external_id", o.external_id);
+            if (error) console.error(`[${SOURCE}] señal ${sid}/${o.external_id}: ${error.message}`);
+            else conSenal++;
+          }
+        } catch (e) {
+          // La señal es un extra: si falla, el cruce de más arriba ya quedó
+          // escrito y la bandeja sigue funcionando.
+          huboError = true;
+          const msg = e instanceof Error ? e.message : String(e);
+          console.error(`[${SOURCE}] ${sid} señal: ${msg}`);
+          detalle.push({ store_id: sid, error_senal: msg });
+        }
+      }
+
       const esperando = contactos.filter((c) => String(c.last_message_type ?? "") === "in").length;
-      detalle.push({ store_id: sid, contactos: contactos.length, esperando, escritos });
+      // ⛔ Un botón que no sabemos leer se GRITA. Sin esto, cablear una
+      // plantilla nueva apaga la señal sin dar ningún error — el modo de falla
+      // que costó dos días de asesoras llamando a gente ya confirmada.
+      if (ciegos.length) {
+        huboError = true;
+        console.error(`[${SOURCE}] ${sid}: botones que no sé leer → ${[...new Set(ciegos)].join(" | ")}`);
+      }
+      detalle.push({
+        store_id: sid, contactos: contactos.length, esperando, escritos, con_senal: conSenal,
+        ...(ciegos.length ? { botones_desconocidos: [...new Set(ciegos)] } : {}),
+      });
     }
 
     storeId = "";
-    await cerrar(huboError ? "warn" : "success", `${escritosTotal} pedidos con dato de chat`, escritosTotal);
+    const ciegosTodos = detalle.flatMap((d) => (d.botones_desconocidos as string[]) ?? []);
+    await cerrar(
+      huboError ? "warn" : "success",
+      ciegosTodos.length
+        ? `${escritosTotal} pedidos con dato de chat — ⛔ BOTONES QUE NO SÉ LEER: ${[...new Set(ciegosTodos)].join(" | ")}`
+        : `${escritosTotal} pedidos con dato de chat`,
+      escritosTotal,
+    );
     return json({ ok: true, version: VERSION, escritos: escritosTotal, detalle, ms: Date.now() - t0 });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

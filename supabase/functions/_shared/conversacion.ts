@@ -88,6 +88,19 @@ export interface MensajeConversacion {
    * inventa un texto: sin transcripción queda solo el reproductor.
    */
   transcripcion?: string | null;
+
+  /**
+   * Nombre de la plantilla, cuando el mensaje SALIÓ como plantilla de Meta.
+   *
+   * No se muestra —la asesora ve el texto que leyó el cliente, no el código—
+   * pero `chateapro-sync` lo necesita para responder si a ese cliente se le
+   * llegó a OFRECER el botón de confirmar. Sin plantilla enviada no se puede
+   * exigir un botón que nunca apareció, y ese pedido no puede clasificarse
+   * como "no confirmó".
+   *
+   * `null` = no fue una plantilla, o el canal no dice cuál.
+   */
+  plantilla?: string | null;
 }
 
 /** Host de los adjuntos de ImporChat. `ruta_archivo` puede venir absoluta

@@ -470,3 +470,69 @@ describe('la bandeja no puede afirmar un cero sobre datos que no existen', () =>
     expect(/🎉/.test(bloque), 'el estado sin medir no puede felicitar a nadie').toBe(false);
   });
 });
+
+
+/**
+ * La señal del botón CONFIRMAR PEDIDO, ahora también en Colombia.
+ *
+ * Separa 10,4% de cancelación contra 57,7% (Ecuador, 765 pedidos resueltos de
+ * agosto-2026). Su modo de falla es SILENCIOSO: entre el 27 y el 29 de agosto
+ * se cambió la plantilla en el panel, el botón pasó a decir otra cosa, y la
+ * señal cayó de 58% a 0% sin un solo error en ningún log — con la asesora dos
+ * días llamando a gente que ya había confirmado. Todo lo de acá defiende ese
+ * flanco.
+ */
+describe('la señal de confirmación no puede quedarse ciega en silencio', () => {
+  const senal = sinComentarios(leer('supabase/functions/_shared/chateaproSenal.ts'));
+
+  it('las plantillas que confirman se DESCUBREN, no se escriben a mano', () => {
+    expect(/export function plantillasQueConfirman/.test(senal)).toBe(true);
+    expect(/listarPlantillas/.test(cpSync), 'el sync tiene que preguntarlas cada corrida').toBe(true);
+    expect(
+      /plantillasQueConfirman\(await listarPlantillas/.test(cpSync),
+      'una lista fija de nombres es exactamente lo que apagó la señal en agosto',
+    ).toBe(true);
+  });
+
+  it('reusa `esBotonConfirmar` y `clasificar`, no una segunda copia', () => {
+    // Dos definiciones del mismo hecho es la trampa que este repo ya pagó
+    // varias veces. La escalera de riesgo vive en senalConfirmacion.ts.
+    expect(/from "\.\/senalConfirmacion\.ts"/.test(senal)).toBe(true);
+    expect(/esBotonConfirmar/.test(senal) && /clasificar/.test(senal)).toBe(true);
+  });
+
+  it('⛔ traduce `postback` a `button`', () => {
+    // En Chatea Pro apretar un botón llega como `postback`. Sin la traducción,
+    // esBotonConfirmar da false para TODOS y la señal queda en cero sin error.
+    expect(/postback["'] \? ["']button/.test(senal)).toBe(true);
+  });
+
+  it('un botón que no sabemos leer se reporta en sync_logs', () => {
+    expect(/botonesDesconocidos/.test(senal)).toBe(true);
+    expect(/BOTONES QUE NO S/.test(cpSync), 'tiene que salir al log de la corrida, no solo a la consola').toBe(true);
+    expect(/huboError = true/.test(cpSync)).toBe(true);
+  });
+
+  it('si NINGUNA plantilla ofrece el botón, la corrida lo grita', () => {
+    // Cero plantillas confirmadoras = la señal daría 0% para todo el mundo.
+    // Eso es indistinguible de "nadie confirma" si no se avisa.
+    expect(/confirmadoras\.size === 0/.test(cpSync)).toBe(true);
+  });
+
+  it('leer hilos tiene tope y reserva de tiempo', () => {
+    // La pregunta no es "¿queda algo de tiempo?" sino "¿queda suficiente?".
+    expect(/RESERVA_HILOS_MS/.test(cpSync)).toBe(true);
+    expect(/HILOS_POR_CORRIDA/.test(cpSync)).toBe(true);
+    expect(/BUDGET_MS - RESERVA_HILOS_MS/.test(cpSync)).toBe(true);
+  });
+
+  it('un pedido sin contacto NO se marca como "no confirmó"', () => {
+    // No poder mirar no es haber mirado. Si no hay suscriptor, se salta y el
+    // pedido queda sin señal (sin_dato), nunca clasificado por omisión.
+    expect(/if \(!sus\) continue;/.test(cpSync)).toBe(true);
+  });
+
+  it('un hilo que no se pudo leer es `sin_dato`', () => {
+    expect(/if \(!hilo\)/.test(senal) && /"sin_dato"/.test(senal)).toBe(true);
+  });
+});
