@@ -177,8 +177,9 @@ interface MensajeCp {
   msg_type?: string;
   /** El texto. Vacío en los adjuntos. */
   content?: string;
-  /** `{type, url, title, wa_conv_id}` — la URL del adjunto vive ACÁ. */
-  payload?: { url?: string; title?: string | null } | null;
+  /** `{type, url, title, transcribed_text, wa_conv_id}` — la URL del adjunto y
+   *  la transcripción de la nota de voz viven ACÁ. */
+  payload?: { url?: string; title?: string | null; transcribed_text?: string | null } | null;
   /** "bot" o el `user_ns` del cliente. */
   sender_id?: string;
   /** 0 = no lo escribió una persona. */
@@ -220,6 +221,9 @@ function normalizarMensaje(m: MensajeCp): MensajeConversacion {
   const texto = esPlantilla ? "" : String(m.content ?? "").trim();
   const nombrePlantilla = esPlantilla ? String(m.content ?? "").trim() : "";
   const archivoUrl = m.payload?.url || null;
+  // Chatea Pro transcribe las notas de voz solo. Se guarda tal cual: es la
+  // diferencia entre leer la cola de un vistazo y tener que escuchar 14 audios.
+  const transcripcion = String(m.payload?.transcribed_text ?? "").trim() || null;
   // Un adjunto sin texto no se inventa: queda marcado para que la pantalla lo
   // pinte como adjunto y no como algo que alguien escribió.
   const esMarcador = !texto && !!MARCADOR[tipo];
@@ -240,6 +244,7 @@ function normalizarMensaje(m: MensajeCp): MensajeConversacion {
     tipo,
     esMarcador,
     archivoUrl,
+    transcripcion,
   };
 }
 

@@ -257,3 +257,38 @@ describe('ninguna pantalla nombra el canal del otro país', () => {
     ).toBe(false);
   });
 });
+
+/**
+ * La nota de voz se escucha Y se lee.
+ *
+ * Medido sobre 18 conversaciones reales de Ecuador: 14 traían audio — el
+ * cliente responde hablando mucho más de lo que escribe. Chatea Pro transcribe
+ * solo (`payload.transcribed_text`), así que la transcripción es gratis y no
+ * hay excusa para que la asesora tenga que escuchar audio por audio.
+ */
+describe('audio, foto y video del cliente', () => {
+  const chat = sinComentarios(leer('src/components/seguimiento/ConversacionChat.tsx'));
+
+  it('la transcripción del audio viaja desde Chatea Pro', () => {
+    expect(/transcribed_text/.test(cpApi), 'el campo real se llama payload.transcribed_text').toBe(true);
+    expect(/transcripcion/.test(cpApi)).toBe(true);
+  });
+
+  it('la transcripción se pinta debajo del reproductor', () => {
+    expect(/transcripcion/.test(chat)).toBe(true);
+    const i = chat.indexOf('<audio');
+    const j = chat.indexOf('transcripcion &&');
+    expect(i > -1 && j > i, 'la transcripción va DESPUÉS del audio, no en vez de él').toBe(true);
+  });
+
+  it('el video se ve en el hilo, no como "abrir archivo"', () => {
+    expect(/<video/.test(chat), 'abrir una pestaña por mensaje no es trabajar una cola').toBe(true);
+  });
+
+  it('nunca se inventa un texto cuando no hay transcripción', () => {
+    expect(
+      /transcripcion &&/.test(chat),
+      'sin transcripción queda solo el reproductor: un texto inventado sobre lo que dijo un cliente es peor que nada',
+    ).toBe(true);
+  });
+});

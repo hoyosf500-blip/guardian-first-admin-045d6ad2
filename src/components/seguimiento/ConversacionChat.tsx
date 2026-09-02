@@ -53,8 +53,9 @@ const dia = (ms: number | null) => {
  *  como enlace: mejor un "abrir" que un cuadro vacío. */
 const SE_VE = new Set(['image', 'sticker', 'photo']);
 const SE_ESCUCHA = new Set(['audio', 'ptt', 'voice']);
+const SE_MIRA = new Set(['video']);
 
-function Adjunto({ url, tipo }: { url: string; tipo: string | null }) {
+function Adjunto({ url, tipo, transcripcion }: { url: string; tipo: string | null; transcripcion?: string | null }) {
   const [fallo, setFallo] = useState(false);
   const t = String(tipo ?? '').toLowerCase();
 
@@ -66,12 +67,40 @@ function Adjunto({ url, tipo }: { url: string; tipo: string | null }) {
   // la app no lo bloquea.
   if (!fallo && (SE_ESCUCHA.has(t) || /\.(ogg|mp3|m4a|opus|wav)$/i.test(url))) {
     return (
-      <audio
+      <>
+        <audio
+          src={url}
+          controls
+          preload="none"
+          onError={() => setFallo(true)}
+          className="w-full max-w-[260px] h-8 mb-1"
+        />
+        {/* ⛔ LA TRANSCRIPCIÓN, DEBAJO (2-sep-2026). Chatea Pro transcribe las
+            notas de voz solo y lo manda en `payload.transcribed_text`. Con la
+            cola en la mano, poder LEER lo que dijo el cliente es la diferencia
+            entre resolver de un vistazo y tener que escuchar audio por audio.
+            Se marca como transcripción a propósito: es lo que una máquina
+            entendió, no lo que el cliente escribió. */}
+        {transcripcion && (
+          <p className="text-[11px] leading-snug italic text-muted-foreground border-l-2 border-border pl-2 mb-1 whitespace-pre-wrap break-words">
+            <span className="not-italic font-semibold text-[10px] text-muted-foreground/80">Dice: </span>
+            {transcripcion}
+          </p>
+        )}
+      </>
+    );
+  }
+
+  // El video se ve acá mismo. Antes caía en "Abrir el archivo", que en una cola
+  // de trabajo significa abrir una pestaña por cada mensaje.
+  if (!fallo && (SE_MIRA.has(t) || /\.(mp4|3gp|mov|webm)$/i.test(url))) {
+    return (
+      <video
         src={url}
         controls
         preload="none"
         onError={() => setFallo(true)}
-        className="w-full max-w-[260px] h-8 mb-1"
+        className="max-h-52 w-auto max-w-full rounded-lg border border-border mb-1 bg-card/40"
       />
     );
   }
@@ -217,7 +246,7 @@ export default function ConversacionChat({ mensajes, estado, error, onRecargar, 
                         ⛔ Degrada solo: si la imagen no carga (ruta que exige
                         sesión, archivo borrado) se esconde y queda el marcador
                         de texto de siempre. Nunca un cuadro roto. */}
-                    {m.archivoUrl && <Adjunto url={m.archivoUrl} tipo={m.tipo} />}
+                    {m.archivoUrl && <Adjunto url={m.archivoUrl} tipo={m.tipo} transcripcion={m.transcripcion} />}
                     <p className={cn('text-xs leading-snug whitespace-pre-wrap break-words', m.esMarcador && 'italic text-muted-foreground')}>
                       {m.texto}
                     </p>

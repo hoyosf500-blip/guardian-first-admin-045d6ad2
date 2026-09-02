@@ -75,6 +75,19 @@ export interface MensajeConversacion {
    * `null` = el mensaje no traía adjunto.
    */
   archivoUrl: string | null;
+  /**
+   * Lo que DICE una nota de voz, en texto.
+   *
+   * Chatea Pro transcribe los audios solo y lo devuelve en
+   * `payload.transcribed_text`. Es exactamente lo que faltaba en ImporChat: se
+   * medió sobre 18 conversaciones reales de Ecuador que **14 traían audio** —
+   * el cliente responde hablando mucho más de lo que escribe—, y hasta ahora la
+   * única forma de saber qué dijo era ponerse a escucharlo.
+   *
+   * `null` = ese mensaje no es audio, o el canal no transcribe. NUNCA se
+   * inventa un texto: sin transcripción queda solo el reproductor.
+   */
+  transcripcion?: string | null;
 }
 
 /** Host de los adjuntos de ImporChat. `ruta_archivo` puede venir absoluta
