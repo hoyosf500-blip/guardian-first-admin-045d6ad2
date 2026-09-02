@@ -120,15 +120,24 @@ export interface Suscriptor {
 export async function buscarSuscriptorPorTelefono(
   cfg: ChateaproConfig,
   telefono: string,
+  countryCode = "CO",
 ): Promise<Suscriptor | null> {
   const clave = last9(telefono);
   if (!clave) return null;
 
   const digitos = String(telefono ?? "").replace(/\D/g, "");
+  const nacional = digitos.replace(/^0+/, "").slice(-10);
+  const conIndicativo = idWhatsapp(telefono, countryCode); // 57XXXXXXXXXX
   const intentos = [
     String(telefono ?? "").trim(), // tal cual viene
     digitos,                        // sin símbolos
-    digitos.slice(-10),             // nacional (CO: 3XXXXXXXXX) — el que funciona
+    nacional,                       // 3XXXXXXXXX — así lo guarda quien escribió primero
+    // ⛔ `+57XXXXXXXXXX` — así queda un contacto CREADO POR LA API (al mandarle
+    // una plantilla a alguien que nunca escribió). Medido el 2-sep-2026: sin
+    // esta forma, el chat que acabamos de abrir salía como "nunca escribió" la
+    // próxima vez que la asesora abriera el pedido.
+    "+" + conIndicativo,
+    conIndicativo,
     clave,                          // últimos 9, por si otra cuenta los guarda así
   ].filter((q) => q && q.length >= 7);
 
@@ -159,6 +168,9 @@ export interface MensajeConversacion {
   tipo: string | null;
   esMarcador: boolean;
   archivoUrl: string | null;
+  /** Lo que DICE la nota de voz. Chatea Pro la transcribe sola. `null` = no es
+   *  audio o no vino transcripción — nunca se inventa. */
+  transcripcion?: string | null;
 }
 
 /**
@@ -341,5 +353,49 @@ export async function enviarPlantilla(
 ): Promise<void> {
   await llamar(cfg, "POST", "/subscriber/send-whatsapp-template", {
     body: { user_ns: userNs, content: contenido },
+  });
+}
+
+/** Indicativo por país, para armar el id de WhatsApp. */
+const INDICATIVO: Record<string, string> = { CO: "57", EC: "593", GT: "502" };
+
+/**
+ * El id de WhatsApp de un teléfono: indicativo + número nacional, solo dígitos.
+ * Verificado leyendo el `mid` de un mensaje real, que lleva el número así
+ * (`573218877000`).
+ */
+export function idWhatsapp(telefono: string, countryCode: string): string {
+  const d = String(telefono ?? "").replace(/\D/g, "");
+  const ind = INDICATIVO[String(countryCode || "CO").toUpperCase()] ?? "57";
+  if (d.startsWith(ind) && d.length > 10) return d;          // ya trae indicativo
+  return ind + d.replace(/^0+/, "").slice(-10);              // nacional → con indicativo
+}
+
+/**
+ * ⛔ LA PLANTILLA AL CLIENTE QUE NUNCA ESCRIBIÓ.
+ *
+ * Medido el 2-sep-2026: `send-whatsapp-template` exige un `user_ns`, o sea un
+ * contacto que YA existe. Un cliente que compró y jamás escribió por WhatsApp
+ * no es contacto, así que no se le podía mandar NADA desde Guardian — y son
+ * exactamente los que hay que rescatar (el pedido de prueba llevaba 12 días
+ * sin retirar en oficina, con la devolución casi segura).
+ *
+ * Esta ruta lo crea al vuelo (`create_if_not_found`), que es lo mismo que hace
+ * el panel. Se usa SOLO como respaldo: si el contacto existe se manda por
+ * `user_ns`, que además deja el mensaje en el hilo de siempre.
+ */
+export async function enviarPlantillaPorTelefono(
+  cfg: ChateaproConfig,
+  userId: string,
+  contenido: Record<string, unknown>,
+  nombre?: string,
+): Promise<void> {
+  await llamar(cfg, "POST", "/subscriber/send-whatsapp-template-by-user-id", {
+    body: {
+      user_id: userId,
+      create_if_not_found: "yes",
+      content: contenido,
+      ...(nombre ? { contact: { name: nombre } } : {}),
+    },
   });
 }

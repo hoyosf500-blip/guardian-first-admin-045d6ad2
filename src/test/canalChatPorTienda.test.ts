@@ -320,3 +320,31 @@ describe('el autor del mensaje y el cuerpo de la plantilla', () => {
     ).toBe(true);
   });
 });
+
+/**
+ * La plantilla al cliente que NUNCA escribió.
+ *
+ * ⛔ Probado con un envío real el 2-sep-2026: `send-whatsapp-template` exige un
+ * contacto que ya existe. Un cliente que compró y jamás escribió por WhatsApp
+ * NO es contacto — y son justo los que hay que rescatar (el pedido de la prueba
+ * llevaba 12 días sin retirar en oficina, con la devolución casi segura).
+ */
+describe('alcanzar al cliente que nunca escribió', () => {
+  it('hay un camino por teléfono que crea el contacto', () => {
+    expect(/enviarPlantillaPorTelefono/.test(cpPlant)).toBe(true);
+    expect(/create_if_not_found/.test(cpApi)).toBe(true);
+  });
+
+  it('el camino por teléfono es el RESPALDO, no el principal', () => {
+    // Con contacto existente se manda por user_ns: así el mensaje queda en el
+    // hilo de siempre y no abre una conversación paralela.
+    expect(/if \(sus\) \{/.test(cpPlant)).toBe(true);
+  });
+
+  it('el buscador prueba también la forma internacional', () => {
+    expect(
+      /"\+" \+ conIndicativo/.test(cpApi),
+      'un contacto creado por la API queda como +57XXXXXXXXXX: sin esa forma, el chat recién abierto sale como "nunca escribió"',
+    ).toBe(true);
+  });
+});

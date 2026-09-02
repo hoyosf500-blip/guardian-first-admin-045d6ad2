@@ -26,10 +26,12 @@ import {
   buscarSuscriptorPorTelefono,
   listarPlantillas,
   enviarPlantilla,
+  enviarPlantillaPorTelefono,
+  idWhatsapp,
   ChateaproError,
 } from "../_shared/chateaproApi.ts";
 
-const VERSION = "chateapro-plantillas 2026-09-02.3 motivo-sin-nombrar-canal";
+const VERSION = "chateapro-plantillas 2026-09-02.5 envio-probado-en-vivo";
 
 /** Lo que `/whatsapp-template/list` devuelve de verdad (medido 2-sep-2026). */
 interface PlantillaCruda {
@@ -123,13 +125,16 @@ Deno.serve(async (req) => {
       .select("phone, nombre").eq("store_id", storeId).eq("external_id", externalId).maybeSingle();
     if (!pedido?.phone) return json({ ok: false, error: "Ese pedido no tiene teléfono" }, 409);
 
-    const sus = await buscarSuscriptorPorTelefono(cfg, String(pedido.phone));
-    if (!sus) {
-      return json({
-        ok: false, sin_chat: true,
-        error: "Ese teléfono todavía no existe como contacto en Chatea Pro.",
-      }, 409);
-    }
+    // ⛔ Un cliente que compró y NUNCA escribió por WhatsApp no existe como
+    // contacto en Chatea Pro. Antes eso terminaba acá con "no existe como
+    // contacto" — y son justo los que hay que rescatar. Ahora, si no está, la
+    // plantilla se manda igual por teléfono y Chatea Pro lo crea al vuelo.
+    // El país decide el indicativo con el que Chatea Pro pudo haber guardado el
+    // teléfono (`+57…` cuando el contacto lo creó la API).
+    const { data: tiendaPais } = await sb.from("stores")
+      .select("country_code").eq("id", storeId).maybeSingle();
+    const cc = String(tiendaPais?.country_code || "CO");
+    const sus = await buscarSuscriptorPorTelefono(cfg, String(pedido.phone), cc);
 
     // ── Candado de un envío por día ───────────────────────────────────────
     // Se reusa `importchat_envios`: el nombre quedó del primer canal, pero la
@@ -155,14 +160,25 @@ Deno.serve(async (req) => {
     }
 
     const cruda = crudas.find((t) => t.name === nombre);
+    const contenido = {
+      // El `namespace` es obligatorio y viene en la propia plantilla.
+      namespace: cruda?.namespace ?? cruda?.default_values?.namespace ?? "",
+      name: elegida.nombre,
+      lang: cruda?.default_values?.lang ?? elegida.idioma ?? "es",
+      params: paramsChateapro(elegida, cruda, valores),
+    };
     try {
-      await enviarPlantilla(cfg, sus.user_ns, {
-        // El `namespace` es obligatorio y viene en la propia plantilla.
-        namespace: cruda?.namespace ?? cruda?.default_values?.namespace ?? "",
-        name: elegida.nombre,
-        lang: cruda?.default_values?.lang ?? elegida.idioma ?? "es",
-        params: paramsChateapro(elegida, cruda, valores),
-      });
+      if (sus) {
+        // Contacto existente: va por `user_ns` para que quede en el hilo de siempre.
+        await enviarPlantilla(cfg, sus.user_ns, contenido);
+      } else {
+        await enviarPlantillaPorTelefono(
+          cfg,
+          idWhatsapp(String(pedido.phone), cc),
+          contenido,
+          String(pedido.nombre || "").trim() || undefined,
+        );
+      }
     } catch (e) {
       // Si el envío falla hay que SOLTAR el candado: si no, el reintento de la
       // asesora choca con "ya se mandó hoy" sobre un mensaje que nunca salió.
@@ -188,7 +204,12 @@ Deno.serve(async (req) => {
       action_time: hora,
     });
 
-    return json({ ok: true, enviado_a: pedido.phone, plantilla: nombre });
+    return json({
+      ok: true, enviado_a: pedido.phone, plantilla: nombre,
+      // Para que la pantalla pueda decir "se le creó el contacto" en vez de
+      // dejar al operador con la duda de si salió por el hilo de siempre.
+      contacto_nuevo: !sus,
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (e instanceof ChateaproError && e.status === 401) {

@@ -27,7 +27,7 @@ import {
   ChateaproError,
 } from "../_shared/chateaproApi.ts";
 
-const VERSION = "chateapro-chat 2026-09-02.4 autor-y-cuerpo-de-plantilla";
+const VERSION = "chateapro-chat 2026-09-02.5 envio-probado-en-vivo";
 
 Deno.serve(async (req) => {
   const cors = getCorsHeaders(req);
@@ -74,7 +74,12 @@ Deno.serve(async (req) => {
       return json({ ok: false, sin_chat: true, error: "Este pedido no tiene teléfono, no hay por dónde buscar la conversación." }, 409);
     }
 
-    const sus = await buscarSuscriptorPorTelefono(cfg, String(pedido.phone));
+    // El país decide el indicativo con el que Chatea Pro pudo haber guardado el
+    // teléfono (`+57…` cuando el contacto lo creó la API).
+    const { data: tiendaPais } = await sb.from("stores")
+      .select("country_code").eq("id", storeId).maybeSingle();
+    const cc = String(tiendaPais?.country_code || "CO");
+    const sus = await buscarSuscriptorPorTelefono(cfg, String(pedido.phone), cc);
     if (!sus) {
       // ⛔ Esto NO es un error: significa que ese teléfono todavía nunca
       // escribió por WhatsApp. Se dice tal cual, porque "no se encontró" y

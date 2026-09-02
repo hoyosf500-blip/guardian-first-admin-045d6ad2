@@ -29,7 +29,7 @@ import {
   ChateaproError,
 } from "../_shared/chateaproApi.ts";
 
-const VERSION = "chateapro-send 2026-09-02.4 autor-y-cuerpo-de-plantilla";
+const VERSION = "chateapro-send 2026-09-02.5 envio-probado-en-vivo";
 
 /** ¿El texto que mandamos aparece en el hilo releído? Comparación floja a
  *  propósito: Chatea Pro puede recortar espacios o normalizar saltos de línea,
@@ -80,7 +80,12 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "Ese pedido no tiene teléfono: no hay a quién escribirle." }, 409);
     }
 
-    const sus = await buscarSuscriptorPorTelefono(cfg, String(pedido.phone));
+    // El país decide el indicativo con el que Chatea Pro pudo haber guardado el
+    // teléfono (`+57…` cuando el contacto lo creó la API).
+    const { data: tiendaPais } = await sb.from("stores")
+      .select("country_code").eq("id", storeId).maybeSingle();
+    const cc = String(tiendaPais?.country_code || "CO");
+    const sus = await buscarSuscriptorPorTelefono(cfg, String(pedido.phone), cc);
     if (!sus) {
       return json({
         ok: false, sin_chat: true,
@@ -124,9 +129,7 @@ Deno.serve(async (req) => {
     // Mismo prefijo que ImporChat: `SEG:` cuenta como gestión de Seguimiento y
     // `WHATSAPP:` como intento de contacto desde Confirmar. Si esto se
     // desalinea, el trabajo de una pantalla le suma puntos a la otra.
-    const { data: tienda } = await sb.from("stores")
-      .select("country_code").eq("id", storeId).maybeSingle();
-    const { fecha, hora } = fechaHoraLocal(String(tienda?.country_code || "CO"));
+    const { fecha, hora } = fechaHoraLocal(cc);
     const modulo = body?.modulo === "WHATSAPP" ? "WHATSAPP" : "SEG";
     const accion = String(body?.accion ?? "").trim().slice(0, 60) || "Escribí por WhatsApp";
     await sb.from("touchpoints").insert({
