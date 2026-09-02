@@ -1098,6 +1098,7 @@ export default function CrmCallView({
                 guia: o.guia,
                 transportadora: o.transportadora,
                 ciudad: o.ciudad,
+                direccion: o.direccion,
                 producto: o.producto,
                 valor: o.valor ? formatCOP(o.valor) : null,
               }}
@@ -1131,6 +1132,7 @@ export default function CrmCallView({
             guia: o.guia,
             transportadora: o.transportadora,
             ciudad: o.ciudad,
+            direccion: o.direccion,
             producto: o.producto,
             valor: o.valor ? formatCOP(o.valor) : null,
           }}

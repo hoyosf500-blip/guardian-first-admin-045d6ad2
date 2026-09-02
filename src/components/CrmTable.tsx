@@ -1735,6 +1735,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
                     guia: o.guia,
                     transportadora: o.transportadora,
                     ciudad: o.ciudad,
+                    direccion: o.direccion,
                     producto: o.producto,
                     valor: o.valor ? formatCOP(o.valor) : null,
                   }}

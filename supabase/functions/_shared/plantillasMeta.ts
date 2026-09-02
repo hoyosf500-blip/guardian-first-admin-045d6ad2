@@ -70,6 +70,9 @@ export interface DatosPedido {
   guia?: string | null;
   transportadora?: string | null;
   ciudad?: string | null;
+  /** La dirección de entrega. La piden las plantillas de Colombia, que la
+   *  nombran en prosa ("a la dirección {{3}}") en vez de con una etiqueta. */
+  direccion?: string | null;
   producto?: string | null;
   valor?: string | null;
   /** El link de rastreo YA ARMADO (`getTrackingUrl` en `orderUtils.ts`, que sabe
@@ -330,21 +333,65 @@ const esUrl = (s: string) => /^https?:\/\//i.test(texto(s));
  * matchea, porque ahí `{{2}}` es el número de orden interno. Si el texto no lo
  * dice, se deja vacío.
  */
-function pistaDelTexto(cuerpo: string, indice: number): "nombre" | "producto" | null {
+type CampoPista = "nombre" | "producto" | "guia" | "direccion" | "ciudad" | "transportadora" | "valor";
+
+function pistaDelTexto(cuerpo: string, indice: number): CampoPista | null {
   const pos = cuerpo.indexOf(`{{${indice}}}`);
   if (pos < 0) return null;
   const antes = cuerpo.slice(Math.max(0, pos - 40), pos);
   if (/(hola|estimad[\p{L}/]*|apreciad[\p{L}/]*|buen[oa]s(\s+\p{L}+)?)[\s,¡!]*$/iu.test(antes)) return "nombre";
   if (/\b(su|tu|sus|tus)\s*$/iu.test(antes)) return "producto";
   if (/\b(pedido|orden|compra)\s+de\s*$/iu.test(antes)) return "producto";
+  // ── Colombia habla en prosa, no con etiquetas (2-sep-2026) ────────────────
+  // Las 28 plantillas aprobadas de la cuenta de Chatea Pro casi no usan la
+  // forma "Etiqueta: {{n}}" que lee `etiquetaDe`, y Chatea Pro tampoco manda
+  // los `example` de Meta: los que llegan son literalmente "w" y "qw". Con las
+  // tres pistas de arriba solas, `sugerirValores` dejaba vacíos casi todos los
+  // huecos y el botón de acción de Seguimiento se apagaba entero. Medido el
+  // 2-sep-2026 sobre la cuenta real: de 11 fases, 8 sin ninguna plantilla que
+  // Guardian pudiera completar.
+  //
+  // Estas cinco leen el SUSTANTIVO pegado al hueco — la misma idea de
+  // `etiquetaDe`, sin exigir los dos puntos. Son deliberadamente literales:
+  // cada una exige que el texto NOMBRE el dato, no que lo insinúe.
+  //   "tu envío con guía {{2}}"                       → guía
+  //   "en la dirección {{4}}" · "dirección registrada" → dirección
+  //   "dirígete a X ciudad {{2}}"                      → ciudad
+  //   "La transportadora {{2}}" · "oficina de {{3}}"   → transportadora
+  //   "el valor a pagar es ${{4}}"                     → valor
+  //
+  // ⛔ Lo que NO cubren sigue siendo lo importante, y es la misma regla de
+  // siempre: si el texto no lo dice, el hueco queda vacío y la plantilla se
+  // salta. "tu orden {{2}}" no matchea nada (ahí va el número de orden
+  // interno) y "indícanos: {{6}}" tampoco — eso es qué dato pedirle al
+  // cliente, y depende de la novedad; inventarlo sería mandarle a un cliente
+  // real una pregunta que nadie decidió.
+  if (/\bgu[ií]a\s*#?\s*$/iu.test(antes)) return "guia";
+  if (/\bdirecci[oó]n(\s+registrada)?\s*$/iu.test(antes)) return "direccion";
+  if (/\bciudad\s*(de\s*)?$/iu.test(antes)) return "ciudad";
+  if (/\b(transportadora|oficina\s+de)\s*$/iu.test(antes)) return "transportadora";
+  if (/\$\s*$/.test(antes)) return "valor";
   return null;
 }
+
+/** Con qué dato del pedido se llena cada pista. */
+const POR_PISTA: Record<CampoPista, (d: DatosPedido) => string> = {
+  nombre: (d) => primerNombre(d.nombre),
+  producto: (d) => texto(d.producto),
+  guia: (d) => texto(d.guia),
+  direccion: (d) => texto(d.direccion),
+  ciudad: (d) => texto(d.ciudad),
+  transportadora: (d) => texto(d.transportadora),
+  valor: (d) => texto(d.valor),
+};
 
 interface Regla { prueba: RegExp; campo: (d: DatosPedido) => string }
 
 const REGLAS: Regla[] = [
   { prueba: /agencia|oficina|sucursal|transportadora|courier/, campo: (d) => texto(d.transportadora) },
   { prueba: /guia|tracking|rastreo|numero de orden|num de orden|orden/, campo: (d) => texto(d.guia) },
+  // "📍Dirección: {{6}}" (Ecuador) y "dirección registrada: {{3}}" (Colombia).
+  { prueba: /direccion|domicilio/, campo: (d) => texto(d.direccion) },
   { prueba: /ciudad|destino|zona|provincia|canton/, campo: (d) => texto(d.ciudad) },
   { prueba: /valor|total|precio|monto|pagar|efectivo/, campo: (d) => texto(d.valor) },
   { prueba: /producto|articulo|pedido de/, campo: (d) => texto(d.producto) },
@@ -387,7 +434,7 @@ export function sugerirValores(p: PlantillaMeta, d: DatosPedido): Record<number,
     // 3. Lo que dice el texto justo antes ("Hola {{1}}", "su {{2}}").
     const pista = pistaDelTexto(p.cuerpo, v.indice);
     if (pista) {
-      const val = pista === "nombre" ? primerNombre(d.nombre) : texto(d.producto);
+      const val = POR_PISTA[pista](d);
       if (val) out[v.indice] = val;
       continue;
     }

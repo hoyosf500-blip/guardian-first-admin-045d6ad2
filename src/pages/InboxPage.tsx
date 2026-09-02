@@ -219,6 +219,7 @@ export default function InboxPage() {
                       guia: o.guia,
                       transportadora: o.transportadora,
                       ciudad: o.ciudad,
+                      direccion: o.direccion,
                       producto: o.producto,
                       valor: o.valor ? formatCOP(o.valor) : null,
                     }}
@@ -260,6 +261,7 @@ export default function InboxPage() {
             guia: abierto.guia,
             transportadora: abierto.transportadora,
             ciudad: abierto.ciudad,
+            direccion: abierto.direccion,
             producto: abierto.producto,
             valor: abierto.valor ? formatCOP(abierto.valor) : null,
           }}

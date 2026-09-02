@@ -1127,6 +1127,7 @@ export default function OrderDetailPage() {
             guia: order.guia,
             transportadora: order.transportadora,
             ciudad: order.ciudad,
+            direccion: order.direccion,
             producto: order.producto,
             valor: valor == null ? null : formatCOP(valor),
           }}

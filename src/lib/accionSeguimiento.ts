@@ -44,8 +44,36 @@ export interface AccionFase {
   gestion: string;
   /** Patrones de nombre de plantilla de Meta, EN ORDEN de preferencia. El
    *  primero que matchee una plantilla aprobada de la cuenta, gana. */
-  plantillas: readonly RegExp[];
+  plantillas: readonly PatronPlantilla[];
 }
+
+/**
+ * Un patrón de plantilla, y —cuando hace falta— el texto que le corresponde.
+ *
+ * ── Por qué el texto puede depender de la plantilla (2-sep-2026) ────────────
+ * La fase pone UNA etiqueta para todas sus plantillas, y eso alcanza mientras
+ * todas digan lo mismo. En Colombia deja de alcanzar: la fase `novedad` promete
+ * *"Preguntarle la dirección"*, pero la única plantilla que la cuenta tiene y
+ * Guardian puede completar es `novedad_recordatorio_v2`, que **no pregunta
+ * nada** — le recuerda al cliente que su pedido está frenado. Con una sola
+ * etiqueta, el botón prometía una cosa, mandaba otra y firmaba la primera en la
+ * bitácora ("Coordiné nueva entrega"): exactamente el bug que este mismo
+ * archivo documenta para las fases `guia`/`bodega_trans` de Ecuador.
+ *
+ * Un `RegExp` suelto sigue valiendo y usa el texto de la fase — que es el caso
+ * de casi todas.
+ */
+export interface PatronConTexto {
+  patron: RegExp;
+  /** Reemplaza `AccionFase.etiqueta` cuando gana ESTA plantilla. */
+  etiqueta?: string;
+  /** Reemplaza `AccionFase.gestion` cuando gana ESTA plantilla. */
+  gestion?: string;
+}
+
+export type PatronPlantilla = RegExp | PatronConTexto;
+
+const soloPatron = (p: PatronPlantilla): RegExp => (p instanceof RegExp ? p : p.patron);
 
 /**
  * ⛔ Solo las fases donde hay UNA acción obvia. `otros`, `entregado`,
@@ -56,7 +84,17 @@ const ACCION_POR_FASE: Partial<Record<SegStatusKey, AccionFase>> = {
   oficina: {
     etiqueta: 'Avisarle que llegó a la agencia',
     gestion: 'Avisé: en oficina',
-    plantillas: [/retiro_agencia_disponible/, /retiro_agencia(?!_recordatorio)/, /retiro_agencia/, /agencia|oficina|retiro/],
+    // Ecuador las llama `retiro_agencia*`; Colombia, `seguimiento_*_oficina*`.
+    // Los dos nombres viven acá y NO se mezclan con el patrón genérico del
+    // final: ese último atrapa también `novedad_reclamo_oficina_1_utilidad`,
+    // que NO es "tu paquete te espera" sino "se registró una novedad" — y era
+    // el que ganaba en Colombia, además de ser incompletable, así que el botón
+    // se apagaba (medido el 2-sep-2026 sobre la cuenta real).
+    plantillas: [
+      /retiro_agencia_disponible/, /retiro_agencia(?!_recordatorio)/, /retiro_agencia/,
+      /seguimiento_reclamo_oficina/, /seguimiento_en_oficina/,
+      /agencia|oficina|retiro/,
+    ],
   },
   guia: {
     etiqueta: 'Mandarle la guía',
@@ -71,7 +109,10 @@ const ACCION_POR_FASE: Partial<Record<SegStatusKey, AccionFase>> = {
   reparto: {
     etiqueta: 'Avisarle que le llega hoy',
     gestion: 'Avisé que llega hoy',
-    plantillas: [/en_camino_hoy/, /zona_entrega/, /en_transito|transito/],
+    // `en_reparto` es como lo nombra Colombia. Va DESPUÉS de `en_camino_hoy`
+    // (Ecuador) porque el orden de esta lista es la preferencia, no el país: si
+    // una cuenta tuviera las dos, gana la que promete el día.
+    plantillas: [/en_camino_hoy/, /seguimiento_en_reparto/, /en_reparto|reparto/, /zona_entrega/, /en_transito|transito/],
   },
   transito: {
     etiqueta: 'Avisarle que va en camino',
@@ -89,12 +130,33 @@ const ACCION_POR_FASE: Partial<Record<SegStatusKey, AccionFase>> = {
   novedad: {
     etiqueta: 'Preguntarle la dirección',
     gestion: 'Coordiné nueva entrega',
-    plantillas: [/novedad/, /direccion_incompleta|direccion/],
+    // ⛔ El recordatorio va SEPARADO y con su propio texto. En Colombia es la
+    // única de novedad que Guardian puede completar entera —las dos buenas
+    // (`novedad_generica_v2`, `novedad_general_v2_utilidad`) piden "indícanos:
+    // {{6}}", o sea QUÉ dato reclamarle, que depende de la novedad y nadie
+    // decidió— y no pregunta nada: le recuerda al cliente que su pedido está
+    // frenado. Con la etiqueta de la fase, el botón decía "Preguntarle la
+    // dirección" y firmaba "Coordiné nueva entrega" sobre un mensaje que no
+    // hace ninguna de las dos cosas.
+    plantillas: [
+      /novedad(?!_recordatorio)/,
+      /direccion_incompleta|direccion/,
+      {
+        patron: /novedad_recordatorio/,
+        etiqueta: 'Recordarle que su pedido está frenado',
+        gestion: 'Le recordé la novedad',
+      },
+    ],
   },
   novedad_sol: {
     etiqueta: 'Confirmarle la nueva entrega',
     gestion: 'Coordiné nueva entrega',
-    plantillas: [/novedad/, /en_camino_hoy|zona_entrega/],
+    plantillas: [
+      /novedad(?!_recordatorio)/,
+      /en_camino_hoy|zona_entrega/,
+      // Mismo motivo que en `novedad`: el recordatorio no confirma nada.
+      { patron: /novedad_recordatorio/, etiqueta: 'Recordarle que su pedido está frenado', gestion: 'Le recordé la novedad' },
+    ],
   },
   procesamiento: {
     etiqueta: 'Avisarle que ya se está preparando',
@@ -114,7 +176,11 @@ const ACCION_POR_FASE: Partial<Record<SegStatusKey, AccionFase>> = {
   rechazado: {
     etiqueta: 'Preguntarle qué pasó',
     gestion: 'Llamé',
-    plantillas: [/rescate_devolucion|rescate/, /ultima_oportunidad/, /novedad/],
+    plantillas: [
+      /rescate_devolucion|rescate/, /ultima_oportunidad/, /novedad(?!_recordatorio)/,
+      // Mismo motivo que en `novedad`: el recordatorio no pregunta nada.
+      { patron: /novedad_recordatorio/, etiqueta: 'Recordarle que su pedido está frenado', gestion: 'Le recordé la novedad' },
+    ],
   },
 };
 
@@ -122,6 +188,35 @@ const ACCION_POR_FASE: Partial<Record<SegStatusKey, AccionFase>> = {
 export function accionPrincipal(estado: string | null | undefined): AccionFase | null {
   if (!estado) return null;
   return ACCION_POR_FASE[classifySegEstado(estado)] ?? null;
+}
+
+/**
+ * La acción **ajustada a la plantilla que realmente va a salir**.
+ *
+ * ⛔ El botón tiene que decir lo que manda y la bitácora tiene que firmar lo
+ * que se hizo. Cuando la plantilla ganadora trae su propio texto (ver
+ * `PatronConTexto`), manda ese; si no, el de la fase, que es lo de siempre.
+ *
+ * Sin `nombre` —todavía no se sabe cuál va a ser— devuelve el de la fase: es lo
+ * más honesto que se puede decir con lo que hay.
+ */
+export function accionDePlantilla(
+  estado: string | null | undefined,
+  nombre: string | null | undefined,
+): AccionFase | null {
+  const base = accionPrincipal(estado);
+  if (!base || !nombre) return base;
+  const n = sinTildes(String(nombre));
+  for (const regla of base.plantillas) {
+    if (!soloPatron(regla).test(n)) continue;
+    if (regla instanceof RegExp) return base;
+    return {
+      ...base,
+      etiqueta: regla.etiqueta ?? base.etiqueta,
+      gestion: regla.gestion ?? base.gestion,
+    };
+  }
+  return base;
 }
 
 // ── Nombres humanos de las plantillas ───────────────────────────────────────
@@ -232,7 +327,8 @@ export function partirPlantillas<T extends PlantillaOrdenable>(
     // Por patrón y en orden: así la primera de cada pasada es la de la
     // situación más específica (el aviso de llegada antes que el recordatorio
     // de vencimiento).
-    for (const patron of accion.plantillas) {
+    for (const regla of accion.plantillas) {
+      const patron = soloPatron(regla);
       const candidatas = plantillas.filter((p) =>
         !usadas.has(p.nombre) && !p.noSoportada
         && !(soloCompletables && completable && !completable(p))

@@ -23,6 +23,7 @@ export interface InboxItem {
   phone: string;
   estado: string;
   ciudad: string | null;
+  direccion: string | null;
   producto: string | null;
   valor: number | null;
   guia: string | null;
@@ -76,7 +77,7 @@ export function useInboxEsperando(storeId: string | null) {
     const seq = ++seqRef.current;
     const { data, error } = await supabase
       .from('orders')
-      .select('id, external_id, nombre, phone, estado, ciudad, producto, valor, guia, transportadora, last_movement_at, chat_entrante_at, chat_saliente_at, chat_leido_at')
+      .select('id, external_id, nombre, phone, estado, ciudad, direccion, producto, valor, guia, transportadora, last_movement_at, chat_entrante_at, chat_saliente_at, chat_leido_at')
       .eq('store_id', storeId)
       .not('chat_entrante_at', 'is', null)
       .order('chat_entrante_at', { ascending: false })
@@ -93,7 +94,7 @@ export function useInboxEsperando(storeId: string | null) {
     }
     type Fila = {
       id: string; external_id: string | null; nombre: string | null; phone: string | null;
-      estado: string | null; ciudad: string | null; producto: string | null; valor: number | null;
+      estado: string | null; ciudad: string | null; direccion: string | null; producto: string | null; valor: number | null;
       guia: string | null; transportadora: string | null; last_movement_at: string | null;
       chat_entrante_at: string | null; chat_saliente_at: string | null; chat_leido_at: string | null;
     };
@@ -114,6 +115,7 @@ export function useInboxEsperando(storeId: string | null) {
         phone: r.phone || '',
         estado: r.estado || '',
         ciudad: r.ciudad,
+        direccion: r.direccion,
         producto: r.producto,
         valor: r.valor != null ? Number(r.valor) : null,
         guia: r.guia,

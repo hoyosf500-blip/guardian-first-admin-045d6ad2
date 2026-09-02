@@ -4,7 +4,7 @@ import { Send, Loader2, MessageCircle } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useEnviarWhatsapp, type ModuloEnvio } from '@/hooks/useEnviarWhatsapp';
 import { usePlantillasMeta, useEnviarPlantilla } from '@/hooks/usePlantillasMeta';
-import { accionPrincipal, plantillaParaAccion, faseParaPlantillas } from '@/lib/accionSeguimiento';
+import { accionPrincipal, accionDePlantilla, plantillaParaAccion, faseParaPlantillas } from '@/lib/accionSeguimiento';
 import { plantillasPara } from '@/lib/plantillasChat';
 import { renderizar, faltantes, sugerirValores, type DatosPedido } from '@/lib/plantillasMeta';
 import { conRastreo } from '@/lib/datosPlantilla';
@@ -144,6 +144,21 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
   );
   const huecos = useMemo(() => (plantilla ? faltantes(plantilla, valores) : []), [plantilla, valores]);
 
+  // ⛔ El botón dice lo que MANDA, no lo que la fase esperaría mandar.
+  //
+  // Una fase tiene una etiqueta para todas sus plantillas, y en Ecuador eso
+  // alcanza. En Colombia no: la fase `novedad` promete "Preguntarle la
+  // dirección" y la única plantilla completable de la cuenta es un
+  // recordatorio que no pregunta nada. `accionDePlantilla` deja que la
+  // plantilla ganadora traiga su propio texto — de botón y de bitácora — y en
+  // el resto de los casos devuelve el de la fase, igual que antes.
+  //
+  // Con texto libre no hay plantilla que consultar, así que manda la fase.
+  const accionReal = useMemo(
+    () => (conPlantilla && plantilla ? accionDePlantilla(estado, plantilla.nombre) ?? accion : accion),
+    [conPlantilla, plantilla, estado, accion],
+  );
+
   // ⛔ `datosPedido` va como tercer argumento (30-ago-2026). Sin él, en las
   // fases `guia`/`bodega_trans` el botón decía «Mandarle la guía», mandaba
   // *"¿todo bien con la entrega?"* —sin guía, sin transportadora, sin link— y
@@ -203,7 +218,7 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
   const listo = conPlantilla ? !!plantilla && huecos.length === 0 : !!textoLibre;
 
   const mandar = async () => {
-    const gestion = accion.gestion;
+    const gestion = accionReal.gestion;
     const r = conPlantilla && plantilla
       ? await enviarPlantilla(externalId, plantilla.nombre, valores, modulo, { phone, accion: gestion })
       : await enviar(externalId, textoLibre, modulo, { phone, accion: gestion });
@@ -233,14 +248,14 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
         <button
           type="button"
           onClick={(e) => e.stopPropagation()}
-          title={`Le manda el mensaje al cliente por WhatsApp y queda registrado como "${accion.gestion}"`}
+          title={`Le manda el mensaje al cliente por WhatsApp y queda registrado como "${accionReal.gestion}"`}
           className={cn(
             'inline-flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/12 px-2.5 py-1.5 text-[11px] font-bold text-accent hover:bg-accent/20 transition-colors',
             className,
           )}
         >
           <MessageCircle size={12} aria-hidden="true" />
-          <span className="truncate">{accion.etiqueta}</span>
+          <span className="truncate">{accionReal.etiqueta}</span>
         </button>
       </PopoverTrigger>
 
@@ -270,7 +285,7 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
 
             <div className="flex items-center gap-2">
               <span className="text-[10px] text-muted-foreground">
-                Queda como «{accion.gestion}»
+                Queda como «{accionReal.gestion}»
               </span>
               <button
                 type="button"
