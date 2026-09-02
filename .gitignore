@@ -46,3 +46,8 @@ scripts/dropi-sandbox-test.mjs
 # origin/main desde b93ddc5 (18-jul) con la clave de Ecuador en claro.
 *-snapshot.yml
 *-snapshot.yaml
+
+# Tokens de API sacados de un panel (Chatea Pro, etc.). NUNCA van al repo:
+# el 11-ago-2026 una integration-key de Dropi terminó publicada en `main`.
+chateapro-token-*.txt
+*.key
