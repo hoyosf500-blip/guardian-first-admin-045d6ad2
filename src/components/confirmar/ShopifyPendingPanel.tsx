@@ -22,6 +22,22 @@ import { toast } from 'sonner';
 const DONE_KEY = (storeId: string) => `guardian.shopifyDone:${storeId}`;
 const DUP_OVERRIDE_KEY = (storeId: string) => `guardian.dupOverride:${storeId}`;
 const MISMATCH_FIXED_KEY = (storeId: string) => `guardian.mismatchFixed:${storeId}`;
+const EXPANDED_KEY = (storeId: string) => `guardian.shopifyPendingAbierto:${storeId}`;
+
+// La lista de pendientes arranca ABIERTA (2026-09-02). Antes `expanded` nacía en
+// false y no se recordaba: cada recarga escondía los pedidos sin pasar a Dropi
+// detrás de un botón, justo lo que hay que tener a la vista. Si el usuario la
+// cierra a mano se respeta, por tienda, hasta que la vuelva a abrir.
+function loadExpanded(storeId: string): boolean {
+  try {
+    const v = localStorage.getItem(EXPANDED_KEY(storeId));
+    return v === null ? true : v === '1';
+  } catch { return true; }
+}
+
+function saveExpanded(storeId: string, open: boolean) {
+  try { localStorage.setItem(EXPANDED_KEY(storeId), open ? '1' : '0'); } catch { /* noop */ }
+}
 const BOGOTA = 'America/Bogota'; // UTC-5 — sirve para Colombia y Ecuador
 
 /** Lee un set persistido por tienda de localStorage + la clave legacy de
@@ -95,9 +111,18 @@ export default function ShopifyPendingPanel() {
   // cuesta una sola petición extra.
   const { data: vmData } = useShopifyValueMismatches(activeStoreId);
   const { confirm: confirmPush, linkProduct } = usePushToDropi(activeStoreId);
-  const { markEntered } = useShopifyManualMarks(activeStoreId);
+  // `marks` son las marcas "Ya lo metí" GUARDADAS EN LA BASE (de cualquier
+  // asesora, desde cualquier equipo). Antes solo se escribían acá y nunca se
+  // leían de vuelta: el `done` de abajo vive en localStorage, así que la asesora
+  // marcaba, el pedido desaparecía de SU pantalla y en la del dueño seguía en
+  // rojo. El 1-sep-2026 eso terminó en un regaño injusto a un asesor de Ecuador.
+  const { markEntered, marks, refetch: refetchMarks } = useShopifyManualMarks(activeStoreId);
+  // Ids marcados "Ya lo metí" por CUALQUIERA, según la base. Se unen al `done`
+  // local para decidir qué se esconde. Va acá arriba a propósito: `handleYaLoMeti`
+  // lo necesita en sus dependencias y con el `const` más abajo quedaría en TDZ.
+  const markedIds = useMemo(() => new Set(marks.map(m => m.shopify_order_id)), [marks]);
   const { user } = useAuth();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState<boolean>(() => activeStoreId ? loadExpanded(activeStoreId) : true);
   const [showMismatches, setShowMismatches] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [done, setDone] = useState<Set<string>>(() => activeStoreId ? loadDone(activeStoreId) : new Set());
@@ -130,15 +155,25 @@ export default function ShopifyPendingPanel() {
     setDone(activeStoreId ? loadDone(activeStoreId) : new Set());
     setDupOverrides(activeStoreId ? loadOverrides(activeStoreId) : new Set());
     setMismatchFixed(activeStoreId ? loadMismatchFixed(activeStoreId) : new Set());
+    setExpanded(activeStoreId ? loadExpanded(activeStoreId) : true);
     setLastBulkErrors({});
   }, [activeStoreId]);
 
   useEffect(() => {
     if (!activeStoreId) return;
-    // Solo la cola de pendientes (ventana corta) va a 15 min: es la que la
-    // asesora trabaja hoy. COST-2 2026-07-10: 2 min → 15 min.
-    return pollWhenVisible(() => { void refetch(); }, 15 * 60_000, { runOnVisible: false });
-  }, [activeStoreId, refetch]);
+    // 2026-09-02: estaba en 15 min y con `runOnVisible: false`. El dueño reportó
+    // que los pedidos nuevos "no salían" y tenía que apretar Actualizar a mano —
+    // y tenía razón: un pedido podía tardar 15 min en aparecer, y al volver de
+    // otra pestaña NO se refrescaba nunca (el interval arrancaba de cero sin
+    // disparar). En una operación COD eso es una venta esperando.
+    //
+    // Vuelve a 3 min y CON `runOnVisible: true`. El ahorro de COST-2 no se
+    // pierde: lo que costaba plata eran las pestañas en segundo plano, y de eso
+    // ya se encarga `pollWhenVisible`, que PARA el interval cuando la pestaña se
+    // oculta. Acá solo se refresca la pestaña que alguien está mirando.
+    const tick = () => { void refetch(); void refetchMarks(); };
+    return pollWhenVisible(tick, 3 * 60_000, { runOnVisible: true });
+  }, [activeStoreId, refetch, refetchMarks]);
 
 
   const pending: ShopifyPendingItem[] = useMemo(() => data?.pending ?? [], [data]);
@@ -184,14 +219,14 @@ export default function ShopifyPendingPanel() {
   // "Ya lo metí": esconde local (snappy) + PERSISTE la marca (auditable + revertible).
   // Guard anti-doble-click: ignora si ya está marcado o si hay un bloqueo activo.
   const handleYaLoMeti = useCallback(async (p: ShopifyPendingItem) => {
-    if (!activeStoreId || lockMarks || done.has(p.id)) return;
+    if (!activeStoreId || lockMarks || done.has(p.id) || markedIds.has(p.id)) return;
     if (isBlockedByDuplicate(p, dupMap, dupOverrides)) return;  // bloqueo anti-duplicado
     setLockMarks(true);
     markDone(p.id);
     const r = await markEntered({ id: p.id, name: p.name, customer: p.customer, phone: p.phone, total: p.total, city: p.city });
     if (!r.ok) toast.error('No se pudo guardar la marca: ' + (r.error || ''));
     setTimeout(() => setLockMarks(false), 600);
-  }, [activeStoreId, lockMarks, done, dupMap, dupOverrides, markDone, markEntered]);
+  }, [activeStoreId, lockMarks, done, markedIds, dupMap, dupOverrides, markDone, markEntered]);
 
   // Revertir desde el historial: saca el pedido del `done` local y refetchea →
   // vuelve a aparecer en la cola de pendientes para meterlo bien.
@@ -254,7 +289,10 @@ export default function ShopifyPendingPanel() {
     try { await navigator.clipboard.writeText(phone); setCopied(phone); setTimeout(() => setCopied(null), 1500); } catch { /* noop */ }
   }, []);
 
-  const visible = useMemo(() => pending.filter(p => !done.has(p.id)), [pending, done]);
+  const visible = useMemo(
+    () => pending.filter(p => !done.has(p.id) && !markedIds.has(p.id)),
+    [pending, done, markedIds],
+  );
   // La lista MOSTRADA aplica el buscador; el contador, el banner y "Subir todos"
   // siguen sobre `visible` (el total real, no lo filtrado por búsqueda).
   const searchedVisible = useMemo(
@@ -660,7 +698,7 @@ export default function ShopifyPendingPanel() {
               className="h-9 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-semibold inline-flex items-center justify-center gap-1.5 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none flex-1 sm:flex-none">
               {bulkRunning ? <Loader2 size={13} className="motion-safe:animate-spin" aria-hidden="true" /> : <Truck size={13} aria-hidden="true" />} Subir todos
             </button>
-            <button onClick={() => setExpanded(e => !e)}
+            <button onClick={() => setExpanded(e => { const n = !e; if (activeStoreId) saveExpanded(activeStoreId, n); return n; })}
               aria-label={expanded ? 'Ocultar lista de pendientes' : 'Ver lista de pendientes'}
               aria-expanded={expanded}
               className="h-9 px-3 rounded-lg border border-border bg-card text-xs font-semibold text-foreground inline-flex items-center justify-center gap-1.5 hover:border-border-strong cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none flex-1 sm:flex-none">
