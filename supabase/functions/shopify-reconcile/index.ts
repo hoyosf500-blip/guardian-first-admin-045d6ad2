@@ -13,6 +13,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { isStoreMember } from "../_shared/dropiStoreConfig.ts";
 import { loadShopifyConfig, getShopifyAccessToken } from "../_shared/shopifyStoreConfig.ts";
+import { respuestaPing } from "../_shared/versionEdge.ts";
+
+// Subir esta marca EN EL MISMO COMMIT que el cambio, o el ping miente.
+const VERSION = "shopify-reconcile 2026-09-02.1 cuadre-del-dia";
 
 const SHOPIFY_API_VERSION = "2024-10";
 
@@ -119,6 +123,7 @@ async function fetchShopifyOrders(domain: string, token: string, sinceISO: strin
 Deno.serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  { const p = respuestaPing(req, VERSION, corsHeaders); if (p) return p; }
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -185,17 +190,17 @@ Deno.serve(async (req: Request) => {
     const sinceDropi = new Date(Date.now() - (days + 6) * 86400000).toISOString();
     // Además del teléfono+fecha (para el cruce), guardamos valor/external_id/estado
     // para poder comparar el valor en los pares emparejados (auditoría de "valor distinto").
-    const dropiList: { tel: string; t: number; valor: number; external_id: string; estado: string }[] = [];
+    const dropiList: { tel: string; t: number; valor: number; external_id: string; estado: string; nombre: string; ciudad: string }[] = [];
     const PAGE = 1000;
     for (let from = 0; from < 20000; from += PAGE) {
       const { data, error } = await sb
         .from("orders")
-        .select("phone, created_at, valor, external_id, estado")
+        .select("phone, created_at, valor, external_id, estado, nombre, ciudad")
         .eq("store_id", storeId)
         .gte("created_at", sinceDropi)
         .range(from, from + PAGE - 1);
       if (error) throw new Error(`orders read: ${error.message}`);
-      const rows = (data || []) as { phone: string | null; created_at: string; valor: number | null; external_id: string | null; estado: string | null }[];
+      const rows = (data || []) as { phone: string | null; created_at: string; valor: number | null; external_id: string | null; estado: string | null; nombre: string | null; ciudad: string | null }[];
       for (const r of rows) {
         const k = normalizePhone(r.phone);
         // Un pedido borrado/reemplazado en Dropi no puede "cubrir" la venta de
@@ -204,6 +209,7 @@ Deno.serve(async (req: Request) => {
         if (k) dropiList.push({
           tel: k, t: new Date(r.created_at).getTime(),
           valor: Number(r.valor) || 0, external_id: String(r.external_id ?? ""), estado: String(r.estado ?? ""),
+          nombre: String(r.nombre ?? ""), ciudad: String(r.ciudad ?? ""),
         });
       }
       if (rows.length < PAGE) break;
@@ -255,6 +261,10 @@ Deno.serve(async (req: Request) => {
       (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
     );
     const pending: Record<string, unknown>[] = [];
+    const matched: Record<string, unknown>[] = [];
+    // Teléfono → la venta de Shopify que YA quedó cubierta. Sirve para detectar
+    // el caso opuesto a la fuga: DOS pedidos en Dropi para UNA sola venta.
+    const telsMatched = new Map<string, string>();
     const valueMismatches: Record<string, unknown>[] = [];
     for (const o of sortedAsc) {
       const tel = orderPhone(o);
@@ -265,6 +275,12 @@ Deno.serve(async (req: Request) => {
       // del push: shopify-push-dropi/discount.ts isCodOvercharge; inline para no
       // acoplar dos edge functions deployadas por separado).
       const d = dropiList[idx];
+      // El pedido emparejado también se devuelve: sin esto el panel solo podía
+      // mostrar lo que FALTA, y para comprobar el cuadre había que contar a mano
+      // contra el panel de Shopify. Ahora se ve pedido por pedido con su número
+      // de Dropi al lado.
+      matched.push({ ...toCard(o), external_id: d.external_id, estado: d.estado, dropi_valor: d.valor });
+      if (tel) telsMatched.set(tel, o.name);
       const shopTotal = o.total_price ? Number(o.total_price) : 0;
       const tol = Math.max(2, shopTotal * 0.01);
       if (shopTotal > 0 && d.valor - shopTotal > tol) {
@@ -285,6 +301,32 @@ Deno.serve(async (req: Request) => {
     pending.sort((a, b) => new Date(b.created_at as string).getTime() - new Date(a.created_at as string).getTime());
     valueMismatches.sort((a, b) => Number(b.overcharge) - Number(a.overcharge));
 
+    // DOS pedidos en Dropi para UNA venta de Shopify. Es el error espejo de la
+    // fuga y cuesta igual o más: se despacha dos veces el mismo producto al
+    // mismo cliente. También explica por qué contar filas nunca cuadra —
+    // Guardian puede tener MÁS pedidos que Shopify.
+    // Un pedido Dropi sobra si: quedó sin emparejar, no está cancelado, y su
+    // teléfono pertenece a una venta de Shopify que YA quedó cubierta por otro.
+    const duplicates: Record<string, unknown>[] = [];
+    for (let i = 0; i < dropiList.length; i++) {
+      if (usedDropi.has(i)) continue;
+      const d = dropiList[i];
+      if (d.estado.toUpperCase().startsWith("CANCELAD")) continue;
+      const ventaCubierta = telsMatched.get(d.tel);
+      if (!ventaCubierta) continue;
+      duplicates.push({
+        external_id: d.external_id,
+        estado: d.estado,
+        valor: d.valor,
+        nombre: d.nombre,
+        ciudad: d.ciudad,
+        phone: d.tel,
+        shopify_name: ventaCubierta,
+        created_at: new Date(d.t).toISOString(),
+      });
+    }
+    duplicates.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+
     // 4. Desglose: hoy + por día, usando la ZONA HORARIA REAL de la tienda para
     //    que el corte "hoy" coincida con el dashboard de Shopify (clave en EC si
     //    la tienda no está en UTC-5). Fallback America/Bogota.
@@ -304,6 +346,19 @@ Deno.serve(async (req: Request) => {
     const todayShopify = shopifyByDate[todayStr] || 0;
     const todayPending = pendingByDate[todayStr] || 0;
 
+    // El cuadre pedido-por-pedido se manda solo de HOY y AYER. Con 7 días, una
+    // tienda como Ecuador devolvería ~425 fichas en cada poll (cada 3 min, por
+    // pestaña abierta) para una pantalla que se mira por día. Los conteos de
+    // arriba siguen cubriendo el período completo.
+    const CUADRE_DIAS = 2;
+    const diasCuadre = new Set<string>();
+    for (let i = 0; i < CUADRE_DIAS; i++) {
+      diasCuadre.add(new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date(Date.now() - i * 86400000)));
+    }
+    const matchedRecientes = matched
+      .filter((m) => diasCuadre.has(fmtDay(m.created_at as string)))
+      .sort((a, b) => new Date(b.created_at as string).getTime() - new Date(a.created_at as string).getTime());
+
     return new Response(
       JSON.stringify({
         ok: true,
@@ -319,6 +374,13 @@ Deno.serve(async (req: Request) => {
         todayPending,
         byDay,
         pending,
+        // Cuadre del día: los que YA están en Dropi (hoy y ayer), con su número
+        // de pedido de Dropi al lado. `matchedDays` dice hasta dónde llega para
+        // que la pantalla no afirme un cuadre completo sobre datos recortados.
+        matched: matchedRecientes,
+        matchedDays: CUADRE_DIAS,
+        duplicateCount: duplicates.length,
+        duplicates,
         valueMismatchCount: valueMismatches.length,
         valueMismatches,
       }),

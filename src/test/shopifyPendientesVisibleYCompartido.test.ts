@@ -127,3 +127,72 @@ describe('panel de pendientes de Shopify: se ve y se comparte', () => {
     ).toBe(true);
   });
 });
+
+/**
+ * CUADRE DEL DÍA (2-sep-2026). El dueño: *"en guardian ahora hay 9 pero en
+ * shopify hay 10, está faltando 1 que el asesor no lo ve"*.
+ *
+ * Medido: no faltaba ninguno. La tira ponía HOY y ÚLTIMOS 7 DÍAS en el MISMO
+ * renglón, y en pantalla ancha se lee como una sola frase: leyó el "10 en
+ * Shopify" de hoy contra el "9 ya en Dropi" de la semana. Y no había forma de
+ * comprobarlo, porque la única lista que existía era la de lo que FALTA.
+ */
+const CUADRE = join(process.cwd(), 'src/components/confirmar/CuadreDelDia.tsx');
+const cuadre = sinComentarios(readFileSync(CUADRE, 'utf8'));
+const RECONCILE = join(process.cwd(), 'supabase/functions/shopify-reconcile/index.ts');
+const reconcile = sinComentarios(readFileSync(RECONCILE, 'utf8'));
+
+describe('cuadre del día: se puede comprobar, no solo creer', () => {
+  it('HOY y el período NO comparten renglón', () => {
+    // El contenedor que envuelve las dos ventanas de tiempo.
+    const tira = codigo.match(/<div className="([^"]*)"[^>]*>\s*<span>\s*<span className="font-medium text-foreground">Hoy:/);
+    expect(tira, 'no se encontró la tira de reconciliación').not.toBeNull();
+    expect(
+      /flex-col/.test(tira![1]),
+      'las dos ventanas de tiempo van una por renglón: juntas se leen como una sola frase y ahí nació el "9 vs 10"',
+    ).toBe(true);
+    expect(
+      /flex-wrap/.test(tira![1]),
+      'flex-wrap deja que "Últimos N días" suba al renglón de "Hoy" en pantalla ancha',
+    ).toBe(false);
+  });
+
+  it('el cuadre se dibuja con los pendientes del SERVIDOR, no con los visibles', () => {
+    const uso = codigo.match(/<CuadreDelDia[\s\S]{0,400}?\/>/);
+    expect(uso, 'el panel debe montar CuadreDelDia').not.toBeNull();
+    expect(/pending=\{pending\}/.test(uso![0])).toBe(true);
+    expect(
+      /pending=\{visible\}|pending=\{searchedVisible\}/.test(uso![0]),
+      'una pantalla para COMPROBAR no puede depender de lo que alguien escondió en su navegador',
+    ).toBe(false);
+  });
+
+  it('el cuadre avisa cuando la suma no da', () => {
+    expect(
+      /enDropi \+ sinPasar === shopifyDelDia/.test(cuadre),
+      'sin ese control el cuadre "se ve bien" aunque falte una venta — que es justo el miedo del dueño',
+    ).toBe(true);
+    expect(/No cuadra/.test(cuadre)).toBe(true);
+  });
+
+  it('el cuadre no afirma nada si el servidor todavía no manda el detalle', () => {
+    expect(
+      /matched === undefined/.test(cuadre),
+      'Lovable NO redespliega edge functions: sin `matched` hay que decirlo, no dibujar un cuadre incompleto',
+    ).toBe(true);
+  });
+
+  it('shopify-reconcile devuelve los emparejados y los duplicados', () => {
+    expect(/matched: matchedRecientes/.test(reconcile), 'sin `matched` el panel solo puede mostrar lo que falta').toBe(true);
+    expect(
+      /duplicates,/.test(reconcile),
+      'Dropi puede tener DOS pedidos para UNA venta: sin eso, contar filas nunca cuadra',
+    ).toBe(true);
+  });
+
+  it('shopify-reconcile puede decir qué versión está desplegada', () => {
+    expect(/respuestaPing\(req, VERSION/.test(reconcile)).toBe(true);
+    const v = reconcile.match(/const VERSION = "shopify-reconcile ([^"]+)"/);
+    expect(v, 'la marca de versión debe existir y subir EN EL MISMO COMMIT, o el ping miente').not.toBeNull();
+  });
+});

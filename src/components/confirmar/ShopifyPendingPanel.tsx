@@ -14,8 +14,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { bogotaToday, formatCOP } from '@/lib/utils';
 import PushToDropiModal from './PushToDropiModal';
 import ShopifyMarksHistoryModal from './ShopifyMarksHistoryModal';
+import CuadreDelDia from './CuadreDelDia';
 import { pollWhenVisible } from '@/lib/pollWhenVisible';
-import { ShoppingBag, RefreshCw, Copy, Check, ExternalLink, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Truck, Loader2, History, Ban, ShieldCheck, Search, X, Link2 } from 'lucide-react';
+import { ShoppingBag, RefreshCw, Copy, Check, ExternalLink, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Truck, Loader2, History, Ban, ShieldCheck, Search, X, Link2, ClipboardCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 
@@ -23,6 +24,17 @@ const DONE_KEY = (storeId: string) => `guardian.shopifyDone:${storeId}`;
 const DUP_OVERRIDE_KEY = (storeId: string) => `guardian.dupOverride:${storeId}`;
 const MISMATCH_FIXED_KEY = (storeId: string) => `guardian.mismatchFixed:${storeId}`;
 const EXPANDED_KEY = (storeId: string) => `guardian.shopifyPendingAbierto:${storeId}`;
+const CUADRE_KEY = (storeId: string) => `guardian.shopifyCuadreAbierto:${storeId}`;
+
+/** El cuadre del día nace cerrado (son todas las ventas del día, no solo lo que
+ *  falta) pero SE RECUERDA: al que lo usa para revisar no se le cierra solo en
+ *  cada recarga. */
+function loadCuadre(storeId: string): boolean {
+  try { return localStorage.getItem(CUADRE_KEY(storeId)) === '1'; } catch { return false; }
+}
+function saveCuadre(storeId: string, open: boolean) {
+  try { localStorage.setItem(CUADRE_KEY(storeId), open ? '1' : '0'); } catch { /* noop */ }
+}
 
 // La lista de pendientes arranca ABIERTA (2026-09-02). Antes `expanded` nacía en
 // false y no se recordaba: cada recarga escondía los pedidos sin pasar a Dropi
@@ -130,6 +142,10 @@ export default function ShopifyPendingPanel() {
   const [dupOverrides, setDupOverrides] = useState<Set<string>>(() => activeStoreId ? loadOverrides(activeStoreId) : new Set());
   // "Ya lo corregí" en valor-distinto: ids que la operadora ya resolvió a mano.
   const [mismatchFixed, setMismatchFixed] = useState<Set<string>>(() => activeStoreId ? loadMismatchFixed(activeStoreId) : new Set());
+  // Cuadre del día: la lista COMPLETA de ventas de Shopify del día con su
+  // estado (en Dropi / sin pasar). Es la única forma de COMPROBAR el cuadre:
+  // los números solos ya se leyeron mal una vez ("9 vs 10", 2-sep-2026).
+  const [showCuadre, setShowCuadre] = useState<boolean>(() => activeStoreId ? loadCuadre(activeStoreId) : false);
   // Buscador de la lista de pendientes (no toca el contador ni "Subir todos").
   const [pendingSearch, setPendingSearch] = useState('');
   const [copied, setCopied] = useState<string | null>(null);
@@ -156,6 +172,7 @@ export default function ShopifyPendingPanel() {
     setDupOverrides(activeStoreId ? loadOverrides(activeStoreId) : new Set());
     setMismatchFixed(activeStoreId ? loadMismatchFixed(activeStoreId) : new Set());
     setExpanded(activeStoreId ? loadExpanded(activeStoreId) : true);
+    setShowCuadre(activeStoreId ? loadCuadre(activeStoreId) : false);
     setLastBulkErrors({});
   }, [activeStoreId]);
 
@@ -694,23 +711,31 @@ export default function ShopifyPendingPanel() {
               {allClear ? 'sin pasar a Dropi — todo al día ✓' : 'sin pasar a Dropi'}
             </span>
           </div>
-          {/* Tira de reconciliación: hoy + período */}
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+          {/* Tira de reconciliación: hoy y período, UNA LÍNEA CADA UNO.
+              ⛔ 2026-09-02: iban en la misma línea separados por "|", y en
+              pantalla ancha eso se lee como una sola frase. El dueño leyó el
+              "10 en Shopify" de HOY contra el "9 ya en Dropi" de los 7 DÍAS y
+              reportó un pedido perdido que no existía. Dos ventanas de tiempo
+              distintas nunca van en el mismo renglón. */}
+          <div className="mt-1 flex flex-col gap-y-0.5 text-xs text-muted-foreground">
             <span>
-              <span className="font-medium text-foreground">Hoy:</span> {todayShopify} en Shopify · {todayMatched} en Dropi ·{' '}
+              <span className="font-medium text-foreground">Hoy:</span> {todayShopify} en Shopify · {todayMatched} ya en Dropi ·{' '}
               <span className={todayPending > 0 ? 'font-semibold text-warning' : ''}>{todayPending} sin pasar</span>
             </span>
-            <span className="opacity-50">|</span>
             <span>
-              <span className="font-medium text-foreground">Últimos {days}d:</span> {periodShopify} en Shopify · {periodMatched} en Dropi ·{' '}
+              <span className="font-medium text-foreground">Últimos {days} días:</span> {periodShopify} en Shopify · {periodMatched} ya en Dropi ·{' '}
               <span className={periodPending > 0 ? 'font-semibold text-warning' : ''}>{periodPending} sin pasar</span>
+              {cancelled > 0 && <span className="opacity-70"> · {cancelled} cancelados</span>}
+              {yaResueltos > 0 && <span className="opacity-70"> · {yaResueltos} ya los marcó el equipo</span>}
             </span>
-            {cancelled > 0 && <span className="opacity-70">· {cancelled} cancelados</span>}
-            {yaResueltos > 0 && (
-              <span className="opacity-70">· {yaResueltos} ya los marcó el equipo</span>
-            )}
           </div>
         </div>
+        <button onClick={() => setShowCuadre(v => { const n = !v; if (activeStoreId) saveCuadre(activeStoreId, n); return n; })} aria-label="Ver el cuadre del día pedido por pedido"
+          aria-expanded={showCuadre}
+          title="Cuadre del día — cada venta de Shopify con su estado"
+          className={`h-9 px-2.5 rounded-lg border flex items-center justify-center gap-1.5 flex-shrink-0 text-xs font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${showCuadre ? 'border-primary/50 bg-primary/10 text-primary' : 'border-border bg-card text-muted-foreground hover:text-foreground'}`}>
+          <ClipboardCheck size={14} aria-hidden="true" /> <span className="hidden sm:inline">Cuadre del día</span>
+        </button>
         <button onClick={() => setShowHistory(true)} aria-label="Ver historial de lo que metí"
           title='Historial de "Ya lo metí" — verificá y revertí'
           className="h-9 px-2.5 rounded-lg border border-border bg-card flex items-center justify-center gap-1.5 text-muted-foreground hover:text-foreground flex-shrink-0 text-xs font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
@@ -737,6 +762,22 @@ export default function ShopifyPendingPanel() {
           </div>
         )}
       </div>
+
+      {/* Cuadre del día: TODAS las ventas del día, una por una, con su estado.
+          Se dibuja con `pending` del SERVIDOR (no `visible`): esta pantalla es
+          para comprobar, y lo que alguien escondió en su navegador no puede
+          cambiar el cuadre. */}
+      {showCuadre && (
+        <CuadreDelDia
+          dia={data.today ?? bogotaToday()}
+          shopifyDelDia={todayShopify}
+          matched={data.matched}
+          pending={pending}
+          duplicates={data.duplicates}
+          timeZone={BOGOTA}
+          onClose={() => { setShowCuadre(false); if (activeStoreId) saveCuadre(activeStoreId, false); }}
+        />
+      )}
 
       {/* Confirmación de subida en lote */}
       {bulkConfirm && count > 0 && (

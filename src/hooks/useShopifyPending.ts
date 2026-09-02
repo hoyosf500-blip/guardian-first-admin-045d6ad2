@@ -40,6 +40,30 @@ export interface ShopifyValueMismatch {
   created_at: string;
 }
 
+/** Pedido de Shopify que YA está en Dropi, con el número de pedido de Dropi al
+ *  lado. Existe para poder COMPROBAR el cuadre pedido por pedido: antes el panel
+ *  solo mostraba lo que faltaba, así que la única forma de verificar era contar
+ *  a mano contra el panel de Shopify — y contar filas de Guardian NUNCA cuadra,
+ *  porque Dropi puede tener dos pedidos para una misma venta. */
+export interface ShopifyMatchedItem extends ShopifyPendingItem {
+  external_id: string;   // número del pedido en Dropi
+  estado: string;        // estado en Dropi (PENDIENTE CONFIRMACION, EN REPARTO…)
+  dropi_valor: number;   // lo que Dropi va a cobrar
+}
+
+/** DOS pedidos en Dropi para UNA venta de Shopify: el error espejo de la fuga.
+ *  Se despacha dos veces el mismo producto al mismo cliente. */
+export interface ShopifyDuplicateItem {
+  external_id: string;
+  estado: string;
+  valor: number;
+  nombre: string;
+  ciudad: string;
+  phone: string;
+  shopify_name: string;  // la venta de Shopify que ese pedido duplica
+  created_at: string;
+}
+
 export interface ShopifyReconcileResult {
   ok: boolean;
   configured: boolean;
@@ -54,6 +78,12 @@ export interface ShopifyReconcileResult {
   todayPending?: number;
   byDay?: ShopifyDayBreakdown[];
   pending: ShopifyPendingItem[];
+  // Cuadre del día. Opcionales: llegan vacíos hasta redesplegar `shopify-reconcile`
+  // (2026-09-02) — la pantalla lo dice en vez de afirmar un cuadre incompleto.
+  matched?: ShopifyMatchedItem[];
+  matchedDays?: number;        // hasta cuántos días atrás llega `matched`
+  duplicateCount?: number;
+  duplicates?: ShopifyDuplicateItem[];
   valueMismatchCount?: number;
   valueMismatches?: ShopifyValueMismatch[];
   error?: string;
