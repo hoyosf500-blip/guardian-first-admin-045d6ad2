@@ -29,26 +29,35 @@ import {
   ChateaproError,
 } from "../_shared/chateaproApi.ts";
 
-const VERSION = "chateapro-plantillas 2026-09-02.1 alta";
+const VERSION = "chateapro-plantillas 2026-09-02.2 medido-contra-la-api";
 
-/**
- * `parsearPlantillas` exige `status: "APPROVED"` porque Meta devuelve también
- * las pendientes y las rechazadas. Chatea Pro solo lista las aprobadas y no
- * manda ese campo, así que sin esto la lista salía SIEMPRE vacía — y una lista
- * vacía se lee como "esta cuenta no tiene plantillas", que es mentira.
- * Solo se completa cuando el campo NO viene; si viene, manda lo que diga.
- */
-function conEstado(crudas: unknown): unknown {
-  if (!Array.isArray(crudas)) return crudas;
-  return crudas.map((t) => {
-    const o = (t && typeof t === "object" ? t : {}) as Record<string, unknown>;
-    return o.status === undefined ? { ...o, status: "APPROVED" } : o;
-  });
+/** Lo que `/whatsapp-template/list` devuelve de verdad (medido 2-sep-2026). */
+interface PlantillaCruda {
+  name?: string;
+  namespace?: string;
+  language?: string;
+  status?: string;
+  /** El panel guarda acá el payload completo que usa para mandarla. */
+  default_values?: { namespace?: string; lang?: string; params?: Record<string, string> } | null;
 }
 
-/** Payload de Chatea Pro: los huecos van como `BODY_{{n}}`, no como `components`. */
-function paramsChateapro(p: PlantillaMeta, valores: Record<number, string>): Record<string, string> {
-  const params: Record<string, string> = {};
+/**
+ * Los parámetros del envío.
+ *
+ * ⛔ NO se arman desde cero. Medido el 2-sep-2026: `default_values.params` trae
+ * también los botones (`QUICK_REPLY_1: "f209801s2909037"`) y los enlaces
+ * (`URL_1`), que apuntan a subflujos internos de Chatea Pro. Mandando solo los
+ * `BODY_{{n}}` la plantilla sale con los botones rotos — y el botón
+ * "CONFIRMAR PEDIDO" es justamente la señal que más predice si un pedido se
+ * cancela (ver `senalConfirmacion`). Se parte de lo que el panel ya usa y solo
+ * se pisan los huecos del cuerpo con lo que escribió la asesora.
+ */
+function paramsChateapro(
+  p: PlantillaMeta,
+  cruda: PlantillaCruda | undefined,
+  valores: Record<number, string>,
+): Record<string, string> {
+  const params: Record<string, string> = { ...(cruda?.default_values?.params ?? {}) };
   for (const v of p.variables) {
     params[`BODY_{{${v.indice}}}`] = String(valores?.[v.indice] ?? "").trim();
   }
@@ -85,8 +94,10 @@ Deno.serve(async (req) => {
       return json({ ok: false, sin_config: true, error: "Esta tienda no tiene Chatea Pro configurado" }, 409);
     }
 
-    const crudas = await listarPlantillas(cfg);
-    const plantillas = parsearPlantillas(conEstado(crudas));
+    const crudas = (await listarPlantillas(cfg)) as unknown as PlantillaCruda[];
+    // `status` SÍ viene ("APPROVED"), verificado el 2-sep-2026: `parsearPlantillas`
+    // filtra las pendientes y rechazadas sin ayuda de nadie.
+    const plantillas = parsearPlantillas(crudas);
 
     if (accion === "listar") {
       return json({ ok: true, plantillas });
@@ -143,12 +154,14 @@ Deno.serve(async (req) => {
       }
     }
 
+    const cruda = crudas.find((t) => t.name === nombre);
     try {
       await enviarPlantilla(cfg, sus.user_ns, {
-        namespace: (crudas.find((t) => (t as { name?: string }).name === nombre) as { namespace?: string } | undefined)?.namespace ?? "",
+        // El `namespace` es obligatorio y viene en la propia plantilla.
+        namespace: cruda?.namespace ?? cruda?.default_values?.namespace ?? "",
         name: elegida.nombre,
-        lang: elegida.idioma || "es",
-        params: paramsChateapro(elegida, valores),
+        lang: cruda?.default_values?.lang ?? elegida.idioma ?? "es",
+        params: paramsChateapro(elegida, cruda, valores),
       });
     } catch (e) {
       // Si el envío falla hay que SOLTAR el candado: si no, el reintento de la

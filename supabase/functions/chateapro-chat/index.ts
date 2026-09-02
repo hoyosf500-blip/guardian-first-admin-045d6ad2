@@ -27,7 +27,7 @@ import {
   ChateaproError,
 } from "../_shared/chateaproApi.ts";
 
-const VERSION = "chateapro-chat 2026-09-02.1 alta";
+const VERSION = "chateapro-chat 2026-09-02.2 medido-contra-la-api";
 
 Deno.serve(async (req) => {
   const cors = getCorsHeaders(req);

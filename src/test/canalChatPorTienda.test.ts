@@ -155,3 +155,60 @@ describe('las funciones de Chatea Pro nacen con las reglas puestas', () => {
     ).toBe(false);
   });
 });
+
+/**
+ * Lo que la API de Chatea Pro devuelve DE VERDAD.
+ *
+ * ⛔ Medido el 2-sep-2026 contra la cuenta real, después de escribir el cliente
+ * leyendo la especificación. Tres de mis suposiciones estaban mal, y las tres
+ * fallaban EN SILENCIO: el hilo salía con todos los mensajes en blanco y el
+ * cruce por teléfono no encontraba a nadie. Estos casos existen para que nadie
+ * "limpie" estos nombres de campo pensando que son arbitrarios.
+ */
+describe('los campos que Chatea Pro devuelve de verdad', () => {
+  it('el texto del mensaje sale de `content`, no de `text`', () => {
+    expect(/m\.content/.test(cpApi)).toBe(true);
+    expect(
+      /m\.text|m\.message/.test(cpApi),
+      '`text`/`message` NO existen en la respuesta: con ellos el hilo sale vacío',
+    ).toBe(false);
+  });
+
+  it('la fecha sale de `ts` (unix en segundos)', () => {
+    expect(/m\.ts/.test(cpApi)).toBe(true);
+    expect(/m\.timestamp/.test(cpApi), '`timestamp` no existe; el campo es `ts`').toBe(false);
+  });
+
+  it('el adjunto sale de `payload.url`', () => {
+    expect(/payload\?\.url/.test(cpApi)).toBe(true);
+    expect(/m\.file_url/.test(cpApi), '`file_url` no existe; la URL vive en `payload`').toBe(false);
+  });
+
+  it('una nota interna NO se pinta como mensaje al cliente', () => {
+    expect(
+      /"note"/.test(cpApi) && /"sistema"/.test(cpApi),
+      'type "note" es una nota del equipo: mostrarla como mensaje hace creer que al cliente se le dijo algo que nunca se le dijo',
+    ).toBe(true);
+  });
+
+  it('el nombre de una plantilla no se muestra como si fuera el mensaje', () => {
+    expect(
+      /esPlantilla/.test(cpApi),
+      'en un wa_template, `content` es el NOMBRE de la plantilla, no lo que leyó el cliente',
+    ).toBe(true);
+  });
+
+  it('el cruce por teléfono prueba el formato NACIONAL', () => {
+    expect(
+      /slice\(-10\)/.test(cpApi),
+      'la búsqueda de Chatea Pro no es por subcadena: +57… y los últimos 9 dan CERO resultados; el que funciona es el de 10 dígitos',
+    ).toBe(true);
+  });
+
+  it('la plantilla se manda con los botones que ya tenía', () => {
+    expect(
+      /default_values\?\.params/.test(cpPlant),
+      'sin los QUICK_REPLY del panel, la plantilla sale con los botones rotos — y "CONFIRMAR PEDIDO" es la señal que más predice una cancelación',
+    ).toBe(true);
+  });
+});

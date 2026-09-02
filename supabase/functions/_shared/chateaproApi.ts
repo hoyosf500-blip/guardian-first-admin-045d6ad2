@@ -100,11 +100,22 @@ export interface Suscriptor {
 /**
  * Encuentra al cliente por teléfono.
  *
- * ⚠️ El buscador de Chatea Pro hace coincidencia por texto, no por los últimos
- * 9 dígitos: `+573001112233` y `3001112233` son el mismo cliente y pueden estar
- * guardados de cualquiera de las dos formas. Por eso se prueban las dos y se
- * confirma comparando los últimos 9 — un match flojo acá le muestra a la
- * asesora la conversación de OTRA persona, que es peor que no mostrar nada.
+ * ⛔ MEDIDO el 2-sep-2026 contra la cuenta real, y NO es lo que yo había
+ * supuesto. El buscador de Chatea Pro **no busca por subcadena**: sobre un
+ * cliente guardado como `3143048595`,
+ *
+ *     phone=3143048595   → 1 resultado
+ *     phone=+573143048595 → 0
+ *     phone=143048595     → 0   (los últimos 9)
+ *
+ * O sea que hay que probar el formato NACIONAL. Chatea Pro guarda los
+ * colombianos con 10 dígitos y sin indicativo; Guardian los guarda igual, pero
+ * Shopify los manda con `+57`, así que un cambio de origen del dato rompería
+ * el cruce en silencio si solo se probara una forma.
+ *
+ * Se prueban varias y **se confirma comparando los últimos 9 dígitos**: un
+ * match flojo acá le muestra a la asesora la conversación de OTRA persona, que
+ * es peor que no mostrar nada.
  */
 export async function buscarSuscriptorPorTelefono(
   cfg: ChateaproConfig,
@@ -113,7 +124,14 @@ export async function buscarSuscriptorPorTelefono(
   const clave = last9(telefono);
   if (!clave) return null;
 
-  const intentos = [String(telefono ?? "").trim(), clave].filter(Boolean);
+  const digitos = String(telefono ?? "").replace(/\D/g, "");
+  const intentos = [
+    String(telefono ?? "").trim(), // tal cual viene
+    digitos,                        // sin símbolos
+    digitos.slice(-10),             // nacional (CO: 3XXXXXXXXX) — el que funciona
+    clave,                          // últimos 9, por si otra cuenta los guarda así
+  ].filter((q) => q && q.length >= 7);
+
   const vistos = new Set<string>();
   for (const q of intentos) {
     if (vistos.has(q)) continue;
@@ -143,19 +161,32 @@ export interface MensajeConversacion {
   archivoUrl: string | null;
 }
 
+/**
+ * Un mensaje tal como lo devuelve `/subscriber/chat-messages`.
+ *
+ * ⛔ MEDIDO el 2-sep-2026. Los nombres que yo había supuesto leyendo la spec
+ * (`text`, `timestamp`, `agent_name`, `url`) NO existen: con ellos el hilo
+ * salía con TODOS los mensajes en blanco. Los reales son estos.
+ */
 interface MensajeCp {
-  id?: string | number;
+  id?: number | string;
   mid?: string;
-  type?: string;          // "in" = del cliente, "out" = nuestro
-  msg_type?: string;      // text, image, audio, video, file
-  text?: string;
-  message?: string;
-  url?: string;
-  file_url?: string;
-  timestamp?: number;     // unix segundos
-  created_at?: string;
-  agent_name?: string;
-  from?: string;
+  /** "in" = del cliente · "out" = nuestro · "note" = nota interna del asesor. */
+  type?: string;
+  /** text · image · audio · video · file · wa_template */
+  msg_type?: string;
+  /** El texto. Vacío en los adjuntos. */
+  content?: string;
+  /** `{type, url, title, wa_conv_id}` — la URL del adjunto vive ACÁ. */
+  payload?: { url?: string; title?: string | null } | null;
+  /** "bot" o el `user_ns` del cliente. */
+  sender_id?: string;
+  /** 0 = no lo escribió una persona. */
+  agent_id?: number;
+  /** "Bot" o el nombre de quien escribió. */
+  username?: string;
+  /** Unix en SEGUNDOS. */
+  ts?: number;
 }
 
 const MARCADOR: Record<string, string> = {
@@ -163,27 +194,49 @@ const MARCADOR: Record<string, string> = {
   audio: "🎤 Nota de voz",
   video: "🎬 Video",
   file: "📎 Archivo",
+  wa_template: "📨 Plantilla",
 };
+
+/**
+ * ⛔ `note` NO es un mensaje que el cliente haya visto: es una nota interna que
+ * un asesor dejó en el chat. Pintarla como parte de la conversación haría creer
+ * que al cliente se le dijo algo que nunca se le dijo. Va como "sistema", que es
+ * como la pantalla ya distingue lo que no salió por WhatsApp.
+ */
+function ladoDe(m: MensajeCp): QuienEscribe {
+  if (m.type === "in") return "cliente";
+  if (m.type === "note") return "sistema";
+  return "negocio";
+}
 
 function normalizarMensaje(m: MensajeCp): MensajeConversacion {
   const tipo = (m.msg_type || "text").toLowerCase();
-  const texto = (m.text ?? m.message ?? "").trim();
-  const archivoUrl = m.url || m.file_url || null;
-  // Un adjunto sin texto no se inventa: se marca como marcador para que la
-  // pantalla lo pinte como adjunto y no como algo que alguien escribió.
+  // ⛔ En un `wa_template`, `content` NO es lo que leyó el cliente: es el NOMBRE
+  // de la plantilla ("ES seguimiento_guia_generada_v2_utilidad"). Medido el
+  // 2-sep-2026. Pintarlo como texto le muestra a la asesora un código donde
+  // debería ver un mensaje, y peor: parece que eso fue lo que se le dijo al
+  // cliente. Se marca como marcador, igual que un adjunto.
+  const esPlantilla = tipo === "wa_template";
+  const texto = esPlantilla ? "" : String(m.content ?? "").trim();
+  const nombrePlantilla = esPlantilla ? String(m.content ?? "").trim() : "";
+  const archivoUrl = m.payload?.url || null;
+  // Un adjunto sin texto no se inventa: queda marcado para que la pantalla lo
+  // pinte como adjunto y no como algo que alguien escribió.
   const esMarcador = !texto && !!MARCADOR[tipo];
-  const fechaMs = typeof m.timestamp === "number"
-    ? m.timestamp * 1000
-    : (m.created_at ? Date.parse(m.created_at) : null);
+  const fechaMs = typeof m.ts === "number" ? m.ts * 1000 : null;
+  // Quién escribió. Acá NO se está adivinando: Chatea Pro dice `sender_id:"bot"`
+  // explícitamente, así que marcarlo como Bot es una medición. Cuando no dice
+  // nada se deja en null — no saber quién escribió no es lo mismo que saber
+  // que fue el bot.
+  const autor = m.sender_id === "bot"
+    ? "Bot"
+    : ((m.agent_id ?? 0) > 0 ? (m.username || null) : null);
   return {
     id: String(m.id ?? m.mid ?? `${fechaMs ?? 0}-${texto.slice(0, 12)}`),
-    fechaMs: Number.isFinite(fechaMs as number) ? (fechaMs as number) : null,
-    de: m.type === "in" ? "cliente" : "negocio",
-    texto: texto || MARCADOR[tipo] || "",
-    // El nombre del asesor cuando Chatea Pro lo trae. NUNCA se rellena con
-    // "bot" por defecto: no saber quién escribió no es lo mismo que saber que
-    // fue el bot (esa confusión ya costó una discusión en ImporChat).
-    autor: m.agent_name || null,
+    fechaMs,
+    de: ladoDe(m),
+    texto: texto || (esPlantilla && nombrePlantilla ? `📨 Plantilla: ${nombrePlantilla}` : "") || MARCADOR[tipo] || "",
+    autor,
     tipo,
     esMarcador,
     archivoUrl,
@@ -204,6 +257,8 @@ export async function leerHilo(
   const r = await llamar<{ data?: MensajeCp[] }>(cfg, "GET", "/subscriber/chat-messages", {
     // `include_bot=1` es imprescindible: sin él la asesora ve su lado de la
     // conversación con huecos donde habló el bot, y contesta a ciegas.
+    // `include_note=1` trae las notas internas del equipo, que se pintan como
+    // "sistema" y no como algo que el cliente vio.
     query: { user_ns: userNs, include_bot: 1, include_note: 1, limit: Math.min(100, limite) },
   });
   const crudos = Array.isArray(r?.data) ? r.data : [];
