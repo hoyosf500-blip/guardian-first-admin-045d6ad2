@@ -49,7 +49,7 @@ import { cambiosDeChat, type ContactoCp, type PedidoCruce } from "../_shared/cha
 
 const SOURCE = "chateapro-sync";
 /** ⛔ Subirla en el mismo commit que cambie algo: si no, el ping miente. */
-const VERSION = "chateapro-sync 2026-09-04.1 dos-tiendas-sin-que-una-se-coma-a-la-otra";
+const VERSION = "chateapro-sync 2026-09-04.2 cero-contactos-no-es-todo-bien";
 
 /** Tope de la API (lo dice la spec; más devuelve 400). */
 const PAGINA = 100;
@@ -257,6 +257,35 @@ Deno.serve(async (req) => {
         continue;
       }
 
+      /**
+       * ⛔ UNA TIENDA CON LLAVE Y CERO CONTACTOS NO ES "TODO BIEN" (3-sep-2026).
+       *
+       * Al conectar Colombia 2 apareció la pregunta: su plan de Chatea Pro
+       * vence el 5-sep, ¿y qué pasa si caduca? Hay dos formas de fallar y son
+       * MUY distintas. Con un 401 el `catch` de arriba lo canta y la bandeja
+       * avisa. Pero si la API contesta 200 con la lista vacía, el sync cerraría
+       * en `success` diciendo "0 contactos" y la pantalla mostraría CERO
+       * clientes esperando — sin un solo error en ningún lado.
+       *
+       * Eso es exactamente lo que ya pasó en Colombia: «Nadie esperando
+       * respuesta — todos los que escribieron ya fueron atendidos 🎉» sobre 39
+       * personas sin contestar. Un cero afirmado sobre un dato que no se pudo
+       * medir es peor que no tener la pantalla.
+       *
+       * No se sabe cuál de las dos hace Chatea Pro al vencer un plan, y no se
+       * supone: se marca la corrida en `warn` y que lo mire un humano. Una
+       * tienda recién configurada también cae acá, y también está bien — "le
+       * pusiste llave y no hay nada del otro lado" es justo lo que hay que
+       * saber el primer día, no dentro de un mes.
+       */
+      if (contactos.length === 0) {
+        huboError = true;
+        const msg = `${sid}: la cuenta respondió sin un solo contacto — llave revocada, plan vencido o espacio de trabajo equivocado`;
+        detalle.push({ store_id: sid, contactos: 0, alarma: "cero contactos" });
+        console.error(`[${SOURCE}] ${msg}`);
+        continue;
+      }
+
       // ── Los pedidos de la ventana ──────────────────────────────────────
       const { data: pedidos, error: pedErr } = await sb.from("orders")
         .select("external_id, phone, fecha, chat_entrante_at, chat_saliente_at")
@@ -354,22 +383,22 @@ Deno.serve(async (req) => {
            * Un pedido ya `confirmado` no se relee: ese estado no se deshace.
            */
           const nuevos = await sb.from("orders")
-            .select("external_id, phone")
+            .select("external_id, phone, chat_entrante_at, chat_saliente_at")
             .eq("store_id", sid).gte("fecha", desdeSenal)
             .is("chat_riesgo", null)
             .order("fecha", { ascending: false })
             .limit(HILOS_POR_CORRIDA);
 
-          const aMirar = [...((nuevos.data ?? []) as Array<{ external_id: string; phone: string | null }>)];
+          const aMirar = [...((nuevos.data ?? []) as PedidoCruce[])];
           if (aMirar.length < HILOS_POR_CORRIDA) {
             const refresco = await sb.from("orders")
-              .select("external_id, phone")
+              .select("external_id, phone, chat_entrante_at, chat_saliente_at")
               .eq("store_id", sid).gte("fecha", desdeSenal)
               .not("chat_riesgo", "is", null)
               .neq("chat_riesgo", "confirmado")
               .order("fecha", { ascending: false })
               .limit(HILOS_POR_CORRIDA - aMirar.length);
-            aMirar.push(...((refresco.data ?? []) as Array<{ external_id: string; phone: string | null }>));
+            aMirar.push(...((refresco.data ?? []) as PedidoCruce[]));
           }
 
           for (const o of aMirar) {
@@ -393,11 +422,52 @@ Deno.serve(async (req) => {
             const senal = senalDeHilo(hilo.mensajes, confirmadoras, declarados);
             if (senal.botonesDesconocidos.length) ciegos.push(...senal.botonesDesconocidos);
             if (senal.recibioPlantilla) conPlantilla++;
+            /**
+             * ⛔ LA VENTANA DE 24 h, QUE ESTA FASE TENÍA EN LA MANO Y TIRABA.
+             *
+             * Medido el 3-sep-2026 al conectar Colombia 2: 26 pedidos pasaron
+             * por acá y los 26 quedaron con `chat_leido_at` puesto y
+             * `chat_entrante_at` VACÍO. Dos cosas se juntaban:
+             *
+             *  1. esta fase lee el hilo entero —tiene el último mensaje del
+             *     cliente delante— y escribía la señal del botón pero NO las
+             *     fechas de la conversación;
+             *  2. al estampar `chat_leido_at` sacaba al pedido de la cola de la
+             *     fase 5, que era el único otro lugar donde se escriben.
+             *
+             * Y el daño no es un dato faltante. Con `chat_leido_at` puesto y
+             * `chat_entrante_at` nulo, `ventanaWhatsapp` no devuelve `sin_dato`
+             * —que esconde el botón honestamente— sino **`nunca_escribio`**: la
+             * pantalla AFIRMA que el cliente jamás escribió y ofrece plantilla,
+             * que se paga, sobre una ventana que podía estar abierta y admitía
+             * un mensaje gratis. Otra vez un cero afirmado sobre algo que sí se
+             * podía medir, y encima con el dato ya cargado en memoria.
+             *
+             * `cambiosDeChat` es el MISMO cruce de las fases 2 y 5 —una sola
+             * definición de "qué se escribe"— y trae gratis las dos reglas que
+             * importan: nunca hacia atrás y nunca pisar con null.
+             */
+            const entranteMs = hilo.ultimoEntranteMs;
+            const salientes = hilo.mensajes.filter((m) => m.de === "negocio" && m.fechaMs != null);
+            const ultSaliente = salientes.length ? salientes[salientes.length - 1] : null;
+            const contactoSintetico: ContactoCp = {
+              phone: o.phone,
+              last_interaction: entranteMs ? new Date(entranteMs).toISOString() : null,
+              last_message_at: ultSaliente?.fechaMs ? new Date(ultSaliente.fechaMs).toISOString() : null,
+              last_message_type: ultSaliente ? (ultSaliente.plantilla ? "out" : "agent") : null,
+            };
+            // Offset 0: acá las fechas ya son ISO en UTC (salen de `ts`, epoch),
+            // no el texto en hora local que devuelve la lista de contactos.
+            const [cambio] = cambiosDeChat([contactoSintetico], [o], 0);
+
             const { error } = await sb.from("orders").update({
               chat_riesgo: senal.riesgo,
               chat_mudo: senal.riesgo === "mudo",
               confirmo_boton_at: senal.apretoBotonAt ? senal.apretoBotonAt.toISOString() : null,
               chat_cliente_escribio_at: senal.clienteEscribioAt ? senal.clienteEscribioAt.toISOString() : null,
+              ...(cambio?.chat_entrante_at ? { chat_entrante_at: cambio.chat_entrante_at } : {}),
+              ...(cambio?.chat_saliente_at ? { chat_saliente_at: cambio.chat_saliente_at } : {}),
+              ...(cambio?.chat_saliente_tipo ? { chat_saliente_tipo: cambio.chat_saliente_tipo } : {}),
               chat_leido_at: new Date().toISOString(),
             }).eq("store_id", sid).eq("external_id", o.external_id);
             if (error) console.error(`[${SOURCE}] señal ${sid}/${o.external_id}: ${error.message}`);
