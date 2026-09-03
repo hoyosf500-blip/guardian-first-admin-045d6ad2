@@ -546,9 +546,37 @@ describe('la señal de confirmación no puede quedarse ciega en silencio', () =>
 
   it('leer hilos tiene tope y reserva de tiempo', () => {
     // La pregunta no es "¿queda algo de tiempo?" sino "¿queda suficiente?".
+    //
+    // ⛔ Antes esto exigia el literal `BUDGET_MS - RESERVA_HILOS_MS`, y se puso
+    // rojo cuando el plazo paso a ser POR TIENDA (`finTienda`) — o sea, ante un
+    // cambio que mejora justo lo que la prueba defiende. Se comprueba la
+    // INTENCION: que a un plazo, sea cual sea, se le reste la reserva.
     expect(/RESERVA_HILOS_MS/.test(cpSync)).toBe(true);
     expect(/HILOS_POR_CORRIDA/.test(cpSync)).toBe(true);
-    expect(/BUDGET_MS - RESERVA_HILOS_MS/.test(cpSync)).toBe(true);
+    expect(/(BUDGET_MS|finTienda)\s*-\s*RESERVA_HILOS_MS/.test(cpSync)).toBe(true);
+    expect(/(BUDGET_MS|finTienda)\s*-\s*RESERVA_RESCATE_MS/.test(cpSync)).toBe(true);
+  });
+
+  /**
+   * ⛔ CON DOS TIENDAS, LA PRIMERA NO PUEDE COMERSE A LA SEGUNDA.
+   *
+   * Medido el 3-sep-2026 con una sola tienda configurada: la corrida tarda 62 s
+   * de los 110 del presupuesto. Todos los relojes de adentro miraban el
+   * presupuesto GLOBAL, asi que al enchufar Colombia 2 la segunda arrancaria
+   * pasados esos 62 s y no le alcanzaria ni para la fase de hilos ni para el
+   * rescate — y el rescate es lo que hace que la tarjeta TENGA boton. Ademas el
+   * SELECT no llevaba `order by`: cual era "la primera" no lo decidia nadie.
+   *
+   * Misma leccion que el nightly, que dejaba tiendas sin mirar por dias.
+   */
+  it('⛔ el tiempo se reparte entre tiendas y el turno de ir primero rota', () => {
+    expect(/const finTienda\s*=/.test(cpSync), 'cada tienda necesita su propio plazo').toBe(true);
+    expect(/tiendas\.sort\(\)/.test(cpSync), 'sin orden estable, "la primera" es al azar').toBe(true);
+    expect(/tiendas\.slice\(giro\)/.test(cpSync), 'el turno de ir primero tiene que rotar').toBe(true);
+    // Adentro del bucle de tiendas ya no puede quedar ningun reloj global: el
+    // unico permitido es el que decide si se EMPIEZA otra tienda.
+    const globales = cpSync.match(/Date\.now\(\) - t0 > BUDGET_MS/g) ?? [];
+    expect(globales.length, 'solo la guarda de "¿empiezo otra tienda?" mira el presupuesto global').toBe(1);
   });
 
   /**

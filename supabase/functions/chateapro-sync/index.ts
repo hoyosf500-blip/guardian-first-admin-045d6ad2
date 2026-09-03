@@ -49,7 +49,7 @@ import { cambiosDeChat, type ContactoCp, type PedidoCruce } from "../_shared/cha
 
 const SOURCE = "chateapro-sync";
 /** ⛔ Subirla en el mismo commit que cambie algo: si no, el ping miente. */
-const VERSION = "chateapro-sync 2026-09-03.3 la-senal-ya-no-se-come-el-rescate";
+const VERSION = "chateapro-sync 2026-09-04.1 dos-tiendas-sin-que-una-se-coma-a-la-otra";
 
 /** Tope de la API (lo dice la spec; más devuelve 400). */
 const PAGINA = 100;
@@ -175,6 +175,30 @@ Deno.serve(async (req) => {
       .map((c: { store_id: string }) => c.store_id);
     if (pedida) tiendas = tiendas.filter((s: string) => s === pedida);
 
+    /**
+     * ⛔ QUIEN VA PRIMERO ROTA, Y NADIE SE COME EL PRESUPUESTO DE OTRO.
+     *
+     * Con UNA tienda esto no se notaba y por eso estaba mal: todos los relojes
+     * de abajo miraban el presupuesto GLOBAL, asi que la primera tienda podia
+     * consumirlo entero. Medido el 3-sep-2026 con una sola tienda: la corrida
+     * tarda 62 s de 110. Al enchufar Colombia 2, la segunda arrancaria pasados
+     * esos 62 s y no le alcanzaria ni para la fase 4 ni para el rescate — y el
+     * rescate es justo lo que hace que la tarjeta TENGA boton.
+     *
+     * Peor todavia: el SELECT no lleva `order by`, asi que cual era "la
+     * primera" no lo decidia nadie. Se ordena por id para que sea estable, y
+     * despues se rota segun la corrida del cron (una cada 10 min), para que el
+     * turno de ir primero no sea siempre de la misma.
+     *
+     * Es la misma leccion que el nightly, que dejaba tiendas sin mirar por
+     * dias: rotacion + presupuesto, no "el que llegue primero".
+     */
+    tiendas.sort();
+    if (tiendas.length > 1) {
+      const giro = Math.floor(t0 / 600_000) % tiendas.length;
+      tiendas = [...tiendas.slice(giro), ...tiendas.slice(0, giro)];
+    }
+
     if (tiendas.length === 0) {
       await cerrar("success", "ninguna tienda con Chatea Pro configurado", 0);
       return json({ ok: true, version: VERSION, tiendas: 0, escritos: 0 });
@@ -191,6 +215,17 @@ Deno.serve(async (req) => {
         await cerrar("warn", `se acabó el tiempo con ${tiendas.length - detalle.length} tienda(s) sin mirar`, escritosTotal);
         return json({ ok: true, version: VERSION, parcial: true, escritos: escritosTotal, detalle });
       }
+      /**
+       * El tiempo de ESTA tienda: una parte justa de lo que queda, repartido
+       * entre las que faltan. Con una sola tienda da exactamente el
+       * presupuesto entero, o sea el comportamiento de siempre. Con dos, la
+       * primera se lleva la mitad de lo que queda y la segunda TODO el resto —
+       * asi que si la primera termina rapido, la segunda hereda su sobrante en
+       * vez de que se pierda.
+       */
+      const faltan = tiendas.length - detalle.length;
+      const finTienda = Date.now() + Math.max(0, t0 + BUDGET_MS - Date.now()) / Math.max(1, faltan);
+
       storeId = sid;
       await traza(`fase 2: leyendo contactos de ${sid}`, escritosTotal);
 
@@ -205,7 +240,7 @@ Deno.serve(async (req) => {
       let pagina = 1;
       try {
         for (; pagina <= MAX_PAGINAS; pagina++) {
-          if (Date.now() - t0 > BUDGET_MS) break;
+          if (Date.now() > finTienda) break;
           const lote = await listarSuscriptores(cfg, pagina, PAGINA);
           if (lote.length === 0) break;
           for (const c of lote) contactos.push(c as ContactoCp);
@@ -242,7 +277,7 @@ Deno.serve(async (req) => {
       const ahora = new Date().toISOString();
       let escritos = 0;
       for (const c of cambios) {
-        if (Date.now() - t0 > BUDGET_MS) break;
+        if (Date.now() > finTienda) break;
         const { error } = await sb.from("orders").update({
           ...(c.chat_entrante_at ? { chat_entrante_at: c.chat_entrante_at } : {}),
           ...(c.chat_saliente_at ? { chat_saliente_at: c.chat_saliente_at } : {}),
@@ -278,7 +313,7 @@ Deno.serve(async (req) => {
        */
       let conPlantilla = 0;
       const ciegos: string[] = [];
-      if (Date.now() - t0 < BUDGET_MS - RESERVA_HILOS_MS) {
+      if (Date.now() < finTienda - RESERVA_HILOS_MS) {
         try {
           // ⛔ Las plantillas que confirman se DESCUBREN, no se escriben a mano.
           // En Ecuador cambiar la plantilla en el panel apagó la señal dos días
@@ -348,7 +383,7 @@ Deno.serve(async (req) => {
             // suficiente?", que es lo que dejó 82 corridas colgadas en Ecuador.
             // La señal es reanudable —la cola se reordena sola cada corrida—;
             // el rescate, en cambio, es el que hace que la tarjeta tenga botón.
-            if (Date.now() - t0 > BUDGET_MS - RESERVA_RESCATE_MS) break;
+            if (Date.now() > finTienda - RESERVA_RESCATE_MS) break;
             if (!o.phone) continue;
             const sus = await buscarSuscriptorPorTelefono(cfg, String(o.phone), String(tienda?.country_code || "CO"));
             // Sin contacto no hay conversación que leer. NO es "no confirmó":
@@ -411,7 +446,7 @@ Deno.serve(async (req) => {
       let sinContacto = 0;
       /** De los rescatados, a cuántos se les encontró conversación de verdad. */
       let conDato = 0;
-      if (Date.now() - t0 < BUDGET_MS - RESERVA_RESCATE_MS) {
+      if (Date.now() < finTienda - RESERVA_RESCATE_MS) {
         try {
           const { data: huerfanos } = await sb.from("orders")
             .select("external_id, phone, chat_entrante_at, chat_saliente_at")
@@ -422,7 +457,7 @@ Deno.serve(async (req) => {
             .limit(RESCATES_POR_CORRIDA);
           const ahora2 = new Date().toISOString();
           for (const o of huerfanos ?? []) {
-            if (Date.now() - t0 > BUDGET_MS) break;
+            if (Date.now() > finTienda) break;
             const sus = await buscarSuscriptorPorTelefono(cfg, String(o.phone), String(tienda?.country_code || "CO"));
             // El mismo cruce puro que la fase 2, con un contacto de a uno: una
             // sola definición de "qué se escribe", para las dos entradas.
