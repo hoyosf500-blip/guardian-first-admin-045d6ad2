@@ -345,6 +345,56 @@ export type Database = {
         }
         Relationships: []
       }
+      dropi_edit_attempts: {
+        Row: {
+          error_message: string | null
+          external_id: string
+          id: string
+          mode: string
+          new_external_id: string | null
+          phone_last9: string | null
+          started_at: string
+          started_by: string | null
+          status: string
+          store_id: string
+          warning: string | null
+        }
+        Insert: {
+          error_message?: string | null
+          external_id: string
+          id?: string
+          mode: string
+          new_external_id?: string | null
+          phone_last9?: string | null
+          started_at?: string
+          started_by?: string | null
+          status?: string
+          store_id: string
+          warning?: string | null
+        }
+        Update: {
+          error_message?: string | null
+          external_id?: string
+          id?: string
+          mode?: string
+          new_external_id?: string | null
+          phone_last9?: string | null
+          started_at?: string
+          started_by?: string | null
+          status?: string
+          store_id?: string
+          warning?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dropi_edit_attempts_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dropi_wallet_movements: {
         Row: {
           categoria: string | null
