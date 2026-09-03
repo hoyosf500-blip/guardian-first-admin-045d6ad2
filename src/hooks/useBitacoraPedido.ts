@@ -38,6 +38,18 @@ const COLA: EventoPendiente[] = [];
 let reloj: ReturnType<typeof setInterval> | null = null;
 let suscriptores = 0;
 
+/**
+ * Gestiones registradas sobre cada pedido mientras está a la vista, contadas
+ * ENTRE instancias del hook (4-sep-2026). `marco` lo emite OrderContext,
+ * `gestiono`/`llamo`/`escribio` los emite useRecordGestion, y el `abrio`/`cerro`
+ * lo lleva `usePedidoALaVista` en la pantalla: tres instancias distintas. Sin
+ * este contador compartido, la pantalla tenía que acordarse de llamar a
+ * `marcarGestion()` en cada botón —y donde se olvidaba, una asesora que
+ * confirmó 30 pedidos figuraba con 30 "saltos".
+ */
+const GESTIONES_EN_VIVO = new Map<string, number>();
+const EVENTOS_GESTION: ReadonlySet<EventoPedido> = new Set<EventoPedido>(['gestiono', 'llamo', 'escribio', 'marco', 'edito']);
+
 async function vaciar(): Promise<void> {
   if (COLA.length === 0) return;
   // Se saca TODO antes del viaje: si mientras tanto llegan eventos nuevos, van
@@ -117,6 +129,10 @@ export function useBitacoraPedido() {
       // Es la MISMA regla que ya cumplen el heartbeat, el reclamo de pedidos y
       // la marca de "en atencion" — esta era la unica puerta que faltaba.
       if (observa) return;
+      if (EVENTOS_GESTION.has(evento) && opts.externalId) {
+        const k = String(opts.externalId);
+        GESTIONES_EN_VIVO.set(k, (GESTIONES_EN_VIVO.get(k) ?? 0) + 1);
+      }
       COLA.push({
         store_id: activeStoreId,
         operator_id: user.id,
@@ -159,11 +175,16 @@ export function usePedidoALaVista(pedido: { externalId?: string | null; phone?: 
     if (!a) return;
     actual.current = null;
     const ms = msEnPantalla(a.desde, Date.now());
-    registrarRef.current(esSalto(a.gestiones) ? 'salto' : 'cerro', {
+    // Las que contó esta instancia (`marcarGestion`) MÁS las que registraron
+    // otras instancias sobre el mismo pedido mientras estuvo abierto.
+    const vivas = a.externalId ? (GESTIONES_EN_VIVO.get(a.externalId) ?? 0) : 0;
+    if (a.externalId) GESTIONES_EN_VIVO.delete(a.externalId);
+    const gestiones = a.gestiones + vivas;
+    registrarRef.current(esSalto(gestiones) ? 'salto' : 'cerro', {
       externalId: a.externalId,
       phone: a.phone,
       msEnPantalla: ms,
-      detalle: { gestiones: a.gestiones },
+      detalle: { gestiones },
     });
   }, []);
 
@@ -175,6 +196,9 @@ export function usePedidoALaVista(pedido: { externalId?: string | null; phone?: 
     if (actual.current?.externalId === clave) return;
     cerrarActual();
     if (!clave) return;
+    // Arranca en cero: una gestión de hace una hora sobre este mismo pedido no
+    // convierte en "trabajado" el vistazo de ahora.
+    GESTIONES_EN_VIVO.delete(clave);
     actual.current = { externalId: clave, phone: tel, desde: Date.now(), gestiones: 0 };
     registrarRef.current('abrio', { externalId: clave, phone: tel });
   }, [clave, tel, cerrarActual]);

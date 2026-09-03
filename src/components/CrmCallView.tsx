@@ -21,6 +21,7 @@ import NotesPanel from '@/components/order-notes/NotesPanel';
 import ChatClienteCard from '@/components/chat/ChatClienteCard';
 import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDialog';
 import { useRiesgoChat } from '@/hooks/useRiesgoChat';
+import { usePedidoALaVista } from '@/hooks/useBitacoraPedido';
 // Guard de atajos compartido con Confirmar: UNA sola definición a propósito —
 // cuando estaba duplicado se arregló una copia y el bug siguió en la otra.
 import { hotkeysHabilitados } from '@/lib/hotkeys';
@@ -558,6 +559,10 @@ export default function CrmCallView({
     actividad: oActual?.dbId ? senalChat.actividad.get(oActual.dbId) ?? null : null,
     riesgo: oActual?.dbId ? senalChat.index.get(oActual.dbId) ?? null : null,
   }), [oActual?.dbId, senalChat.actividad, senalChat.index]);
+
+  // Bitácora de lo que está a la vista (ver CallView). Seguimiento no la
+  // tenía: "lo vio y lo saltó" y "no lo vio" se veían igual en esta cola.
+  usePedidoALaVista(oActual ? { externalId: oActual.externalId, phone: oActual.phone } : null);
 
   if (!items.length) {
     // Sin pedido en pantalla no hay atajos (ver hotkeysRef arriba).

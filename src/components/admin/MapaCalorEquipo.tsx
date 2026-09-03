@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Clock, Loader2 } from 'lucide-react';
 import { useStoreSchedule, DEFAULT_SCHEDULE_MINUTES } from '@/hooks/useStoreSchedule';
 import { useMapaCalorDia } from '@/hooks/useMapaCalorDia';
@@ -28,6 +28,11 @@ interface Props {
   storeId: string | null;
   /** Las mismas personas que las tarjetas de abajo (incluye supervisores). */
   asesores: { operatorId: string; name: string }[];
+  /** Cambia cuando el panel recibe un aviso de realtime: el mapa se recarga
+   *  con él en vez de abrir un canal propio (ver `crm_lento_cinco_bucles`).
+   *  ⛔ Sin esto el mapa era una FOTO del momento en que se montó (4-sep-2026):
+   *  a las 15:00 seguía mostrando las gestiones de hasta las 9:10. */
+  refreshKey?: number;
 }
 
 /** El tono de una celda según su estado. Separado del cálculo a propósito: el
@@ -72,7 +77,7 @@ function tituloCelda(nombre: string, celda: CeldaMapa): string {
   return `${cuando}${almuerzo} — ${celda.cantidad} gestion${celda.cantidad === 1 ? '' : 'es'}`;
 }
 
-export default function MapaCalorEquipo({ storeId, asesores }: Props) {
+export default function MapaCalorEquipo({ storeId, asesores, refreshKey }: Props) {
   const [ymd, setYmd] = useState(() => bogotaToday());
   const [abierta, setAbierta] = useState<{ operatorId: string; hora: number } | null>(null);
 
@@ -80,7 +85,20 @@ export default function MapaCalorEquipo({ storeId, asesores }: Props) {
   const esHoy = ymd === hoy;
 
   const scheduleQuery = useStoreSchedule(storeId);
-  const { gestiones, marcas, estado } = useMapaCalorDia(storeId, ymd);
+  const { gestiones, marcas, estado, recargar } = useMapaCalorDia(storeId, ymd);
+
+  // Vivo, de dos formas: (1) cada aviso de realtime del panel padre; (2) un
+  // reloj de 60 s para que la hora "en curso" avance sola, y una recarga de
+  // respaldo cada 5 min por si el realtime se durmió. Solo para HOY: un día
+  // cerrado no cambia.
+  useEffect(() => { if (refreshKey) void recargar(); }, [refreshKey, recargar]);
+  const [ahoraMs, setAhoraMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!esHoy) return;
+    const reloj = setInterval(() => setAhoraMs(Date.now()), 60_000);
+    const respaldo = setInterval(() => { void recargar(); }, 5 * 60_000);
+    return () => { clearInterval(reloj); clearInterval(respaldo); };
+  }, [esHoy, recargar]);
 
   const operadores = useMemo(() => asesores.map((a) => a.operatorId), [asesores]);
   const nombreDe = useMemo(() => {
@@ -97,8 +115,8 @@ export default function MapaCalorEquipo({ storeId, asesores }: Props) {
     horario: scheduleQuery.data ?? DEFAULT_SCHEDULE_MINUTES,
     medible: estado === 'ok',
     // Solo hoy tiene horas que "todavía no pasaron".
-    horaActual: esHoy ? horaDelDiaBogota(new Date().toISOString()) : null,
-  }), [marcas, operadores, scheduleQuery.data, estado, esHoy]);
+    horaActual: esHoy ? horaDelDiaBogota(new Date(ahoraMs).toISOString()) : null,
+  }), [marcas, operadores, scheduleQuery.data, estado, esHoy, ahoraMs]);
 
   const detalle = useMemo(() => {
     if (!abierta) return [];
@@ -164,6 +182,12 @@ export default function MapaCalorEquipo({ storeId, asesores }: Props) {
                   {h}
                 </th>
               ))}
+              <th
+                className="w-[3.5rem] text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground"
+                title="Gestiones antes de la primera hora del horario o después de la última. Cuentan en el total: quien entró a las 7:30 trabajó."
+              >
+                Fuera
+              </th>
               <th className="w-[3.5rem] text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                 Día
               </th>
@@ -198,6 +222,9 @@ export default function MapaCalorEquipo({ storeId, asesores }: Props) {
                     </td>
                   );
                 })}
+                <td className="pl-2 text-right text-xs font-mono tabular-nums text-muted-foreground">
+                  {fila.fueraDeHorario == null ? '—' : fila.fueraDeHorario === 0 ? '·' : fila.fueraDeHorario}
+                </td>
                 <td className="pl-2 text-right text-xs font-mono tabular-nums font-semibold">
                   {fila.total ?? '—'}
                 </td>

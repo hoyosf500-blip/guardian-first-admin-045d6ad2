@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { Send, Clock, X, Package } from 'lucide-react';
 import { useEnviarWhatsapp, type ModuloEnvio } from '@/hooks/useEnviarWhatsapp';
 import { useConversacion } from '@/hooks/useConversacion';
+import { useBitacoraPedido } from '@/hooks/useBitacoraPedido';
 import { useCanalChat, nombreCanal } from '@/hooks/useCanalChat';
 import ConversacionChat from '@/components/seguimiento/ConversacionChat';
 import PlantillasWhatsapp from '@/components/seguimiento/PlantillasWhatsapp';
@@ -98,6 +99,16 @@ export default function PanelConversacion({
   );
 
   const hilo = useConversacion(externalId, activo);
+  // Bitácora: `leyo_chat` una vez por conversación abierta. Estaba en el
+  // vocabulario y nadie lo emitía (4-sep-2026): "¿quién leyó el chat de este
+  // cliente?" no tenía respuesta.
+  const bitacora = useBitacoraPedido();
+  const leidoRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activo || !externalId || leidoRef.current === externalId) return;
+    leidoRef.current = externalId;
+    bitacora('leyo_chat', { externalId, phone: phone ?? null });
+  }, [activo, externalId, phone, bitacora]);
   // Para nombrar el canal REAL de la tienda: mandar a una asesora colombiana a
   // ImporChat es mandarla a la app de Ecuador, donde ese chat no existe.
   const canalChat = useCanalChat();

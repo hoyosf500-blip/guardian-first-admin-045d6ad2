@@ -634,7 +634,10 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
       // "Gestionado hoy" (vuelve mañana); cierre = sale (snooze 30d).
       const label = isSegCloser(action) ? cleanSegAction(action) : 'Gestionado hoy';
       setResults(prev => ({ ...prev, [order.dbId!]: label }));
-      const { ok, fila } = await recordGestion(order.phone, module, action);
+      // CON el número de pedido: sin él, un cliente con dos pedidos mezcla las
+      // gestiones de los dos en la bitácora (es el 4º parámetro que la
+      // migración de `order_events` creó para eso, y acá no se pasaba).
+      const { ok, fila } = await recordGestion(order.phone, module, action, order.externalId);
       if (!ok) {
         // useRecordGestion NUNCA lanza: `ok:false` = faltó teléfono o el INSERT
         // no entró (RLS, red). Festejar igual dejaba la card oculta con toast

@@ -25,6 +25,7 @@ import { metodosParaEstado } from '@/lib/segMetodosEstado';
 import { useAiInsight } from '@/hooks/useAiInsight';
 import SlaAlertCard from '@/components/order-detail/SlaAlertCard';
 import CustomerHistoryCard from '@/components/order-detail/CustomerHistoryCard';
+import BitacoraPedidoCard from '@/components/order-detail/BitacoraPedidoCard';
 import Timeline from '@/components/order-detail/Timeline';
 import CommunicationLog from '@/components/order-detail/CommunicationLog';
 import ChatClienteCard from '@/components/chat/ChatClienteCard';
@@ -1081,6 +1082,11 @@ export default function OrderDetailPage() {
 
       {/* Customer history */}
       <CustomerHistoryCard currentPhone={order.phone} currentOrderId={order.id} />
+
+      {/* La bitácora de ESTE pedido: quién lo abrió, cuánto estuvo, qué marcó,
+          qué editó, si lo deshizo. El índice existía desde el 3-sep y ninguna
+          pantalla lo consultaba. RLS: la asesora ve lo suyo, el jefe todo. */}
+      <BitacoraPedidoCard storeId={activeStoreId} externalId={order.external_id} />
 
       {/* Timeline + Communication log */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

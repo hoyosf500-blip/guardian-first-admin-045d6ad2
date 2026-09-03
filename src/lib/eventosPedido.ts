@@ -52,7 +52,12 @@ export type EventoPedido =
   /** Se editó el pedido (dirección, valor, transportadora…). */
   | 'edito'
   /** Se marcó un resultado (confirmado, cancelado, novedad resuelta…). */
-  | 'marco';
+  | 'marco'
+  /** ⛔ Se DESHIZO una marca (4-sep-2026). Antes el "Deshacer" borraba la fila
+   *  de `order_results` y la de `touchpoints` y no quedaba rastro en ningún
+   *  lado: "confirmó y deshizo" era invisible, y es exactamente la maniobra
+   *  para inflar y desinflar un número. Trae en `detalle` qué se deshizo. */
+  | 'deshizo';
 
 /** Lo que se guarda en `detalle`. Valores planos a propósito: es una columna
  *  jsonb que se va a leer desde una pantalla y desde SQL, y un objeto anidado
@@ -130,6 +135,7 @@ export const NOMBRE_EVENTO: Record<EventoPedido, string> = {
   leyo_chat: 'Leyó la conversación',
   edito: 'Editó el pedido',
   marco: 'Marcó un resultado',
+  deshizo: 'Deshizo una marca',
 };
 
 /** "2 min 14 s", "8 s", "—". Para leer una duración de un vistazo. */

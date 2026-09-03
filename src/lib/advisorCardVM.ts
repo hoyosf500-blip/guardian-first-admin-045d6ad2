@@ -98,6 +98,14 @@ export interface BuildAdvisorsInput {
    *  puede afirmar: es un hueco de lectura, no un cero. Default true para no
    *  cambiar el comportamiento de quien todavía no lo pasa. */
   workEventsOk?: boolean;
+  /** ¿Se pudo leer la responsabilidad por devoluciones? `false` = la consulta
+   *  falló: `evitables` va en null, no en 0. Default true. */
+  scoresOk?: boolean;
+  /** ¿Se pudo leer la RPC de avisos de inactividad? `false` = `avisos` null. */
+  inactivityOk?: boolean;
+  /** ¿Se pudo leer la mezcla de pedidos? `false` = la tarjeta dice "no se pudo
+   *  leer" en vez de esconder la barra como si nadie hubiera descremado. */
+  mezclaOk?: boolean;
   /** Roster completo (para mostrar inactivos con su "última vez"). Opcional: sin
    *  él, un asesor sin actividad simplemente no trae días de inactividad. */
   rosterByOp?: ReadonlyMap<string, RosterLite>;
@@ -191,7 +199,9 @@ export interface AdvisorDetalle {
   // Calidad
   tasaDevolucion: number | null;
   dirMalas: number | null;      // % en rojo
-  evitables: number;
+  evitables: number | null;     // null = la consulta falló, no "cero evitables"
+  /** false = no se pudo leer la mezcla; la tarjeta lo dice en vez de esconder la barra. */
+  mezclaOk: boolean;
   // Confirmar hondo
   cancelados: number;
   sinCerrarAun: number;         // noresp que siguen sin cerrar (usamos noresp)
@@ -206,7 +216,7 @@ export interface AdvisorDetalle {
   enCrmSec: number | null;
   fueraSec: number | null;
   trabajandoSec: number | null;
-  avisos: number;
+  avisos: number | null;        // null = la RPC de avisos falló, no "cero avisos"
   avisosMin: number;
   sinGestionMin: number | null;
   peorHuecoMin: number | null;
@@ -432,7 +442,9 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
     const tasaDevolucion = score?.tasaDevolucion ?? null;
     const dirMalas = score?.pctEnRojo ?? null;
     const devoluciones = score ? score.devoluciones : null;
-    const evitables = score ? score.evitables : 0;
+    // ⛔ null cuando la consulta falló: "0 evitables" sobre una lectura caída
+    // es un cero afirmado, y el semáforo de calidad se apaga en silencio.
+    const evitables = input.scoresOk === false ? null : (score ? score.evitables : 0);
 
     // ── Atención + motivos (en cristiano) ─────────────────────────────────────
     const motivos: string[] = [];
@@ -519,7 +531,9 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
     }
     void inflowSuelto;
 
-    const avisos = inact ? Number(inact.warnings_count) || 0 : 0;
+    // ⛔ null cuando la RPC de avisos falló: "0 en verde" era un cero medido
+    // haciéndose pasar por buena noticia, en el número que el dueño pidió ver.
+    const avisos = input.inactivityOk === false ? null : (inact ? Number(inact.warnings_count) || 0 : 0);
     const avisosMin = inact ? Math.round((Number(inact.total_lost_seconds) || 0) / 60) : 0;
 
     // Texto de estado (hoy): "Trabajando · marcó hace 1 min"
@@ -577,6 +591,7 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
       motivos,
       detalle: {
         tasaDevolucion, dirMalas, evitables,
+        mezclaOk: input.mezclaOk !== false,
         cancelados: r.cancelados,
         sinCerrarAun: r.noresp,
         contactoPct, contactoFaltan,

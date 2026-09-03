@@ -16,7 +16,9 @@ const base: DatosResumen = {
   tienda: 'Rushmira (Colombia)',
   dia: 'viernes, 21 de agosto',
   cierres: [],
+  cierresLeidos: true,
   asesorasDelTurno: 0,
+  asistencia: [],
   novedadesAbiertas: 0,
   entregadosHoy: 0,
   canceladosHoy: 0,
@@ -161,7 +163,9 @@ describe('⛔ resumen-diario: los cuatro conteos, no dos', () => {
     tienda: 'Rushmira EC',
     dia: 'viernes, 30 de agosto',
     cierres: [cierre('Ana', 10, 10), cierre('Luis', 8, 8)],
+    cierresLeidos: true,
     asesorasDelTurno: 2,
+    asistencia: [],
     novedadesAbiertas: null,
     entregadosHoy: null,
     canceladosHoy: null,
@@ -194,5 +198,64 @@ describe('⛔ resumen-diario: los cuatro conteos, no dos', () => {
   it('y con novedades abiertas de verdad, las nombra', () => {
     const r = construirResumen({ ...base, novedadesAbiertas: 3, entregadosHoy: 5, canceladosHoy: 1, sinFechaDeMovimiento: 0 });
     expect(r.titular).toContain('3 novedades abiertas');
+  });
+});
+
+/**
+ * ⛔ GUARDIÁN (4-sep-2026) — tres consultas del mismo Promise.all no leían
+ * `.error`: `seg_cierres`, `store_members` y `sync_logs`. Con `seg_cierres`
+ * caída el titular acusaba «Nadie cerró el día» a un equipo que sí cerró; con
+ * `store_members` caída, `asesorasDelTurno` era 0 y `cierres` vacío, y caía en
+ * «Seguimiento cerró en cero» — buena noticia falsa sobre un día que nadie midió.
+ */
+describe('⛔ lo que no se pudo LEER no se titula como medido', () => {
+  const conEquipo: DatosResumen = {
+    tienda: 'Rushmira EC', dia: 'jueves, 4 de septiembre',
+    cierres: [], cierresLeidos: true, asesorasDelTurno: 2, asistencia: [],
+    novedadesAbiertas: 0, entregadosHoy: 0, canceladosHoy: 0, sinFechaDeMovimiento: 0, minutosDesdeSync: 5,
+  };
+
+  it('cierres sin leer: no acusa "nadie cerró"', () => {
+    const d = { ...conEquipo, cierresLeidos: false };
+    expect(titularDe(d)).toMatch(/no pude leer los cierres/i);
+    expect(titularDe(d)).not.toMatch(/nadie cerró/i);
+    expect(construirResumen(d).texto).toMatch(/no se pudieron leer los cierres/i);
+  });
+
+  it('equipo sin leer: no dice "cerró en cero" ni "sin equipo asignado"', () => {
+    const d = { ...conEquipo, asesorasDelTurno: null };
+    expect(titularDe(d)).toMatch(/no pude leer el equipo/i);
+    expect(titularDe(d)).not.toMatch(/cerró en cero/i);
+    expect(construirResumen(d).texto).not.toMatch(/sin equipo asignado/i);
+  });
+});
+
+describe('quién trabajó hoy — lo que Guardian midió', () => {
+  const conEquipo: DatosResumen = {
+    tienda: 'Rushmira EC', dia: 'jueves, 4 de septiembre',
+    cierres: [cierre('Ana', 10, 10)], cierresLeidos: true, asesorasDelTurno: 2,
+    asistencia: [
+      { nombre: 'Ana', primera: '08:03', ultima: '17:41', gestiones: 63, pausas: 2, minutosPausa: 35 },
+      { nombre: 'Bea', primera: null, ultima: null, gestiones: 0, pausas: 0, minutosPausa: 0 },
+    ],
+    novedadesAbiertas: 0, entregadosHoy: 0, canceladosHoy: 0, sinFechaDeMovimiento: 0, minutosDesdeSync: 5,
+  };
+
+  it('por persona: entrada, salida, gestiones y pausas', () => {
+    const t = construirResumen(conEquipo).texto;
+    expect(t).toContain('QUIÉN TRABAJÓ HOY');
+    expect(t).toContain('Ana: 08:03 → 17:41 · 63 gestiones · 2 pausas (35 min)');
+  });
+
+  it('quien no marcó nada sale como "sin ninguna gestión", no como "no entró"', () => {
+    const t = construirResumen(conEquipo).texto;
+    expect(t).toContain('Bea: sin ninguna gestión registrada hoy.');
+    expect(t).not.toMatch(/Bea: no entró/);
+  });
+
+  it('si no se pudo leer, lo dice en vez de listar a todos en cero', () => {
+    const t = construirResumen({ ...conEquipo, asistencia: null }).texto;
+    expect(t).toMatch(/no se pudo leer la asistencia/i);
+    expect(t).not.toMatch(/sin ninguna gestión/i);
   });
 });

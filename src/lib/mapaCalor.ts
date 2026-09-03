@@ -58,6 +58,15 @@ export interface FilaMapa {
   /** Horas del horario que pasaron y quedaron en cero. `null` si no se midió.
    *  Es el número que el dueño busca: "estuvo tres horas sin marcar nada". */
   horasEnCero: number | null;
+  /**
+   * Gestiones FUERA del horario configurado (antes de la primera hora o
+   * después de la última). Se cuentan en `total` y se muestran aparte.
+   * ⛔ Antes se descartaban (4-sep-2026): con horario 9-17, la que entró a las
+   * 7:30 a limpiar el backlog tenía sus 40 gestiones borradas del total y
+   * todas sus celdas en rojo — mientras la tarjeta de al lado sí las contaba.
+   * Dos cifras contradictorias en la misma pantalla, y la de arriba acusaba.
+   */
+  fueraDeHorario: number | null;
 }
 
 export interface MapaCalor {
@@ -136,10 +145,14 @@ export function construirMapaCalor(input: MapaCalorInput): MapaCalor {
 
   let maximo = 0;
   const filas: FilaMapa[] = operadores.map((operatorId) => {
-    const serie = serieHoraria(repartirPorHora(porOperador.get(operatorId) ?? []), desde, hasta);
+    const horasOp = porOperador.get(operatorId) ?? [];
+    const serie = serieHoraria(repartirPorHora(horasOp), desde, hasta);
     const porHora = new Map(serie.map((s) => [s.hora, s.cantidad]));
+    // Lo que quedó afuera de `[desde, hasta]` no se pierde: se cuenta aparte
+    // y suma al total del día.
+    const fuera = horasOp.filter((h) => h < desde || h > hasta).length;
 
-    let total = 0;
+    let total = fuera;
     let enCero = 0;
     const celdas: CeldaMapa[] = horas.map((hora) => {
       const tocaAlmuerzo = pisaAlmuerzo(hora, horario.lunch_start_min, horario.lunch_end_min);
@@ -164,6 +177,7 @@ export function construirMapaCalor(input: MapaCalorInput): MapaCalor {
       celdas,
       total: medible ? total : null,
       horasEnCero: medible ? enCero : null,
+      fueraDeHorario: medible ? fuera : null,
     };
   });
 

@@ -23,6 +23,7 @@ import { isRpcMissing } from '@/lib/rpcError';
 import AdvisorCard from '@/components/admin/AdvisorCard';
 import AlertaEquipoStrip from '@/components/admin/AlertaEquipoStrip';
 import MapaCalorEquipo from '@/components/admin/MapaCalorEquipo';
+import PausasDelDiaPanel from '@/components/admin/PausasDelDiaPanel';
 import { useInboxEsperando } from '@/hooks/useInboxEsperando';
 import { useSelloGestion } from '@/hooks/useSelloGestion';
 import { resumirSinVuelta } from '@/lib/plantillasSinVuelta';
@@ -189,6 +190,11 @@ export default function ProductivityDashboard() {
   const [activityRows, setActivityRows] = useState<ActivityRow[]>([]);
   const [workedRows, setWorkedRows] = useState<WorkedRow[]>([]);
   const [inactivityRows, setInactivityRows] = useState<InactivityRow[]>([]);
+  // false = la RPC de avisos falló: "Avisos sin trabajar: 0 en verde" sería
+  // un cero afirmado sobre algo que no se midió (4-sep-2026).
+  const [inactivityOk, setInactivityOk] = useState(true);
+  // Cada aviso de realtime también refresca el mapa de calor (ver `debounced`).
+  const [mapaTick, setMapaTick] = useState(0);
   // Operadora cuyo detalle de avisos está abierto. Va con el operator_id (no
   // solo el nombre): la tabla contó los avisos por id, y buscar el detalle por
   // display_name se rompía con perfiles sin nombre u homónimas.
@@ -262,7 +268,7 @@ export default function ProductivityDashboard() {
     return Math.max(0, Math.min(1, (s - schedule.workStartSec) / tot));
   })();
   const metaGestionesInput = metaGestionesDelRango(range, range === 'today' ? fraccionTurnoHoy : 1);
-  const { scores: respScores } = useResponsabilidadAsesor(range, rows, metaGestionesInput);
+  const { scores: respScores, status: respStatus } = useResponsabilidadAsesor(range, rows, metaGestionesInput);
 
   // Tienda de la corrida MÁS RECIENTE de load(). Las 4 RPCs de abajo resuelven
   // su alcance server-side: una respuesta en vuelo de la tienda anterior NO se
@@ -420,8 +426,10 @@ export default function ProductivityDashboard() {
     // (o falla), la columna "Sin trabajar" cae a '—' y el resto sigue.
     if (!inactivity.error) {
       setInactivityRows((inactivity.data as InactivityRow[] | null) ?? []);
+      setInactivityOk(true);
     } else {
       setInactivityRows([]);
+      setInactivityOk(false);
       if (process.env.NODE_ENV !== 'production') {
         console.warn('[productivity] inactivity rpc error', inactivity.error);
       }
@@ -453,7 +461,10 @@ export default function ProductivityDashboard() {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const debounced = () => {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => load(true), 1000);
+      // El mapa de calor comparte este mismo aviso (no abre otro canal): sin
+      // esto era una foto del momento en que se montó, y a las 15:00 seguía
+      // mostrando las gestiones de hasta las 9:10 (4-sep-2026).
+      timer = setTimeout(() => { load(true); setMapaTick((t) => t + 1); }, 1000);
     };
     const storeFilter = `store_id=eq.${activeStoreId}`;
     // OJO: NO nos suscribimos a `orders`. El sync la reescribe sin parar (cientos de
@@ -598,6 +609,13 @@ export default function ProductivityDashboard() {
         // NO puede decir "presente sin marcar": sería acusar por un hueco de
         // lectura. Ver `useLiveTeam.workEventsOk`.
         workEventsOk: liveTeam.workEventsOk,
+        // Tres banderas que el panel calculaba y NO leía (4-sep-2026): con la
+        // consulta caída, la tarjeta decía "Devoluciones evitables: 0", "Avisos
+        // sin trabajar: 0" en verde, y la mezcla desaparecía igual que si nadie
+        // hubiera descremado. Ahora pintan "—" / "no se pudo leer".
+        scoresOk: respStatus !== 'error',
+        inactivityOk,
+        mezclaOk: !mezclaError,
       })
     : [];
   const trabajandoAhora = liveTeam.operators.filter((o) => o.estado === 'trabajando').length;
@@ -819,7 +837,12 @@ export default function ProductivityDashboard() {
               <MapaCalorEquipo
                 storeId={activeStoreId}
                 asesores={advisorVMs.map((vm) => ({ operatorId: vm.operatorId, name: vm.name }))}
+                refreshKey={mapaTick}
               />
+              {/* Las pausas declaradas ("estoy en la agencia") existían en la
+                  base y NINGÚN panel las leía: el dueño no podía ver "declaró
+                  4 pausas de 25 min". Solo hoy (4-sep-2026). */}
+              {isToday && <PausasDelDiaPanel storeId={activeStoreId} nombreDe={(id) => advisorVMs.find((v) => v.operatorId === id)?.name ?? 'Sin nombre'} />}
               {/* Tres columnas en pantallas anchas (3-sep-2026): estaba fijo en
                   dos, así que con 8 asesoras eran cuatro filas de tarjetas altas
                   y el dueño no veía al equipo sin scrollear. */}

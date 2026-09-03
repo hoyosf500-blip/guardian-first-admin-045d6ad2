@@ -374,7 +374,8 @@ export default function AdvisorCard({
             <DetalleItem label="Direcciones malas" value={d.dirMalas == null ? '—' : `${d.dirMalas}%`}
               tone={d.dirMalas != null && d.dirMalas >= 30 ? 'bad' : d.dirMalas != null && d.dirMalas >= 15 ? 'warn' : 'muted'}
               hint="de lo que confirmó y ya se despachó, cuánto salió con la dirección en rojo" />
-            <DetalleItem label="Devoluciones evitables" value={d.evitables} />
+            <DetalleItem label="Devoluciones evitables" value={d.evitables == null ? '—' : d.evitables}
+              hint={d.evitables == null ? 'no se pudo leer' : undefined} />
           </DetalleGrupo>
 
           {/* Confirmar (hondo) */}
@@ -408,13 +409,14 @@ export default function AdvisorCard({
             )}
             <button
               type="button"
-              onClick={() => d.avisos > 0 && onInactivityDetail?.(vm.operatorId, vm.name)}
-              className={`flex items-center justify-between gap-2 rounded-lg border border-border bg-card/40 px-2.5 py-1.5 text-left ${d.avisos > 0 ? 'cursor-pointer hover:border-border-strong' : 'cursor-default'}`}
-              title={d.avisos > 0 ? 'Ver cada aviso con su hora' : 'Sin avisos de inactividad'}
+              onClick={() => (d.avisos ?? 0) > 0 && onInactivityDetail?.(vm.operatorId, vm.name)}
+              className={`flex items-center justify-between gap-2 rounded-lg border border-border bg-card/40 px-2.5 py-1.5 text-left ${(d.avisos ?? 0) > 0 ? 'cursor-pointer hover:border-border-strong' : 'cursor-default'}`}
+              title={d.avisos == null ? 'No se pudieron leer los avisos' : d.avisos > 0 ? 'Ver cada aviso con su hora' : 'Sin avisos de inactividad'}
             >
               <span className="text-[10px] uppercase tracking-[0.05em] text-muted-foreground">Avisos sin trabajar</span>
-              <span className={`font-mono tabular-nums font-bold ${d.avisos >= 3 ? 'text-danger' : d.avisos > 0 ? 'text-warning' : 'text-success'}`}>
-                {d.avisos}{d.avisos > 0 ? ` · ${d.avisosMin} min` : ''}
+              {/* null = la RPC falló: "—" en neutro, nunca "0" en verde. */}
+              <span className={`font-mono tabular-nums font-bold ${d.avisos == null ? 'text-muted-foreground' : d.avisos >= 3 ? 'text-danger' : d.avisos > 0 ? 'text-warning' : 'text-success'}`}>
+                {d.avisos == null ? '—' : d.avisos}{(d.avisos ?? 0) > 0 ? ` · ${d.avisosMin} min` : ''}
               </span>
             </button>
             <DetalleItem
@@ -425,7 +427,11 @@ export default function AdvisorCard({
           </DetalleGrupo>
 
           {/* Mezcla — descreme */}
-          {(d.dificiles + d.faciles + d.otrosMezcla) > 0 && (
+          {/* La consulta caída NO es "nadie descremó": se dice (4-sep-2026). */}
+          {!d.mezclaOk && (
+            <p className="text-[11px] text-warning">No se pudo leer qué tipo de pedidos agarró.</p>
+          )}
+          {d.mezclaOk && (d.dificiles + d.faciles + d.otrosMezcla) > 0 && (
             <div>
               <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground font-semibold">Qué tipo de pedidos agarró</span>
               <div className="mt-1.5 flex h-3 w-full overflow-hidden rounded-full bg-muted/40"

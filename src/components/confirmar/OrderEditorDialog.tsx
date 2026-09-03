@@ -9,6 +9,7 @@ import { formatCOP, bogotaToday } from '@/lib/utils';
 import { parseValorInput } from '@/lib/orderAlerts';
 import { buildUpdatePlan, linesDirty, deriveTotal, type EditableLine, type EditStep } from '@/lib/orderEditPlan';
 import { parseInvoke } from '@/lib/parseInvoke';
+import { useBitacoraPedido } from '@/hooks/useBitacoraPedido';
 import { cotizacionDesfasada, mismoDestino } from '@/lib/destinoCotizado';
 import { debeSembrarLineas } from '@/lib/sembrarLineas';
 import { asignarVariantes } from '@/lib/asignarVariantes';
@@ -149,6 +150,12 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
   const destRef = useRef<{ ciudad: string; departamento: string }>({ ciudad: '', departamento: '' });
   // Doble-click / doble-tab del botón "Actualizar Orden" — ver handleSubmit.
   const submittingRef = useRef(false);
+  // Bitácora: cada edición que Dropi aceptó queda en `order_events` CON el
+  // pedido y qué campos cambiaron. Hasta el 4-sep-2026 `edito` estaba en el
+  // vocabulario y nadie lo emitía: "qué editó y qué decía antes" vivía solo
+  // en `order_results.reason`, que ninguna pantalla muestra.
+  const bitacora = useBitacoraPedido();
+  const ultimaAuditRef = useRef<{ tipo: string; campos: string } | null>(null);
 
   /**
    * @param sembrarLineas Reconstruir las líneas editables con lo que devuelve
@@ -355,6 +362,10 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
       toast.warning('La edición corre pero no pude registrar la auditoría');
       return null;
     }
+    ultimaAuditRef.current = {
+      tipo: result,
+      campos: Object.keys((payload.despues as Record<string, unknown> | undefined) ?? {}).join(','),
+    };
     const { data, error } = await supabase.from('order_results').insert({
       order_id: order.dbId,
       phone: order.phone || '',
@@ -384,6 +395,18 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
 
   const settleAudit = async (id: string | null, status: 'synced' | 'failed', notes?: string) => {
     if (!id) return;
+    // Éxito verificado = edición real. "Sin cambios que empujar" no es una.
+    if (status === 'synced' && !/^Sin cambios/.test(notes ?? '')) {
+      bitacora('edito', {
+        externalId: order.externalId,
+        phone: order.phone,
+        detalle: {
+          tipo: ultimaAuditRef.current?.tipo ?? '',
+          campos: ultimaAuditRef.current?.campos ?? '',
+          notas: (notes ?? '').slice(0, 200),
+        },
+      });
+    }
     // Respaldo client-side: ya existe política UPDATE en order_results
     // (migración 20260714000000) y además las edges settlean server-side por
     // auditId — este settle queda como respaldo para ventanas de edge vieja.

@@ -38,14 +38,37 @@ export interface CierreDeAsesora {
   motivo: string | null;
 }
 
+/**
+ * Quién entró, cuándo y cuánto hizo, según lo que Guardian MIDIÓ (4-sep-2026).
+ *
+ * Es la única vía por la que el dueño se entera de esto sin abrir el CRM: las
+ * alertas del panel viven en el navegador. Solo cuenta lo marcado en Guardian.
+ */
+export interface AsistenciaAsesora {
+  nombre: string;
+  /** Primera y última gestión del día, 'HH:MM' local. `null` = ninguna. */
+  primera: string | null;
+  ultima: string | null;
+  gestiones: number;
+  pausas: number;
+  /** Minutos de las pausas CERRADAS. Una abierta no suma: no se sabe. */
+  minutosPausa: number;
+}
+
 export interface DatosResumen {
   tienda: string;
   /** Día del resumen, ya formateado (ej. "viernes, 21 de agosto"). */
   dia: string;
   /** Lo que el equipo declaró al cerrar. Vacío = nadie cerró. */
   cierres: CierreDeAsesora[];
-  /** Cuántas personas del equipo podrían haber cerrado. */
-  asesorasDelTurno: number;
+  /** ¿Se pudieron LEER los cierres? `false` = la consulta falló: `cierres`
+   *  vacío no significa "nadie cerró". Antes eso salía como acusación. */
+  cierresLeidos: boolean;
+  /** Cuántas personas del equipo podrían haber cerrado. `null` = no se pudo
+   *  leer el equipo (y entonces tampoco se puede decir "nadie cerró"). */
+  asesorasDelTurno: number | null;
+  /** `null` = no se pudo leer. */
+  asistencia: AsistenciaAsesora[] | null;
   /** `null` = no se pudo contar. Un 0 acá se lee como BUENA NOTICIA
    *  ("no quedan novedades") y el dueño no revisa la cola. */
   novedadesAbiertas: number | null;
@@ -80,6 +103,17 @@ const cifra = (n: number | null) => (n === null ? 'sin dato' : String(n));
  * salvar; el resto ya pasó.
  */
 export function titularDe(d: DatosResumen): string {
+  // ⛔ Lo que no se pudo LEER no se titula como si se hubiera medido. Antes,
+  // con `store_members` caído, `asesorasDelTurno` era 0 y `cierres` vacío, y
+  // el titular decía "Seguimiento cerró en cero": buena noticia falsa sobre un
+  // día que nadie midió. Y con `seg_cierres` caído decía "Nadie cerró el día"
+  // a un equipo que sí cerró.
+  if (d.asesorasDelTurno == null) {
+    return 'No pude leer el equipo de la tienda: este resumen está incompleto.';
+  }
+  if (!d.cierresLeidos) {
+    return 'No pude leer los cierres del día: no sé cómo terminó Seguimiento.';
+  }
   const sinCerrar = Math.max(d.asesorasDelTurno - d.cierres.length, 0);
   const faltaron = d.cierres.reduce((n, c) => n + c.faltaron, 0);
 
@@ -115,7 +149,11 @@ export function construirResumen(d: DatosResumen): Resumen {
 
   // ── 1. Lo que declaró el equipo ──────────────────────────────────
   L.push('CÓMO CERRÓ EL EQUIPO');
-  if (d.cierres.length === 0) {
+  if (d.asesorasDelTurno == null) {
+    L.push('  No se pudo leer el equipo de la tienda.');
+  } else if (!d.cierresLeidos) {
+    L.push('  No se pudieron leer los cierres del día.');
+  } else if (d.cierres.length === 0) {
     L.push(
       d.asesorasDelTurno > 0
         ? `  Nadie firmó el cierre (${plural(d.asesorasDelTurno, 'persona en el turno', 'personas en el turno')}).`
@@ -136,6 +174,31 @@ export function construirResumen(d: DatosResumen): Resumen {
     if (sinCerrar > 0) {
       L.push(`  ${plural(sinCerrar, 'persona no cerró', 'personas no cerraron')} su día.`);
     }
+  }
+
+  // ── 1b. Quién trabajó, según lo que Guardian midió ────────────────
+  // Lo que el dueño no podía saber sin abrir el panel: quién entró, a qué
+  // hora, cuánto hizo, cuántas pausas declaró. "Sin ninguna gestión" se dice
+  // así, no "no entró": una llamada desde el celular sin marcar no aparece.
+  L.push('');
+  L.push('QUIÉN TRABAJÓ HOY (lo que midió Guardian)');
+  // Sin el equipo leído no hay contra qué cruzar: "sin equipo" sería inventar.
+  if (d.asistencia === null || d.asesorasDelTurno == null) {
+    L.push('  No se pudo leer la asistencia.');
+  } else if (d.asistencia.length === 0) {
+    L.push('  Sin equipo asignado a esta tienda.');
+  } else {
+    for (const a of d.asistencia) {
+      if (a.gestiones === 0 && !a.primera) {
+        L.push(`  ${a.nombre}: sin ninguna gestión registrada hoy.`);
+        continue;
+      }
+      const pausas = a.pausas > 0
+        ? ` · ${plural(a.pausas, 'pausa', 'pausas')} (${a.minutosPausa} min)`
+        : '';
+      L.push(`  ${a.nombre}: ${a.primera ?? '?'} → ${a.ultima ?? '?'} · ${plural(a.gestiones, 'gestión', 'gestiones')}${pausas}`);
+    }
+    L.push('  Solo cuenta lo marcado en Guardian.');
   }
 
   // ── 2. Lo que la base cuenta sola ────────────────────────────────

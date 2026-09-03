@@ -177,6 +177,31 @@ describe('la intensidad del color', () => {
   });
 });
 
+/**
+ * ⛔ FUERA DEL HORARIO NO ES "NO TRABAJÓ" (4-sep-2026). Con horario 9-17, la
+ * que entró a las 7:30 a limpiar el backlog tenía sus gestiones borradas del
+ * total y todas sus celdas en rojo, mientras la tarjeta de al lado sí las
+ * contaba: dos cifras contradictorias en la misma pantalla, y la de arriba
+ * acusaba.
+ */
+describe('lo que se hizo fuera del horario', () => {
+  it('se cuenta aparte y suma al total del día', () => {
+    const m = construirMapaCalor({
+      marcas: [...marca('a', 7, 4), ...marca('a', 10, 2), ...marca('a', 19, 1)],
+      operadores: ['a'], horario: HORARIO, medible: true,
+    });
+    expect(m.filas[0].fueraDeHorario).toBe(5);
+    expect(m.filas[0].total).toBe(7);
+    // Y no inventa columnas: el mapa sigue siendo el horario.
+    expect(m.horas.includes(7)).toBe(false);
+  });
+
+  it('sin medir, tampoco afirma cero fuera de horario', () => {
+    const m = construirMapaCalor({ marcas: [], operadores: ['a'], horario: HORARIO, medible: false });
+    expect(m.filas[0].fueraDeHorario).toBeNull();
+  });
+});
+
 describe('el nombre de la hora', () => {
   it('se dice como lo pidió el dueño: de 10 a 11', () => {
     expect(rangoHora(10)).toBe('10:00 a 11:00');

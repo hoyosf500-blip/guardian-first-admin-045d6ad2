@@ -439,7 +439,9 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
     // ⛔ El veredicto es `ok`, no si volvió la fila: un INSERT que entra pero no
     // devuelve nada mostraba "No se pudo registrar" sobre una gestión guardada,
     // y con el candado anti-duplicado el cartel se repetía en el reintento.
-    const { ok } = await recordGestion(o.phone, 'SEG', metodo);
+    // CON el número de pedido (ver CrmTable): la bitácora sin `external_id`
+    // no puede decir sobre CUÁL de los dos pedidos de un cliente fue.
+    const { ok } = await recordGestion(o.phone, 'SEG', metodo, o.externalId);
     setGestionando(false);
     enVueloRef.current = false;
     if (ok) {

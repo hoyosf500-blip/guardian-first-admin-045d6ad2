@@ -113,7 +113,10 @@ export function useRecordGestion() {
         operator_id: user.id,
         store_id: activeStoreId,
         action_date: bogotaToday(),
-        action_time: now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
+        // Con zona: era el ÚNICO insert de touchpoints que tomaba la hora del
+        // navegador. Una asesora trabajando desde otra zona dejaba la fecha
+        // bien y la hora corrida — y esa hora sale en el historial del pedido.
+        action_time: now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' }),
       };
       const { data, error } = await supabase.from('touchpoints').insert(tp).select();
       // ⛔ El veredicto lo da `error`, NO si volvió la fila. Ver `ResultadoGestion`.

@@ -61,7 +61,16 @@ export function accionLegible(action: string): string {
 /** El módulo (`SEG`, `NOVEDAD`, `LLAMADA`…), o `''` si la fila es vieja y no lo trae. */
 export function moduloDe(action: string): string {
   const i = action.indexOf(':');
-  return i >= 0 ? action.slice(0, i).trim().toUpperCase() : '';
+  if (i >= 0) {
+    const pref = action.slice(0, i).trim().toUpperCase();
+    // `Cancelado: motivo` viene de Confirmar sin prefijo de módulo: el texto
+    // antes de los dos puntos es el resultado, no el módulo.
+    return pref === 'CANCELADO' ? 'CONFIRMAR' : pref;
+  }
+  // Las marcas de Confirmar (`Confirmado`, `No respondió`) tampoco llevan
+  // prefijo: sin esto el sello no podía decir de qué cola vino.
+  if (/^(confirmado|no respondi[oó])$/i.test(action.trim())) return 'CONFIRMAR';
+  return '';
 }
 
 export function useSelloGestion(storeId: string | null, phones: string[]) {
@@ -92,17 +101,35 @@ export function useSelloGestion(storeId: string | null, phones: string[]) {
     const lotes: string[][] = [];
     for (let i = 0; i < lista.length; i += LOTE) lotes.push(lista.slice(i, i + LOTE));
 
-    const respuestas = await Promise.all(
-      lotes.map((lote) =>
-        supabase
+    // ⛔ PAGINADO HASTA AGOTAR (4-sep-2026). Sin `.limit()` ni `.range()`,
+    // PostgREST recorta en 1.000 filas SIN error: con 100 teléfonos y 7 días de
+    // toques el lote se pasaba, y los teléfonos que quedaban afuera del corte
+    // salían como "nadie lo tocó" — clientes ya atendidos volvían a figurar
+    // pendientes en la bandeja y el supervisor aparecía con menos deuda de la
+    // real. Es el regaño injusto que el sello existe para evitar.
+    const PAGINA = 1000;
+    type FilaCruda = { phone: string | null; action: string | null; operator_id: string | null; created_at: string };
+    const leerLote = async (lote: string[]): Promise<{ data: FilaCruda[] | null; error: unknown }> => {
+      const filas: FilaCruda[] = [];
+      for (let desdeFila = 0; ; desdeFila += PAGINA) {
+        const r = await supabase
           .from('touchpoints')
           .select('phone, action, operator_id, created_at')
           .eq('store_id', storeId)
           .in('phone', lote)
           .gte('created_at', desde)
-          .order('created_at', { ascending: false }),
-      ),
-    );
+          .order('created_at', { ascending: false })
+          // Desempate estable entre páginas.
+          .order('id', { ascending: false })
+          .range(desdeFila, desdeFila + PAGINA - 1);
+        if (r.error) return { data: null, error: r.error };
+        const pagina = (r.data ?? []) as unknown as FilaCruda[];
+        filas.push(...pagina);
+        if (pagina.length < PAGINA) break;
+      }
+      return { data: filas, error: null };
+    };
+    const respuestas = await Promise.all(lotes.map(leerLote));
     if (seq !== seqRef.current) return;
 
     // ⛔ Si UN lote falla, no se pinta un mapa a medias: la mitad de las tarjetas

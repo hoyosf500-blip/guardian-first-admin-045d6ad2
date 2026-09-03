@@ -108,7 +108,7 @@ export default function ActividadPage() {
   const filtroOperador = puedeVerATodas ? quien : (user?.id ?? null);
 
   const { roster } = useAdvisorRoster(activeStoreId);
-  const { filas, resumen, estado, recargar } = useBitacoraDia(activeStoreId, dia, filtroOperador);
+  const { filas, resumen, estado, truncado, recargar } = useBitacoraDia(activeStoreId, dia, filtroOperador);
 
   // Nombres para la lista: el roster no incluye al dueño, y el dueño también
   // trabaja pedidos. Sin esto sus propias filas saldrían sin nombre.
@@ -213,6 +213,15 @@ export default function ActividadPage() {
 
       {estado === 'ok' && (
         <>
+          {/* ⛔ Si se tocó el tope, el resumen está INCOMPLETO y se dice: sobre
+              estos números se habla con una persona. Lo que falta es lo más
+              viejo del día (la mañana). */}
+          {truncado && (
+            <div className="rounded-2xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning mb-4">
+              Este día tiene más eventos de los que puedo leer de una vez: la lista y el resumen
+              están <strong>incompletos</strong> (falta lo más temprano). Elegí una persona para verla completa.
+            </div>
+          )}
           {/* ── Resumen por persona ─────────────────────────────────────── */}
           {resumen.length > 0 && (
             <div className="flex flex-col gap-3 mb-5">

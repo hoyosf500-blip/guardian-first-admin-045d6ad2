@@ -19,6 +19,7 @@ import SelloGestion from '@/components/comun/SelloGestion';
 import LockBadge from '@/components/LockBadge';
 import { useSelloGestion, type EstadoSello, type Sello } from '@/hooks/useSelloGestion';
 import { useAtencionPedido } from '@/hooks/useAtencionPedido';
+import { usePedidoALaVista } from '@/hooks/useBitacoraPedido';
 import { matchesQuery } from '@/lib/textSearch';
 import { toast } from 'sonner';
 
@@ -530,6 +531,9 @@ export default function InboxPage() {
   // cliente que estoy atendiendo queda tomado mientras lo tenga seleccionado, y
   // se suelta solo al pasar al siguiente.
   useAtencionPedido(sel?.dbId ?? null, Boolean(ancha && sel));
+  // Bitácora de lo que está a la vista (ver CallView): la bandeja tampoco
+  // dejaba rastro de "abrió el chat y pasó al siguiente".
+  usePedidoALaVista(sel ? { externalId: sel.externalId, phone: sel.phone } : null);
 
   // ¿El feed del canal podría estar caído? Si el sync falla o lleva mucho sin
   // correr, esta lista puede estar INCOMPLETA — y un "Nadie esperando" en verde

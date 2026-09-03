@@ -40,6 +40,7 @@ import NotesPanel from '@/components/order-notes/NotesPanel';
 import ChatClienteCard from '@/components/chat/ChatClienteCard';
 import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDialog';
 import { useRiesgoChat } from '@/hooks/useRiesgoChat';
+import { usePedidoALaVista } from '@/hooks/useBitacoraPedido';
 import { AddressAutocomplete } from '@/components/address/AddressAutocomplete';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
 import { DespachoGateButton } from '@/components/address/DespachoGateButton';
@@ -823,6 +824,14 @@ export default function CallView({ items, alerts }: Props) {
     { titulo: string; detalle: string; gemelos: ActiveDupAlert[] } | null
   >(null);
   const decididoDuplicado = useRef<Set<string>>(new Set());
+
+  // La bitácora de lo que está a la vista: `abrio` / `cerro` / `salto`. Hasta
+  // el 4-sep-2026 solo Novedades la tenía: la confirmadora que pasó 8 h
+  // llamando aparecía en /actividad con la lista vacía. Las gestiones (`marco`
+  // lo emite OrderContext) se cuentan solas entre instancias, así que no hace
+  // falta llamar a `marcarGestion` acá. ARRIBA del early-return, misma regla
+  // de hooks que los dos de arriba.
+  usePedidoALaVista(o ? { externalId: o.externalId, phone: o.phone } : null);
 
   if (!items.length || !o) {
     // Sin pedido en pantalla no hay atajos (ver hotkeysRef arriba).

@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { useCelebration } from '@/hooks/useCelebration';
 import { useDataLoader, smartMerge } from '@/hooks/useDataLoader';
 import { useNovedades } from '@/hooks/useNovedades';
+import { useBitacoraPedido } from '@/hooks/useBitacoraPedido';
 // COST-2 (2026-04-29): useAutoDropiSync removido — el sync automático
 // cada hora consumía Cloud sin necesidad. Ahora el admin sincroniza
 // manualmente con el botón "Sincronizar ahora" en Dashboard/Admin, y el
@@ -273,6 +274,13 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   // para filtrar por la tienda activa (multi-tenant).
   const dataLoader = useDataLoader(user, activeStoreId);
   const novedades = useNovedades(user, activeStoreId);
+  // La bitácora (`order_events`): marcar y deshacer quedan registrados CON el
+  // número de pedido. Hasta el 4-sep-2026 `marco` estaba en el vocabulario y
+  // nadie lo emitía: /actividad decía "abrió 30 · gestionó 0" sobre una asesora
+  // que confirmó 30. Va por ref para no meterla en las deps de markResult.
+  const bitacora = useBitacoraPedido();
+  const bitacoraRef = useRef(bitacora);
+  useEffect(() => { bitacoraRef.current = bitacora; }, [bitacora]);
 
   // Hidratar el contador del día desde la DB al montar.
   //
@@ -1645,7 +1653,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       setLastMark(prev => prev ? { ...prev, resultId: insertedResult.id } : prev);
     }
 
-    const { data: tpData } = await supabase.from('touchpoints').insert({
+    const { data: tpData, error: tpErr } = await supabase.from('touchpoints').insert({
       phone: order.phone,
       action: result === 'conf' ? 'Confirmado' : result === 'canc' ? `Cancelado: ${reason || ''}` : 'No respondió',
       operator_id: user.id,
@@ -1653,10 +1661,20 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       action_time: now,
       store_id: activeStoreId,
     }).select('id').single();
+    // El resultado ya quedó en order_results; si el SELLO no entró, se dice:
+    // sin él, Novedades y la bandeja muestran "nadie tocó este cliente" sobre
+    // un pedido que sí se gestionó — el regaño injusto que el sello evita.
+    if (tpErr) console.error('[markResult] el sello (touchpoint) no se guardó; el resultado sí:', tpErr.message);
 
     if (tpData?.id) {
       setLastMark(prev => prev ? { ...prev, touchpointId: tpData.id } : prev);
     }
+
+    bitacoraRef.current('marco', {
+      externalId: order.externalId,
+      phone: order.phone,
+      detalle: { result, module: 'confirmar', reason: reason || '', sello: !tpErr },
+    });
 
     // Release the per-order lock now that this operator is done with it.
     // Use rpc cast — claim/release_order are not yet in generated types.
@@ -1710,11 +1728,28 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       noresp: Math.max(0, prev.noresp - (result === 'noresp' ? 1 : 0)),
     }));
 
+    // ⛔ El rastro va ANTES del borrado (4-sep-2026). `order_events` es
+    // append-only: "confirmó y deshizo" deja de ser invisible, que era la
+    // maniobra para inflar y desinflar un número.
+    bitacoraRef.current('deshizo', {
+      externalId: order.externalId,
+      phone: order.phone,
+      detalle: { result, module: 'confirmar', reason: lastMark.reason || '' },
+    });
     if (resultId) {
-      await supabase.from('order_results').delete().eq('id', resultId);
+      const { error: delErr } = await supabase.from('order_results').delete().eq('id', resultId);
+      if (delErr) {
+        // La política solo deja deshacer lo propio y dentro de la ventana de
+        // 15 min. Si no entró, la marca sigue viva: no se toca el estado del
+        // pedido ni se le hace creer a la asesora que se revirtió.
+        console.error('[undoLast] no se pudo borrar el resultado:', delErr.message);
+        toast.error('No se pudo deshacer: la marca ya quedó registrada (pasaron más de 15 min o no es tuya).');
+        return;
+      }
     }
     if (touchpointId) {
-      await supabase.from('touchpoints').delete().eq('id', touchpointId);
+      const { error: delTpErr } = await supabase.from('touchpoints').delete().eq('id', touchpointId);
+      if (delTpErr) console.error('[undoLast] el sello quedó (no se pudo borrar):', delTpErr.message);
     }
 
     // Fix 6: si revertimos una confirmación, también devolvemos el estado
