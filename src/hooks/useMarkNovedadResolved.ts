@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { OrderData } from '@/lib/orderUtils';
-import { hoyEn, horaAhoraEn } from '@/lib/utils';
+import { bogotaToday, horaAhoraEn } from '@/lib/utils';
 import { buildNovedadAction, NovedadResultTipo } from '@/lib/novedadGestion';
 import { toast } from 'sonner';
 
@@ -69,10 +69,15 @@ export function useMarkNovedadResolved() {
       if (!user || !order) return { ok: false, dropi: 'no_aplica' };
       const key = order.dbId || order.externalId || order.phone;
       setMarking(key);
-      // Día y hora en la zona de la TIENDA (GT es UTC−6): con Bogotá fijo, una
-      // gestión de las 23:15 en Guatemala se anotaba mañana (4-sep-2026).
-      const today = hoyEn(activeStore?.country_code);
-      const now = horaAhoraEn(activeStore?.country_code);
+      // ⛔ Día de BOGOTÁ, la misma vara que TODOS los lectores (`useLiveTeam`,
+      // `SegCounterBar`, la cobertura, el mapa de calor) y que el trigger que
+      // protege la novedad resuelta del próximo sync (`20260903200000`). El
+      // 4-sep se pasó a la zona de la tienda para que una gestión de las
+      // 23:15 en Guatemala no se anotara "mañana"; pero con los lectores en
+      // Bogotá esa marca no aparecía en NINGÚN día y el trigger no la
+      // protegía. Mover todo a la zona de la tienda es otra tanda; a medias, no.
+      const today = bogotaToday();
+      const now = horaAhoraEn('CO');
       const solution = (nota || '').replace(/\s+/g, ' ').trim();
       const vaADropi = !!opts?.dropi && tipo !== 'sin_respuesta' && !!order.externalId;
       let dropi: DropiResultado = 'no_aplica';

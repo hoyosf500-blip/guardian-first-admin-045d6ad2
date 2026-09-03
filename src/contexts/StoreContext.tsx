@@ -289,6 +289,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { void refresh(); }, [refresh]);
 
+  // ⛔ Reintento del scope (revisión 3-sep-2026). Si `set_active_store` falló
+  // (un blip de red al entrar), `scopeStoreId` quedaba en null PARA SIEMPRE:
+  // `refresh` solo corre al cambiar de usuario y `setActiveStoreId` solo con
+  // un cambio manual de tienda. Todo lo que espera el scope del servidor
+  // (Reportes, el ranking del Dashboard, Jornada) quedaba en "cargando" hasta
+  // F5. Ahora se reintenta al volver la red, al volver a la pestaña, y cada
+  // 30 s mientras siga caído.
+  useEffect(() => {
+    if (scopeSynced || !activeStoreId) return;
+    const id = activeStoreId;
+    const otraVez = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      void sincronizarScope(id);
+    };
+    window.addEventListener('online', otraVez);
+    document.addEventListener('visibilitychange', otraVez);
+    const t = setInterval(otraVez, 30_000);
+    return () => {
+      window.removeEventListener('online', otraVez);
+      document.removeEventListener('visibilitychange', otraVez);
+      clearInterval(t);
+    };
+  }, [scopeSynced, activeStoreId, sincronizarScope]);
+
   const setActiveStoreId = useCallback((id: string) => {
     // Optimista: el UI cambia de inmediato, no bloqueamos la navegación.
     setActiveStoreIdState(id);

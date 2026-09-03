@@ -1699,8 +1699,29 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       toast.info('Ya fue revertido por el rollback de Dropi');
       return;
     }
-    if (lastMark.order.dbId) revertedIds.current.add(lastMark.order.dbId);
     const { order, result, resultId, touchpointId } = lastMark;
+
+    // ⛔ El borrado va PRIMERO, antes de tocar el estado local (revisión
+    // 3-sep-2026). Si la base rechaza el DELETE (política de 15 min, red), la
+    // marca sigue viva: con el estado optimista ya aplicado el pedido volvía
+    // a verse sin resultado y el contador bajaba en 1, la asesora lo marcaba
+    // de nuevo → segunda fila en order_results y, si era conf, segundo push.
+    // El rastro `deshizo` se deja igual, con `ok:false`, para que la bitácora
+    // diga lo que pasó y no lo que se intentó.
+    if (resultId) {
+      const { error: delErr } = await supabase.from('order_results').delete().eq('id', resultId);
+      if (delErr) {
+        console.error('[undoLast] no se pudo borrar el resultado:', delErr.message);
+        bitacoraRef.current('deshizo', {
+          externalId: order.externalId,
+          phone: order.phone,
+          detalle: { result, module: 'confirmar', reason: lastMark.reason || '', ok: false },
+        });
+        toast.error('No se pudo deshacer: la marca sigue registrada (pasaron más de 15 min o no es tuya).');
+        return;
+      }
+    }
+    if (order.dbId) revertedIds.current.add(order.dbId);
 
     setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result: undefined, reason: undefined } : o));
     // `Math.max(0, …)` igual que `myCounter`: sin piso, deshacer la PRIMERA
@@ -1728,25 +1749,15 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       noresp: Math.max(0, prev.noresp - (result === 'noresp' ? 1 : 0)),
     }));
 
-    // ⛔ El rastro va ANTES del borrado (4-sep-2026). `order_events` es
-    // append-only: "confirmó y deshizo" deja de ser invisible, que era la
-    // maniobra para inflar y desinflar un número.
+    // El rastro (4-sep-2026): `order_events` es append-only, así "confirmó y
+    // deshizo" deja de ser invisible, que era la maniobra para inflar y
+    // desinflar un número. Va DESPUÉS del DELETE porque tiene que decir lo que
+    // pasó de verdad (`ok:true`), no lo que se intentó.
     bitacoraRef.current('deshizo', {
       externalId: order.externalId,
       phone: order.phone,
-      detalle: { result, module: 'confirmar', reason: lastMark.reason || '' },
+      detalle: { result, module: 'confirmar', reason: lastMark.reason || '', ok: true },
     });
-    if (resultId) {
-      const { error: delErr } = await supabase.from('order_results').delete().eq('id', resultId);
-      if (delErr) {
-        // La política solo deja deshacer lo propio y dentro de la ventana de
-        // 15 min. Si no entró, la marca sigue viva: no se toca el estado del
-        // pedido ni se le hace creer a la asesora que se revirtió.
-        console.error('[undoLast] no se pudo borrar el resultado:', delErr.message);
-        toast.error('No se pudo deshacer: la marca ya quedó registrada (pasaron más de 15 min o no es tuya).');
-        return;
-      }
-    }
     if (touchpointId) {
       const { error: delTpErr } = await supabase.from('touchpoints').delete().eq('id', touchpointId);
       if (delTpErr) console.error('[undoLast] el sello quedó (no se pudo borrar):', delTpErr.message);

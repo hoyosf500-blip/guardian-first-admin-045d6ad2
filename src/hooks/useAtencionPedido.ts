@@ -75,7 +75,13 @@ export function useAtencionPedido(dbId: string | null | undefined, activo: boole
       // equipo — el "Siguiente salta" de la bandeja y de Novedades al pasar
       // rápido entre tarjetas. Se suelta acá mismo.
       if (cancelado) {
-        if (r.ok) void releaseOrder(dbId);
+        // ⛔ Solo si NADIE MÁS de esta pestaña lo sostiene. `claim_order`
+        // renueva un candado propio y devuelve ok:true; si la bandeja (o la
+        // ficha de Novedades) tiene el mismo pedido abierto y el diálogo de
+        // WhatsApp se cerró antes de que respondiera el RPC, soltar acá le
+        // quitaba el candado a la pantalla que sí lo tiene — y Confirmar se lo
+        // entregaba a otra asesora (revisión 3-sep-2026).
+        if (r.ok && !(SOSTENIDOS.get(dbId) ?? 0)) void releaseOrder(dbId);
         return;
       }
       // `ok:false` no se avisa ni se salta: acá el pedido YA está en pantalla

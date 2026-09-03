@@ -30,7 +30,13 @@ import { bogotaSecondsOfDay } from '@/lib/inactivityWindow';
 const EN_LINEA_MAX_MIN = 10;   // señal < 10 min = en línea
 const SIN_MARCAR_MIN = 20;     // presente (mouse) pero sin marcar hace +20 min
 const POLL_MS = 30_000;
-const EVENT_SCAN_LIMIT = 400;  // filas recientes para hallar la última por operadora
+// Filas recientes para hallar la última por operadora. Era 400 y se alcanzaba en
+// un día normal de Ecuador (3-sep-2026: 181 confirmaciones + 98 gestiones de
+// seguimiento → las dos tarjetas decían "no se pudo medir" en el ritmo de
+// Seguimiento y en la presencia). 1000 es el tope que PostgREST devuelve en una
+// sola consulta (más se corta en silencio, ver useSelloGestion); pasarlo exige
+// paginar. Al llegar al tope, `workEventsOk` sigue diciendo que no se pudo leer.
+const EVENT_SCAN_LIMIT = 1000;
 
 export type WorkStatus = 'trabajando' | 'presente_sin_marcar' | 'ausente';
 
@@ -296,7 +302,13 @@ export function useLiveTeam(): LiveTeam {
       status: 'ok',
       updatedAt: nowMs,
     });
-  }, [storeId, scopeSynced]);
+  // ⛔ `scopeStoreId` en las deps (revisión 3-sep-2026): `load` se recreaba al
+  // cambiar de tienda capturando scopeStoreId=null y salía por la rama de
+  // "cargando"; cuando el servidor confirmaba la tienda nueva, nadie volvía a
+  // crear `load` (scopeSynced seguía en true) y el poll llamaba al closure
+  // viejo para siempre. Jornada desaparecía y "trabajando ahora" quedaba en 0
+  // hasta recargar la página.
+  }, [storeId, scopeSynced, scopeStoreId]);
 
   useEffect(() => {
     setTeam(t => ({ ...t, status: 'loading' }));

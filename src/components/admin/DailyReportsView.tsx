@@ -168,7 +168,7 @@ export default function DailyReportsView() {
   // Las tres RPCs de abajo resuelven la tienda SERVER-SIDE: se espera a que el
   // servidor la confirme (ver `scopeStoreId` en StoreContext), si no pintan
   // los reportes de la tienda anterior bajo el nombre de la nueva (4-sep-2026).
-  const { scopeStoreId } = useStore();
+  const { scopeStoreId, scopeSynced } = useStore();
   const today = useMemo(() => new Date(), []);
   const sevenAgo = useMemo(() => { const d = new Date(); d.setDate(d.getDate() - 6); return d; }, []);
 
@@ -186,7 +186,18 @@ export default function DailyReportsView() {
   const [errMsg, setErrMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (activeStoreId && scopeStoreId !== activeStoreId) { setLoading(true); return; }
+    if (activeStoreId && scopeStoreId !== activeStoreId) {
+      // "Viajando" ≠ "falló" (revisión 3-sep-2026): si `set_active_store` no
+      // entró, el scope no va a aterrizar nunca solo y esto giraba toda la
+      // jornada. Se dice, y StoreContext reintenta al volver la red / la pestaña.
+      if (!scopeSynced) {
+        setLoading(false);
+        setErrMsg('No se pudo fijar la tienda en el servidor. Se reintenta solo al volver la conexión; si sigue, cambiá de tienda y volvé.');
+      } else {
+        setLoading(true);
+      }
+      return;
+    }
     setLoading(true);
     setErrMsg(null);
     // .bind(supabase) es OBLIGATORIO: si solo hacés `const rpc = supabase.rpc`

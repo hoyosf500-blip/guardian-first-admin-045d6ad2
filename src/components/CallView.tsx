@@ -820,8 +820,12 @@ export default function CallView({ items, alerts }: Props) {
   // y los pedidos por los que la asesora YA respondió, para no repreguntar. El
   // segundo es un ref y no un estado: cambiarlo no tiene que repintar la ficha
   // en medio de una llamada.
+  // `paraId`: a QUÉ pedido pertenece la pregunta. Si la ficha se re-ancla a un
+  // vecino mientras el diálogo está abierto (el cron le cambió el estado al
+  // pedido), "Son distintos — confirmar" confirmaba al vecino (revisión
+  // 3-sep-2026).
   const [preguntaDuplicado, setPreguntaDuplicado] = useState<
-    { titulo: string; detalle: string; gemelos: ActiveDupAlert[] } | null
+    { titulo: string; detalle: string; gemelos: ActiveDupAlert[]; paraId: string } | null
   >(null);
   const decididoDuplicado = useRef<Set<string>>(new Set());
 
@@ -956,7 +960,7 @@ export default function CallView({ items, alerts }: Props) {
         decididoDuplicado.current.has(String(o.dbId ?? o.externalId ?? '')),
       );
       if (aviso.frena) {
-        setPreguntaDuplicado({ titulo: aviso.titulo, detalle: aviso.detalle, gemelos: aviso.gemelos });
+        setPreguntaDuplicado({ titulo: aviso.titulo, detalle: aviso.detalle, gemelos: aviso.gemelos, paraId: String(o.dbId ?? o.externalId ?? '') });
         return;
       }
     }
@@ -1995,8 +1999,13 @@ export default function CallView({ items, alerts }: Props) {
             <AlertDialogCancel>Mejor los reviso</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                decididoDuplicado.current.add(String(o.dbId ?? o.externalId ?? ''));
+                const actual = String(o.dbId ?? o.externalId ?? '');
                 setPreguntaDuplicado(null);
+                if (preguntaDuplicado && preguntaDuplicado.paraId !== actual) {
+                  toast.error('El pedido en pantalla cambió mientras leías. Volvé a mirarlo antes de confirmar.');
+                  return;
+                }
+                decididoDuplicado.current.add(actual);
                 void handleMark('conf');
               }}
             >

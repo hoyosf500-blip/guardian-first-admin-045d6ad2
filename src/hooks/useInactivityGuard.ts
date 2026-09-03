@@ -152,9 +152,13 @@ export function useInactivityGuard({ hasPendingWork, enPausa = false }: { hasPen
     try {
       const raw = localStorage.getItem(lockKey(activeStoreId));
       if (raw) {
-        const lk = JSON.parse(raw) as { until?: number; number?: number; lostSeconds?: number };
+        const lk = JSON.parse(raw) as { until?: number; number?: number; lostSeconds?: number; grabado?: boolean };
         if (typeof lk.until === 'number' && lk.until > Date.now()) {
           warningsTodayRef.current = Math.max(warningsTodayRef.current, lk.number || 0);
+          // ⛔ Si este aviso YA se grabó antes del reload, que "Entendido" no
+          // lo vuelva a grabar: record_inactivity_warning es COUNT+1, no es
+          // idempotente, y la asesora aparecía con 4 avisos por 3 reales.
+          if (lk.grabado) grabadoRef.current = lk.number || 3;
           pendingRef.current = true;
           setWarning({ lostSeconds: lk.lostSeconds || 0, number: lk.number || 3, lockedUntil: lk.until });
           restored = true;
@@ -195,7 +199,9 @@ export function useInactivityGuard({ hasPendingWork, enPausa = false }: { hasPen
         try {
           localStorage.setItem(
             lockKey(storeRef.current),
-            JSON.stringify({ until: lockedUntil, number, lostSeconds: lost }),
+            // `grabado`: el aviso se graba en la base ACÁ abajo, en este mismo
+            // paso; el candado lo recuerda para que un F5 no lo grabe dos veces.
+            JSON.stringify({ until: lockedUntil, number, lostSeconds: lost, grabado: true }),
           );
         } catch { /* noop */ }
       }
@@ -279,10 +285,14 @@ export function useInactivityGuard({ hasPendingWork, enPausa = false }: { hasPen
     const store = storeRef.current;
     const now = new Date();
 
-    warningsTodayRef.current = w.number;
+    // ⛔ Nunca hacia abajo: el servidor pudo haber contestado ya (en `handle`)
+    // con un número mayor —otro navegador, localStorage vacío— y pisarlo acá
+    // atrasaba la numeración local: el bloqueo del 3er aviso llegaba un aviso
+    // tarde.
+    warningsTodayRef.current = Math.max(warningsTodayRef.current, w.number);
     if (store) {
       try {
-        localStorage.setItem(dayKey(store, now), String(w.number));
+        localStorage.setItem(dayKey(store, now), String(warningsTodayRef.current));
         localStorage.removeItem(lockKey(store)); // bloqueo cumplido / aviso cerrado
       } catch { /* noop */ }
     }

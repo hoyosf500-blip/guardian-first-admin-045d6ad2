@@ -30,6 +30,13 @@ export interface InboxItem {
   transportadora: string | null;
   /** ms epoch del último mensaje del cliente (por eso está esperando). */
   entranteAt: number;
+  /** Desde cuándo ESPERA, que es lo que la pantalla mide y colorea: en la cola
+   *  de "escribieron" es `entranteAt`; en la canasta de deuda ("sin
+   *  respuesta") es nuestro último mensaje (`salienteAt`), porque ahí el
+   *  cliente puede no haber escrito nunca y `entranteAt` es 0 — con eso la
+   *  pantalla decía «hace 20700 días» y daba por resuelto a todo el que
+   *  recibió una plantilla (visto en producción el 3-sep-2026). */
+  esperaDesde: number;
   /** ms epoch del último mensaje NUESTRO, y cuándo se leyó la conversación.
    *  Van juntos para poder armar el `ActividadChatOrden` que necesita el botón
    *  de acción: sin ellos, la ventana de 24 h queda en `sin_dato` y el botón se
@@ -250,6 +257,7 @@ async function cargarTienda(storeId: string | null): Promise<void> {
         // `salienteAt`); ponerlo en 0 es preferible a mentir con `Date.now()`,
         // que se leería como "escribió recién".
         entranteAt: entranteAt ?? 0,
+        esperaDesde: entranteAt ?? 0,
         salienteAt,
         leidoAt,
         lockedBy: r.locked_by,
@@ -270,7 +278,7 @@ async function cargarTienda(storeId: string | null): Promise<void> {
         if (salienteAt == null) return;
         if (ahora - salienteAt < umbralMs) return;
         if (salienteAt < pisoMs) return;   // más de una semana: ya es historia
-        deudaOut.push(item());
+        deudaOut.push({ ...item(), esperaDesde: salienteAt });
       }
     };
 
@@ -318,7 +326,16 @@ function suscribir(storeId: string, avisar: (s: Snapshot) => void): () => void {
 
   // La primera carga la dispara el primero que llega; los demás reciben lo que
   // ya hay y esperan el aviso. Así abrir una segunda pantalla no cuesta nada.
-  if (!SNAPSHOT.has(storeId)) void cargarTienda(storeId);
+  //
+  // ⛔ Pero un snapshot en ERROR o uno que quedó de una visita anterior (el
+  // último suscriptor cerró el canal: desde entonces nadie escuchó los
+  // cambios) SÍ se vuelve a leer. Antes, si la primera lectura fallaba,
+  // /inbox decía "Reintentá en un momento" y volver a entrar no reintentaba
+  // nunca; y al volver a una tienda se pintaba la cola de hace horas con
+  // status 'ok' (revisión 3-sep-2026). El snapshot viejo se sigue pintando en
+  // el acto; solo se agrega el refresco.
+  const previo = SNAPSHOT.get(storeId);
+  if (!previo || previo.status === 'error' || !canal) void cargarTienda(storeId);
 
   return () => {
     subs!.delete(avisar);

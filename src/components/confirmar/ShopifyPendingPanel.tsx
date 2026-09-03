@@ -94,16 +94,28 @@ function loadOverrideMap(storeId: string): Record<string, number> {
   const key = DUP_OVERRIDE_KEY(storeId);
   const ahora = Date.now();
   const out: Record<string, number> = {};
+  let formatoViejo = false;
   for (const store of [localStorage, sessionStorage]) {
     try {
       const raw = JSON.parse(store.getItem(key) || 'null');
       if (Array.isArray(raw)) {
+        formatoViejo = true;
         for (const id of raw) if (typeof id === 'string') out[id] = out[id] ?? ahora;
       } else if (raw && typeof raw === 'object') {
         for (const [id, ts] of Object.entries(raw as Record<string, unknown>)) {
           if (typeof ts === 'number' && ahora - ts < DUP_OVERRIDE_TTL_MS) out[id] = ts;
         }
       }
+    } catch { /* noop */ }
+  }
+  // ⛔ El formato viejo (lista de ids sin fecha) se REESCRIBE con fecha acá,
+  // una sola vez. Si no, cada carga lo leía como "marcado ahora" y esos ids
+  // nunca caducaban: exactamente el candado eterno que el TTL vino a cerrar
+  // (revisión 3-sep-2026).
+  if (formatoViejo) {
+    try {
+      localStorage.setItem(key, JSON.stringify(out));
+      sessionStorage.removeItem(key);
     } catch { /* noop */ }
   }
   return out;

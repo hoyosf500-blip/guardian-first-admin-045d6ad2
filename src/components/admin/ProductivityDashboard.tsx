@@ -459,13 +459,24 @@ export default function ProductivityDashboard() {
   useEffect(() => {
     if (!activeStoreId) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const debounced = () => {
+    let mapaPendiente = false;
+    const recargar = (conMapa: boolean) => () => {
+      if (conMapa) mapaPendiente = true;
       if (timer) clearTimeout(timer);
-      // El mapa de calor comparte este mismo aviso (no abre otro canal): sin
-      // esto era una foto del momento en que se montó, y a las 15:00 seguía
-      // mostrando las gestiones de hasta las 9:10 (4-sep-2026).
-      timer = setTimeout(() => { load(true); setMapaTick((t) => t + 1); }, 1000);
+      timer = setTimeout(() => {
+        load(true);
+        // El mapa de calor comparte este mismo canal (no abre otro): sin esto
+        // era una foto del momento en que se montó, y a las 15:00 seguía
+        // mostrando las gestiones de hasta las 9:10 (4-sep-2026). Pero SOLO
+        // se relee con una gestión nueva: el mapa sale de order_results y
+        // touchpoints, y releer el día entero (dos tablas paginadas) por cada
+        // heartbeat de 5 min de cada asesora era una recarga por minuto que no
+        // cambiaba nada (revisión 3-sep-2026).
+        if (mapaPendiente) { mapaPendiente = false; setMapaTick((t) => t + 1); }
+      }, 1000);
     };
+    const debounced = recargar(false);
+    const conGestion = recargar(true);
     const storeFilter = `store_id=eq.${activeStoreId}`;
     // OJO: NO nos suscribimos a `orders`. El sync la reescribe sin parar (cientos de
     // filas por corrida cada ~10 min) → cada cambio disparaba un refetch de las 4
@@ -476,8 +487,8 @@ export default function ProductivityDashboard() {
     // ~200 ms, así que el costo era el volumen de recargas, no cada consulta.
     const channel = supabase
       .channel(`admin-productivity-${activeStoreId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_results', filter: storeFilter }, debounced)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'touchpoints', filter: storeFilter }, debounced)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_results', filter: storeFilter }, conGestion)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'touchpoints', filter: storeFilter }, conGestion)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'operator_activity_daily', filter: storeFilter }, debounced)
       // Un aviso de inactividad nuevo aparece en vivo en la columna "Sin trabajar".
       .on('postgres_changes', { event: '*', schema: 'public', table: 'operator_inactivity_warnings', filter: storeFilter }, debounced)

@@ -249,7 +249,7 @@ function FilaCola({ o, seleccionada, onSelect, sello, estadoSello, miId, resuelt
   // ya atendido — si siguiera en rojo, la lista mentiría sobre la urgencia.
   const t = resuelto
     ? { chip: 'bg-success/12 border-success/25 text-success', dot: 'bg-success', texto: 'text-success' }
-    : tono(o.entranteAt);
+    : tono(o.esperaDesde);
   const contexto = [o.producto, o.ciudad].filter(Boolean).join(' · ');
   // El check va ADEMAS del tono apagado: en blanco y negro, o para quien no
   // distingue colores, la opacidad sola no dice nada.
@@ -282,7 +282,7 @@ function FilaCola({ o, seleccionada, onSelect, sello, estadoSello, miId, resuelt
           <span className="text-sm font-bold text-foreground truncate min-w-0">{o.nombre}</span>
           <span className={`ml-auto shrink-0 inline-flex items-center gap-1 text-[10px] font-mono tabular-nums font-bold ${t.texto}`}>
             {resuelto && <CheckCircle2 size={11} aria-label="Resuelto" />}
-            {haceCuantoMs(o.entranteAt)}
+            {haceCuantoMs(o.esperaDesde)}
           </span>
         </span>
         {contexto && (
@@ -344,7 +344,7 @@ function TarjetaLista({ o, sello, estadoSello, miId, children }: {
   miId: string | null;
   children: ReactNode;
 }) {
-  const t = tono(o.entranteAt);
+  const t = tono(o.esperaDesde);
   return (
     <div className="relative bg-card/40 border border-border rounded-2xl p-4 flex flex-col gap-3 hover:border-border-strong transition-colors min-w-0">
       <div className="min-w-0">
@@ -352,7 +352,7 @@ function TarjetaLista({ o, sello, estadoSello, miId, children }: {
           <span className="text-base font-bold text-foreground truncate">{o.nombre}</span>
           <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[11px] font-bold ${t.chip}`}>
             <span className={`w-1.5 h-1.5 rounded-full ${t.dot}`} aria-hidden="true" />
-            <Clock size={10} aria-hidden="true" /> {haceCuantoMs(o.entranteAt)}
+            <Clock size={10} aria-hidden="true" /> {haceCuantoMs(o.esperaDesde)}
           </span>
           <span className="pill pill-neutral text-[10px] px-2 py-0.5 rounded-full font-semibold">{o.estado || '—'}</span>
           {/* Días EN ESE ESTADO, no desde que nació el pedido: es el reloj que
@@ -461,8 +461,14 @@ export default function InboxPage() {
     const sello = o.phone ? selloDe(o.phone) : null;
     if (!sello) return false;
     const t = Date.parse(sello.createdAt);
-    return Number.isFinite(t) && t > o.entranteAt;
-  }, [estadoSello, selloDe]);
+    // En la deuda se mide desde NUESTRO último mensaje, y ese envío deja su
+    // propio touchpoint casi a la misma hora: se pide una gestión posterior de
+    // verdad (2 min de margen), no el sello del mismo envío. Sin esto, la
+    // pestaña "Sin respuesta" daba por resuelto a todo el que recibió una
+    // plantilla (producción, 3-sep-2026: «174 en la cola · 106 ya resueltos»).
+    const margen = vista === 'deuda' ? 2 * 60_000 : 0;
+    return Number.isFinite(t) && t > o.esperaDesde + margen;
+  }, [estadoSello, selloDe, vista]);
 
   const marcarResuelto = useCallback((o: InboxItem) => {
     if (!o.phone) {
@@ -540,9 +546,12 @@ export default function InboxPage() {
   // sobre un feed muerto es una mentira tranquilizadora (hallazgo P1).
   // ⛔ `never` TAMBIÉN es dudoso. "El sync nunca corrió" no es una razón para
   // confiar en la lista: es la razón más fuerte para desconfiar.
-  const feedDudoso = salud.data?.status === 'failing'
+  // `canal != null`: mientras el canal no se resolvió, `sourceSyncChat(null)`
+  // apunta a importchat-sync y en Colombia eso es `never` → un destello del
+  // banner rojo "el sync de ImporChat falla" en cada entrada (revisión 3-sep).
+  const feedDudoso = canal != null && (salud.data?.status === 'failing'
     || salud.data?.status === 'critical'
-    || salud.data?.status === 'never';
+    || salud.data?.status === 'never');
 
   // Cuántos llevan más de un día. Es el número que dice si la cola se está
   // trabajando o solo se está mirando — y no se puede leer de un vistazo
@@ -552,7 +561,7 @@ export default function InboxPage() {
   // el numero de "llevan mas de un dia" — la cola pareceria mejor de lo que
   // esta por haber tecleado algo. Esconder trabajo esta prohibido.
   const masDeUnDia = useMemo(
-    () => cola.filter((i) => Date.now() - i.entranteAt >= 86_400_000).length,
+    () => cola.filter((i) => Date.now() - i.esperaDesde >= 86_400_000).length,
     [cola],
   );
 

@@ -31,16 +31,23 @@ describe('⛔ la bitácora registra todo lo que hace la asesora', () => {
     const src = sinComentarios(leer('contexts/OrderContext.tsx'));
     expect(src, 'markResult ya no emite marco').toMatch(/bitacoraRef\.current\(\s*'marco'/);
     expect(src, 'undoLast ya no emite deshizo').toMatch(/bitacoraRef\.current\(\s*'deshizo'/);
-    // El rastro va ANTES del borrado: si el DELETE falla a mitad, igual queda.
-    // Se mira el DELETE del propio undoLast (el primero después del deshizo),
-    // no otros borrados del archivo.
+    // El DELETE va PRIMERO y el rastro dice lo que pasó (revisión 3-sep-2026):
+    // con el estado optimista aplicado antes de borrar, un DELETE rechazado
+    // dejaba el pedido "sin resultado" en pantalla y la asesora lo marcaba dos
+    // veces. Se exige: el borrado antes de cualquier setWorkQueue del undo, y
+    // DOS deshizo — uno con ok:false en la rama del error y uno con ok:true.
     const iUndo = src.indexOf('const undoLast');
-    const iDeshizo = src.indexOf("bitacoraRef.current('deshizo'", iUndo);
-    const iDelete = src.indexOf("from('order_results').delete()", iUndo);
+    const cuerpo = src.slice(iUndo, src.indexOf('const resetOrders', iUndo));
+    const iDelete = cuerpo.indexOf("from('order_results').delete()");
+    const iOptimista = cuerpo.indexOf('setWorkQueue(');
     expect(iUndo).toBeGreaterThan(-1);
-    expect(iDeshizo, 'undoLast no emite deshizo').toBeGreaterThan(-1);
     expect(iDelete, 'undoLast ya no borra el resultado').toBeGreaterThan(-1);
-    expect(iDeshizo, 'el deshizo se registra después de borrar').toBeLessThan(iDelete);
+    expect(iOptimista, 'undoLast ya no limpia el resultado en pantalla').toBeGreaterThan(-1);
+    expect(iDelete, 'el estado optimista se aplica ANTES de borrar en la base').toBeLessThan(iOptimista);
+    const deshizos = cuerpo.match(/bitacoraRef\.current\(\s*'deshizo'/g) ?? [];
+    expect(deshizos.length, 'undoLast tiene que dejar rastro tanto si borró como si no pudo').toBeGreaterThanOrEqual(2);
+    expect(cuerpo).toMatch(/ok:\s*false/);
+    expect(cuerpo).toMatch(/ok:\s*true/);
   });
 
   it('editar el pedido deja rastro (OrderEditorDialog)', () => {

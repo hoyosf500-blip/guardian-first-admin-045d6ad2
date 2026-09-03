@@ -269,13 +269,17 @@ export function useSegAsignaciones() {
         // Con el scope del servidor sin confirmar no se pregunta: la respuesta
         // sería de otra tienda. Se sale como "sin quórum" y el reintento de
         // cada 5 min lo agarra cuando aterrice.
-        if (!scopeOkRef.current) {
+        // Salvo que lo apriete un jefe a mano (`forzar`): ahí no se pregunta
+        // la presencia (sería de otra tienda) y se reparte entre el plantel.
+        // Sin esto, con el scope caído el botón decía "sin quórum… apretá de
+        // nuevo" para siempre (revisión 3-sep-2026).
+        if (!scopeOkRef.current && !opts?.forzar) {
           return {
             asignados: 0, ignorados: 0, sinOperadores: false, desbalance: 0,
             entre: 0, ausentes: operadores.length, sinQuorum: true,
           };
         }
-        const presentes = await presenciaDeHoy();
+        const presentes = scopeOkRef.current ? await presenciaDeHoy() : null;
         const filtrados = presentes === null
           ? operadores
           : operadores.filter((id) => presentes.has(id));
@@ -407,7 +411,16 @@ export function useSegAsignaciones() {
         { p_store_id: activeStoreId, p_order_ids: libres.slice(0, 50), p_limite: cuantos },
       );
 
-      if (faltaLaMigracion(error)) { setSoportado(false); return null; }
+      // ⛔ Que falte `tomar_seguimiento` NO apaga `soportado` (revisión
+      // 3-sep-2026): ese flag es el del reparto entero (`repartir_seguimiento`,
+      // el panel del turno, el chip "solo las mías", el botón del jefe), y esto
+      // se dispara solo, al abrir la pantalla, para cualquiera con 0 sin tocar.
+      // Con la migración sin aplicar, a los segundos de entrar se perdía todo
+      // el módulo por una RPC que es solo el "pedir más".
+      if (faltaLaMigracion(error)) {
+        console.warn('[tomarMas] tomar_seguimiento no está en la base; el reparto sigue.');
+        return null;
+      }
       if (error) return null;
 
       await cargar(); // la verdad la tiene el server

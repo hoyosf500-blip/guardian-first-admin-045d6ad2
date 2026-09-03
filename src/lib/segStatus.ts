@@ -79,6 +79,11 @@ const GUIA_EXACT = new Set([
   'PREPARADO PARA TRANSPORTADORA',
   'ENTREGADO A TRANSPORTADORA',
   'POR RECOLECTAR',
+  // CO (producción, 3-sep-2026, 3 pedidos): la guía se generó y la
+  // transportadora no lo movió. Historial real: PENDIENTE → GUIA_GENERADA →
+  // SIN MOVIMIENTOS. Misma situación que POR RECOLECTAR; caía en 'otros' y
+  // no entraba a la lista SLA de "guía generada sin movimiento".
+  'SIN MOVIMIENTOS',
 ]);
 
 const BODEGA_TRANS_EXACT = new Set([
@@ -104,6 +109,10 @@ const TRANSITO_EXACT = new Set([
   // ENTREGA EN AGENCIA' NO es tránsito — es retiro del cliente (oficina).
   'EN BODEGA',
   'DISTRIBUCION PARA ENTREGA',
+  // EC: la transportadora ya recogió el paquete (el paso siguiente a 'POR
+  // RECOLECTAR'). Visto en la consola de Rushmira Ecuador el 3-sep-2026 cayendo
+  // en 'otros': fuera de las listas SLA y candidato a "detenido" sin estarlo.
+  'RECOLECTADO',
 ]);
 
 const REPARTO_EXACT = new Set([

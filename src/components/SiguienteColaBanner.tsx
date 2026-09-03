@@ -48,7 +48,14 @@ export default function SiguienteColaBanner({ supersededIds }: Props) {
   // Solo se cuenta con `status === 'ok'`. Con `sin_medir`/`error`, este banner
   // NO puede decir «todo al día»: es exactamente el cero que celebró una
   // bandeja con 39 clientes esperando.
-  const bandejaMedida = bandeja.status === 'ok';
+  // ⛔ Y con la canasta de deuda sin leer (`deudaError`) tampoco se cuenta
+  // como medida. Aparte: `sin_medir` / `not_ready` no es un fallo, es una
+  // tienda sin sync de chat — ahí la bandeja NO APLICA y no se avisa nada;
+  // y `cargando` es el primer render, tampoco (revisión 3-sep-2026: se
+  // pintaba «No pude leer la bandeja» de forma permanente en tiendas sin chat).
+  const bandejaMedida = bandeja.status === 'ok' && !bandeja.deudaError;
+  const bandejaNoAplica = bandeja.status === 'sin_medir' || bandeja.status === 'not_ready';
+  const bandejaCargando = bandeja.status === 'cargando';
   const bandejaPend = bandejaMedida ? bandeja.items.length + bandeja.sinRespuesta.length : 0;
 
   // Confirmar terminado = ningún pedido ACCIONABLE de la cola sin resultado.
@@ -105,7 +112,8 @@ export default function SiguienteColaBanner({ supersededIds }: Props) {
   // ⛔ Y con Novedades sin leer (error o todavía cargando) tampoco: una cola
   // vacía porque la consulta falló no es una cola vacía (4-sep-2026).
   const novedadesMedidas = !novedadesError && !novedadesLoading;
-  if (novedadesPend === 0 && novedadesMedidas && segTerminado && bandejaMedida && bandejaPend === 0) {
+  const bandejaAlDia = (bandejaMedida && bandejaPend === 0) || bandejaNoAplica;
+  if (novedadesPend === 0 && novedadesMedidas && segTerminado && bandejaAlDia) {
     return (
       <div className="rounded-2xl border border-success/40 bg-success/10 px-4 py-3 mb-4 flex items-center gap-3 shadow-card3d">
         <PartyPopper size={18} className="text-success shrink-0" aria-hidden="true" />
@@ -166,7 +174,7 @@ export default function SiguienteColaBanner({ supersededIds }: Props) {
             <ArrowRight size={15} className="text-muted-foreground shrink-0" aria-hidden="true" />
           </button>
         )}
-        {!bandejaMedida && (
+        {!bandejaMedida && !bandejaNoAplica && !bandejaCargando && (
           <p className="flex-1 self-center text-[11px] text-warning">
             No pude leer la bandeja: puede haber clientes esperando respuesta.
           </p>

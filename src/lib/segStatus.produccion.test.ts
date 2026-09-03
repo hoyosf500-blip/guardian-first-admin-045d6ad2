@@ -62,6 +62,10 @@ const CENSO_PRODUCCION: ReadonlyArray<{ estado: string; pais: 'CO' | 'EC'; n: nu
   { estado: 'EN BODEGA ORIGEN', pais: 'EC', n: 1 },
   { estado: 'GUIA_GENERADA', pais: 'EC', n: 1 },
   { estado: 'POR RECOLECTAR', pais: 'EC', n: 1 },
+  // Visto en la consola de producción (Rushmira Ecuador, 3-sep-2026) cayendo en 'otros'.
+  { estado: 'RECOLECTADO', pais: 'EC', n: 1 },
+  // CO, 3 pedidos el 3-sep-2026: guía generada y la transportadora no lo movió.
+  { estado: 'SIN MOVIMIENTOS', pais: 'CO', n: 3 },
   { estado: 'PREPARADO PARA TRANSPORTADORA', pais: 'EC', n: 1 },
   // Estados que solo aparecen fuera de la ventana de 60 días (censo completo,
   // toda la historia). Van igual: el tablero de Seguimiento mira 45 días, pero

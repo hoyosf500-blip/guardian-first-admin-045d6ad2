@@ -86,6 +86,7 @@ export const ESTADO_TO_BUCKET: Record<string, BucketKey> = {
   'DESPACHADA': 'en_transito',
   'EN BODEGA DESTINO': 'en_transito',
   'EN PUNTO DROOP': 'en_transito',
+  'RECOLECTADO': 'en_transito', // EC: la transportadora ya lo recogió (sigue a POR RECOLECTAR)
   // novedad
   'NOVEDAD': 'novedad',
   'INTENTO DE ENTREGA': 'novedad',
@@ -116,6 +117,10 @@ export const ESTADO_TO_BUCKET: Record<string, BucketKey> = {
   'EN BODEGA DROPI': 'preparacion',
   'RECOGIDO POR DROPI': 'preparacion',
   'POR RECOLECTAR': 'preparacion', // EC: guía generada, la transportadora aún no recogió el paquete
+  // CO (visto en producción el 3-sep-2026, 3 pedidos): la guía se generó y la
+  // transportadora no lo ha movido. Historial real: PENDIENTE → GUIA_GENERADA →
+  // SIN MOVIMIENTOS. Es la misma situación que POR RECOLECTAR, no tránsito.
+  'SIN MOVIMIENTOS': 'preparacion',
   // cancelado
   'CANCELADO': 'cancelado',
   // Órdenes soft-borradas (REEMPLAZADA por edición / ARCHIVADO_GHOST). OJO

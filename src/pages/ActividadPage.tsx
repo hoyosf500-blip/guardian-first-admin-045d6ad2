@@ -32,6 +32,9 @@ import { NOMBRE_EVENTO, duracionLegible, saltoSinMirar } from '@/lib/eventosPedi
  * `ok`-con-cero son tres carteles distintos, y ninguno dice lo del otro.
  */
 
+/** Cuántas filas se DIBUJAN (el resumen se calcula sobre todas). */
+const TOPE_FILAS_DIBUJADAS = 500;
+
 const EVENTO_TONO: Record<string, string> = {
   salto: 'text-warning',
   gestiono: 'text-success',
@@ -263,9 +266,18 @@ export default function ActividadPage() {
                 <span className="ml-auto text-[11px] font-mono tabular-nums text-muted-foreground">{filas.length}</span>
               </div>
               <div className="max-h-[60vh] overflow-y-auto">
-                {filas.map((f) => (
+                {/* Tope de dibujo (revisión 3-sep-2026): "Todo el equipo" pasa
+                    de 2.000 filas antes del mediodía y hasta 10.000; pintarlas
+                    todas de una (cada una con Link y ~8 spans) congelaba la
+                    pantalla varios segundos. El resumen de arriba sí usa todas. */}
+                {filas.slice(0, TOPE_FILAS_DIBUJADAS).map((f) => (
                   <Fila key={f.id} f={f} nombre={nombreDe(f.operatorId)} />
                 ))}
+                {filas.length > TOPE_FILAS_DIBUJADAS && (
+                  <p className="px-3 py-2 text-[11px] text-muted-foreground border-t border-border/70">
+                    Se muestran las últimas {TOPE_FILAS_DIBUJADAS} de {filas.length}. Elegí una persona arriba para ver su día completo.
+                  </p>
+                )}
               </div>
             </div>
           )}

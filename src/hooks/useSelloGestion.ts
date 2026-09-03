@@ -96,7 +96,10 @@ export function useSelloGestion(storeId: string | null, phones: string[]) {
       return;
     }
     const seq = ++seqRef.current;
-    setEstado('cargando');
+    // Si ya hay un mapa bueno, se conserva mientras llega el nuevo: bajar a
+    // 'cargando' con cada cliente nuevo que entra por realtime hacía que los
+    // resueltos perdieran el verde y saltaran arriba ~200 ms (revisión 3-sep).
+    setEstado((e) => (e === 'ok' ? e : 'cargando'));
     const desde = new Date(Date.now() - VENTANA_SELLO_DIAS * 86_400_000).toISOString();
     const lotes: string[][] = [];
     for (let i = 0; i < lista.length; i += LOTE) lotes.push(lista.slice(i, i + LOTE));

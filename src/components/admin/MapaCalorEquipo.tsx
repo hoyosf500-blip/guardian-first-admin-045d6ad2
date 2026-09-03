@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Clock, Loader2 } from 'lucide-react';
 import { useStoreSchedule, DEFAULT_SCHEDULE_MINUTES } from '@/hooks/useStoreSchedule';
 import { useMapaCalorDia } from '@/hooks/useMapaCalorDia';
@@ -91,7 +91,12 @@ export default function MapaCalorEquipo({ storeId, asesores, refreshKey }: Props
   // reloj de 60 s para que la hora "en curso" avance sola, y una recarga de
   // respaldo cada 5 min por si el realtime se durmió. Solo para HOY: un día
   // cerrado no cambia.
-  useEffect(() => { if (refreshKey) void recargar(); }, [refreshKey, recargar]);
+  // `recargar` va por ref: si estuviera en las deps, cambiar de tienda o de
+  // día disparaba esta recarga A LA VEZ que la del propio hook → dos lecturas
+  // paralelas del día completo (revisión 3-sep-2026).
+  const recargarRef = useRef(recargar);
+  recargarRef.current = recargar;
+  useEffect(() => { if (refreshKey) void recargarRef.current(); }, [refreshKey]);
   const [ahoraMs, setAhoraMs] = useState(() => Date.now());
   useEffect(() => {
     if (!esHoy) return;

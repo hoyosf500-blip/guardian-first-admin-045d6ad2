@@ -48,7 +48,7 @@ export default function DashboardTab() {
   // "su día" sale de myCounter — ver el bloque del cierre más abajo.
   const { allOrders, counter, myCounter, workQueue } = useOrders();
   const { user, profile } = useAuth();
-  const { activeStoreId, isManagerOfActive, isOwnerOfActive, scopeStoreId } = useStore();
+  const { activeStoreId, isManagerOfActive, isOwnerOfActive, scopeStoreId, scopeSynced } = useStore();
   const [period, setPeriod] = useState(7);
   const [historyData, setHistoryData] = useState<DailyResult[]>([]);
   const [actionsOpen, setActionsOpen] = useState(false);
@@ -109,7 +109,9 @@ export default function DashboardTab() {
     // ⛔ Esta RPC resuelve la tienda SERVER-SIDE: se espera a que el servidor
     // la confirme (ver `scopeStoreId`), si no pinta la serie de la tienda
     // anterior bajo el nombre de la nueva.
-    if (scopeStoreId !== activeStoreId) { setEquipoEstado('cargando'); return; }
+    // "Viajando" = cargando; "falló el sync" = error, no un cargando eterno
+    // (revisión 3-sep-2026). StoreContext reintenta solo al volver la red.
+    if (scopeStoreId !== activeStoreId) { setEquipoEstado(scopeSynced ? 'cargando' : 'error'); return; }
     let cancelado = false;
     setEquipoEstado('cargando');
     // Día de BOGOTÁ, no UTC (4-sep-2026): de 19:00 a medianoche `hasta` era

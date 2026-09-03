@@ -511,6 +511,41 @@ async function sweepStraySiblings(
  *  total ≈ esperado como señal secundaria. EXACTAMENTE UN candidato → se
  *  adopta y el pipeline sigue normal. 0 o 2+ → null (el caller devuelve
  *  'creacion_incierta' y el cliente NO debe reintentar). Nunca tira. */
+/** Ids de las órdenes ACTIVAS del cliente en Dropi ANTES del POST (sin la
+ *  vieja). Van a `excludeAlso` de la recuperación del create incierto: solo se
+ *  adopta una orden que NO existía antes de crear. Sin esto (revisión
+ *  3-sep-2026), un 500 de Dropi que no insertó nada mandaba a la recuperación,
+ *  el listado devolvía la OTRA venta viva del cliente (id mayor, mismo total,
+ *  <24 h) como único candidato, se "adoptaba" y se mataba la vieja: una venta
+ *  perdida en silencio, no un duplicado. `null` = el listado falló → no se
+ *  recupera nada (queda `unknown`). Nunca tira. */
+async function hermanasAntesDelPost(
+  cfg: { base: string; sessionToken: string; apiKey: string; storeUrl: string },
+  phone: string,
+  clientName: string,
+  oldId: string,
+): Promise<string[] | null> {
+  try {
+    const sibs = await listActiveOrdersByPhone(cfg, { phone, fallbackName: clientName, excludeIds: [oldId] });
+    return sibs.map((s) => String(s.id));
+  } catch (e) {
+    console.error("[hermanasAntesDelPost] listado falló:", e);
+    return null;
+  }
+}
+
+/** Relee `orders.estado` justo antes del POST: el gate de arriba corre al
+ *  entrar y la cotización tarda 10-60 s; en ese lapso otra persona puede haber
+ *  cancelado el pedido (PUT CANCELADO + local). `null` = no se pudo leer. */
+// deno-lint-ignore no-explicit-any
+async function estadoActual(sbAdmin: any, orderId: string): Promise<string | null> {
+  const r = await sbAdmin.from("orders").select("estado").eq("id", orderId).maybeSingle();
+  if (r.error || !r.data) return null;
+  return String(r.data.estado || "");
+}
+
+const ESTADO_NO_EDITABLE = /CANCELAD|REEMPLAZAD|RECHAZAD|^ENTREGADO/i;
+
 async function recoverUncertainCreate(
   cfg: { base: string; sessionToken: string; apiKey: string; storeUrl: string },
   // deno-lint-ignore no-explicit-any
@@ -762,7 +797,13 @@ type ClaimEdicion =
 async function claimEditAttempt(
   // deno-lint-ignore no-explicit-any
   sbAdmin: any,
-  opts: { storeId: string; externalId: string; mode: string; userId: string; phoneLast9: string },
+  opts: {
+    storeId: string; externalId: string; mode: string; userId: string; phoneLast9: string;
+    /** Ids de las órdenes ACTIVAS del cliente en Dropi (sin la vieja), o null
+     *  si el listado falló. Solo se llama al reclaimear un intento `unknown` o
+     *  `pending` viejo — ver abajo. */
+    hermanasVivas?: () => Promise<string[] | null>;
+  },
 ): Promise<ClaimEdicion> {
   const ins = await sbAdmin.from("dropi_edit_attempts")
     .insert({
@@ -800,6 +841,30 @@ async function claimEditAttempt(
   }
   if (ex.status !== "error") {
     console.warn(`[dropi-edit-attempts] reclaim de un intento ${ex.status} de hace ${Math.round(ageMs / 60000)} min para #${opts.externalId}`);
+    // ⛔ Un `unknown` / `pending` viejo NO se reclaimea a ciegas (revisión
+    // 3-sep-2026). "A los 30 min el cron ya importó la orden nueva y el gate
+    // de REEMPLAZADA frena" solo vale si Dropi marcó la vieja por su cuenta, y
+    // no lo hace: sin el PUT explícito la vieja sigue PENDIENTE. Secuencia
+    // real: POST con 504 que SÍ creó #101 → recuperación falla por throttle →
+    // unknown → 31 min después la asesora edita de nuevo → gate ve PENDIENTE
+    // → otro POST → #102. Se mira el listado de Dropi: si hay una orden viva
+    // del cliente con id MAYOR que la vieja, es casi seguro la que ese intento
+    // creó, y no se crea otra. Si el listado no se pudo leer, tampoco.
+    const vivas = opts.hermanasVivas ? await opts.hermanasVivas() : null;
+    if (vivas === null) {
+      return {
+        ok: false, code: "needs_verify",
+        error: "Un intento anterior de editar este pedido quedó sin confirmar y no pude leer el listado de Dropi para saber si creó la orden nueva. No se creó nada — verificá en el panel de Dropi y reintentá en unos minutos.",
+      };
+    }
+    const oldNum = Number(opts.externalId);
+    const mayor = vivas.map(String).find((id) => Number(id) > oldNum);
+    if (mayor) {
+      return {
+        ok: false, code: "needs_verify", newExternalId: mayor,
+        error: `Un intento anterior de editar este pedido quedó sin confirmar y en Dropi hay una orden viva del cliente con id mayor (#${mayor}): casi seguro es la que ese intento creó. No se creó nada — gestioná la #${mayor} en el panel de Dropi y cancelá la que sobre.`,
+      };
+    }
   }
   // RECLAIM ATÓMICO (compare-and-swap) — mismo motivo que en shopify-push-dropi:
   // el UNIQUE serializa el primer INSERT, no dos UPDATE sobre la fila existente.
@@ -1249,7 +1314,7 @@ async function resolveClientAndLines(
  *  Esta funcion es parte de la cadena que puede DUPLICAR un pedido en Dropi,
  *  y hasta hoy no habia forma de saber que version corria: el arreglo
  *  "exactamente UNO vivo" de julio-2026 se desplego sin poder comprobarlo. */
-const VERSION = "dropi-change-carrier 2026-09-04.1 el-editor-reclama-antes-de-crear";
+const VERSION = "dropi-change-carrier 2026-09-04.2 la-recuperacion-no-adopta-hermanas-viejas";
 
 Deno.serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);
@@ -1397,9 +1462,15 @@ Deno.serve(async (req: Request) => {
     // en adelante que no llegue al POST suelta el claim como 'error' en el
     // `finally` del handler; el POST lo asienta como 'done' o 'unknown'.
     const phoneLast9Row = String(orderRow.phone || "").replace(/\D/g, "").slice(-9);
+    // La config se carga ANTES del claim: el reclaim de un intento viejo
+    // necesita mirar el listado de Dropi (ver `hermanasVivas`). Cargarla no
+    // crea nada y no toca la tabla de intentos.
+    const cfg = await loadStoreConfig(sbAdmin, storeId);
+    if (!cfg.apiKey) return jsonOk({ ok: false, error: "La tienda no tiene Clave API de Dropi configurada" });
     if (mode === "apply" || mode === "apply_value" || mode === "apply_edit") {
       const claim = await claimEditAttempt(sbAdmin, {
         storeId, externalId, mode, userId: user.id, phoneLast9: phoneLast9Row,
+        hermanasVivas: () => hermanasAntesDelPost(cfg, String(orderRow.phone || ""), String(orderRow.nombre || ""), externalId),
       });
       if (claim.ok === false) {
         return jsonOk({
@@ -1411,9 +1482,6 @@ Deno.serve(async (req: Request) => {
       }
       attemptId = claim.attemptId;
     }
-
-    const cfg = await loadStoreConfig(sbAdmin, storeId);
-    if (!cfg.apiKey) return jsonOk({ ok: false, error: "La tienda no tiene Clave API de Dropi configurada" });
 
     // =========================== MODE: DEBUG ===========================
     // Diagnóstico A/B para CONFIRMAR el root cause del 401 del edge (2026-07-01):
@@ -1829,6 +1897,16 @@ Deno.serve(async (req: Request) => {
             ?? "",
         );
         if (id) { nuevoId = id; usada = carrier.name; formaGanadora = f.nombre; break; }
+        // ⛔ 5xx / 0 / 408 / 429 = INCIERTO, misma regla que `esCreateIncierto`
+        // en el editor: un 502 del gateway después de que Dropi insertó no es
+        // un rechazo, y seguir con la forma siguiente crearía otra orden real.
+        if (esCreateIncierto(post.status)) {
+          return jsonOk({
+            ok: false, paso: "crear", REVISAR_EN_DROPI: true,
+            error: `Dropi respondió ${post.status} a la orden de prueba (forma ${f.nombre}): no sé si la creó. Buscala en el panel por el cliente antes de volver a probar.`,
+            dropiBody: post.body, intentos, transportadora: carrier.name, tipoProducto,
+          });
+        }
         // ⛔ Aceptado SIN id parseable = la orden probablemente EXISTE. Seguir
         // con la forma siguiente crearía otra orden real (hasta 5). Se frena y
         // se dice, con lo que Dropi devolvió, para buscarla a mano.
@@ -2195,6 +2273,12 @@ Deno.serve(async (req: Request) => {
 
       let newIdV: string | null = null;
       let dropiStatusV = 0;
+      // Foto de las órdenes vivas del cliente ANTES de crear + relectura del
+      // estado (ver `hermanasAntesDelPost` / `estadoActual`).
+      const previasV = await hermanasAntesDelPost(cfg, String(orderRow.phone || clientV.phone || ""), `${clientV.name} ${clientV.surname || ""}`, externalId);
+      const estadoV = await estadoActual(sbAdmin, String(orderRow.id));
+      if (estadoV === null) return jsonOk({ ok: false, error: "No pude releer el estado del pedido antes de crear. No se creó nada — reintentá." });
+      if (ESTADO_NO_EDITABLE.test(estadoV)) return jsonOk({ ok: false, code: "ya_gestionado", error: `El pedido pasó a ${estadoV} mientras editabas — no se creó nada. Refrescá la pantalla.` });
       if (serveDeadline - Date.now() < EDIT_CREATE_MARGIN_MS) {
         return jsonOk({ ok: false, error: "La cotización tardó demasiado y no queda tiempo para crear la orden de forma segura. No se creó nada — reintentá." });
       }
@@ -2232,7 +2316,8 @@ Deno.serve(async (req: Request) => {
             // recuperarla por listado; si no hay UN candidato claro, devolver
             // 'creacion_incierta' — el "NO reintentes" viaja en el string para
             // que también lo muestre un cliente viejo.
-            const rec = await recoverUncertainCreate(cfg, sbAdmin, {
+            // Sin la foto previa no se adopta nada: podría ser la otra venta.
+            const rec = previasV === null ? null : await recoverUncertainCreate(cfg, sbAdmin, {
               phone: String(orderRow.phone || clientV.phone || ""),
               clientName: `${clientV.name} ${clientV.surname || ""}`,
               oldId: externalId,
@@ -2240,7 +2325,7 @@ Deno.serve(async (req: Request) => {
               storeId,
               userId: user.id,
               label: "Cambio de valor",
-              excludeAlso: await recentEditedIdsForPhone(sbAdmin, storeId, phoneLast9Row, attemptId),
+              excludeAlso: [...await recentEditedIdsForPhone(sbAdmin, storeId, phoneLast9Row, attemptId), ...previasV],
             });
             if (!rec) {
               await asentar({ status: "unknown", error_message: `create incierto [${postV.status}]: ${postV.detail}`.slice(0, 500) });
@@ -2578,6 +2663,10 @@ Deno.serve(async (req: Request) => {
 
       let newIdE: string | null = null;
       let dropiStatusE = 0;
+      const previasE = await hermanasAntesDelPost(cfg, String(orderRow.phone || clientE.phone || ""), `${clientE.name} ${clientE.surname || ""}`, externalId);
+      const estadoE = await estadoActual(sbAdmin, String(orderRow.id));
+      if (estadoE === null) return jsonOk({ ok: false, error: "No pude releer el estado del pedido antes de crear. No se creó nada — reintentá." });
+      if (ESTADO_NO_EDITABLE.test(estadoE)) return jsonOk({ ok: false, code: "ya_gestionado", error: `El pedido pasó a ${estadoE} mientras editabas — no se creó nada. Refrescá la pantalla.` });
       if (serveDeadline - Date.now() < EDIT_CREATE_MARGIN_MS) {
         return jsonOk({ ok: false, error: "La cotización tardó demasiado y no queda tiempo para crear la orden de forma segura. No se creó nada — reintentá." });
       }
@@ -2611,7 +2700,7 @@ Deno.serve(async (req: Request) => {
             });
           }
           if (postE.code === "created_sin_id" || postE.code === "post_incierto") {
-            const rec = await recoverUncertainCreate(cfg, sbAdmin, {
+            const rec = previasE === null ? null : await recoverUncertainCreate(cfg, sbAdmin, {
               phone: String(orderRow.phone || clientE.phone || ""),
               clientName: `${clientE.name} ${clientE.surname || ""}`,
               oldId: externalId,
@@ -2619,7 +2708,7 @@ Deno.serve(async (req: Request) => {
               storeId,
               userId: user.id,
               label: "Edición del pedido",
-              excludeAlso: await recentEditedIdsForPhone(sbAdmin, storeId, phoneLast9Row, attemptId),
+              excludeAlso: [...await recentEditedIdsForPhone(sbAdmin, storeId, phoneLast9Row, attemptId), ...previasE],
             });
             if (!rec) {
               await asentar({ status: "unknown", error_message: `create incierto [${postE.status}]: ${postE.detail}`.slice(0, 500) });
@@ -2894,6 +2983,10 @@ Deno.serve(async (req: Request) => {
     // 5) POST /api/orders/myorders (session token vía dropiWebFetch sobre cfg.base).
     let newExternalId: string | null = null;
     let dropiHttpStatus = 0;
+    const previasA = await hermanasAntesDelPost(cfg, String(orderRow.phone || client.phone || ""), `${client.name} ${client.surname || ""}`, externalId);
+    const estadoA = await estadoActual(sbAdmin, String(orderRow.id));
+    if (estadoA === null) return jsonOk({ ok: false, error: "No pude releer el estado del pedido antes de crear. No se creó nada — reintentá." });
+    if (ESTADO_NO_EDITABLE.test(estadoA)) return jsonOk({ ok: false, code: "ya_gestionado", error: `El pedido pasó a ${estadoA} mientras editabas — no se creó nada. Refrescá la pantalla.` });
     if (serveDeadline - Date.now() < EDIT_CREATE_MARGIN_MS) {
       return jsonOk({ ok: false, error: "La cotización tardó demasiado y no queda tiempo para crear la orden de forma segura. No se creó nada — reintentá." });
     }
@@ -2927,7 +3020,7 @@ Deno.serve(async (req: Request) => {
           });
         }
         if (postA.code === "created_sin_id" || postA.code === "post_incierto") {
-          const rec = await recoverUncertainCreate(cfg, sbAdmin, {
+          const rec = previasA === null ? null : await recoverUncertainCreate(cfg, sbAdmin, {
             phone: String(orderRow.phone || client.phone || ""),
             clientName: `${client.name} ${client.surname || ""}`,
             oldId: externalId,
@@ -2935,7 +3028,7 @@ Deno.serve(async (req: Request) => {
             storeId,
             userId: user.id,
             label: "Cambio de transportadora",
-            excludeAlso: await recentEditedIdsForPhone(sbAdmin, storeId, phoneLast9Row, attemptId),
+            excludeAlso: [...await recentEditedIdsForPhone(sbAdmin, storeId, phoneLast9Row, attemptId), ...previasA],
           });
           if (!rec) {
             await asentar({ status: "unknown", error_message: `create incierto [${postA.status}]: ${postA.detail}`.slice(0, 500) });
