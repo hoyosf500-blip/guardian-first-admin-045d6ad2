@@ -97,6 +97,44 @@ export function plantillasQueConfirman(crudas: PlantillaConBotones[]): Set<strin
 }
 
 /**
+ * TODOS los textos de botón que las plantillas de la cuenta declaran.
+ *
+ * ⛔ Existe para que la alarma de "botón que no sé leer" siga significando algo
+ * (3-sep-2026). `senalDeHilo` grita cuando el cliente aprieta un botón que no
+ * reconoce —es la defensa contra cablear una plantilla nueva y quedarse ciego
+ * sin un solo error, que en Ecuador costó dos días— pero la lista de botones
+ * conocidos estaba escrita a mano con tres textos. La cuenta de Colombia
+ * declara además "Coordinar entrega" (en las tres de novedad), "YA LE RECOGI",
+ * "OBTENER OFERTA" y "NO RECIBIR MAS MENSAJES". O sea que cada cliente que
+ * apretaba "Coordinar entrega" —lo NORMAL— disparaba la alarma y dejaba el
+ * `sync_logs` en `warn`. Una alarma que suena todos los días no la mira nadie,
+ * y entonces tampoco suena el día que importa.
+ *
+ * Se descubre de la misma fuente que `plantillasQueConfirman`, así que una
+ * plantilla nueva entra sola y la alarma queda para lo que de verdad es
+ * desconocido: un botón que NINGUNA plantilla de la cuenta declara.
+ */
+export function botonesDeclarados(crudas: PlantillaConBotones[]): Set<string> {
+  const out = new Set<string>();
+  for (const t of crudas ?? []) {
+    let comps = t?.components as unknown;
+    if (typeof comps === "string") {
+      try { comps = JSON.parse(comps); } catch { comps = []; }
+    }
+    if (!Array.isArray(comps)) continue;
+    for (const c of comps as Array<Record<string, unknown>>) {
+      if (String(c?.type ?? "").toUpperCase() !== "BUTTONS") continue;
+      const botones = Array.isArray(c?.buttons) ? c.buttons as Array<Record<string, unknown>> : [];
+      for (const b of botones) {
+        const t2 = limpio(String(b?.text ?? ""));
+        if (t2) out.add(t2);
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * Un mensaje de Chatea Pro con la forma que entiende `senalConfirmacion`.
  *
  * ⛔ `postback` es el apretón de un botón. En ImporChat ese tipo se llama
@@ -141,6 +179,10 @@ export interface SenalChateapro {
 export function senalDeHilo(
   hilo: MensajeConversacion[] | null,
   confirmadoras: Set<string>,
+  /** Los botones que la cuenta declara (`botonesDeclarados`). Un botón que
+   *  está acá NO es desconocido: es parte del catálogo, aunque no confirme.
+   *  Sin esto la alarma sonaba con cada "Coordinar entrega" — ver arriba. */
+  declarados: Set<string> = new Set(),
 ): SenalChateapro {
   if (!hilo) {
     return { riesgo: "sin_dato", apretoBotonAt: null, clienteEscribioAt: null, recibioPlantilla: false, botonesDesconocidos: [] };
@@ -172,6 +214,9 @@ export function senalDeHilo(
     // se reporta: es la señal de que se cableó una plantilla nueva y podríamos
     // estar ciegos AHORA MISMO sin un solo error.
     if (esBotonConfirmar(m) || t.includes("MODIFICAR DATOS") || t.includes("HABLAR CON ASESOR")) continue;
+    // Declarado por alguna plantilla de la cuenta = conocido, aunque no
+    // confirme nada. "Coordinar entrega" es el caso normal en Colombia.
+    if (declarados.has(t)) continue;
     conocidos.add(m.texto.trim());
   }
 

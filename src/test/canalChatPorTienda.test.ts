@@ -488,9 +488,31 @@ describe('la señal de confirmación no puede quedarse ciega en silencio', () =>
   it('las plantillas que confirman se DESCUBREN, no se escriben a mano', () => {
     expect(/export function plantillasQueConfirman/.test(senal)).toBe(true);
     expect(/listarPlantillas/.test(cpSync), 'el sync tiene que preguntarlas cada corrida').toBe(true);
+    // Lo que importa NO es que estén en la misma línea, sino que lo que se le
+    // pasa a `plantillasQueConfirman` salga de la lista VIVA de la cuenta. Se
+    // comprueba que la lista se pida y que ese resultado —y no otra cosa— sea
+    // lo que se clasifica: una lista fija de nombres es exactamente lo que
+    // apagó la señal en agosto.
+    const dePlantillasVivas = /const (\w+) = await listarPlantillas\([^)]*\);[\s\S]{0,400}?plantillasQueConfirman\(\1\)/.test(cpSync)
+      || /plantillasQueConfirman\(await listarPlantillas/.test(cpSync);
+    expect(dePlantillasVivas, 'las confirmadoras tienen que salir de `listarPlantillas`, no de un literal').toBe(true);
+  });
+
+  /**
+   * ⛔ La alarma de "botón que no sé leer" tiene que seguir significando algo.
+   *
+   * Nació para agarrar el modo de falla de agosto (una plantilla nueva y nadie
+   * se entera). Pero la lista de botones conocidos estaba escrita a mano con
+   * tres textos, y la cuenta de Colombia declara además "Coordinar entrega" —
+   * el botón de las tres plantillas de novedad. Cada cliente que hacía lo
+   * normal dejaba la corrida en `warn`. Una alarma que suena todos los días no
+   * la mira nadie, y entonces tampoco suena el día que importa.
+   */
+  it('los botones conocidos también se DESCUBREN de las plantillas de la cuenta', () => {
+    expect(/export function botonesDeclarados/.test(senal)).toBe(true);
     expect(
-      /plantillasQueConfirman\(await listarPlantillas/.test(cpSync),
-      'una lista fija de nombres es exactamente lo que apagó la señal en agosto',
+      /senalDeHilo\([^)]*declarados/.test(cpSync),
+      'el sync tiene que pasarle los botones declarados, o la alarma vuelve a sonar por «Coordinar entrega»',
     ).toBe(true);
   });
 

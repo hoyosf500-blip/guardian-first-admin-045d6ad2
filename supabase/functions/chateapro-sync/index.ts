@@ -44,12 +44,12 @@ import {
   leerHilo,
   ChateaproError,
 } from "../_shared/chateaproApi.ts";
-import { plantillasQueConfirman, senalDeHilo } from "../_shared/chateaproSenal.ts";
+import { plantillasQueConfirman, botonesDeclarados, senalDeHilo } from "../_shared/chateaproSenal.ts";
 import { cambiosDeChat, type ContactoCp, type PedidoCruce } from "../_shared/chateaproCruce.ts";
 
 const SOURCE = "chateapro-sync";
 /** ⛔ Subirla en el mismo commit que cambie algo: si no, el ping miente. */
-const VERSION = "chateapro-sync 2026-09-03.1 last-interaction-y-rescate-por-telefono";
+const VERSION = "chateapro-sync 2026-09-03.2 rescate-por-telefono-y-alarma-que-sirve";
 
 /** Tope de la API (lo dice la spec; más devuelve 400). */
 const PAGINA = 100;
@@ -283,7 +283,11 @@ Deno.serve(async (req) => {
           // ⛔ Las plantillas que confirman se DESCUBREN, no se escriben a mano.
           // En Ecuador cambiar la plantilla en el panel apagó la señal dos días
           // enteros sin un solo error en el log (58% → 2% → 0%).
-          const confirmadoras = plantillasQueConfirman(await listarPlantillas(cfg));
+          const crudasPl = await listarPlantillas(cfg);
+          const confirmadoras = plantillasQueConfirman(crudasPl);
+          // Todos los botones que la cuenta declara: lo que NO esté acá sí es
+          // desconocido de verdad y merece la alarma.
+          const declarados = botonesDeclarados(crudasPl);
           if (confirmadoras.size === 0) {
             huboError = true;
             console.error(`[${SOURCE}] ${sid}: NINGUNA plantilla ofrece el botón de confirmar — la señal quedaría en cero`);
@@ -341,7 +345,7 @@ Deno.serve(async (req) => {
             // es que no se pudo mirar, y eso se llama `sin_dato`.
             if (!sus) continue;
             const hilo = await leerHilo(cfg, sus.user_ns);
-            const senal = senalDeHilo(hilo.mensajes, confirmadoras);
+            const senal = senalDeHilo(hilo.mensajes, confirmadoras, declarados);
             if (senal.botonesDesconocidos.length) ciegos.push(...senal.botonesDesconocidos);
             if (senal.recibioPlantilla) conPlantilla++;
             const { error } = await sb.from("orders").update({

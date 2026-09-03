@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   plantillasQueConfirman,
+  botonesDeclarados,
   aMensajeChat,
   senalDeHilo,
 } from '../../supabase/functions/_shared/chateaproSenal';
@@ -183,5 +184,66 @@ describe('senalDeHilo', () => {
       msg({ texto: 'espere, no estoy seguro', fechaMs: Date.parse('2026-09-02T16:00:00Z') }),
     ], CONFIRMA);
     expect(s.riesgo).toBe('confirmado');
+  });
+});
+
+/**
+ * ⛔ UNA ALARMA QUE SUENA TODOS LOS DÍAS NO LA MIRA NADIE (3-sep-2026).
+ *
+ * `senalDeHilo` grita cuando el cliente aprieta un botón que no reconoce — es
+ * la defensa contra cablear una plantilla nueva y quedarse ciego sin un solo
+ * error, que en Ecuador costó dos días. Pero la lista de conocidos estaba
+ * escrita a mano con tres textos, y la cuenta de Colombia declara además
+ * "Coordinar entrega" (en las tres plantillas de novedad), "YA LE RECOGI",
+ * "OBTENER OFERTA" y "NO RECIBIR MAS MENSAJES". O sea que el cliente que hacía
+ * lo NORMAL —apretar "Coordinar entrega" en una novedad— dejaba el `sync_logs`
+ * de la corrida en `warn`.
+ */
+describe('botonesDeclarados — la alarma solo para lo que de verdad no conocemos', () => {
+  const conBotones = (name: string, botones: string[]) => ({
+    name,
+    components: [{ type: 'BUTTONS', buttons: botones.map((text) => ({ type: 'QUICK_REPLY', text })) }],
+  });
+
+  const CUENTA_CO = [
+    conBotones('confirmacion_sin_imagen_v2', ['CONFIRMAR PEDIDO', 'Modificar Datos']),
+    conBotones('novedad_generica_v2', ['Coordinar entrega']),
+    conBotones('interrapidisimo_bucle', ['YA LE RECOGI']),
+    conBotones('remarketing_tenis', ['OBTENER OFERTA', 'NO RECIBIR MAS MENSAJES']),
+  ];
+
+  it('recoge todos los textos declarados, normalizados', () => {
+    const d = botonesDeclarados(CUENTA_CO);
+    expect(d.has('COORDINAR ENTREGA')).toBe(true);
+    expect(d.has('YA LE RECOGI')).toBe(true);
+    expect(d.has('OBTENER OFERTA')).toBe(true);
+    expect(d.size).toBe(6);
+  });
+
+  it('⛔ «Coordinar entrega» ya no dispara la alarma', () => {
+    const s = senalDeHilo(
+      [PLANTILLA_CONF, msg({ tipo: 'postback', texto: 'Coordinar entrega' })],
+      CONFIRMA,
+      botonesDeclarados(CUENTA_CO),
+    );
+    expect(s.botonesDesconocidos).toEqual([]);
+    // Y sigue sin contarse como confirmación: no confirma nada.
+    expect(s.riesgo).not.toBe('confirmado');
+  });
+
+  it('pero un botón que NINGUNA plantilla declara sí la dispara', () => {
+    // Es el caso que la alarma existe para agarrar: alguien cableó algo por
+    // fuera y podríamos estar ciegos AHORA MISMO sin un solo error.
+    const s = senalDeHilo(
+      [PLANTILLA_CONF, msg({ tipo: 'postback', texto: 'QUIERO OTRO COLOR' })],
+      CONFIRMA,
+      botonesDeclarados(CUENTA_CO),
+    );
+    expect(s.botonesDesconocidos).toEqual(['QUIERO OTRO COLOR']);
+  });
+
+  it('sin lista de declarados se comporta como antes (nadie queda ciego por omisión)', () => {
+    const s = senalDeHilo([PLANTILLA_CONF, msg({ tipo: 'postback', texto: 'Coordinar entrega' })], CONFIRMA);
+    expect(s.botonesDesconocidos).toEqual(['Coordinar entrega']);
   });
 });
