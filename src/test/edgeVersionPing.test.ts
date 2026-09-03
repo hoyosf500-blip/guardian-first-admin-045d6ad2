@@ -60,6 +60,12 @@ const REQUERIDAS = [
   "dropi-change-carrier",
   "dropi-update-order",
   "dropi-update-order-full",
+  // 4-sep-2026: el historial pasó a ser único POR TIENDA y el índice global se
+  // borró en la base. Las dos funciones que lo ingieren cambiaron su
+  // `onConflict`; si una queda vieja, pierde el historial en silencio (warn
+  // dentro de un try/catch). `dropi-refresh-batch` ya estaba en la lista; a
+  // esta le faltaba la marca y por eso el deploy del 4-sep no se pudo comprobar.
+  "dropi-refresh-order",
 ] as const;
 
 /** Lo primero que aparece en el handler y ya es "auth". El ping va antes. */

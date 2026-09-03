@@ -613,7 +613,7 @@ async function syncStore(
  *    El guardián `src/test/edgeVersionPing.test.ts` exige que exista y que el
  *    ping se conteste ANTES de cualquier auth.
  */
-const VERSION = "dropi-cron 2026-08-30.1 auditoria-44";
+const VERSION = "dropi-cron 2026-09-04.1 el-fallo-del-reintento-se-anota";
 
 Deno.serve(async (req: Request) => {
   const CORS_HEADERS = getCorsHeaders(req);

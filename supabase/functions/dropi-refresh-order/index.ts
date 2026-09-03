@@ -15,6 +15,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, isStoreMember } from "../_shared/dropiStoreConfig.ts";
 import { mapDropiOrderToRow, extractStatusHistoryRows } from "../_shared/dropiOrderMapper.ts";
+import { respuestaPing } from "../_shared/versionEdge.ts";
+
+// Marca de versión (4-sep-2026): esta función cambió el `onConflict` del
+// historial a (store_id, dropi_history_id) y el índice viejo se BORRÓ en la
+// base. Si el deploy no entra, cada refresh pierde el historial en silencio
+// (el upsert falla dentro de un try/catch con warn). Sin ping no había forma
+// de saber desde afuera qué versión corre — ver _shared/versionEdge.ts.
+const VERSION = "dropi-refresh-order 2026-09-04.1 historial-por-tienda";
 
 interface RefreshBody {
   store_id?: string;
@@ -36,6 +44,7 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return jsonResp({ error: "POST only" }, 405, corsHeaders);
   }
+  { const p = respuestaPing(req, VERSION, corsHeaders); if (p) return p; }
 
   try {
     const authHeader = req.headers.get("Authorization") ?? "";
