@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { OrderData, normalizePhoneForCountry } from '@/lib/orderUtils';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
-import { formatCOP } from '@/lib/utils';
+import { formatCOP, bogotaToday } from '@/lib/utils';
 import { parseValorInput } from '@/lib/orderAlerts';
 import { buildUpdatePlan, linesDirty, deriveTotal, type EditableLine, type EditStep } from '@/lib/orderEditPlan';
 import { parseInvoke } from '@/lib/parseInvoke';
@@ -362,6 +362,14 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
       reason: JSON.stringify(payload).slice(0, 2000),
       dropi_sync_status: 'pending',
       store_id: activeStoreId,
+      // ⛔ La fecha va EXPLÍCITA, en hora de Bogotá (3-sep-2026). Esta fila no
+      // la mandaba y caía al default de la tabla, que era `CURRENT_DATE` = UTC:
+      // de 19:00 a medianoche una edición quedaba anotada MAÑANA. Hoy ningún
+      // número lo nota (los contadores filtran por `isCallOutcome` antes de
+      // mirar la fecha), pero es la mina que va a pisar el control de "todas
+      // las acciones que marcan". El default también se arregló
+      // (20260903220000); esto lo deja dicho en el código, que es donde se lee.
+      result_date: bogotaToday(),
     }).select('id').single();
     if (error || !data?.id) {
       // Nunca en silencio: la edición sigue (no bloquear a la asesora), pero
