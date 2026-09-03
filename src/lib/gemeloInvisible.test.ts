@@ -80,6 +80,23 @@ describe('el gemelo que el espejo todavía no muestra', () => {
   });
 
   /**
+   * ⛔ «QUIEN VE, CEDE» (4-sep-2026). Después de reclamar, el push vuelve a
+   * preguntar excluyendo SU PROPIA fila. Cualquier OTRA fila viva del teléfono
+   * —aunque su shopify_order_id sea distinto y esté 'pending'— es motivo para
+   * ceder. Sin desempate: el que comiteó segundo ve al primero.
+   */
+  it('después del claim: la fila propia se excluye por id, cualquier OTRA fila viva del teléfono frena', () => {
+    const mia: FilaPush = { id: 'claim-A', shopify_order_id: 'S-A', dropi_order_id: null, payload: { phone: TEL } };
+    const otra: FilaPush = { id: 'claim-B', shopify_order_id: 'S-B', dropi_order_id: null, payload: { phone: TEL } };
+    // Solo la mía: no soy gemela de mí misma.
+    expect(elegirGemeloCiego([mia], T9, 'S-A', new Set(), 'claim-A')).toBeNull();
+    // La mía y otra pending: cedo ante la otra.
+    expect(elegirGemeloCiego([mia, otra], T9, 'S-A', new Set(), 'claim-A')?.shopify_order_id).toBe('S-B');
+    // Y desde el otro lado pasa lo mismo: simétrico, sin desempate.
+    expect(elegirGemeloCiego([mia, otra], T9, 'S-B', new Set(), 'claim-B')?.shopify_order_id).toBe('S-A');
+  });
+
+  /**
    * La ventana existe para cubrir el lag del espejo, NO el horizonte de
    * recompra. Si alguien la estirara a semanas, este candado empezaría a
    * frenar recompras legítimas — que es exactamente el error que la regla del

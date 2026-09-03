@@ -36,6 +36,10 @@ export interface DropiWebCfg {
 export class WebFallbackError extends Error {
   status: number;
   body?: unknown;
+  /** `true` cuando el error salió del POST que CREA una orden y no prueba que
+   *  no se creó (5xx, timeout 504, 2xx sin id). El caller lo marca 'unknown' y
+   *  exige verificación humana; nunca lo reintenta solo. */
+  incierto?: boolean;
   constructor(message: string, status = 422, body?: unknown) {
     super(message);
     this.name = "WebFallbackError";

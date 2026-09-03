@@ -136,7 +136,17 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
       setSubmitError(null);
       return;
     }
-    if (!r.ok) { setSubmitError(r.error || 'Dropi rechazó el pedido'); return; }
+    if (!r.ok) {
+      // Un fallo de RED del lado del navegador (wifi, pestaña que perdió la
+      // conexión) no dice nada sobre Dropi: el POST pudo haber salido y la
+      // orden existir. La salida natural de la asesora era cargarla a mano en
+      // el panel → dos guías. Se dice explícito.
+      const esRed = !r.blocked && /failed to fetch|network|networkerror|load failed|fetch/i.test(r.error || '');
+      setSubmitError(esRed
+        ? `${r.error} — Se cortó la conexión mientras se subía: el pedido PUEDE haber quedado creado. Recargá y mirá si ya figura en Dropi antes de cargarlo a mano.`
+        : (r.error || 'Dropi rechazó el pedido'));
+      return;
+    }
     // `already` = el pedido ya estaba en Dropi (idempotente, no se recreó): igual es éxito.
     toast.success(r.already
       ? `Ya estaba en Dropi${r.dropi_order_id ? ` (orden ${r.dropi_order_id})` : ''}`

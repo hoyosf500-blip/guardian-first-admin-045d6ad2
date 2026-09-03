@@ -140,4 +140,21 @@ describe("selectAutoPushCandidates", () => {
     const out = selectAutoPushCandidates(orders, new Set(), new Map(), baseOpts({ cap: 0 }));
     expect(out).toHaveLength(3);
   });
+
+  /**
+   * ⛔ EL CASO DE LA FOTO (3-sep-2026): dos ventas del mismo cliente en la misma
+   * corrida. Ninguna estaba en `orders` (el espejo llega tarde) y las dos
+   * pasaban. El robot sube UNA por teléfono y por corrida: la más vieja.
+   */
+  it("dos ventas del MISMO teléfono en la misma corrida: sube solo la más vieja", () => {
+    const orders = [ord("nueva", 45, "314866463"), ord("vieja", 120, "314866463"), ord("otra", 60, "222222222")];
+    const out = selectAutoPushCandidates(orders, new Set(), new Map(), baseOpts());
+    expect(out.map((o) => o.shopify_order_id)).toEqual(["vieja", "otra"]);
+  });
+
+  it("el cap se aplica DESPUÉS de dejar una por teléfono (no se gasta un cupo en la repetida)", () => {
+    const orders = [ord("v1", 120, "314866463"), ord("v2", 100, "314866463"), ord("otra", 60, "222222222")];
+    const out = selectAutoPushCandidates(orders, new Set(), new Map(), baseOpts({ cap: 2 }));
+    expect(out.map((o) => o.shopify_order_id)).toEqual(["v1", "otra"]);
+  });
 });

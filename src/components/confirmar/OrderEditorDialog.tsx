@@ -147,6 +147,8 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
   // Ciudad/provincia que se está cotizando. Se leen por ref para que
   // `fetchQuote` no se recree en cada tecleo (y no reviva efectos).
   const destRef = useRef<{ ciudad: string; departamento: string }>({ ciudad: '', departamento: '' });
+  // Doble-click / doble-tab del botón "Actualizar Orden" — ver handleSubmit.
+  const submittingRef = useRef(false);
 
   /**
    * @param sembrarLineas Reconstruir las líneas editables con lo que devuelve
@@ -556,6 +558,27 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
       // confirmó ni negó — el reintento a ciegas es justo lo que deja
       // duplicados VIVOS en Dropi. El mensaje del server ya dice NO reintentes;
       // acá NO invitamos al retry.
+      // ⛔ EL CLAIM DEL SERVIDOR (4-sep-2026): otro request ya está editando
+      // este pedido (`in_progress`), ya lo editó y quedó con id nuevo
+      // (`ya_gestionado`), o un intento anterior quedó sin confirmar
+      // (`needs_verify`). Ninguno se arregla apretando de nuevo: el reintento
+      // a ciegas es justo lo que creaba la segunda orden. NO se invita al retry.
+      if (d?.code === 'in_progress' || d?.code === 'ya_gestionado' || d?.code === 'needs_verify' || d?.code === 'claim_failed') {
+        await settleAudit(auditId, 'failed', `EDICIÓN no aplicada (${d.code}): ${shortMsg}`);
+        const nuevo = d?.code === 'ya_gestionado' && d?.externalId ? d.externalId : null;
+        toast.warning(`${partialPrefix(clientApplied)}${shortMsg}`, {
+          description: d?.code === 'in_progress'
+            ? 'Esperá unos segundos y refrescá la pantalla: cuando termine, el pedido va a aparecer con el cambio.'
+            : d?.code === 'needs_verify'
+              ? 'Verificá en el panel de Dropi si la orden nueva quedó creada ANTES de tocar nada.'
+              : 'Refrescá la pantalla para ver el pedido como quedó.',
+          duration: 15000,
+          ...(nuevo
+            ? { action: { label: `Ver #${nuevo}`, onClick: () => window.open(`/pedido/${nuevo}`, '_blank') } }
+            : {}),
+        });
+        return null;
+      }
       if (d?.code === 'creacion_incierta') {
         await settleAudit(auditId, 'failed', `EDICIÓN INCIERTA — no reintentar: ${shortMsg}`);
         toast.error(`${partialPrefix(clientApplied)}${shortMsg}`, {
@@ -629,6 +652,27 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
         });
         return null;
       }
+      // ⛔ EL CLAIM DEL SERVIDOR (4-sep-2026): otro request ya está editando
+      // este pedido (`in_progress`), ya lo editó y quedó con id nuevo
+      // (`ya_gestionado`), o un intento anterior quedó sin confirmar
+      // (`needs_verify`). Ninguno se arregla apretando de nuevo: el reintento
+      // a ciegas es justo lo que creaba la segunda orden. NO se invita al retry.
+      if (d?.code === 'in_progress' || d?.code === 'ya_gestionado' || d?.code === 'needs_verify' || d?.code === 'claim_failed') {
+        await settleAudit(auditId, 'failed', `EDICIÓN no aplicada (${d.code}): ${shortMsg}`);
+        const nuevo = d?.code === 'ya_gestionado' && d?.externalId ? d.externalId : null;
+        toast.warning(`${partialPrefix(clientApplied)}${shortMsg}`, {
+          description: d?.code === 'in_progress'
+            ? 'Esperá unos segundos y refrescá la pantalla: cuando termine, el pedido va a aparecer con el cambio.'
+            : d?.code === 'needs_verify'
+              ? 'Verificá en el panel de Dropi si la orden nueva quedó creada ANTES de tocar nada.'
+              : 'Refrescá la pantalla para ver el pedido como quedó.',
+          duration: 15000,
+          ...(nuevo
+            ? { action: { label: `Ver #${nuevo}`, onClick: () => window.open(`/pedido/${nuevo}`, '_blank') } }
+            : {}),
+        });
+        return null;
+      }
       if (d?.code === 'creacion_incierta') {
         await settleAudit(auditId, 'failed', `EDICIÓN INCIERTA — no reintentar: ${shortMsg}`);
         toast.error(`${partialPrefix(clientApplied)}${shortMsg}`, {
@@ -668,6 +712,12 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
       toast.error('Este pedido no tiene ID externo de Dropi y no puede sincronizarse');
       return;
     }
+    // Guard por ref y no solo por estado: el `disabled` del botón depende de un
+    // render que todavía no pasó cuando llega el segundo click del doble-click.
+    // CallView usa la misma guarda (`markingRef`) por el mismo motivo. Acá
+    // importa más: cada click que pasa es un create-with-edit en Dropi.
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       const steps = plan;
@@ -730,6 +780,7 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
       onSuccess?.();
       onOpenChange(false);
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };

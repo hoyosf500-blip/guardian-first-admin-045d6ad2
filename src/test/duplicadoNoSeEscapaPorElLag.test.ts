@@ -56,6 +56,59 @@ describe('⛔ el duplicado no se escapa por el lag del espejo', () => {
   });
 
   /**
+   * ⛔ «QUIEN VE, CEDE» (4-sep-2026). El chequeo de arriba corre ANTES del
+   * claim, y en ese instante dos ventas distintas del mismo teléfono todavía
+   * no tienen fila ninguna: las dos pasaban. Después de reclamar hay que volver
+   * a mirar, excluyendo la fila propia (`claimId`), y ceder si aparece otra.
+   * Sin desempate: `pushed_at` es el inicio de la transacción, no el orden de
+   * commit, y con un desempate los dos podían "ganar".
+   */
+  it('vuelve a preguntar DESPUÉS del claim, excluyendo su propia fila, y cede', () => {
+    const iClaim = codigo.indexOf('status: "pending"');
+    const iPost = codigo.indexOf('integrations/orders/myorders');
+    const iRecheck = codigo.indexOf('findInvisibleTwin(sb, storeId, phoneNorm, shopifyOrderId, claimId)');
+    expect(iRecheck, 'no hay re-chequeo post-claim con el claim propio excluido').toBeGreaterThan(iClaim);
+    expect(iRecheck, 'el re-chequeo corre después del POST: ya sería un informe').toBeLessThan(iPost);
+    // Y cede: la fila propia pasa a error y se responde duplicado.
+    const trasRecheck = codigo.slice(iRecheck, iPost);
+    expect(trasRecheck, 'el re-chequeo no cede: encontró gemelo y siguió').toMatch(/status:\s*"error"[\s\S]{0,300}duplicate_phone/);
+    // Nada de desempate por fecha.
+    expect(trasRecheck).not.toMatch(/pushed_at\s*[<>]/);
+  });
+
+  /**
+   * ⛔ FAIL-CLOSED (4-sep-2026). Antes: `catch {}` y el push seguía. Con la
+   * base lenta, "Subir todos" de 20 creaba 20 sin candado.
+   */
+  it('si el candado no puede correr, el push se FRENA (no degrada abierto)', () => {
+    // El bloque del guard (desde la primera llamada al gemelo hasta el claim)
+    // no puede tener un catch vacío: tiene que responder guard_failed.
+    const iGuard = codigo.indexOf('findInvisibleTwin(sb');
+    const iClaim = codigo.indexOf('status: "pending"');
+    const bloqueGuard = codigo.slice(iGuard, iClaim);
+    expect(bloqueGuard, 'el guard volvió a tragarse el error y seguir').not.toMatch(/catch\s*(\([^)]*\))?\s*\{\s*\}/);
+    expect(bloqueGuard, 'el guard no responde guard_failed cuando no puede correr').toMatch(/blocked:\s*"guard_failed"/);
+    const puroSinComentarios = sinComentarios(push);
+    // La lectura fallida del registro de intentos tiene que SUBIR, no loguearse.
+    expect(puroSinComentarios).toMatch(/no pude leer shopify_pushed_orders[\s\S]{0,80}\)/);
+    expect(puroSinComentarios).toMatch(/throw new Error\(`no pude leer shopify_pushed_orders/);
+  });
+
+  /**
+   * ⛔ UN 5xx NO ES UN RECHAZO (4-sep-2026). Un 502/504 del gateway que llega
+   * después de que Dropi insertó caía en 'error', `safeToRetry` dejaba
+   * reintentar sin "Forzar" y el robot lo retomaba solo a las 2 h. Segunda
+   * orden real. Y el POST era el único fetch a Dropi sin timeout.
+   */
+  it('solo un rechazo SEGURO (4xx de validación) queda reintentable; el resto es unknown', () => {
+    expect(codigo).toMatch(/function esRechazoSeguro\(/);
+    expect(codigo, 'el 5xx vuelve a marcarse error').toMatch(/if\s*\(\s*!dropiOk\s*&&\s*rechazoSeguro\s*\)/);
+    const iPost = codigo.indexOf('integrations/orders/myorders');
+    const bloquePost = codigo.slice(iPost, iPost + 900);
+    expect(bloquePost, 'el POST de creación no tiene timeout').toMatch(/AbortSignal\.timeout\(/);
+  });
+
+  /**
    * La recompra legítima tiene que seguir teniendo salida. Sin el escape, un
    * cliente que compra dos veces el mismo día queda trabado sin forma de
    * destrabarlo — la venta perdida en silencio que la regla del 18-jul-2026

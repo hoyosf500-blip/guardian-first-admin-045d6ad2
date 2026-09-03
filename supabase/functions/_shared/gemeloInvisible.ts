@@ -44,6 +44,8 @@
 export const VENTANA_GEMELO_MS = 24 * 60 * 60 * 1000;
 
 export interface FilaPush {
+  /** Id de la fila de intento. Sirve para excluir el claim PROPIO. */
+  id?: string;
   shopify_order_id: string;
   dropi_order_id: string | null;
   /** Lo que se le mandó a Dropi. El teléfono va acá dentro. */
@@ -69,17 +71,23 @@ export function last9(p: unknown): string {
  * @param shopifyOrderId la venta que se está subiendo — no es gemela de sí misma.
  * @param espejadas     `dropi_order_id` que YA aparecen en `orders`: sobre esos
  *                      manda el guard de siempre, no éste.
+ * @param excluirId     mi PROPIO claim, cuando se pregunta después de reclamar
+ *                      («quien ve, cede», 4-sep-2026). Explícito aunque el
+ *                      shopify_order_id ya lo cubra: el contrato es "cualquier
+ *                      OTRA fila", y eso tiene que leerse en la firma.
  */
 export function elegirGemeloCiego(
   filas: FilaPush[],
   phoneNorm: string,
   shopifyOrderId: string,
   espejadas: Set<string>,
+  excluirId?: string,
 ): Gemelo | null {
   // Un teléfono corto no identifica a nadie: con 3 dígitos "coincidirían"
   // clientes distintos y frenaríamos ventas buenas. Mismo piso que el robot.
   if (!phoneNorm || phoneNorm.length < 7) return null;
   for (const f of filas) {
+    if (excluirId && f.id != null && String(f.id) === String(excluirId)) continue;
     if (String(f.shopify_order_id) === String(shopifyOrderId)) continue;
     if (last9(f.payload?.phone) !== phoneNorm) continue;
     // Sin `dropi_order_id` (un 'pending' en curso, o un 'unknown' que quedó sin

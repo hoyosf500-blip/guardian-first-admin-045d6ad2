@@ -30,7 +30,7 @@ const SHOPIFY_API_VERSION = "2024-10";
 /** Se despliega A MANO: Lovable no redespliega edge functions al publicar.
  *  `POST .../shopify-push-dropi?ping=1` contesta esta marca — es la unica forma de saber si
  *  el arreglo del gemelo invisible llego de verdad al runtime. */
-const VERSION = "shopify-push-dropi 2026-09-03.1 gemelo-invisible-por-telefono";
+const VERSION = "shopify-push-dropi 2026-09-04.1 quien-ve-cede-y-el-5xx-no-se-reintenta";
 
 interface ShopifyLineItem {
   product_id: number;
@@ -594,7 +594,18 @@ async function createOrderViaWeb(
     shipping_amount: quote.shippingAmount,
   };
 
-  const { status, body, text } = await dropiWebFetch(cfg, `/api/orders/myorders`, { method: "POST", body: orderBody });
+  // ⛔ ESTE POST CREA UNA ORDEN. Un timeout (dropiWebFetch lanza 504) o un 5xx
+  // del gateway pueden llegar DESPUÉS de que Dropi la insertó. Todo lo que
+  // salga de acá con `incierto: true` se marca 'unknown' (verificación humana),
+  // nunca 'error' (que el robot reintenta a las 2 h = segunda orden real).
+  let res: Awaited<ReturnType<typeof dropiWebFetch>>;
+  try {
+    res = await dropiWebFetch(cfg, `/api/orders/myorders`, { method: "POST", body: orderBody });
+  } catch (e) {
+    if (e instanceof WebFallbackError) e.incierto = true;
+    throw e;
+  }
+  const { status, body, text } = res;
   const ok = status >= 200 && status < 300 && body?.isSuccess !== false;
   const orderId =
     (body?.id as string | number | undefined) ??
@@ -604,7 +615,11 @@ async function createOrderViaWeb(
     null;
   if (!ok || orderId == null) {
     const detail = String(body?.message || body?.error || text || "error").slice(0, 500);
-    throw new WebFallbackError(`Dropi (panel web) rechazó el pedido [${status}]: ${detail}`, 502);
+    const err = new WebFallbackError(`Dropi (panel web) rechazó el pedido [${status}]: ${detail}`, 502);
+    // 2xx sin id = probablemente creada; 5xx/0/408/429 = no se sabe. Solo un
+    // 4xx de validación es un rechazo seguro.
+    err.incierto = ok || !esRechazoSeguro(status, body);
+    throw err;
   }
   return String(orderId);
 }
@@ -624,12 +639,15 @@ async function findDuplicatesServiceRole(
   shopifyCreatedAtMs?: number,
 ): Promise<Array<{ external_id?: string; estado?: string }>> {
   const since = new Date(Date.now() - 60 * 86400000).toISOString();
-  const { data } = await sb.from("orders")
+  const { data, error } = await sb.from("orders")
     .select("external_id, estado, phone, created_at")
     .eq("store_id", storeId)
     .ilike("phone", `%${phoneNorm}`)
     .gte("created_at", since)
     .limit(50);
+  // ⛔ FAIL-CLOSED. Antes el error se descartaba y `data` vacío se leía como
+  // "no tiene pedidos": el candado corría ciego y el push creaba igual.
+  if (error) throw new Error(`no pude leer orders para el anti-duplicado: ${error.message}`);
   // ACTIVA = ni entregada ni muerta (misma regla que isActiveDropiEstado en
   // shopify-auto-push — si se cambia acá, cambiar allá).
   const isActive = (estado: string): boolean => {
@@ -677,10 +695,12 @@ async function findInvisibleTwin(
   // deno-lint-ignore no-explicit-any
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sb: any, storeId: string, phoneNorm: string, shopifyOrderId: string,
+  /** Mi propio claim, cuando se pregunta DESPUÉS de reclamar (ver «quien ve, cede»). */
+  excluirId?: string,
 ): Promise<Gemelo | null> {
   const desde = new Date(Date.now() - VENTANA_GEMELO_MS).toISOString();
   const { data, error } = await sb.from("shopify_pushed_orders")
-    .select("shopify_order_id, dropi_order_id, payload")
+    .select("id, shopify_order_id, dropi_order_id, payload")
     .eq("store_id", storeId)
     .gte("pushed_at", desde)
     .in("status", ["created", "pending", "unknown"])
@@ -690,11 +710,11 @@ async function findInvisibleTwin(
     // recientes primero, que son los que todavía no llegaron al espejo.
     .order("pushed_at", { ascending: false })
     .limit(500);
-  // ⛔ Y SI LA LECTURA FALLA, SE DICE. Todo este bloque vive dentro de un
-  // `catch {}` que degrada abierto (no frenar un push honesto por un problema
-  // de infra), y esa decisión se mantiene — pero en silencio el candado podía
-  // estar MUERTO en producción sin que nada lo delatara.
-  if (error) console.error(`[gemelo-invisible] no pude leer shopify_pushed_orders (${error.message}) — el candado NO corrió para ${phoneNorm}`);
+  // ⛔ FAIL-CLOSED (4-sep-2026). La versión anterior solo logueaba: el candado
+  // podía estar muerto en producción y el push creaba igual. Ahora el error
+  // sube, y el caller responde `guard_failed` — un push demorado 30 s cuesta
+  // menos que dos guías.
+  if (error) throw new Error(`no pude leer shopify_pushed_orders: ${error.message}`);
   const filas = (data || []) as FilaPush[];
 
   // Cuáles de esos intentos YA se ven en el espejo. Sobre esos manda el guard
@@ -702,13 +722,23 @@ async function findInvisibleTwin(
   const ids = filas.map((f) => f.dropi_order_id).filter((x): x is string => !!x);
   const espejadas = new Set<string>();
   if (ids.length > 0) {
-    const { data: yaEspejadas } = await sb.from("orders")
+    const { data: yaEspejadas, error: espError } = await sb.from("orders")
       .select("external_id").eq("store_id", storeId).in("external_id", ids);
+    if (espError) throw new Error(`no pude leer orders para el gemelo: ${espError.message}`);
     for (const r of ((yaEspejadas || []) as Array<{ external_id: string | null }>)) {
       if (r.external_id) espejadas.add(String(r.external_id));
     }
   }
-  return elegirGemeloCiego(filas, phoneNorm, shopifyOrderId, espejadas);
+  return elegirGemeloCiego(filas, phoneNorm, shopifyOrderId, espejadas, excluirId);
+}
+
+/** Respuesta de Dropi que prueba que la orden NO se creó: un 4xx de validación
+ *  (no 408/429, que son "volvé a intentar") o un 2xx con `isSuccess:false`.
+ *  Todo lo demás —5xx, 0, timeout— puede haber llegado DESPUÉS del insert. */
+function esRechazoSeguro(status: number, body: Record<string, unknown> | null): boolean {
+  if (status >= 400 && status < 500 && status !== 408 && status !== 429) return true;
+  if (status >= 200 && status < 300 && body?.isSuccess === false) return true;
+  return false;
 }
 
 Deno.serve(async (req: Request) => {
@@ -1174,12 +1204,12 @@ Deno.serve(async (req: Request) => {
     // (integraciones y fallback web, que vienen después). Degrada sin bloquear si la
     // RPC no está desplegada o falla por infra (no rompe el push honesto).
     const phoneNorm = String(client.phone || "").replace(/\D/g, "").slice(-9);
+    const ventaShopifyMs = ord.created_at ? new Date(ord.created_at).getTime() : undefined;
     if (!allowDuplicate && phoneNorm.length >= 7) {
       try {
         // Camino de cron: consulta con service role (sin auth.uid()). Camino de
         // usuario: la RPC find_duplicate_phones con el JWT del miembro.
         let list: Array<{ external_id?: string; estado?: string }> = [];
-        const ventaShopifyMs = ord.created_at ? new Date(ord.created_at).getTime() : undefined;
         if (isCron) {
           list = await findDuplicatesServiceRole(
             sb, storeId, phoneNorm,
@@ -1194,7 +1224,19 @@ Deno.serve(async (req: Request) => {
           const { data: dups, error: dupErr } = await sbUser!.rpc("find_duplicate_phones", {
             p_store_id: storeId, p_phones: [phoneNorm],
           });
-          if (!dupErr && Array.isArray(dups)) list = dups as Array<{ external_id?: string; estado?: string }>;
+          if (!dupErr && Array.isArray(dups)) {
+            list = dups as Array<{ external_id?: string; estado?: string }>;
+          } else {
+            // La RPC no está o falló: antes se seguía con la lista VACÍA (el
+            // candado corriendo ciego, en silencio). Ahora se cae a la misma
+            // consulta que usa el cron —la membresía ya se comprobó arriba— y
+            // si ESA también falla, sube al catch y el push se frena.
+            console.warn(`[anti-dup] find_duplicate_phones falló (${dupErr?.message ?? "sin filas"}); uso la consulta service-role`);
+            list = await findDuplicatesServiceRole(
+              sb, storeId, phoneNorm,
+              Number.isFinite(ventaShopifyMs) ? ventaShopifyMs : undefined,
+            );
+          }
         }
         // El gemelo que el espejo todavía no muestra. Va ANTES de mirar `list`
         // porque justamente cubre el caso en que `list` viene vacía por lag.
@@ -1223,7 +1265,19 @@ Deno.serve(async (req: Request) => {
             duplicates: top,
           }, 409, cors);
         }
-      } catch { /* fallo de infra del guard → no bloquear el push honesto */ }
+      } catch (guardErr) {
+        // ⛔ FAIL-CLOSED (4-sep-2026). Antes: `catch {}` y el push seguía. En un
+        // "Subir todos" de 20 con la base lenta, eso eran 20 órdenes sin
+        // candado. Duplicar está PROHIBIDO en esta operación; un push demorado
+        // se reintenta en un minuto, una guía doble se paga.
+        const gm = guardErr instanceof Error ? guardErr.message : String(guardErr);
+        console.error(`[anti-dup] el candado no pudo correr para ${phoneNorm}: ${gm}`);
+        return json({
+          ok: false,
+          blocked: "guard_failed",
+          error: "No pude verificar si este cliente ya tiene un pedido en Dropi (la base no respondió). No se creó nada. Reintentá en un momento.",
+        }, 409, cors);
+      }
     }
 
     // Sumar el envío prioritario al COD: Dropi cobra el total por los productos,
@@ -1333,6 +1387,61 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ⛔ RE-CHEQUEO DESPUÉS DEL CLAIM: «quien ve, cede» (4-sep-2026).
+    //
+    // El claim de arriba serializa EL MISMO pedido de Shopify (UNIQUE por
+    // shopify_order_id). Dos ventas DISTINTAS del mismo teléfono —dos asesoras,
+    // o una asesora y el robot— pasaban las dos: el chequeo del gemelo corría
+    // antes del claim, y en ese instante ninguna fila existía todavía.
+    //
+    // Ahora, ya con mi fila 'pending' comiteada, vuelvo a mirar. Si veo OTRA
+    // fila viva de este teléfono (pending/created/unknown, 24 h), cedo: marco la
+    // mía 'error' y respondo duplicado. SIN desempate a propósito — un orden
+    // por `pushed_at` no sirve, porque `now()` es el inicio de la transacción y
+    // la visibilidad entre requests la da el COMMIT (el que empezó segundo puede
+    // comitear primero, y con un desempate los dos "ganan"). Con rendición
+    // simétrica: los commits están totalmente ordenados, el que comiteó segundo
+    // ve al primero, y a lo sumo UNO sigue. Peor caso: ceden los dos → cero
+    // órdenes ahora, y el reintento ya es secuencial (el robot y "Subir todos"
+    // van con `await`), así que el primero crea y el segundo rebota arriba.
+    //
+    // La que cede queda 'error' y no 'unknown': nunca tocó Dropi, y 'unknown' la
+    // dejaría muerta para el robot para siempre (autoPushSelect no reintenta
+    // unknown). `allow_duplicate` salta esto igual que el chequeo de arriba: es
+    // la asesora firmando que son dos pedidos distintos.
+    if (!allowDuplicate && phoneNorm.length >= 7 && claimId) {
+      let gemelo2: Gemelo | null = null;
+      try {
+        gemelo2 = await findInvisibleTwin(sb, storeId, phoneNorm, shopifyOrderId, claimId);
+      } catch (guardErr) {
+        const gm = guardErr instanceof Error ? guardErr.message : String(guardErr);
+        console.error(`[anti-dup] el re-chequeo post-claim no pudo correr para ${phoneNorm}: ${gm}`);
+        // Soltar el claim como 'error' (nunca tocó Dropi): si quedara 'pending',
+        // el pedido pasaría 3 min bloqueado y después exigiría "Forzar".
+        await sb.from("shopify_pushed_orders").update({ status: "error", error_message: `guard_failed: ${gm}`.slice(0, 500) }).eq("id", claimId);
+        return json({
+          ok: false,
+          blocked: "guard_failed",
+          error: "No pude verificar si este cliente ya tiene un pedido en Dropi (la base no respondió). No se creó nada. Reintentá en un momento.",
+        }, 409, cors);
+      }
+      if (gemelo2) {
+        await sb.from("shopify_pushed_orders").update({
+          status: "error",
+          error_message: `duplicate_phone: cedí ante la venta #${gemelo2.shopify_order_id}${gemelo2.dropi_order_id ? ` (Dropi #${gemelo2.dropi_order_id})` : ""} que se estaba subiendo al mismo tiempo`,
+        }).eq("id", claimId);
+        return json({
+          ok: false,
+          blocked: "duplicate_phone",
+          error: `Al mismo tiempo se está subiendo a Dropi otro pedido con este mismo teléfono ` +
+            `(venta de Shopify #${gemelo2.shopify_order_id}` +
+            `${gemelo2.dropi_order_id ? `, orden Dropi #${gemelo2.dropi_order_id}` : ""}). ` +
+            `No se creó nada. Si de verdad son dos pedidos distintos, subilo con "No es duplicado".`,
+          duplicates: [{ external_id: gemelo2.dropi_order_id ?? undefined }],
+        }, 409, cors);
+      }
+    }
+
     let dropiRes: Response;
     let rawText: string;
     try {
@@ -1345,19 +1454,27 @@ Deno.serve(async (req: Request) => {
           "Origin": dropiCfg.storeUrl,
         },
         body: JSON.stringify(dropiPayload),
+        // ⛔ CON TIMEOUT. Era el único fetch a Dropi sin señal de aborto: si Dropi
+        // colgaba, la función moría por wall-clock (a veces DESPUÉS de crear la
+        // orden) y la fila quedaba 'pending' sin motivo. Con la señal, el
+        // timeout cae al catch de abajo → 'unknown' → verificación humana.
+        signal: AbortSignal.timeout(45_000),
       });
       rawText = await dropiRes.text();
     } catch (netErr) {
-      // Error de RED: NO sabemos si Dropi recibió/creó la orden. Marcamos 'unknown'
-      // para BLOQUEAR el reintento hasta que alguien verifique en Dropi (mejor
-      // bloquear que arriesgar un duplicado con doble flete).
+      // Error de RED o TIMEOUT: NO sabemos si Dropi recibió/creó la orden.
+      // Marcamos 'unknown' para BLOQUEAR el reintento hasta que alguien verifique
+      // en Dropi (mejor bloquear que arriesgar un duplicado con doble flete).
       const nm = netErr instanceof Error ? netErr.message : String(netErr);
       if (claimId) await sb.from("shopify_pushed_orders").update({ status: "unknown", error_message: `Red: ${nm}`.slice(0, 500) }).eq("id", claimId);
-      return json({ ok: false, blocked: "needs_verify", error: "No se pudo confirmar con Dropi (error de red). Verificá en Dropi si el pedido se creó antes de reintentar." }, 502, cors);
+      return json({ ok: false, blocked: "needs_verify", error: "No se pudo confirmar con Dropi (error de red o tiempo agotado). Verificá en Dropi si el pedido se creó antes de reintentar." }, 502, cors);
     }
     let dBody: Record<string, unknown> = {};
     try { dBody = rawText ? JSON.parse(rawText) : {}; } catch { dBody = { raw: rawText }; }
     const dropiOk = dropiRes.ok && dBody.isSuccess !== false;
+    // ¿La respuesta PRUEBA que la orden no se creó? Solo un 4xx de validación o
+    // un isSuccess:false. Un 5xx/504 del gateway puede llegar después del insert.
+    const rechazoSeguro = esRechazoSeguro(dropiRes.status, dBody);
 
     // Intentar extraer el id de la orden creada de varias formas conocidas.
     const dropiOrderId =
@@ -1380,7 +1497,9 @@ Deno.serve(async (req: Request) => {
       // Si Dropi respondió 2xx + isSuccess!==false (dropiOk===true) pero no pudimos
       // leer el id, la orden PROBABLEMENTE ya se creó — NO debemos dispararle un
       // fallback web que la crearía DE NUEVO. Ese caso cae al bloque B (needs_verify).
-      const isPrivateProductSignal = !dropiOk &&
+      // Y EXIGIMOS `rechazoSeguro`: un 5xx cuyo texto diga "not found" no prueba
+      // que la orden no se creó, y dispararle el fallback web sería crearla dos veces.
+      const isPrivateProductSignal = !dropiOk && rechazoSeguro &&
         (dropiRes.status === 404 || /\$type|Undefined property|no encontr|not found/i.test(detail));
 
       if (isPrivateProductSignal) {
@@ -1415,14 +1534,26 @@ Deno.serve(async (req: Request) => {
         } catch (webErr) {
           const webMsg = webErr instanceof Error ? webErr.message : String(webErr);
           const webStatus = webErr instanceof WebFallbackError ? webErr.status : 502;
-          // WebFallbackError = falla CONTROLADA (producto/ciudad/cotización sin
-          // resolver, o Dropi rechazó el POST): la orden NO se creó → 'error'
-          // (reintento seguro). Un throw CRUDO (ej. red durante el POST) es
-          // indeterminado → 'unknown' para exigir verificación antes de reintentar.
-          const webFinalStatus = webErr instanceof WebFallbackError ? "error" : "unknown";
+          // WebFallbackError SIN `incierto` = falla CONTROLADA antes del POST
+          // (producto/ciudad/cotización sin resolver) o un 4xx de validación:
+          // la orden NO se creó → 'error' (reintento seguro).
+          // ⛔ CON `incierto` (4-sep-2026) = el POST de creación dio 5xx, 504 por
+          // timeout o 2xx sin id: la orden PUEDE existir → 'unknown' + verificación
+          // humana. Antes TODA WebFallbackError caía en 'error' y el robot la
+          // reintentaba a las 2 h: segunda orden real. Un throw CRUDO sigue
+          // siendo 'unknown'.
+          const webIncierto = !(webErr instanceof WebFallbackError) || webErr.incierto === true;
+          const webFinalStatus = webIncierto ? "unknown" : "error";
           await sb.from("shopify_pushed_orders").update({
             status: webFinalStatus, error_message: `Fallback web [${webStatus}]: ${webMsg}`.slice(0, 500),
           }).eq("id", claimId);
+          if (webIncierto) {
+            return json({
+              ok: false, blocked: "needs_verify",
+              error: `${webMsg} — No sé si la orden quedó creada: verificá en Dropi antes de reintentar.`,
+              dropiBody: dBody,
+            }, webStatus, cors);
+          }
           return json({ ok: false, error: webMsg, dropiBody: dBody }, webStatus, cors);
         }
       }
@@ -1430,8 +1561,15 @@ Deno.serve(async (req: Request) => {
       // Falla NO atribuible a producto privado. Hay que distinguir DOS casos con
       // consecuencias opuestas para el reintento:
       //
-      //  A) `!dropiOk` → Dropi RECHAZÓ de verdad (HTTP 4xx/5xx o isSuccess=false):
-      //     la orden NO se creó → 'error' (seguro reintentar SIN force).
+      //  A) `!dropiOk` Y `rechazoSeguro` → Dropi RECHAZÓ de verdad (4xx de
+      //     validación o isSuccess=false): la orden NO se creó → 'error' (seguro
+      //     reintentar SIN force).
+      //
+      //  A') `!dropiOk` SIN `rechazoSeguro` (5xx, 504, 408, 429) → NO SE SABE.
+      //     ⛔ Este era el hueco del 4-sep-2026: un 502/504 del gateway que llega
+      //     DESPUÉS de que Dropi insertó caía en 'error', `safeToRetry` dejaba
+      //     reintentar sin "Forzar" y el robot lo retomaba solo a las 2 h →
+      //     segunda orden real, guías consecutivas, doble flete. Va a 'unknown'.
       //
       //  B) `dropiOk===true` pero no pudimos extraer el id (respuesta 2xx +
       //     isSuccess!==false con el id en una clave desconocida / formato nuevo):
@@ -1440,11 +1578,22 @@ Deno.serve(async (req: Request) => {
       //     Por eso lo marcamos 'unknown' y exigimos verificación humana (needs_verify),
       //     igual que un error de red. Logueamos el body crudo para poder ampliar el
       //     extractor de id si aparece una forma nueva.
-      if (!dropiOk) {
+      if (!dropiOk && rechazoSeguro) {
         await sb.from("shopify_pushed_orders").update({
           status: "error", error_message: `Dropi [${dropiRes.status}]: ${detail}`,
         }).eq("id", claimId);
         return json({ ok: false, error: `Dropi rechazó el pedido [${dropiRes.status}]: ${detail}`, dropiBody: dBody }, 502, cors);
+      }
+      if (!dropiOk) {
+        console.error(`shopify-push-dropi: Dropi respondió ${dropiRes.status} sin prueba de rechazo — indeterminado. Body:`, rawText.slice(0, 1000));
+        await sb.from("shopify_pushed_orders").update({
+          status: "unknown", error_message: `Dropi [${dropiRes.status}] indeterminado: ${detail}`.slice(0, 500),
+        }).eq("id", claimId);
+        return json({
+          ok: false, blocked: "needs_verify",
+          error: `Dropi respondió ${dropiRes.status} y no sé si la orden quedó creada. Verificá en Dropi antes de reintentar.`,
+          dropiBody: dBody,
+        }, 502, cors);
       }
       // Caso B: Dropi aceptó pero no encontramos el id → indeterminado.
       console.error("shopify-push-dropi: Dropi 2xx isSuccess!=false pero id no parseable. Body crudo:", rawText.slice(0, 1000));

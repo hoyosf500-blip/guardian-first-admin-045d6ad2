@@ -99,5 +99,17 @@ export function selectAutoPushCandidates(
     return true;
   });
   picked.sort((a, b) => a.createdAtMs - b.createdAtMs); // más viejos primero
-  return opts.cap > 0 ? picked.slice(0, opts.cap) : picked;
+  // ⛔ EL LOTE CONTRA SÍ MISMO (4-sep-2026). Dos ventas del mismo teléfono en
+  // la misma corrida no estaban en `orders` ninguna de las dos (el espejo llega
+  // tarde) y las dos pasaban los filtros de arriba. El push tiene su propio
+  // candado sin lag (el gemelo invisible), pero es defensa de un solo nivel:
+  // acá se sube UNA por teléfono y por corrida —la más vieja— y la otra espera
+  // a la próxima, cuando el espejo ya la muestra o el gemelo la frena.
+  const vistos = new Set<string>();
+  const unaPorTelefono = picked.filter((o) => {
+    if (vistos.has(o.phoneLast9)) return false;
+    vistos.add(o.phoneLast9);
+    return true;
+  });
+  return opts.cap > 0 ? unaPorTelefono.slice(0, opts.cap) : unaPorTelefono;
 }

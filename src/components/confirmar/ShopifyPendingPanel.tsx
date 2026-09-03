@@ -80,8 +80,45 @@ function saveDone(storeId: string, ids: Set<string>) {
 // "No es duplicado" vive en localStorage (antes sessionStorage): si se
 // evaporaba al cerrar la pestaña, el mismo pedido amanecía BLOQUEADO otra vez
 // y la operadora sentía que "no deja subir".
+//
+// ⛔ PERO CADUCA (4-sep-2026). Antes no caducaba nunca, y `allow_duplicate`
+// salta TODOS los candados del servidor, incluido el gemelo invisible. Un
+// pedido marcado hace tres días (cuando el gemelo era una entrega vieja) que
+// quedó trabado por otro motivo subía después en un "Subir todos" con el
+// candado apagado. La marca vale lo que vale la ventana del gemelo: 24 h.
+// Formato nuevo `{id: ts}`; el viejo (lista de ids) se lee como "marcado
+// ahora" una sola vez y se reescribe con fecha.
+const DUP_OVERRIDE_TTL_MS = 24 * 60 * 60 * 1000;
+
+function loadOverrideMap(storeId: string): Record<string, number> {
+  const key = DUP_OVERRIDE_KEY(storeId);
+  const ahora = Date.now();
+  const out: Record<string, number> = {};
+  for (const store of [localStorage, sessionStorage]) {
+    try {
+      const raw = JSON.parse(store.getItem(key) || 'null');
+      if (Array.isArray(raw)) {
+        for (const id of raw) if (typeof id === 'string') out[id] = out[id] ?? ahora;
+      } else if (raw && typeof raw === 'object') {
+        for (const [id, ts] of Object.entries(raw as Record<string, unknown>)) {
+          if (typeof ts === 'number' && ahora - ts < DUP_OVERRIDE_TTL_MS) out[id] = ts;
+        }
+      }
+    } catch { /* noop */ }
+  }
+  return out;
+}
+
 function loadOverrides(storeId: string): Set<string> {
-  return loadPersistedSet(DUP_OVERRIDE_KEY(storeId));
+  return new Set(Object.keys(loadOverrideMap(storeId)));
+}
+
+function saveOverride(storeId: string, id: string) {
+  try {
+    const m = loadOverrideMap(storeId);
+    m[id] = Date.now();
+    localStorage.setItem(DUP_OVERRIDE_KEY(storeId), JSON.stringify(m));
+  } catch { /* noop */ }
 }
 
 function loadMismatchFixed(storeId: string): Set<string> {
@@ -268,11 +305,8 @@ export default function ShopifyPendingPanel() {
   // auditoría (quién y cuándo) — escape para la recompra legítima.
   const markNotDuplicate = useCallback((p: ShopifyPendingItem) => {
     if (!activeStoreId) return;
-    setDupOverrides(prev => {
-      const next = new Set(prev).add(p.id);
-      try { localStorage.setItem(DUP_OVERRIDE_KEY(activeStoreId), JSON.stringify([...next])); } catch { /* noop */ }
-      return next;
-    });
+    saveOverride(activeStoreId, p.id);
+    setDupOverrides(prev => new Set(prev).add(p.id));
     if (user) {
       void supabase.from('touchpoints').insert({
         phone: p.phone,
