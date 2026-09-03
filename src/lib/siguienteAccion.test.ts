@@ -592,6 +592,24 @@ describe('la novedad que lleva más de un día parada', () => {
     expect(siguienteAccion(conNovedades(99)).etiqueta).toContain('3 novedades paradas');
   });
 
+  /**
+   * ⛔ LAS DOS EXPLICACIONES CONVIVEN. La primera versión las ponía en un
+   * ternario: apenas había UNA vencida se perdía la frase de las cerradas por
+   * la transportadora — que es justo la que se agregó para que nadie crea que
+   * se perdieron pedidos al ver «14» donde ayer decía «84».
+   */
+  it('reclama por las vencidas Y sigue explicando las que la transportadora cerró', () => {
+    const r = siguienteAccion({
+      ...vacio,
+      novedadesQueue: Array.from({ length: 84 }, () => ({ ...base, estado: 'NOVEDAD' })),
+      novedadesAbiertas: 14,
+      novedadesVencidas: 3,
+    });
+    expect(r.porque).toContain('24 h');
+    expect(r.porque).toContain('70');
+    expect(r.porque).toContain('cerró la incidencia');
+  });
+
   it('el escalón sigue siendo el mismo y en el mismo lugar de la escalera', () => {
     const r = siguienteAccion({ ...conNovedades(3), bandejaUrgentes: 5 });
     expect(r.key).toBe('bandeja');

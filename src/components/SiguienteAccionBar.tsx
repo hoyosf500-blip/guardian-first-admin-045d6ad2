@@ -242,7 +242,14 @@ export default function SiguienteAccionBar() {
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current',
             )}
           >
-            +{o.cuantos} {o.etiqueta.replace(/^\d+\s*/, '')}
+            {/* ⛔ La etiqueta se muestra ENTERA, sin reconstruirla con `cuantos`.
+                Antes decía `+{cuantos} {etiqueta sin su número}` y eso MENTÍA en
+                cuanto los dos números dejaron de ser el mismo: con 3 novedades
+                vencidas de 12, el chip afirmaba «+12 novedades paradas hace
+                +24 h (de 12)» — y encima se contradecía en su propio paréntesis.
+                La etiqueta ya trae su número correcto; pegarle otro al lado solo
+                puede empeorarla. */}
+            +{o.etiqueta}
           </button>
         ))}
       </div>

@@ -97,6 +97,24 @@ describe('los repetidos dentro del propio lote', () => {
     expect(r.has('b')).toBe(false);
   });
 
+  /**
+   * ⛔ EL OVERRIDE NO PUEDE DESARMAR EL CANDADO PARA EL OTRO. La primera
+   * versión hacía `continue` ANTES de anotar el teléfono: con «No es duplicado»
+   * puesto en A, B pasaba como «el primero de ese teléfono» y los DOS se
+   * subían en el mismo lote — justo lo que este archivo existe para impedir.
+   * Marcar A como legítimo no convierte a B en el primero.
+   */
+  it('con el primero overrideado, el segundo SIGUE frenado', () => {
+    const r = repetidosEnElLote([p('a', '3148664637'), p('b', '3148664637')], new Set(['a']));
+    expect(r.has('a')).toBe(false);
+    expect(r.has('b')).toBe(true);
+  });
+
+  it('si los dos están overrideados, suben los dos: la asesora ya decidió', () => {
+    const r = repetidosEnElLote([p('a', '3148664637'), p('b', '3148664637')], new Set(['a', 'b']));
+    expect(r.size).toBe(0);
+  });
+
   it('un lote vacío o de uno no frena nada', () => {
     expect(repetidosEnElLote([]).size).toBe(0);
     expect(repetidosEnElLote([p('a', '3148664637')]).size).toBe(0);

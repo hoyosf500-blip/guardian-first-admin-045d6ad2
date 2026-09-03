@@ -49,7 +49,7 @@ import { cambiosDeChat, type ContactoCp, type PedidoCruce } from "../_shared/cha
 
 const SOURCE = "chateapro-sync";
 /** ⛔ Subirla en el mismo commit que cambie algo: si no, el ping miente. */
-const VERSION = "chateapro-sync 2026-09-04.3 la-senal-ya-no-tira-la-ventana";
+const VERSION = "chateapro-sync 2026-09-04.4 con-autorizacion";
 
 /** Tope de la API (lo dice la spec; más devuelve 400). */
 const PAGINA = 100;
@@ -162,6 +162,52 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     const pedida = String(body?.store_id || "").trim();
+
+    // ── AUTORIZACIÓN ────────────────────────────────────────────────────────
+    // ⛔ ESTA FUNCIÓN NO PEDÍA NADA. Ni un header. Encontrado el 3-sep-2026 en
+    // una auditoría de aislamiento entre empresas: `req.headers` no aparecía una
+    // sola vez en las 589 líneas del archivo. Cualquiera que pudiera invocarla
+    // elegía la tienda por el body, o —sin `store_id`— disparaba el sync de
+    // TODAS y recibía de vuelta el `detalle` con el censo de cada inquilino
+    // (`store_id`, contactos, pedidos esperando, escritos) y sus errores. Y
+    // encima escribe: hace UPDATE sobre `orders` de cada una de esas tiendas.
+    //
+    // Su hermana `importchat-sync` sí valida, y su comentario nombra este mismo
+    // riesgo con todas las letras ("finding #5"). O sea que no era una decisión:
+    // era un olvido. Este bloque es el de ella, con el mismo criterio.
+    //
+    // Mezclar empresas está PROHIBIDO en esta operación (REGLA #1 de CLAUDE.md),
+    // y `dropi-health` ya documenta el mismo agujero explotado de verdad: la
+    // clave anónima sale del bundle JS, así que "hace falta estar logueado" no
+    // es un candado.
+    const cronSecret = req.headers.get("x-cron-secret");
+    if (cronSecret) {
+      const { data: secretRow } = await sb
+        .from("app_settings").select("value").eq("key", "cron_shared_secret").maybeSingle();
+      const esperado = String(secretRow?.value || "");
+      if (!esperado || cronSecret !== esperado) {
+        return json({ ok: false, error: "cron secret inválido" }, 401);
+      }
+    } else {
+      const auth = req.headers.get("Authorization") ?? "";
+      const { data: u } = await sb.auth.getUser(auth.replace("Bearer ", ""));
+      if (!u?.user) return json({ ok: false, error: "no autenticado" }, 401);
+      if (pedida) {
+        const { data: m } = await sb
+          .from("store_members").select("role")
+          .eq("store_id", pedida).eq("user_id", u.user.id).maybeSingle();
+        if (!m) return json({ ok: false, error: "no sos miembro de esa tienda" }, 403);
+      } else {
+        // SIN store_id un humano NO dispara el sync multi-tienda: la respuesta
+        // filtraría el detalle de TODAS las empresas a cualquiera con sesión.
+        // Solo el cron (por la rama de arriba) o un admin de plataforma.
+        const { data: rol } = await sb.from("user_roles")
+          .select("role").eq("user_id", u.user.id).eq("role", "admin").maybeSingle();
+        if (!rol) {
+          return json({ ok: false, error: "Especificá store_id: solo un admin puede sincronizar todas las tiendas." }, 403);
+        }
+      }
+    }
 
     await traza("fase 1: buscando tiendas con Chatea Pro");
 

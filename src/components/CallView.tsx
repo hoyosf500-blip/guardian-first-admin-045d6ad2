@@ -798,6 +798,32 @@ export default function CallView({ items, alerts }: Props) {
     riesgo: o?.dbId ? senalChat.index.get(o.dbId) ?? null : null,
   }), [o?.dbId, senalChat.actividad, senalChat.index]);
 
+  // ⛔ ESTOS DOS HOOKS VAN ARRIBA DEL EARLY-RETURN, Y NO ES UN DETALLE DE ESTILO.
+  //
+  // Se declararon debajo (commit 622b70a, 3-sep-2026) y eso TUMBABA /confirmar
+  // entera: cuando la cola queda en cero —se marca el último pendiente, o se
+  // escribe en el buscador algo que no matchea— el componente toma el camino
+  // corto de más abajo y corre DOS HOOKS MENOS que en el render anterior. React
+  // exige el mismo número de hooks en cada render (#300/#310), y como cada ruta
+  // va envuelta en su ErrorBoundary, la asesora ve «Algo salió mal» en vez de
+  // una pantalla degradada. Tampoco se auto-cura: `CallView` se monta SIN `key`,
+  // así que cambiar la lista no lo remonta.
+  //
+  // Es la MISMA regresión de agosto, reintroducida. Por eso existe
+  // `scripts/check-hooks.mjs` y por eso corre bloqueante en CI: si volvés a
+  // mover esto para abajo, falla ahí antes de llegar a producción.
+  //
+  // Ninguno de los dos depende de `o`, así que acá arriba no cuestan nada.
+  //
+  // Qué guardan: la pregunta pendiente por pedido duplicado (ver `handleMark`)
+  // y los pedidos por los que la asesora YA respondió, para no repreguntar. El
+  // segundo es un ref y no un estado: cambiarlo no tiene que repintar la ficha
+  // en medio de una llamada.
+  const [preguntaDuplicado, setPreguntaDuplicado] = useState<
+    { titulo: string; detalle: string; gemelos: ActiveDupAlert[] } | null
+  >(null);
+  const decididoDuplicado = useRef<Set<string>>(new Set());
+
   if (!items.length || !o) {
     // Sin pedido en pantalla no hay atajos (ver hotkeysRef arriba).
     hotkeysRef.current = null;
@@ -900,15 +926,6 @@ export default function CallView({ items, alerts }: Props) {
       },
     },
   });
-
-  // Pregunta pendiente por pedido duplicado (ver el bloque de handleMark).
-  // `decididoDuplicado` guarda los pedidos por los que ella YA respondió, para
-  // no volver a preguntar lo mismo. Es un ref y no un estado: cambiarlo no
-  // tiene que repintar la ficha en medio de una llamada.
-  const [preguntaDuplicado, setPreguntaDuplicado] = useState<
-    { titulo: string; detalle: string; gemelos: ActiveDupAlert[] } | null
-  >(null);
-  const decididoDuplicado = useRef<Set<string>>(new Set());
 
   const handleMark = async (result: string, reason?: string) => {
     // ⛔ EL SEGUNDO PEDIDO DEL MISMO CLIENTE NO SE CONFIRMA EN SILENCIO

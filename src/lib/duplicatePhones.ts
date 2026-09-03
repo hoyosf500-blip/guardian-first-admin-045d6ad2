@@ -90,12 +90,19 @@ export function repetidosEnElLote(
   const vistos = new Set<string>();
   const repetidos = new Set<string>();
   for (const it of items) {
-    if (overrides.has(it.id)) continue;
     const n = normalizePhone(it.phone);
     // Sin teléfono no se puede afirmar que sean el mismo cliente: no se frena.
     if (!n) continue;
-    if (vistos.has(n)) repetidos.add(it.id);
-    else vistos.add(n);
+    // ⛔ EL TELÉFONO SE REGISTRA AUNQUE EL PEDIDO ESTÉ OVERRIDEADO. La primera
+    // versión hacía `continue` ANTES de anotarlo, y eso desarmaba el candado
+    // para su gemelo: si la asesora marcó «No es duplicado» en A, B pasaba como
+    // «el primero de ese teléfono» y los dos se subían en el mismo lote — que
+    // es exactamente lo que este archivo existe para impedir. Marcar A como
+    // legítimo no convierte a B en el primero.
+    const yaVisto = vistos.has(n);
+    vistos.add(n);
+    if (overrides.has(it.id)) continue;
+    if (yaVisto) repetidos.add(it.id);
   }
   return repetidos;
 }

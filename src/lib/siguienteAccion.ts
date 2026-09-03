@@ -428,11 +428,18 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
         : (novedades === 1 ? '1 novedad abierta' : `${novedades} novedades abiertas`),
       // Se nombra lo que NO es trabajo. Sin esta línea, el que ayer leyó "84" y
       // hoy lee "14" va a creer que se perdieron pedidos.
-      porque: vencidas > 0
-        ? 'Ninguna novedad puede pasar de 24 h sin respuesta: la transportadora tiene el paquete parado y cada día que pasa lo acerca a la devolución.'
-        : esperando > 0
-          ? `${doc('novedades').porque} (${esperando} más están en estado NOVEDAD pero la transportadora ya cerró la incidencia: no se pueden gestionar.)`
+      // ⛔ Las dos explicaciones CONVIVEN. La primera versión las ponía en un
+      // ternario y, apenas había una vencida, se perdía la frase de las
+      // cerradas por la transportadora — que es justo la que se agregó para que
+      // nadie crea que se perdieron pedidos al ver «14» donde ayer decía «84».
+      porque: [
+        vencidas > 0
+          ? 'Ninguna novedad puede pasar de 24 h sin respuesta: la transportadora tiene el paquete parado y cada día que pasa lo acerca a la devolución.'
           : doc('novedades').porque,
+        esperando > 0
+          ? `(${esperando} más están en estado NOVEDAD pero la transportadora ya cerró la incidencia: no se pueden gestionar.)`
+          : '',
+      ].filter(Boolean).join(' '),
       ruta: '/novedades',
       tono: 'urgente',
     });

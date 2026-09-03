@@ -679,12 +679,22 @@ async function findInvisibleTwin(
   sb: any, storeId: string, phoneNorm: string, shopifyOrderId: string,
 ): Promise<Gemelo | null> {
   const desde = new Date(Date.now() - VENTANA_GEMELO_MS).toISOString();
-  const { data } = await sb.from("shopify_pushed_orders")
+  const { data, error } = await sb.from("shopify_pushed_orders")
     .select("shopify_order_id, dropi_order_id, payload")
     .eq("store_id", storeId)
     .gte("pushed_at", desde)
     .in("status", ["created", "pending", "unknown"])
+    // ⛔ CON ORDEN. Sin `.order()`, PostgREST devuelve un subconjunto arbitrario
+    // al recortar en 500: en una tienda con muchos pushes en 24 h el gemelo
+    // podía quedar FUERA del recorte y el candado no veía nada. Los más
+    // recientes primero, que son los que todavía no llegaron al espejo.
+    .order("pushed_at", { ascending: false })
     .limit(500);
+  // ⛔ Y SI LA LECTURA FALLA, SE DICE. Todo este bloque vive dentro de un
+  // `catch {}` que degrada abierto (no frenar un push honesto por un problema
+  // de infra), y esa decisión se mantiene — pero en silencio el candado podía
+  // estar MUERTO en producción sin que nada lo delatara.
+  if (error) console.error(`[gemelo-invisible] no pude leer shopify_pushed_orders (${error.message}) — el candado NO corrió para ${phoneNorm}`);
   const filas = (data || []) as FilaPush[];
 
   // Cuáles de esos intentos YA se ven en el espejo. Sobre esos manda el guard
