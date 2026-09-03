@@ -40,7 +40,7 @@ import { cn } from '@/lib/utils';
  *  · El envío se da por hecho SOLO si el servidor lo confirmó releyendo el chat.
  */
 export default function PanelConversacion({
-  activo, externalId, nombre, estado, phone, actividad, datos, modulo, onEnviado, altoChat,
+  activo, externalId, nombre, estado, phone, actividad, datos, modulo, onEnviado, altoChat, className,
 }: {
   /** ¿Esta conversación está a la vista? Decide si se lee el hilo y si se
    *  siembra el cuadro de texto con la primera sugerencia. */
@@ -61,6 +61,9 @@ export default function PanelConversacion({
   /** Alto del hilo. La bandeja lo da más grande que el modal porque ahí la
    *  conversación es la pantalla, no un anexo. */
   altoChat?: string;
+  /** Clases del contenedor. La bandeja lo usa para que el panel ocupe el alto
+   *  de su columna en vez de crecer y empujar la página. */
+  className?: string;
 }) {
   const { enviar, enviando } = useEnviarWhatsapp();
   const [texto, setTexto] = useState('');
@@ -173,7 +176,7 @@ export default function PanelConversacion({
   };
 
   return (
-    <div className="flex flex-col gap-4 min-w-0">
+    <div className={cn('flex flex-col gap-4 min-w-0', className)}>
       {/* Lo que pasó, primero. Aunque no se pueda escribir, esto es lo que
           decide si hay que llamar. */}
       <ConversacionChat

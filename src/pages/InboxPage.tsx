@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { MessageSquare, Phone, MapPin, Package, Clock, Inbox, CheckCircle2, Loader2, Truck, Home, ChevronRight } from 'lucide-react';
+import { MessageSquare, Phone, MapPin, Package, Clock, Inbox, CheckCircle2, Loader2 } from 'lucide-react';
 import { useStore } from '@/contexts/StoreContext';
 import { useInboxEsperando, type InboxItem } from '@/hooks/useInboxEsperando';
 import { useImporchatSyncHealth } from '@/hooks/useImporchatSyncHealth';
@@ -28,9 +28,9 @@ function useMinuteTick(): void {
 /**
  * ¿Cabe la cola Y la conversación al lado?
  *
- * A 1024 px hay lugar para una columna de ~340 px y un hilo legible. Debajo de
+ * A 1024 px hay lugar para una columna de ~300 px y un hilo legible. Debajo de
  * eso la bandeja sigue siendo la lista de siempre con el cuadro modal: apretar
- * media pantalla en un celular no sería un panel, sería dos cosas ilegibles.
+ * media pantalla en un celular no sería un panel, serían dos cosas ilegibles.
  *
  * Arranca en `false` a propósito: antes del primer efecto no se sabe el ancho,
  * y el layout angosto —el que ya existía— es el que funciona en las dos.
@@ -48,11 +48,11 @@ function usePantallaAncha(): boolean {
 }
 
 // Más de 3 h esperando = urgente (rojo); 1-3 h = tibio (ámbar); recién = normal.
-function tono(entranteAt: number): { chip: string; dot: string } {
+function tono(entranteAt: number): { chip: string; dot: string; texto: string } {
   const h = (Date.now() - entranteAt) / 3_600_000;
-  if (h >= 3) return { chip: 'bg-danger/14 border-danger/30 text-danger', dot: 'bg-danger' };
-  if (h >= 1) return { chip: 'bg-warning/14 border-warning/30 text-warning', dot: 'bg-warning' };
-  return { chip: 'bg-success/14 border-success/30 text-success', dot: 'bg-success' };
+  if (h >= 3) return { chip: 'bg-danger/14 border-danger/30 text-danger', dot: 'bg-danger', texto: 'text-danger' };
+  if (h >= 1) return { chip: 'bg-warning/14 border-warning/30 text-warning', dot: 'bg-warning', texto: 'text-warning' };
+  return { chip: 'bg-success/14 border-success/30 text-success', dot: 'bg-success', texto: 'text-success' };
 }
 
 /** Iniciales para el círculo. Ayuda a volver a encontrar a la misma persona en
@@ -61,6 +61,19 @@ function iniciales(nombre: string): string {
   const p = nombre.trim().split(/\s+/).filter(Boolean);
   if (p.length === 0) return '?';
   return ((p[0][0] || '') + (p.length > 1 ? p[p.length - 1][0] || '' : '')).toUpperCase();
+}
+
+/**
+ * ¿Se le puede escribir gratis todavía?
+ *
+ * ⛔ Es una PISTA, no el veredicto. Sale de `chat_entrante_at`, que lo escribe
+ * el sync y puede tener ~20 min. El panel vuelve a decidir con el hilo recién
+ * leído, y el servidor revalida antes de mandar. Vale la pena igual: saber
+ * ANTES de abrir que a este cliente ya no se le puede escribir gratis cambia a
+ * quién atiende primero la asesora.
+ */
+function soloPlantilla(o: InboxItem): boolean {
+  return ventanaWhatsapp(o.entranteAt, true).estado === 'vencida';
 }
 
 /** Los datos con los que se rellenan los huecos de una plantilla aprobada. */
@@ -158,105 +171,134 @@ function BotonResponder({ onClick, disabled }: { onClick: () => void; disabled?:
 }
 
 /**
- * Una persona de la cola.
+ * Una fila de la cola, estilo lista de chats: círculo, nombre, una línea de
+ * contexto y el reloj a la derecha.
  *
- * `compacto` es el modo de la columna izquierda cuando la conversación va al
- * lado: sin botonera, porque los botones viven en el panel — se actúa DESPUÉS
- * de leer, que es la regla de esta pantalla. En angosto se dibuja completa,
- * exactamente como venía.
+ * ⛔ `min-w-0` en TODA la cadena hasta el texto. Sin eso un nombre largo o una
+ * dirección sin espacios no se recorta: empuja la columna, y en un grid la
+ * columna empuja la página entera. Eso fue exactamente lo que pasó la primera
+ * vez que se armó este panel — la pantalla se desbordó a lo ancho y había que
+ * scrollear de lado para ver la barra lateral.
  */
-function FilaCliente({ o, compacto, seleccionado, onSelect, children }: {
+function FilaCola({ o, seleccionada, onSelect }: {
   o: InboxItem;
-  compacto: boolean;
-  seleccionado?: boolean;
-  onSelect?: () => void;
-  children?: ReactNode;
+  seleccionada: boolean;
+  onSelect: () => void;
 }) {
   const t = tono(o.entranteAt);
-  // ⛔ Es una PISTA, no el veredicto. Sale de `chat_entrante_at`, que lo escribe
-  // el sync y puede tener ~20 min. El panel vuelve a decidir con el hilo recién
-  // leído, y el servidor revalida antes de mandar. Vale la pena igual: saber
-  // ANTES de abrir que a este cliente ya no se le puede escribir gratis cambia
-  // a quién atiende primero la asesora.
-  const vencida = ventanaWhatsapp(o.entranteAt, true).estado === 'vencida';
-
-  const Cuerpo = (
-    <>
-      <div className="flex items-start gap-3 min-w-0">
+  const contexto = [o.producto, o.ciudad].filter(Boolean).join(' · ');
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-current={seleccionada ? 'true' : undefined}
+      className={`w-full text-left px-3 py-2.5 flex items-start gap-2.5 min-w-0 border-l-2 transition-colors ${
+        seleccionada
+          ? 'bg-accent/10 border-l-accent'
+          : 'border-l-transparent hover:bg-card/60'
+      }`}
+    >
+      <span className="relative shrink-0">
         <span
-          className={`w-9 h-9 shrink-0 rounded-xl border flex items-center justify-center text-[11px] font-bold ${seleccionado ? 'bg-accent/20 border-accent/40 text-accent' : 'bg-card/60 border-border text-muted-foreground'}`}
+          className={`w-9 h-9 rounded-full border flex items-center justify-center text-[11px] font-bold ${
+            seleccionada ? 'bg-accent/20 border-accent/40 text-accent' : 'bg-card/60 border-border text-muted-foreground'
+          }`}
           aria-hidden="true"
         >
           {iniciales(o.nombre)}
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-bold text-foreground truncate">{o.nombre}</span>
-            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[11px] font-bold ${t.chip}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${t.dot}`} aria-hidden="true" />
-              <Clock size={10} aria-hidden="true" /> {haceCuantoMs(o.entranteAt)}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap mt-1">
-            <span className="pill pill-neutral text-[10px] px-2 py-0.5 rounded-full font-semibold">{o.estado || '—'}</span>
-            {/* Días EN ESE ESTADO, no desde que nació el pedido: es el reloj que
-                dice qué tan cerca está de devolverse. `null` se dibuja "—". */}
-            <span
-              className="text-[10px] font-mono tabular-nums font-bold text-muted-foreground"
-              title={o.diasEnEstado == null
-                ? 'Dropi no reporta cuándo se movió por última vez'
-                : `Lleva ${o.diasEnEstado} ${o.diasEnEstado === 1 ? 'día' : 'días'} en «${o.estado || 'este estado'}»`}
-            >
-              D{o.diasEnEstado ?? '—'}
-            </span>
-            {vencida && (
-              <span
-                className="text-[10px] px-2 py-0.5 rounded-full font-bold border border-warning/40 bg-warning/10 text-warning"
-                title="Pasaron más de 24 h desde su último mensaje: WhatsApp ya no entrega texto escrito a mano, hay que mandarle una plantilla aprobada."
-              >
-                solo plantilla
-              </span>
-            )}
-          </div>
-          <div className="text-xs text-muted-foreground mt-1.5 space-y-0.5">
-            <div className="font-mono tabular-nums">{formatPhone(o.phone)}</div>
-            {(o.producto || o.ciudad) && (
-              <div className="flex items-center gap-3 flex-wrap">
-                {o.producto && <span className="inline-flex items-center gap-1 truncate"><Package size={11} aria-hidden="true" /> {o.producto}</span>}
-                {o.ciudad && <span className="inline-flex items-center gap-1"><MapPin size={11} aria-hidden="true" /> {o.ciudad}</span>}
-                {o.valor ? <span className="font-mono tabular-nums font-semibold text-foreground">{formatCOP(o.valor)}</span> : null}
-              </div>
-            )}
-          </div>
-        </div>
-        {compacto && (
-          <ChevronRight size={16} className={`shrink-0 mt-1 ${seleccionado ? 'text-accent' : 'text-muted-foreground/50'}`} aria-hidden="true" />
+        {/* El punto de "sin contestar", como cualquier bandeja. */}
+        <span className={`absolute -right-0.5 -top-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-background ${t.dot}`} aria-hidden="true" />
+      </span>
+
+      <span className="min-w-0 flex-1 block">
+        <span className="flex items-baseline gap-2 min-w-0">
+          <span className="text-sm font-bold text-foreground truncate min-w-0">{o.nombre}</span>
+          <span className={`ml-auto shrink-0 text-[10px] font-mono tabular-nums font-bold ${t.texto}`}>
+            {haceCuantoMs(o.entranteAt)}
+          </span>
+        </span>
+        {contexto && (
+          <span className="block text-xs text-muted-foreground truncate mt-0.5">{contexto}</span>
         )}
+        <span className="flex items-center gap-1.5 mt-1 flex-wrap">
+          <span className="pill pill-neutral text-[9px] px-1.5 py-0.5 rounded-full font-semibold">{o.estado || '—'}</span>
+          <span
+            className="text-[9px] font-mono tabular-nums font-bold text-muted-foreground"
+            title={o.diasEnEstado == null
+              ? 'Dropi no reporta cuándo se movió por última vez'
+              : `Lleva ${o.diasEnEstado} ${o.diasEnEstado === 1 ? 'día' : 'días'} en «${o.estado || 'este estado'}»`}
+          >
+            D{o.diasEnEstado ?? '—'}
+          </span>
+          {soloPlantilla(o) && (
+            <span
+              className="text-[9px] px-1.5 py-0.5 rounded-full font-bold border border-warning/40 bg-warning/10 text-warning"
+              title="Pasaron más de 24 h desde su último mensaje: WhatsApp ya no entrega texto escrito a mano, hay que mandarle una plantilla aprobada."
+            >
+              solo plantilla
+            </span>
+          )}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/** Una fila de la ficha del cliente: etiqueta arriba, valor abajo. */
+function Dato({ etiqueta, children }: { etiqueta: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">{etiqueta}</div>
+      <div className="text-xs text-foreground break-words">{children}</div>
+    </div>
+  );
+}
+
+/** La tarjeta completa de la lista angosta (celular y tablet): como venía. */
+function TarjetaLista({ o, children }: { o: InboxItem; children: ReactNode }) {
+  const t = tono(o.entranteAt);
+  return (
+    <div className="relative bg-card/40 border border-border rounded-2xl p-4 flex flex-col gap-3 hover:border-border-strong transition-colors min-w-0">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-base font-bold text-foreground truncate">{o.nombre}</span>
+          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[11px] font-bold ${t.chip}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${t.dot}`} aria-hidden="true" />
+            <Clock size={10} aria-hidden="true" /> {haceCuantoMs(o.entranteAt)}
+          </span>
+          <span className="pill pill-neutral text-[10px] px-2 py-0.5 rounded-full font-semibold">{o.estado || '—'}</span>
+          {/* Días EN ESE ESTADO, no desde que nació el pedido: es el reloj que
+              dice qué tan cerca está de devolverse. `null` se dibuja "—". */}
+          <span
+            className="text-[10px] font-mono tabular-nums font-bold text-muted-foreground"
+            title={o.diasEnEstado == null
+              ? 'Dropi no reporta cuándo se movió por última vez'
+              : `Lleva ${o.diasEnEstado} ${o.diasEnEstado === 1 ? 'día' : 'días'} en «${o.estado || 'este estado'}»`}
+          >
+            D{o.diasEnEstado ?? '—'}
+          </span>
+          {soloPlantilla(o) && (
+            <span
+              className="text-[10px] px-2 py-0.5 rounded-full font-bold border border-warning/40 bg-warning/10 text-warning"
+              title="Pasaron más de 24 h desde su último mensaje: hay que mandarle una plantilla aprobada."
+            >
+              solo plantilla
+            </span>
+          )}
+        </div>
+        <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
+          <div className="font-mono tabular-nums">{formatPhone(o.phone)}</div>
+          {(o.producto || o.ciudad) && (
+            <div className="flex items-center gap-3 flex-wrap">
+              {o.producto && <span className="inline-flex items-center gap-1"><Package size={11} aria-hidden="true" /> {o.producto}</span>}
+              {o.ciudad && <span className="inline-flex items-center gap-1"><MapPin size={11} aria-hidden="true" /> {o.ciudad}</span>}
+              {o.valor ? <span className="font-mono tabular-nums font-semibold text-foreground">{formatCOP(o.valor)}</span> : null}
+            </div>
+          )}
+        </div>
       </div>
       {children}
-    </>
-  );
-
-  if (compacto) {
-    return (
-      <button
-        type="button"
-        onClick={onSelect}
-        aria-current={seleccionado ? 'true' : undefined}
-        className={`w-full text-left rounded-2xl p-3 border transition-colors ${
-          seleccionado
-            ? 'bg-accent/10 border-accent/40'
-            : 'bg-card/40 border-border hover:border-border-strong'
-        }`}
-      >
-        {Cuerpo}
-      </button>
-    );
-  }
-
-  return (
-    <div className="relative bg-card/40 border border-border rounded-2xl p-4 flex flex-col gap-3 hover:border-border-strong transition-colors">
-      {Cuerpo}
     </div>
   );
 }
@@ -319,10 +361,14 @@ export default function InboxPage() {
   const llamar = (phone: string) => { void recordContacto(phone, 'LLAMADA', 'llamó'); };
 
   return (
-    <div className={ancha ? 'max-w-[1500px] mx-auto' : 'max-w-3xl mx-auto'}>
-      <header className="mb-5">
+    // ⛔ `overflow-x-hidden` y `w-full`: la red de seguridad del desborde. Si
+    // alguna vez vuelve a colarse un hijo que no se deja achicar, esta pantalla
+    // recorta en vez de empujar el ancho de TODA la app y obligar a scrollear de
+    // lado para encontrar la barra lateral.
+    <div className={`w-full min-w-0 overflow-x-hidden ${ancha ? 'max-w-[1500px] mx-auto' : 'max-w-3xl mx-auto'}`}>
+      <header className="mb-4">
         <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold mb-1">CRM · WhatsApp</div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3 flex-wrap">
           <span className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
             <Inbox size={20} strokeWidth={2.25} />
           </span>
@@ -397,50 +443,65 @@ export default function InboxPage() {
         </div>
       )}
 
-      {/* ── ANCHA: la cola a la izquierda, la conversación al lado ────────────
-          Antes había que abrir un cuadro por cliente, leerlo, cerrarlo y volver
-          a la lista. Con nueve personas esperando eso son nueve aperturas, y la
-          pantalla mostraba a alguien esperando hace TRES DÍAS. Acá se elige y se
-          lee en el mismo lugar, y al contestar la cola pasa sola al siguiente. */}
+      {/* ── ANCHA: cola · conversación · ficha, dentro de UN marco ────────────
+          Tres paneles pegados con divisorias, no tres tarjetas flotando: es lo
+          que hace que se lea como una bandeja de chat y no como un listado con
+          un anexo. Cada panel scrollea por dentro.
+
+          ⛔ TODAS las columnas van `minmax(0,…)`. El valor por defecto de una
+          columna de grid es `min-width:auto`, o sea "no me achico por debajo de
+          mi contenido" — y con eso una dirección larga o una burbuja de chat
+          ancha empujan la columna, la columna empuja el grid y el grid empuja la
+          página entera. Pasó en producción el 3-sep-2026: la pantalla se
+          desbordó a lo ancho y había que scrollear de lado para ver el menú. */}
       {status === 'ok' && items.length > 0 && ancha && (
-        <div className="grid grid-cols-[minmax(300px,360px)_1fr] gap-4 items-start">
-          <div className="flex flex-col gap-2 max-h-[calc(100vh-15rem)] overflow-y-auto pr-1" role="list">
-            {items.map((o) => (
-              <FilaCliente
-                key={o.dbId}
-                o={o}
-                compacto
-                seleccionado={o.dbId === selId}
-                onSelect={() => setSelId(o.dbId)}
-              />
-            ))}
+        <div className="grid min-w-0 grid-cols-[minmax(0,290px)_minmax(0,1fr)] xl:grid-cols-[minmax(0,300px)_minmax(0,1fr)_minmax(0,280px)] rounded-2xl border border-border bg-card/30 overflow-hidden">
+
+          {/* 1 · LA COLA */}
+          <div className="min-w-0 flex flex-col border-r border-border">
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-border/70 shrink-0">
+              <Inbox size={12} className="text-muted-foreground" aria-hidden="true" />
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Esperando</span>
+              <span className="ml-auto text-[11px] font-mono tabular-nums font-bold text-danger">{items.length}</span>
+            </div>
+            <div className="overflow-y-auto max-h-[70vh] divide-y divide-border/50" role="list">
+              {items.map((o) => (
+                <FilaCola
+                  key={o.dbId}
+                  o={o}
+                  seleccionada={o.dbId === selId}
+                  onSelect={() => setSelId(o.dbId)}
+                />
+              ))}
+            </div>
           </div>
 
-          <div className="sticky top-0">
+          {/* 2 · LA CONVERSACIÓN */}
+          <div className="min-w-0 flex flex-col">
             {sel ? (
-              <div className="rounded-2xl border border-border bg-card/40 p-4 flex flex-col gap-4">
-                <div className="flex items-start justify-between gap-3 flex-wrap">
+              <>
+                <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border/70 min-w-0 shrink-0">
+                  <span className="w-9 h-9 shrink-0 rounded-full bg-accent/15 border border-accent/30 text-accent flex items-center justify-center text-[11px] font-bold" aria-hidden="true">
+                    {iniciales(sel.nombre)}
+                  </span>
                   <div className="min-w-0">
-                    <h2 className="text-lg font-bold text-foreground truncate">{sel.nombre}</h2>
-                    <div className="text-xs text-muted-foreground font-mono tabular-nums mt-0.5">{formatPhone(sel.phone)}</div>
+                    <h2 className="text-sm font-bold text-foreground truncate">{sel.nombre}</h2>
+                    <div className="text-[11px] text-muted-foreground font-mono tabular-nums">{formatPhone(sel.phone)}</div>
                   </div>
-                  <span className="pill pill-neutral text-[10px] px-2 py-0.5 rounded-full font-semibold">{sel.estado || '—'}</span>
+                  <span className="ml-auto shrink-0 pill pill-neutral text-[10px] px-2 py-0.5 rounded-full font-semibold">
+                    {sel.estado || '—'}
+                  </span>
                 </div>
 
-                {/* El contexto del pedido, a la vista mientras se contesta. Sin
-                    esto la asesora tiene que abrir la ficha en otra pestaña para
-                    responder "¿dónde va mi paquete?" — que es LA pregunta. */}
-                <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
-                  {sel.producto && <span className="inline-flex items-center gap-1.5"><Package size={12} aria-hidden="true" /> {sel.producto}</span>}
-                  {sel.ciudad && <span className="inline-flex items-center gap-1.5"><MapPin size={12} aria-hidden="true" /> {sel.ciudad}</span>}
-                  {sel.valor ? <span className="font-mono tabular-nums font-semibold text-foreground">{formatCOP(sel.valor)}</span> : null}
-                  {(sel.transportadora || sel.guia) && (
-                    <span className="inline-flex items-center gap-1.5">
-                      <Truck size={12} aria-hidden="true" />
-                      {sel.transportadora || '—'}{sel.guia ? <span className="font-mono tabular-nums"> · {sel.guia}</span> : null}
-                    </span>
-                  )}
-                  {sel.direccion && <span className="inline-flex items-center gap-1.5 min-w-0"><Home size={12} aria-hidden="true" className="shrink-0" /> <span className="truncate">{sel.direccion}</span></span>}
+                {/* El contexto mínimo también acá, porque la ficha de la derecha
+                    no existe por debajo de 1280 px y "¿dónde va mi paquete?" es
+                    LA pregunta que hay que poder contestar sin cambiar de
+                    pantalla. */}
+                <div className="xl:hidden flex flex-wrap gap-x-3 gap-y-1 px-4 py-2 border-b border-border/70 text-[11px] text-muted-foreground min-w-0 shrink-0">
+                  {sel.producto && <span className="truncate max-w-full">{sel.producto}</span>}
+                  {sel.ciudad && <span>· {sel.ciudad}</span>}
+                  {sel.valor ? <span className="font-mono tabular-nums font-semibold text-foreground">· {formatCOP(sel.valor)}</span> : null}
+                  {sel.transportadora && <span>· {sel.transportadora}</span>}
                 </div>
 
                 {/* `key` por pedido: al cambiar de cliente el panel se re-monta
@@ -458,30 +519,71 @@ export default function InboxPage() {
                     actividad={actividadDe(sel)}
                     datos={datosDe(sel)}
                     modulo="SEG"
-                    altoChat="min-h-[240px] max-h-[44vh]"
+                    altoChat="min-h-[220px] max-h-[42vh]"
+                    className="p-4 gap-3 min-w-0"
                   />
                 ) : (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="p-4 text-xs text-muted-foreground">
                     Este pedido no tiene número de orden, así que no se puede abrir su conversación desde acá.
                   </p>
                 )}
 
-                <Acciones o={sel} cc={cc} onLlamar={llamar} className="border-t border-border pt-3" />
-              </div>
+                <Acciones o={sel} cc={cc} onLlamar={llamar} className="px-4 pb-4 pt-0" />
+              </>
             ) : (
-              <div className="rounded-2xl border border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
+              <div className="p-10 text-center text-sm text-muted-foreground">
                 Elegí a alguien de la lista para leer lo que escribió.
               </div>
             )}
           </div>
+
+          {/* 3 · LA FICHA DEL PEDIDO (desde 1280 px) */}
+          <aside className="hidden xl:flex min-w-0 flex-col border-l border-border">
+            <div className="px-3 py-2 border-b border-border/70 shrink-0">
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Su pedido</span>
+            </div>
+            {sel ? (
+              <div className="overflow-y-auto max-h-[70vh] p-3 flex flex-col gap-3 min-w-0">
+                <Dato etiqueta="Producto">{sel.producto || '—'}</Dato>
+                <Dato etiqueta="Valor">
+                  <span className="font-mono tabular-nums font-semibold">{sel.valor ? formatCOP(sel.valor) : '—'}</span>
+                </Dato>
+                <Dato etiqueta="Ciudad">{sel.ciudad || '—'}</Dato>
+                <Dato etiqueta="Dirección">{sel.direccion || '—'}</Dato>
+                <Dato etiqueta="Transportadora">{sel.transportadora || '—'}</Dato>
+                <Dato etiqueta="Guía">
+                  <span className="font-mono tabular-nums">{sel.guia || '—'}</span>
+                </Dato>
+                <Dato etiqueta="Estado">
+                  {sel.estado || '—'}
+                  {sel.diasEnEstado != null && (
+                    <span className="text-muted-foreground"> · {sel.diasEnEstado} {sel.diasEnEstado === 1 ? 'día' : 'días'} así</span>
+                  )}
+                </Dato>
+                <Dato etiqueta="Teléfono">
+                  <span className="font-mono tabular-nums">{formatPhone(sel.phone)}</span>
+                </Dato>
+                {sel.externalId && (
+                  <Link
+                    to={`/pedido/${sel.externalId}`}
+                    className="mt-1 text-[11px] font-semibold text-accent hover:underline"
+                  >
+                    Abrir el pedido #{sel.externalId} →
+                  </Link>
+                )}
+              </div>
+            ) : (
+              <div className="p-3 text-xs text-muted-foreground">—</div>
+            )}
+          </aside>
         </div>
       )}
 
       {/* ── ANGOSTA: la lista de siempre, con el cuadro modal ───────────────── */}
       {status === 'ok' && items.length > 0 && !ancha && (
-        <div className="flex flex-col gap-2.5">
+        <div className="flex flex-col gap-2.5 min-w-0">
           {items.map((o) => (
-            <FilaCliente key={o.dbId} o={o} compacto={false}>
+            <TarjetaLista key={o.dbId} o={o}>
               <div className="flex gap-2 flex-wrap">
                 {/* ⛔ ACÁ LEER VA PRIMERO, SIEMPRE (28-ago-2026).
                     Esta pantalla es, por definición, la de los clientes que
@@ -494,7 +596,7 @@ export default function InboxPage() {
                 <BotonResponder onClick={() => setAbierto(o)} disabled={!o.externalId} />
                 <Acciones o={o} cc={cc} onLlamar={llamar} plano />
               </div>
-            </FilaCliente>
+            </TarjetaLista>
           ))}
         </div>
       )}
