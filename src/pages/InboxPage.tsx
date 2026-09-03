@@ -15,6 +15,8 @@ import { precargarPlantillas } from '@/hooks/usePlantillasMeta';
 import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDialog';
 import PanelConversacion from '@/components/seguimiento/PanelConversacion';
 import AccionPrincipal from '@/components/seguimiento/AccionPrincipal';
+import SelloGestion from '@/components/comun/SelloGestion';
+import { useSelloGestion, type EstadoSello, type Sello } from '@/hooks/useSelloGestion';
 
 // Re-render cada 60s para que "hace 2 h" suba solo, sin re-fetch.
 function useMinuteTick(): void {
@@ -180,10 +182,13 @@ function BotonResponder({ onClick, disabled }: { onClick: () => void; disabled?:
  * vez que se armó este panel — la pantalla se desbordó a lo ancho y había que
  * scrollear de lado para ver la barra lateral.
  */
-function FilaCola({ o, seleccionada, onSelect }: {
+function FilaCola({ o, seleccionada, onSelect, sello, estadoSello, miId }: {
   o: InboxItem;
   seleccionada: boolean;
   onSelect: () => void;
+  sello: Sello | null;
+  estadoSello: EstadoSello;
+  miId: string | null;
 }) {
   const t = tono(o.entranteAt);
   const contexto = [o.producto, o.ciudad].filter(Boolean).join(' · ');
@@ -240,6 +245,16 @@ function FilaCola({ o, seleccionada, onSelect }: {
             </span>
           )}
         </span>
+        {/* ⛔ EL SELLO (3-sep-2026). Esta bandeja no mostraba NADA de gestión:
+            una asesora podía haberle contestado a este cliente hace diez minutos
+            desde otra pantalla y acá seguía viéndose como si nadie lo hubiera
+            tocado. Eso es exactamente el regaño injusto que el dueño quiere
+            evitar. Compacto porque la columna es angosta. */}
+        {sello && (
+          <span className="block mt-1">
+            <SelloGestion sello={sello} estado={estadoSello} miId={miId} compacto />
+          </span>
+        )}
       </span>
     </button>
   );
@@ -256,7 +271,13 @@ function Dato({ etiqueta, children }: { etiqueta: string; children: ReactNode })
 }
 
 /** La tarjeta completa de la lista angosta (celular y tablet): como venía. */
-function TarjetaLista({ o, children }: { o: InboxItem; children: ReactNode }) {
+function TarjetaLista({ o, sello, estadoSello, miId, children }: {
+  o: InboxItem;
+  sello: Sello | null;
+  estadoSello: EstadoSello;
+  miId: string | null;
+  children: ReactNode;
+}) {
   const t = tono(o.entranteAt);
   return (
     <div className="relative bg-card/40 border border-border rounded-2xl p-4 flex flex-col gap-3 hover:border-border-strong transition-colors min-w-0">
@@ -286,6 +307,7 @@ function TarjetaLista({ o, children }: { o: InboxItem; children: ReactNode }) {
               solo plantilla
             </span>
           )}
+          <SelloGestion sello={sello} estado={estadoSello} miId={miId} />
         </div>
         <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
           <div className="font-mono tabular-nums">{formatPhone(o.phone)}</div>
@@ -327,6 +349,14 @@ export default function InboxPage() {
   useMinuteTick();
 
   const cc = activeStore?.country_code;
+
+  // Quién tocó cada uno de estos clientes, de todas las pantallas. Los teléfonos
+  // se piden en un solo viaje para toda la cola, no una consulta por tarjeta.
+  const telefonosCola = useMemo(
+    () => items.map((i) => i.phone).filter(Boolean),
+    [items],
+  );
+  const { selloDe, estado: estadoSello, miId } = useSelloGestion(activeStoreId, telefonosCola);
 
   // La cola avanza sola: si el seleccionado ya no está (le contestaron y salió
   // de la lista), pasa al siguiente en vez de dejar el panel vacío. Ese detalle
@@ -471,6 +501,9 @@ export default function InboxPage() {
                   o={o}
                   seleccionada={o.dbId === selId}
                   onSelect={() => setSelId(o.dbId)}
+                  sello={selloDe(o.phone)}
+                  estadoSello={estadoSello}
+                  miId={miId}
                 />
               ))}
             </div>
@@ -488,8 +521,11 @@ export default function InboxPage() {
                     <h2 className="text-sm font-bold text-foreground truncate">{sel.nombre}</h2>
                     <div className="text-[11px] text-muted-foreground font-mono tabular-nums">{formatPhone(sel.phone)}</div>
                   </div>
-                  <span className="ml-auto shrink-0 pill pill-neutral text-[10px] px-2 py-0.5 rounded-full font-semibold">
-                    {sel.estado || '—'}
+                  <span className="ml-auto shrink-0 flex items-center gap-2">
+                    <SelloGestion sello={selloDe(sel.phone)} estado={estadoSello} miId={miId} />
+                    <span className="pill pill-neutral text-[10px] px-2 py-0.5 rounded-full font-semibold">
+                      {sel.estado || '—'}
+                    </span>
                   </span>
                 </div>
 
@@ -583,7 +619,7 @@ export default function InboxPage() {
       {status === 'ok' && items.length > 0 && !ancha && (
         <div className="flex flex-col gap-2.5 min-w-0">
           {items.map((o) => (
-            <TarjetaLista key={o.dbId} o={o}>
+            <TarjetaLista key={o.dbId} o={o} sello={selloDe(o.phone)} estadoSello={estadoSello} miId={miId}>
               <div className="flex gap-2 flex-wrap">
                 {/* ⛔ ACÁ LEER VA PRIMERO, SIEMPRE (28-ago-2026).
                     Esta pantalla es, por definición, la de los clientes que

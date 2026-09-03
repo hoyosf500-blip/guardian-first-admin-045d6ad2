@@ -14,6 +14,9 @@ export type SegOwnerBucket = 'mine' | 'available' | 'other';
 /** Touchpoint mínimo necesario para clasificar (la fila real trae más campos). */
 interface TouchpointLike {
   operator_id: string;
+  /** Solo hace falta si se pide una ventana. Sin él, la fila NO se descarta:
+   *  no saber cuándo fue no es razón para borrar una gestión que existió. */
+  created_at?: string | null;
 }
 
 /**
@@ -21,15 +24,37 @@ interface TouchpointLike {
  *  - 'available' → ningún touchpoint de operadora (nadie lo ha gestionado)
  *  - 'mine'      → tengo al menos un touchpoint propio
  *  - 'other'     → solo lo ha gestionado otra operadora
+ *
+ * `desdeMs` (opcional) acota la ventana.
+ *
+ * ⛔ POR QUÉ EXISTE (3-sep-2026). Esta función NO miraba la fecha, y `CrmTable`
+ * le pasa **60 días** de touchpoints. O sea que un pedido que alguien tocó hace
+ * cincuenta días seguía diciendo **"Mío"** en la vista Lista, como si estuviera
+ * trabajado hoy. El dueño necesita esa etiqueta para saber a quién NO regañar:
+ * una etiqueta que se queda pegada dos meses no le sirve para eso — le dice que
+ * está atendido algo que nadie mira desde marzo.
+ *
+ * Es opcional a propósito: quien no la pasa se comporta EXACTAMENTE como antes.
+ * El filtro "solo disponibles" de la lista no la usa a propósito (ver `CrmTable`).
  */
 export function classifySegOwnershipFromTps(
   tps: TouchpointLike[],
   currentUserId: string | undefined,
   adminIds: string[],
+  desdeMs?: number,
 ): SegOwnerBucket {
   const adminSet = new Set(adminIds);
   // Solo cuentan las gestiones de operadoras (no de admins auditando).
-  const operatorTps = tps.filter((tp) => !adminSet.has(tp.operator_id));
+  const operatorTps = tps.filter((tp) => {
+    if (adminSet.has(tp.operator_id)) return false;
+    if (desdeMs == null) return true;
+    // Una fila sin fecha NO se descarta: "no sé cuándo fue" no es lo mismo que
+    // "fue hace mucho", y descartarla convertiría una gestión real en un pedido
+    // "que nadie tocó" — el error caro en esta pantalla.
+    if (!tp.created_at) return true;
+    const t = Date.parse(tp.created_at);
+    return !Number.isFinite(t) || t >= desdeMs;
+  });
 
   if (operatorTps.length === 0) return 'available';
   if (currentUserId && operatorTps.some((tp) => tp.operator_id === currentUserId)) {

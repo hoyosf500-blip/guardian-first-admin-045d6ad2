@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useOrders } from '@/contexts/OrderContext';
 import { useStore } from '@/contexts/StoreContext';
@@ -11,6 +11,8 @@ import { copyToClipboard } from '@/lib/clipboard';
 import { useMarkNovedadResolved } from '@/hooks/useMarkNovedadResolved';
 import { useRecordGestion } from '@/hooks/useRecordGestion';
 import { usePedidoALaVista } from '@/hooks/useBitacoraPedido';
+import { useSelloGestion } from '@/hooks/useSelloGestion';
+import SelloGestion from '@/components/comun/SelloGestion';
 import { NovedadResultTipo } from '@/lib/novedadGestion';
 import { AuroraBackdrop } from '@/components/ui3d';
 import {
@@ -64,7 +66,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
   const { loadNovedades } = useOrders();
   const { markNovedad } = useMarkNovedadResolved();
   const recordContacto = useRecordGestion();
-  const { activeStore } = useStore();
+  const { activeStore, activeStoreId } = useStore();
   const countryCode = activeStore?.country_code;
   // BUG B fix: persist by *order id*, not array index. When the queue
   // reorders or the operator returns from the carrier tab we keep showing
@@ -115,6 +117,18 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
   // El hook abre, mide y cierra solo cuando cambia `o`. Si mientras estuvo
   // abierta hubo alguna gestion escribe `cerro`; si no hubo ninguna, `salto`.
   const { marcarGestion } = usePedidoALaVista(o ? { externalId: o.externalId, phone: o.phone } : null);
+
+  // ⛔ EL SELLO DE "YA LO TOCÓ" (3-sep-2026). Esta cola era la ÚNICA de las
+  // cuatro que no leía las gestiones: no mostraba nada, ni siquiera si alguien
+  // había marcado la novedad hace diez minutos. De ahí salió el pedido del
+  // dueño — una operadora dijo que la había tocado y no había con qué
+  // contrastarlo. Se leen todos los teléfonos de la cola de una vez, no uno por
+  // tarjeta, para no hacer una consulta por pedido.
+  const telefonosCola = useMemo(
+    () => visibleItems.map((it) => it.phone).filter(Boolean) as string[],
+    [visibleItems],
+  );
+  const { selloDe, estado: estadoSello, miId } = useSelloGestion(activeStoreId, telefonosCola);
   // Borrador de solución según la guía OFICIAL de Dropi para esa transportadora
   // y esa novedad (hojas «Estados y Novedades»): con el teléfono del pedido
   // puesto y huecos para lo que acordó la asesora. Solo Ecuador. Nunca se
@@ -251,6 +265,9 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
           <span className="dark:opacity-60">·</span>
           <span className="font-mono tabular-nums">{formatPhone(o.phone)}</span>
         </span>
+        {/* Quién la tocó y hace cuánto. Si nadie la tocó, no se dibuja nada —
+            el componente NUNCA afirma "nadie lo tocó" sobre datos que no llegaron. */}
+        <SelloGestion sello={selloDe(o.phone)} estado={estadoSello} miId={miId} />
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground font-mono tabular-nums">{callIdx + 1} / {visibleItems.length}</span>
           <div className="flex gap-1.5">

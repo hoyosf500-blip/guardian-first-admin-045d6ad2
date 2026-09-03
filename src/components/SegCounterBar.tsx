@@ -2,9 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
-import { CheckCircle2, ListChecks, Hourglass, Users, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, ListChecks, Hourglass, Users, AlertTriangle, Eye, SkipForward, Target } from 'lucide-react';
 import { bogotaToday } from '@/lib/utils';
 import { isSegCloser } from '@/lib/segDailyReview';
+import { useBitacoraDia } from '@/hooks/useBitacoraDia';
+import { useStoreSchedule } from '@/hooks/useStoreSchedule';
+import { scheduleFromMinutes, bogotaSecondsOfDay } from '@/lib/inactivityWindow';
+import { horarioNetoSeconds, horarioNetoTranscurridoSec } from '@/lib/jornadaMath';
+import { metaGestionesDelRango, nivelMeta } from '@/lib/responsabilidadAsesor';
 
 /**
  * Barra de productividad para Seguimiento. Cuenta touchpoints "SEG:*"
@@ -87,6 +92,39 @@ export default function SegCounterBar() {
     };
   }, [user, activeStoreId, refetch]);
 
+  // ── Su propio registro y su meta (3-sep-2026) ───────────────────────────────
+  //
+  // Pedido del dueño: *"que el asesor sepa que cualquier acción que haga se
+  // registra"*. La bitácora ya existía y ella ya podía entrar a /actividad, pero
+  // no estaba donde trabaja. **Saber que está anotado, y poder verlo, es lo que
+  // presiona** — y después nadie puede alegar que no sabía.
+  //
+  // Va SIN ranking entre compañeras, decisión del dueño: la competencia abierta
+  // empuja al descreme (agarrar solo los pedidos fáciles), que es justo lo que
+  // `MezclaTrabajoPanel` existe para detectar.
+  const { resumen: bitacora, estado: estadoBitacora } = useBitacoraDia(activeStoreId, bogotaToday(), user?.id ?? null);
+  const mio = bitacora[0] ?? null;
+
+  // La META, que hasta hoy solo alimentaba el semáforo del dueño y ella nunca
+  // veía. Prorrateada al turno transcurrido con la función que ya existe: a las
+  // 10:30 exigirle el día entero sería una vara falsa.
+  const scheduleQuery = useStoreSchedule(activeStoreId);
+  const meta = (() => {
+    if (!scheduleQuery.isSuccess || !scheduleQuery.data) return null;
+    const s = scheduleFromMinutes(scheduleQuery.data);
+    const neto = horarioNetoSeconds(s);
+    if (neto <= 0) return null;
+    const transcurrido = horarioNetoTranscurridoSec(s, bogotaSecondsOfDay(new Date()));
+    const m = metaGestionesDelRango('today', transcurrido / neto);
+    return m > 0 ? m : null;
+  })();
+  const nivel = meta != null ? nivelMeta(stats.myActions, meta) : null;
+  const metaTono =
+    nivel === 'optimo' ? 'text-success'
+    : nivel === 'aceptable' ? 'text-warning'
+    : nivel === 'lento' ? 'text-danger'
+    : 'text-muted-foreground';
+
   // El jefe (admin o dueño) no ve la barra de cola personal de operadora.
   if (!user || isAdmin || isOwnerOfActive) return null;
 
@@ -119,6 +157,7 @@ export default function SegCounterBar() {
   }
 
   const pendientes = Math.max(0, stats.myActions - stats.myResolved);
+
   // null = todavía no registraste acciones hoy → no hay tasa que calcular.
   // Antes caía a 0, que se leía como "0% de resolución" (un veredicto) sobre
   // una muestra vacía.
@@ -130,7 +169,8 @@ export default function SegCounterBar() {
     : 'bg-muted/60 text-muted-foreground border-border';
 
   return (
-    <div className="bg-card/40 border border-border rounded-2xl p-3.5 mb-4 flex items-center gap-4 flex-wrap shadow-card3d">
+    <div className="bg-card/40 border border-border rounded-2xl p-3.5 mb-4 shadow-card3d">
+    <div className="flex items-center gap-4 flex-wrap">
       {/* Rótulo de la barra (espeja "Equipo hoy" de CounterBar). Se oculta en
           celular para no apretar la fila: las asesoras trabajan desde el móvil. */}
       <span className="text-[10px] uppercase tracking-[0.08em] font-semibold text-muted-foreground shrink-0 hidden sm:inline">
@@ -175,6 +215,48 @@ export default function SegCounterBar() {
           <span>resueltos</span>
         </div>
       </div>
+    </div>
+
+    {/* ── Su propio registro, donde trabaja ─────────────────────────────────
+        Pedido del dueño: que la asesora sepa que cada acción queda anotada.
+        No es una amenaza: es su registro, el mismo que ve él, y lo puede
+        mirar entero en Actividad.
+
+        ⛔ Solo se dibuja con `estado === 'ok'`. Mientras carga —o si la
+        migración de la bitácora todavía no corrió— NO se pinta un "0 abiertos
+        · 0 pasaste sin gestionar", que sería un veredicto sobre datos que no
+        existen. Es la misma regla que ya rige los contadores de arriba. */}
+    {(estadoBitacora === 'ok' && mio) || meta != null ? (
+      <div className="mt-2.5 pt-2.5 border-t border-border/60 flex items-center gap-x-4 gap-y-1 flex-wrap text-[11px] text-muted-foreground">
+        {estadoBitacora === 'ok' && mio && (
+          <>
+            <span className="inline-flex items-center gap-1.5" title="Pedidos que abriste hoy, contados por el sistema.">
+              <Eye size={12} aria-hidden="true" />
+              <span className="font-mono tabular-nums font-bold text-foreground">{mio.abrio}</span> abriste
+            </span>
+            {mio.salto > 0 && (
+              <span
+                className="inline-flex items-center gap-1.5 text-warning"
+                title="Los abriste y pasaste al siguiente sin registrar ninguna gestión. Queda anotado."
+              >
+                <SkipForward size={12} aria-hidden="true" />
+                <span className="font-mono tabular-nums font-bold">{mio.salto}</span> pasaste sin gestionar
+              </span>
+            )}
+          </>
+        )}
+        {meta != null && (
+          <span
+            className={`inline-flex items-center gap-1.5 ml-auto ${metaTono}`}
+            title="La meta se calcula sobre lo que va del turno, no sobre el día entero."
+          >
+            <Target size={12} aria-hidden="true" />
+            Vas <span className="font-mono tabular-nums font-bold">{stats.myActions}</span>
+            {' '}de <span className="font-mono tabular-nums font-bold">{meta}</span> esperadas a esta hora
+          </span>
+        )}
+      </div>
+    ) : null}
     </div>
   );
 }

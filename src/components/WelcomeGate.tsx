@@ -1,7 +1,9 @@
-import { ReactNode, useCallback, useEffect, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock } from 'lucide-react';
+import { Clock, AlertTriangle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStoreSchedule } from '@/hooks/useStoreSchedule';
+import { avisoEntrada } from '@/lib/entradaTarde';
 import { useStore } from '@/contexts/StoreContext';
 import { supabase } from '@/integrations/supabase/client';
 import { AuroraBackdrop } from '@/components/ui3d';
@@ -60,6 +62,9 @@ interface Props { children: ReactNode }
  */
 
 const DURACION_MS = 2800;
+/** Con una advertencia encima, 2,8 s no alcanzan para leerla. No bloquea —sigue
+ *  cerrándose sola, la lección de `OpeningReportGate`— pero da tiempo de leer. */
+const DURACION_CON_AVISO_MS = 7000;
 
 function claveDeHoy(userId: string): string {
   return `guardian.welcome.${userId}.${bogotaToday()}`;
@@ -86,6 +91,32 @@ const esperar = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
  * política deja a un supervisor ver las filas de su equipo, esta consulta
  * seguiría trayendo UNA sola fila — la propia — en lugar de la de otra persona.
  */
+/**
+ * Las marcas de entrada de los días ANTERIORES (hasta 6, sin contar hoy).
+ *
+ * Es lo que convierte el aviso en algo que pesa: el reto de un día se olvida,
+ * *"3ª vez esta semana"* no. Si falla, se devuelve vacío y el aviso sale sin
+ * acumulado — nunca se inventa un historial.
+ */
+async function leerEntradasPrevias(userId: string, storeId: string): Promise<string[]> {
+  const hoy = bogotaToday();
+  try {
+    const { data } = await supabase
+      .from('operator_activity_daily')
+      .select('first_action_at, activity_date')
+      .eq('operator_id', userId)
+      .eq('store_id', storeId)
+      .lt('activity_date', hoy)
+      .order('activity_date', { ascending: false })
+      .limit(6);
+    return ((data ?? []) as { first_action_at: string | null }[])
+      .map((r) => r.first_action_at)
+      .filter((x): x is string => !!x);
+  } catch {
+    return [];
+  }
+}
+
 async function leerMarcaDeEntrada(userId: string, storeId: string): Promise<string | null> {
   const hoy = bogotaToday();
   for (let intento = 0; intento < 2; intento++) {
@@ -115,6 +146,27 @@ export default function WelcomeGate({ children }: Props) {
   // una hora nueva mientras la base conservaba la original — la pantalla
   // contradecía a /admin → Productividad. '' = no se pudo confirmar.
   const [horaEntrada, setHoraEntrada] = useState('');
+  // La marca cruda de hoy y las de los días anteriores, para el acumulado.
+  const [marcaHoy, setMarcaHoy] = useState<string | null>(null);
+  const [entradasPrevias, setEntradasPrevias] = useState<string[]>([]);
+  const scheduleQuery = useStoreSchedule(activeStoreId);
+
+  /**
+   * "32 min tarde · 3ª vez esta semana", o `null` si no hay nada que decir.
+   *
+   * ⛔ NO JUZGA HASTA SABER EL HORARIO. Mientras la consulta no haya resuelto se
+   * pasa `null` como hora de apertura, y `avisoEntrada` devuelve `texto: null`.
+   * Acusar contra un horario supuesto sería exactamente el error que esta
+   * pantalla no puede cometer: la asesora lo lee de sí misma.
+   */
+  const aviso = useMemo(
+    () => avisoEntrada(
+      marcaHoy,
+      entradasPrevias,
+      scheduleQuery.isSuccess ? scheduleQuery.data?.work_start_min ?? null : null,
+    ),
+    [marcaHoy, entradasPrevias, scheduleQuery.isSuccess, scheduleQuery.data],
+  );
 
   useEffect(() => {
     // Esperar a saber QUIÉN es: hasta que cargan los roles, `isAdmin` es false.
@@ -142,7 +194,14 @@ export default function WelcomeGate({ children }: Props) {
       const { saludar, horaSellada } = decidirApertura({ esAdmin: false, marcaEntrada: marca });
       if (!saludar) return;
       setHoraEntrada(horaSellada ? formatTimeBogota(horaSellada) : '');
+      setMarcaHoy(horaSellada ?? null);
       setVisible(true);
+      // El acumulado va DESPUÉS de mostrar la bienvenida y sin bloquearla: si
+      // esa consulta tarda o falla, el saludo sale igual y el aviso aparece sin
+      // el "3ª vez" en vez de no aparecer.
+      void leerEntradasPrevias(user.id, activeStoreId).then((previas) => {
+        if (!cancelado) setEntradasPrevias(previas);
+      });
     })();
     return () => { cancelado = true; };
   }, [user, profileLoaded, isAdmin, isOwnerOfActive, activeStoreId]);
@@ -154,11 +213,14 @@ export default function WelcomeGate({ children }: Props) {
   // (los diálogos de Radix lo usan para cerrarse).
   useEffect(() => {
     if (!visible) return;
-    const t = setTimeout(cerrar, DURACION_MS);
+    const t = setTimeout(cerrar, aviso.texto ? DURACION_CON_AVISO_MS : DURACION_MS);
     const onKey = () => cerrar();
     window.addEventListener('keydown', onKey);
     return () => { clearTimeout(t); window.removeEventListener('keydown', onKey); };
-  }, [visible, cerrar]);
+    // `aviso.texto` entra a propósito: el acumulado llega DESPUÉS de que la
+    // bienvenida ya se pintó, así que sin esta dependencia el reloj se quedaría
+    // en los 2,8 s cortos y la advertencia se iría antes de poder leerla.
+  }, [visible, cerrar, aviso.texto]);
 
   const saludo = greetingFor(profile?.display_name);
   const fecha = new Date().toLocaleDateString('es-CO', {
@@ -248,6 +310,28 @@ export default function WelcomeGate({ children }: Props) {
                   <span className="text-[13px] font-semibold text-success">
                     Turno iniciado · {horaEntrada}
                   </span>
+                </motion.div>
+              )}
+
+              {/* ⛔ LA ADVERTENCIA DE ENTRADA TARDE (3-sep-2026).
+                  El dato ya existía y SOLO lo veía el dueño, en su panel de
+                  Productividad: la asesora nunca se enteraba, así que no podía
+                  corregirse sola y cada conversación arrancaba de cero.
+
+                  No sale nunca si llegó puntual, si no se pudo medir la hora, o
+                  si todavía no se sabe el horario de la tienda: acusar contra un
+                  horario supuesto sería peor que no decir nada. Y no bloquea —
+                  la pantalla igual se cierra sola. */}
+              {!isAdmin && aviso.texto && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.94 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.5, ease: 'easeOut', delay: 1.0 }}
+                  className="relative mt-2.5 inline-flex items-center gap-2 rounded-xl border border-warning/40 bg-warning/12 px-3.5 py-2"
+                  role="status"
+                >
+                  <AlertTriangle size={14} className="text-warning shrink-0" aria-hidden="true" />
+                  <span className="text-[13px] font-semibold text-warning">{aviso.texto}</span>
                 </motion.div>
               )}
 

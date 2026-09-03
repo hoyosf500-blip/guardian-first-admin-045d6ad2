@@ -21,6 +21,7 @@ import { useStoreSchedule } from '@/hooks/useStoreSchedule';
 import { bogotaToday } from '@/lib/utils';
 import { isRpcMissing } from '@/lib/rpcError';
 import AdvisorCard from '@/components/admin/AdvisorCard';
+import AlertaEquipoStrip from '@/components/admin/AlertaEquipoStrip';
 import { buildAdvisorVMs } from '@/lib/advisorCardVM';
 import { useLiveTeam } from '@/hooks/useLiveTeam';
 import { useResponsabilidadAsesor } from '@/hooks/useResponsabilidadAsesor';
@@ -784,6 +785,10 @@ export default function ProductivityDashboard() {
                   </div>
                 )}
               </div>
+              {/* ⛔ ARRIBA DE LAS TARJETAS, no dentro de "Ver detalle". El dueño
+                  reportó que no volvía a ver las alertas de inactividad: el
+                  número existía, pero colapsado en cada tarjeta, una por una. */}
+              <AlertaEquipoStrip vms={advisorVMs} isToday={isToday} />
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {advisorVMs.map((vm) => (
                   <AdvisorCard

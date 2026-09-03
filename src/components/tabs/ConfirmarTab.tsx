@@ -23,6 +23,7 @@ import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { fetchPendientesDeConfirmar } from '@/lib/fetchPendientes';
 import { isLockedByOther } from '@/lib/callQueueNav';
 import { MAX_DAILY_ATTEMPTS, COOLDOWN_LABEL, REMIND_LOOKAHEAD_MS, estaAplazado, hasDueReminder } from '@/lib/confirmarQueue';
+import { resumirIntentos, textoIntentosAMedias } from '@/lib/intentosAMedias';
 import { toast } from 'sonner';
 import WorkList, { diasReales } from '@/components/WorkList';
 import CallView from '@/components/CallView';
@@ -834,6 +835,10 @@ export default function ConfirmarTab({ profile }: Props) {
               solo los pendientes que todavía no marcaste — accionable. */}
           {(() => {
             const tocadosHoy = myConfirmTouchedToday.size;
+            // Los que se llamaron una vez, no contestaron y ahí quedaron.
+            const textoAMedias = textoIntentosAMedias(
+              resumirIntentos(gestionPorPedido.values(), MAX_DAILY_ATTEMPTS),
+            );
             // Contar sobre EL MISMO arreglo que alimenta la lista (filteredItems,
             // ya con isLockedByOther + filtro 'pending'/activo + fecha/búsqueda
             // aplicados). Antes se contaba sobre visibleQueue crudo → el chip
@@ -910,6 +915,25 @@ export default function ConfirmarTab({ profile }: Props) {
                       {gestionCargada ? 'que nadie llamó' : 'sin tocar'}
                       {nadieLlamo === 0 && <span className="text-success ml-1">✓</span>}
                     </span>
+                    {/* ⛔ LOS QUE QUEDARON A MEDIO INTENTAR (3-sep-2026).
+                        Pedido del dueño: *"hacen 1 intento en vez de 3"*. El tope
+                        de tres ya existía y la ficha ya decía "Hoy 1 de 3" dentro
+                        del pedido abierto, pero quedarse en la primera llamada no
+                        se veía en ninguna pantalla.
+                        No cuenta al que confirmó de una (ese resolvió) ni al que
+                        gastó sus tres (ese cumplió): solo al que llamó, no
+                        contestaron, y ahí quedó. Ver `intentosAMedias.ts`. */}
+                    {gestionCargada && textoAMedias && (
+                      <>
+                        <span className="opacity-50">·</span>
+                        <span
+                          className="text-warning font-semibold"
+                          title="Se los llamó una vez, no contestaron y todavía les quedan llamadas hoy. No cuenta a los que ya confirmaron ni a los que agotaron sus 3."
+                        >
+                          {textoAMedias}
+                        </span>
+                      </>
+                    )}
                   </div>
                 )}
                 <label

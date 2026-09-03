@@ -1212,6 +1212,12 @@ interface OrderCardProps {
   colKey: string;
 }
 
+/** Cuánto vale la etiqueta "lo tocó Fulana" antes de volverse historia vieja.
+ *  Es una DURACIÓN, no una fecha: calcular el corte al importar el módulo lo
+ *  dejaría congelado en el momento en que se abrió la pestaña, y estas sesiones
+ *  duran todo el turno. */
+const VENTANA_SELLO_MS = 7 * 24 * 60 * 60 * 1000;
+
 // C5: React.memo. Antes cualquier setState de CrmTable (ej. setExpandedPhone,
 // setResults, setPendingChanges) re-renderizaba TODOS los OrderCard de TODAS
 // las columnas — con 500 pedidos eso es 500 renders sincrónicos por click,
@@ -1222,7 +1228,22 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
   // 'mine' = yo la gestioné · 'other' = solo otra operadora · 'available' = nadie.
   // NO bloquea acciones — cualquiera puede gestionar cualquier pedido; el bucket
   // solo alimenta la etiqueta. Los touchpoints de admins se ignoran.
-  const ownerBucket = classifySegOwnershipFromTps(tps, currentUserId, adminIds);
+  //
+  // ⛔ CON VENTANA DE 7 DÍAS (3-sep-2026). Esta consulta trae 60 días y la
+  // clasificación no miraba la fecha, así que un pedido tocado hace cincuenta
+  // días seguía diciendo "Mío" como si estuviera trabajado. El dueño usa esta
+  // etiqueta para saber a quién NO regañar; pegada dos meses le decía que estaba
+  // atendido algo que nadie miraba desde marzo.
+  //
+  // Siete días es la MISMA ventana con la que el tablero muestra el historial
+  // (`ultimaGestionSeg`, OrderContext): las dos vistas de Seguimiento dejan de
+  // contestar distinto a la misma pregunta.
+  //
+  // El filtro "solo disponibles" (arriba, en la lista) NO lleva ventana a
+  // propósito: ahí "disponible" significa que nadie lo agarró nunca, y acotarlo
+  // a una semana devolvería a la cola pedidos que otra asesora ya venía
+  // trabajando. Son dos preguntas distintas sobre el mismo dato.
+  const ownerBucket = classifySegOwnershipFromTps(tps, currentUserId, adminIds, Date.now() - VENTANA_SELLO_MS);
   const isMine = ownerBucket === 'mine';
   const isOtherOwner = ownerBucket === 'other';
   // Última gestora (touchpoints vienen ordenados desc por created_at).

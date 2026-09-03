@@ -57,6 +57,39 @@ function lockKey(storeId: string): string {
   return `guardian.inactivityLock:${storeId}`;
 }
 
+/**
+ * Grabar el aviso en la base.
+ *
+ * ⛔ SE LLAMA CUANDO EL AVISO SALE, NO CUANDO LO CIERRAN (3-sep-2026).
+ *
+ * Antes vivía dentro de `acknowledge`, o sea que **solo quedaba constancia si la
+ * persona apretaba "Entendido"**. Cerrar la pestaña con el modal en pantalla
+ * borraba la evidencia — justo lo que haría quien no quiere que la cuenten — y
+ * el dueño veía CERO avisos sobre alguien a quien el modal le había salido tres
+ * veces. Ese hueco es la razón principal por la que el dueño dijo *"las alertas
+ * de inactividad no las he vuelto a ver"*.
+ *
+ * Es best-effort a propósito: si la red falla, el modal igual sale y la pantalla
+ * igual se bloquea. Perder el registro es malo; frenarle el CRM a una asesora
+ * por un error de red sería peor.
+ *
+ * Devuelve el contador del día que dice el SERVIDOR, o `null` si no se pudo.
+ */
+async function grabarAviso(storeId: string, lostSeconds: number): Promise<number | null> {
+  try {
+    const { data } = await (supabase.rpc as unknown as (
+      fn: 'record_inactivity_warning',
+      args: { p_store_id: string; p_lost_seconds: number },
+    ) => Promise<{ data: number | null; error: { message?: string } | null }>)(
+      'record_inactivity_warning',
+      { p_store_id: storeId, p_lost_seconds: lostSeconds },
+    );
+    return typeof data === 'number' ? data : null;
+  } catch {
+    return null; // best-effort: no rompemos la UX de quien está trabajando
+  }
+}
+
 export function useInactivityGuard({ hasPendingWork, enPausa = false }: { hasPendingWork: boolean; enPausa?: boolean }) {
   const { user, isAdmin, loading: authLoading } = useAuth();
   const { activeStoreId, isManagerOfActive, isOwnerOfActive } = useStore();
@@ -71,6 +104,9 @@ export function useInactivityGuard({ hasPendingWork, enPausa = false }: { hasPen
   const warningsTodayRef = useRef(0);        // cuántos avisos lleva hoy
   const storeRef = useRef<string | null>(null);
   const initializedStoreRef = useRef<string | null>(null);
+  // Número del último aviso que YA se grabó en la base. Evita grabar dos veces
+  // el mismo cuando después se aprieta "Entendido".
+  const grabadoRef = useRef(0);
   // Último valor de hasPendingWork — leído en el handler/tick (que corren fuera
   // del render) para decidir si penalizar. Se actualiza en cada render.
   const hasWorkRef = useRef(hasPendingWork);
@@ -163,6 +199,18 @@ export function useInactivityGuard({ hasPendingWork, enPausa = false }: { hasPen
           );
         } catch { /* noop */ }
       }
+      // ⛔ ACÁ, no en `acknowledge`. El aviso ya salió: que quede constancia
+      // aunque la persona cierre la pestaña sin cerrarlo. Ver `grabarAviso`.
+      const tienda = storeRef.current;
+      if (tienda) {
+        grabadoRef.current = number;
+        void grabarAviso(tienda, lost).then((delServidor) => {
+          if (delServidor != null && delServidor > warningsTodayRef.current) {
+            warningsTodayRef.current = delServidor;
+            try { localStorage.setItem(dayKey(tienda, new Date()), String(delServidor)); } catch { /* noop */ }
+          }
+        });
+      }
     };
 
     const onMousemove = () => {
@@ -241,23 +289,20 @@ export function useInactivityGuard({ hasPendingWork, enPausa = false }: { hasPen
     setWarning(null);
     lastActivityRef.current = Date.now();
 
-    // Persistir best-effort (el reporte del admin lee de la DB).
-    if (store) {
-      void (async () => {
-        try {
-          const { data } = await (supabase.rpc as unknown as (
-            fn: 'record_inactivity_warning',
-            args: { p_store_id: string; p_lost_seconds: number },
-          ) => Promise<{ data: number | null; error: { message?: string } | null }>)(
-            'record_inactivity_warning',
-            { p_store_id: store, p_lost_seconds: w.lostSeconds },
-          );
-          if (typeof data === 'number' && data > warningsTodayRef.current) {
-            warningsTodayRef.current = data;
-            try { localStorage.setItem(dayKey(store, new Date()), String(data)); } catch { /* noop */ }
-          }
-        } catch { /* best-effort, no rompemos UX */ }
-      })();
+    // ⛔ RED DE SEGURIDAD, ya no la vía principal. El aviso se graba al SALIR
+    // (ver `handle`); acá solo se cubre el caso del bloqueo restaurado desde
+    // localStorage tras un reload, donde este montaje nunca vio salir el aviso
+    // y por lo tanto nunca lo grabó. Sin la guarda de `grabadoRef`, apretar
+    // "Entendido" sumaría un segundo aviso por el mismo hueco y le inflaría el
+    // número a la asesora — el error opuesto, y también injusto.
+    if (store && grabadoRef.current !== w.number) {
+      grabadoRef.current = w.number;
+      void grabarAviso(store, w.lostSeconds).then((delServidor) => {
+        if (delServidor != null && delServidor > warningsTodayRef.current) {
+          warningsTodayRef.current = delServidor;
+          try { localStorage.setItem(dayKey(store, new Date()), String(delServidor)); } catch { /* noop */ }
+        }
+      });
     }
   }, [warning]);
 

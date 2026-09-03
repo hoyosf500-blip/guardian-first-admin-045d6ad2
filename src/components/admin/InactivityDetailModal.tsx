@@ -41,8 +41,21 @@ export default function InactivityDetailModal({
   /** Solo para el TÍTULO del modal — la búsqueda va por `operatorId`. */
   operadora: string;
   /** operator_id real: el MISMO id con el que la tabla contó los avisos.
-   *  Buscar por display_name rompía el vínculo celda→detalle con perfiles sin
-   *  nombre (fallback 'Sin nombre'), nombres editados u homónimas. */
+   *
+   *  ⛔ HOY NO SE USA PARA BUSCAR, y el motivo importa. La función desplegada
+   *  `admin_inactivity_details` acepta `(p_operadora, p_range, p_store_id)` —
+   *  confirmado en `types.ts`, que se genera de la base viva. El cliente venía
+   *  intentando primero una firma con `p_operator_id` que NUNCA EXISTIÓ en
+   *  ninguna migración: cada apertura del modal gastaba un viaje que siempre
+   *  fallaba con PGRST202 antes de caer al camino por nombre.
+   *
+   *  Se sacó el intento muerto en vez de escribir la migración porque reescribir
+   *  una función SQL desplegada es exactamente lo que prohíbe la REGLA #1. El
+   *  arreglo de fondo —buscar por id— necesita una migración propia con el
+   *  `pg_get_functiondef` de la versión que está corriendo delante.
+   *
+   *  Mientras tanto, la búsqueda por nombre no se deja mentir: sin nombre en el
+   *  perfil, el modal lo dice en vez de traer los avisos de otra persona. */
   operatorId?: string | null;
   range: Range;
   onClose: () => void;
@@ -55,7 +68,7 @@ export default function InactivityDetailModal({
     let active = true;
     // El cast va INLINE sobre supabase.rpc (no extraído a variable): asignarlo
     // pierde el `this` del cliente (memoria rpc_supabase_binding_pattern).
-    const call = (args: { p_operadora: string; p_range: string; p_store_id: string | null; p_operator_id?: string }) =>
+    const call = (args: { p_operadora: string; p_range: string; p_store_id: string | null }) =>
       (supabase.rpc as unknown as (
         fn: 'admin_inactivity_details',
         a: typeof args,
@@ -64,19 +77,18 @@ export default function InactivityDetailModal({
         args,
       );
     void (async () => {
-      // Preferimos buscar por operator_id (el id con el que se contaron los
-      // avisos). Si la RPC desplegada todavía no acepta p_operator_id
-      // (migration pendiente — regla #1: no reescribir la función a ciegas),
-      // PostgREST responde PGRST202 "function ... does not exist" → caemos al
-      // camino viejo por nombre para no dejar el modal muerto.
-      let resp = await call(
-        operatorId
-          ? { p_operadora: operadora, p_range: range, p_store_id: storeId, p_operator_id: operatorId }
-          : { p_operadora: operadora, p_range: range, p_store_id: storeId },
-      );
-      if (operatorId && resp.error && (resp.error.code === 'PGRST202' || /does not exist|p_operator_id/i.test(resp.error.message ?? ''))) {
-        resp = await call({ p_operadora: operadora, p_range: range, p_store_id: storeId });
+      // ⛔ SIN NOMBRE NO SE BUSCA (3-sep-2026). La función desplegada solo acepta
+      // `p_operadora` —el NOMBRE—, así que con el nombre vacío o el marcador
+      // "Sin nombre" esta consulta traería los avisos de CUALQUIERA que también
+      // esté sin nombre. Mostrarle al dueño los avisos de otra persona bajo este
+      // título es peor que no mostrar nada: sobre esto se habla con alguien.
+      const nombre = (operadora || '').trim();
+      if (!nombre || /^sin nombre$/i.test(nombre)) {
+        setError('Esta persona no tiene nombre en su perfil, y el detalle se busca por nombre: no puedo asegurar que estos avisos sean suyos. Ponele el nombre en su perfil y volvé a abrirlo.');
+        setRows([]);
+        return;
       }
+      const resp = await call({ p_operadora: nombre, p_range: range, p_store_id: storeId });
       if (!active) return;
       if (resp.error) { setError(resp.error.message ?? 'Error'); setRows([]); }
       else { setRows(resp.data ?? []); }
