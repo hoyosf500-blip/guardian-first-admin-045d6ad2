@@ -3432,6 +3432,12 @@ export type Database = {
           total: number
         }[]
       }
+      tomar_seguimiento: {
+        Args: { p_limite?: number; p_order_ids: string[]; p_store_id: string }
+        Returns: {
+          tomados: number
+        }[]
+      }
       update_store_branding: {
         Args: { p_brand_logo_url: string; p_name: string; p_store_id: string }
         Returns: undefined
