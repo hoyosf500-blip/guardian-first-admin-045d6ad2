@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { pollWhenVisible } from '@/lib/pollWhenVisible';
 
 // Trae los external_ids con INCIDENCIA ABIERTA en Dropi (edge
 // dropi-open-incidences — la misma consulta del panel de novedades de Dropi).
@@ -95,8 +96,12 @@ export function useOpenIncidences(storeId: string | null) {
     const fresh = storeId ? cache.get(storeId) : undefined;
     setOpenIds(fresh?.ids ?? null);
     void reloadOpen();
-    const t = setInterval(() => { void reloadOpen(true); }, POLL_MS);
-    return () => clearInterval(t);
+    // Con la pestaña oculta no se pregunta (4-sep-2026): era el único poll del
+    // proyecto sin `pollWhenVisible`, se monta dos veces a la vez (la barra
+    // "Lo que sigue" + la pantalla) y con `force=true` saltaba el MIN_REFRESH —
+    // dos viajes a Dropi cada 30 min desde pestañas que nadie mira, en la
+    // cuenta de Ecuador, que es justo la que throttlea.
+    return pollWhenVisible(() => { void reloadOpen(true); }, POLL_MS, { runOnVisible: false });
   }, [reloadOpen, storeId]);
 
   return { openIds, openLoading, reloadOpen };

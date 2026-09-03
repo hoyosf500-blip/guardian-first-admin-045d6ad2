@@ -14,13 +14,13 @@ import { canalDeTienda, type CanalChat } from '@/lib/canalChat';
  * conversación no existe.
  */
 export function useCanalChat(): CanalChat | null {
-  const { activeStoreId } = useStore();
+  const { activeStoreId, activeStore } = useStore();
   const [canal, setCanal] = useState<CanalChat | null>(null);
 
   useEffect(() => {
     if (!activeStoreId) { setCanal(null); return; }
     let vivo = true;
-    void canalDeTienda(activeStoreId).then(c => { if (vivo) setCanal(c); });
+    void canalDeTienda(activeStoreId, activeStore?.country_code).then(c => { if (vivo) setCanal(c); });
     return () => { vivo = false; };
   }, [activeStoreId]);
 

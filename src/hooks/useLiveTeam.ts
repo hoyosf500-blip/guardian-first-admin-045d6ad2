@@ -117,7 +117,7 @@ function accionTouchpoint(action: string): string {
 }
 
 export function useLiveTeam(): LiveTeam {
-  const { activeStoreId: storeId, scopeSynced } = useStore();
+  const { activeStoreId: storeId, scopeSynced, scopeStoreId } = useStore();
   const [team, setTeam] = useState<LiveTeam>({
     operators: [], pendingConfirmar: null, pendingNovedades: null,
     presenceMouseOk: true, workEventsOk: true, status: 'loading', updatedAt: 0,
@@ -132,6 +132,16 @@ export function useLiveTeam(): LiveTeam {
     // sincronizado, devolverían las cifras de la tienda ANTERIOR bajo el
     // nombre de la nueva — mostrar el país equivocado es peor que no mostrar.
     if (!scopeSynced) { setTeam(t => ({ ...t, status: 'error', updatedAt: Date.now() })); return; }
+    // ⛔ Y se espera a que el servidor CONFIRME la tienda nueva (4-sep-2026).
+    // `scopeSynced` arrancaba en true y nadie lo bajaba al cambiar de tienda:
+    // este hook preguntaba en el acto, la RPC contestaba con el estado en vivo
+    // de la tienda ANTERIOR, y el panel pintaba nombres ecuatorianos con
+    // números colombianos hasta el poll siguiente. Mientras viaja el UPDATE se
+    // vacían los operadores y se declara "cargando", no se conserva lo viejo.
+    if (scopeStoreId !== storeId) {
+      setTeam(t => ({ ...t, operators: [], status: 'loading', updatedAt: Date.now() }));
+      return;
+    }
     const myReq = ++reqRef.current;
     const nowMs = Date.now();
     const today = bogotaToday();

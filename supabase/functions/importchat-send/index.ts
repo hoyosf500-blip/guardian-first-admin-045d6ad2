@@ -50,7 +50,7 @@ import { respuestaPing } from "../_shared/versionEdge.ts";
  * un deploy llegó era adivinar comparando comportamientos. Ese agujero ya costó
  * dos rondas enteras en agosto (ver `lovable_despliega_codigo_viejo`).
  */
-const VERSION = "importchat-send 2026-09-02.1 primer-ping";
+const VERSION = "importchat-send 2026-09-04.1 el-touchpoint-que-no-entra-se-dice";
 
 const MAX_LARGO = 1000;
 /** Reintentos de RELECTURA tras emitir (ms de espera antes de cada uno). Con una
@@ -307,7 +307,7 @@ Deno.serve(async (req) => {
       // Sin `accion` queda el texto de siempre: un cliente viejo se comporta
       // igual. Se acota para que nadie meta un párrafo en la bitácora.
       const accion = String(body?.accion ?? "").trim().slice(0, 60) || "Escribí por WhatsApp";
-      await sb.from("touchpoints").insert({
+      const { error: tpErr } = await sb.from("touchpoints").insert({
         phone: pedido.phone,
         action: `${modulo}: ${accion}`,
         operator_id: u.user.id,
@@ -315,6 +315,11 @@ Deno.serve(async (req) => {
         action_date: fecha,
         action_time: hora,
       });
+      // Como sus hermanas (chateapro-send / chateapro-plantillas): la gestión
+      // que no queda registrada no le baja el número a nadie y la asesora la
+      // vuelve a hacer. El mensaje YA salió; lo que no puede pasar es que el
+      // fallo del registro quede mudo (4-sep-2026).
+      if (tpErr) console.error(`[importchat-send] el mensaje salió pero el touchpoint NO se guardó (${pedido.phone}): ${tpErr.message}`);
     }
 
     // El hilo actualizado viaja de vuelta: la pantalla lo pinta al instante,

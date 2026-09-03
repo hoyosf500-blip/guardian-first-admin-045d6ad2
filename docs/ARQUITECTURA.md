@@ -476,3 +476,81 @@ log como fuente de estado"** (commits anteriores prometieron más cobertura de l
 marca la **tanda 4 (`CallView`/`CrmCallView`) como la peligrosa** — toca los overrides
 module-level de validación de direcciones, `visualDecision` y `DespachoGateButton`; si aparece un
 `visualDecision` o un efecto de auto-validación en el diff, revertir.
+
+### Flujo de creación de pedidos en Dropi y sus candados (4-sep-2026)
+
+**Duplicar un pedido está PROHIBIDO en esta operación**: son dos guías, dos fletes y doble
+trabajo para la asesora. Solo CUATRO sitios del código hacen un POST que crea una orden en
+Dropi (verificado por grep sobre `supabase/functions/**` y `src/**`):
+
+| Sitio | Camino | Quién lo dispara |
+|---|---|---|
+| `shopify-push-dropi/index.ts` → `POST /integrations/orders/myorders` | crear desde una venta de Shopify | el panel "Subir a Dropi" / "Subir todos" (`ShopifyPendingPanel`) y el robot `shopify-auto-push` |
+| `shopify-push-dropi/index.ts` → `createOrderViaWeb` (`POST /api/orders/myorders`) | fallback web para producto PRIVADO | el mismo push, solo si integraciones rechazó con señal de producto privado |
+| `dropi-change-carrier/index.ts` → `postCreateWithEdit` | RECREAR el pedido con id nuevo (`is_edit_order`) | el editor de pedidos: `apply` / `apply_value` / `apply_edit` (cambiar transportadora, valor o líneas) |
+| `dropi-change-carrier/index.ts` → `variant_probe` | orden de PRUEBA que se cancela sola | diagnóstico; solo el dueño |
+
+`dropi-update-order`, `dropi-update-order-full`, `dropi-resolve-incidence` y **confirmar**
+(`markResult` → `_shared/dropiConfirmOrder.ts`) son `PUT` sobre una orden existente: **no crean
+nada**. Cambiar solo dirección / ciudad / datos del cliente va por `update_full` (PUT, mismo id) —
+ver `orderEditPlan.ts`.
+
+**Los candados, en el orden en que corren:**
+
+1. **Selección del robot** (`_shared/autoPushSelect.ts`): no sube si el teléfono ya tiene una
+   orden ACTIVA en `orders` (ENTREGADO = recompra, se sube), ni si la orden Dropi más reciente
+   nació DESPUÉS de la venta (contraparte), y **una sola venta por teléfono y corrida**.
+2. **El lote contra sí mismo** ("Subir todos", `repetidosEnElLote` en `duplicatePhones.ts`): dos
+   ventas del mismo teléfono en el mismo lote → sube la primera, la otra queda con motivo.
+3. **Guard pre-claim en `shopify-push-dropi`** (fail-closed): RPC `find_duplicate_phones` (manual)
+   o `findDuplicatesServiceRole` (cron) contra el espejo `orders`, MÁS `findInvisibleTwin` contra
+   `shopify_pushed_orders` (nuestro propio registro, sin lag: el "gemelo invisible"). Si alguna
+   lectura falla → 409 `guard_failed`, no se crea.
+4. **Claim atómico** en `shopify_pushed_orders` (`UNIQUE (store_id, shopify_order_id)`): la fila
+   se inserta ANTES del POST; reclaim solo desde `error` por compare-and-swap.
+5. **Re-chequeo post-claim, «quien ve, cede»**: ya con mi fila `pending` comiteada, vuelvo a mirar
+   excluyendo mi id; si veo OTRA fila viva del teléfono en 24 h, marco la mía `error` y respondo
+   409. Sin desempate a propósito (`pushed_at` es inicio de transacción, no orden de commit).
+6. **El POST con timeout** (45 s). Clasificación de la respuesta: solo un **4xx de validación** o
+   `isSuccess:false` es `error` (reintentable); **5xx / 504 / 408 / 429 / 2xx-sin-id → `unknown`**
+   (`needs_verify`: verificación humana, el robot no lo retoma).
+7. **`allow_duplicate`** ("No es duplicado") salta 3 y 5: es la asesora firmando que son dos
+   pedidos distintos. Caduca a las 24 h en el panel.
+8. **El editor reclama antes de crear** (`dropi_edit_attempts`, `UNIQUE (store_id, external_id)`):
+   `pending <3 min` → `in_progress`; `pending ≥3 min` / `unknown` → `needs_verify` (reclaimable
+   a los 30 min); `error` → reclaim; **`done` no se reclaimea nunca** (`ya_gestionado` con el id
+   nuevo). `done` se asienta INMEDIATAMENTE después del POST, antes del PUT REEMPLAZADA. Un 5xx
+   del create-with-edit es `post_incierto` → `creacion_incierta` (sin invitar al retry).
+9. **En Confirmar**, `avisoAntesDeConfirmar` frena antes de generar guía si el cliente tiene otro
+   pedido en curso en la cola (client-side; la salida es "Son pedidos distintos").
+
+Guardianes: `duplicadoNoSeEscapaPorElLag`, `editorReclamaAntesDeCrear`, `gemeloInvisible.test`,
+`autoPushSelect.test`, `duplicatePhones.test`, `confirmarSinDuplicar.test`.
+
+### Qué acción de la asesora escribe dónde (4-sep-2026)
+
+Tres tablas guardan lo que hace el equipo: `order_results` (resultados y auditorías de edición),
+`touchpoints` (gestiones por teléfono, el "sello") y `order_events` (la bitácora: CON número de
+pedido, append-only, sin UPDATE ni DELETE para nadie).
+
+| Acción | `order_results` | `touchpoints` | `order_events` |
+|---|---|---|---|
+| Confirmar / cancelar / no contestó | ✅ `conf`/`canc`/`noresp` | ✅ `Confirmado` / `Cancelado: x` / `No respondió` | ✅ `marco` |
+| Deshacer una marca | 🗑 DELETE (solo lo propio, ≤15 min) | 🗑 DELETE (ídem) | ✅ `deshizo` |
+| Editar pedido (cliente / valor / transportadora / líneas) | ✅ `edicion_orden` / `cambio_valor` / `edicion_completa` con `{antes, despues}` | — | ✅ `edito` |
+| Cambiar transportadora (edge) | ✅ `cambio_transportadora` | — | (vía el diálogo: `edito`) |
+| Gestión de Seguimiento (avisé, envié guía…) | — | ✅ `SEG: …` | ✅ `gestiono` (con `external_id`) |
+| Resolver novedad | — | ✅ `NOVEDAD: …` | `abrio`/`cerro`/`salto` + `gestiono` |
+| Llamar (botón) | — | ✅ `LLAMADA: …` | ✅ `llamo` |
+| WhatsApp / plantilla (edge de chat) | — | ✅ `SEG:`/`WHATSAPP:` | ✅ `escribio` |
+| Leer la conversación | — | — | ✅ `leyo_chat` |
+| Abrir un pedido y pasar de largo | — | — | ✅ `abrio` + `salto` (Confirmar, Seguimiento, Novedades, bandeja) |
+| "No es duplicado" | — | ✅ `DUP_OVERRIDE: …` | — |
+| Pausa de jornada | — | — | — (`operator_pausas`; visible en Productividad) |
+| Tomar / soltar pedido (candado) | — | — | — (`orders.locked_by`, sin histórico) |
+| Reparto / pedir más | — | — | — (`seg_asignaciones`, sin histórico de reasignaciones) |
+
+Dónde se ve: `/actividad` (por persona y día, paginado), `/pedido/:id` (bitácora del pedido),
+`/admin → Productividad` (mapa de calor hora por hora, pausas, tarjetas) y el correo de las 21:00
+(`resumen-diario`: quién entró, a qué hora, cuánto hizo). Lo que NO existe: alertas de inactividad
+al dueño sin estar conectado (exige un cron nuevo) y un histórico de reasignaciones/candados.

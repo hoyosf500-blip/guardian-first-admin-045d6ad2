@@ -21,6 +21,29 @@ export function bogotaToday(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date());
 }
 
+/**
+ * Zona horaria de la tienda por país. CO y EC comparten UTC−5; Guatemala es
+ * UTC−6 (sin horario de verano). Sin país conocido, Bogotá.
+ *
+ * Existe porque los inserts del cliente estampaban la hora de Bogotá para
+ * TODAS las tiendas (4-sep-2026): una novedad gestionada a las 23:15 en
+ * Guatemala quedaba anotada MAÑANA, con una hora en la que la asesora no
+ * trabajó. Mismo offset que `_shared/horaLocal.ts` en las edge functions.
+ */
+export function zonaHorariaDe(countryCode: string | null | undefined): string {
+  return String(countryCode || '').toUpperCase() === 'GT' ? 'America/Guatemala' : 'America/Bogota';
+}
+
+/** 'YYYY-MM-DD' de HOY en la zona de la tienda. */
+export function hoyEn(countryCode: string | null | undefined): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: zonaHorariaDe(countryCode) }).format(new Date());
+}
+
+/** 'HH:MM' de AHORA en la zona de la tienda. */
+export function horaAhoraEn(countryCode: string | null | undefined): string {
+  return new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: zonaHorariaDe(countryCode) });
+}
+
 // ── Moneda por país de la tienda activa (multi-tienda CO/EC) ──
 // Mismo patrón module-level que setTrackingCountry (orderUtils): StoreContext
 // setea el país UNA vez y todos los call-sites de formatCOP formatean acorde,

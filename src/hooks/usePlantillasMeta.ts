@@ -109,7 +109,7 @@ export function precargarPlantillas(storeId: string | null | undefined): void {
  * entre dos clics, y son ~40 plantillas por llamada.
  */
 export function usePlantillasMeta(activo: boolean, fase?: string | null) {
-  const { activeStoreId } = useStore();
+  const { activeStoreId, activeStore } = useStore();
   const [plantillas, setPlantillas] = useState<PlantillaMeta[]>([]);
   const [estado, setEstado] = useState<EstadoPlantillas>('inicial');
   const [error, setError] = useState<string | undefined>();
@@ -180,7 +180,7 @@ export interface ResultadoPlantilla {
 }
 
 export function useEnviarPlantilla() {
-  const { activeStoreId } = useStore();
+  const { activeStoreId, activeStore } = useStore();
   const { user } = useAuth();
   const [enviando, setEnviando] = useState(false);
 
@@ -194,7 +194,7 @@ export function useEnviarPlantilla() {
     if (!activeStoreId) return { ok: false, error: 'No hay tienda activa' };
     setEnviando(true);
     try {
-      const fn = await fnCanal(activeStoreId, 'plantillas');
+      const fn = await fnCanal(activeStoreId, 'plantillas', activeStore?.country_code);
       const { data, error } = await supabase.functions.invoke(fn, {
         // `gestion` es ADITIVO: un servidor sin redesplegar lo ignora y escribe
         // "Mandé la plantilla X" como siempre. Ver `useEnviarWhatsapp`.

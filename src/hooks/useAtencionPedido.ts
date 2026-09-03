@@ -69,7 +69,15 @@ export function useAtencionPedido(dbId: string | null | undefined, activo: boole
     if (observa || !activo || !dbId) return;
     let cancelado = false;
     void claimOrder(dbId).then((r) => {
-      if (cancelado) return;
+      // ⛔ Si la pantalla ya se cerró cuando llega la respuesta, el candado YA
+      // existe en la base (4-sep-2026): con el `return` a secas quedaba
+      // huérfano 15 min y `isLockedByOther` escondía ese pedido a TODO el
+      // equipo — el "Siguiente salta" de la bandeja y de Novedades al pasar
+      // rápido entre tarjetas. Se suelta acá mismo.
+      if (cancelado) {
+        if (r.ok) void releaseOrder(dbId);
+        return;
+      }
       // `ok:false` no se avisa ni se salta: acá el pedido YA está en pantalla
       // porque la persona lo eligió. Que otra lo tenga tomado no es motivo para
       // sacárselo de la vista —seguir el hilo de un chat no le hace daño a

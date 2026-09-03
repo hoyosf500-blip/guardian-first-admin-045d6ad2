@@ -194,9 +194,11 @@ Deno.serve(async (req) => {
         }
         const histRows = orderUuid ? extractStatusHistoryRows(orderObj, orderUuid, storeId) : [];
         if (histRows.length > 0) {
+          // ⛔ POR TIENDA (4-sep-2026) — ver dropi-refresh-batch. Exige el índice
+          // `uq_osh_store_history` (20260904130000) aplicado ANTES del deploy.
           const { error: histErr } = await sbAdmin
             .from("order_status_history")
-            .upsert(histRows, { onConflict: "dropi_history_id", ignoreDuplicates: true });
+            .upsert(histRows, { onConflict: "store_id,dropi_history_id", ignoreDuplicates: true });
           if (histErr) console.warn(`dropi-refresh-order: historial no ingerido (${histErr.message})`);
         }
       } catch (hErr) {

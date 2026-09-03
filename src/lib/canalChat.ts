@@ -25,7 +25,16 @@ function porPais(countryCode: string | null | undefined): CanalChat {
   return String(countryCode || '').toUpperCase() === 'EC' ? 'importchat' : 'chateapro';
 }
 
-export async function canalDeTienda(storeId: string): Promise<CanalChat> {
+/**
+ * @param countryCode país de la tienda si el llamador ya lo tiene
+ *   (`activeStore.country_code`). Es lo que decide cuando la lectura falla.
+ *   ⛔ Sin él, el `catch` devolvía `'importchat'` FIJO —contradiciendo su
+ *   propio comentario— y encima quedaba cacheado toda la sesión: un fallo
+ *   transitorio en una tienda de Colombia dejaba a la asesora llamando a
+ *   `importchat-*` en una cuenta Chatea Pro, sin poder leer ni escribir un
+ *   chat hasta recargar (4-sep-2026).
+ */
+export async function canalDeTienda(storeId: string, countryCode?: string | null): Promise<CanalChat> {
   const guardado = cache.get(storeId);
   if (guardado) return guardado;
 
@@ -39,12 +48,15 @@ export async function canalDeTienda(storeId: string): Promise<CanalChat> {
       if (error) throw error;
       const row = data as { canal_chat?: string | null; country_code?: string | null } | null;
       if (row?.canal_chat === 'importchat' || row?.canal_chat === 'chateapro') return row.canal_chat;
-      return porPais(row?.country_code);
-    } catch {
+      return porPais(row?.country_code ?? countryCode);
+    } catch (e) {
       // Sin la columna (migración sin aplicar) o sin red: el país decide.
       // Nunca se lanza: quedarse sin canal apagaría el botón de escribir, y
       // eso se lee como "está roto" en vez de "todavía no está configurado".
-      return 'importchat';
+      // Y el fallo NO se cachea: el próximo llamador vuelve a preguntar.
+      console.warn('[canalChat] no se pudo leer el canal de la tienda; decide el país:', e instanceof Error ? e.message : e);
+      cache.delete(storeId);
+      return porPais(countryCode);
     }
   })();
 
@@ -60,8 +72,8 @@ export async function canalDeTienda(storeId: string): Promise<CanalChat> {
  * `importchat-chat` / `chateapro-chat`— para que agregar un tercer canal sea
  * una fila más y no otro `if` desparramado por los hooks.
  */
-export async function fnCanal(storeId: string, base: 'chat' | 'send' | 'plantillas'): Promise<string> {
-  const canal = await canalDeTienda(storeId);
+export async function fnCanal(storeId: string, base: 'chat' | 'send' | 'plantillas', countryCode?: string | null): Promise<string> {
+  const canal = await canalDeTienda(storeId, countryCode);
   return `${canal}-${base}`;
 }
 

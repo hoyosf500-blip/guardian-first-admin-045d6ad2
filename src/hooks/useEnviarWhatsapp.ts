@@ -64,7 +64,7 @@ export interface GestionDelEnvio {
 }
 
 export function useEnviarWhatsapp() {
-  const { activeStoreId } = useStore();
+  const { activeStoreId, activeStore } = useStore();
   const { user } = useAuth();
   const [enviando, setEnviando] = useState(false);
 
@@ -74,7 +74,7 @@ export function useEnviarWhatsapp() {
     if (!texto) return { ok: false, error: 'Escribí un mensaje' };
     setEnviando(true);
     try {
-      const fn = await fnCanal(activeStoreId, 'send');
+      const fn = await fnCanal(activeStoreId, 'send', activeStore?.country_code);
       const { data, error } = await supabase.functions.invoke(fn, {
         // `accion` es ADITIVO: un servidor viejo (Lovable no redespliega edge
         // functions con un push) lo ignora y escribe el texto genérico de

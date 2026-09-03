@@ -48,7 +48,7 @@ export default function DashboardTab() {
   // "su día" sale de myCounter — ver el bloque del cierre más abajo.
   const { allOrders, counter, myCounter, workQueue } = useOrders();
   const { user, profile } = useAuth();
-  const { activeStoreId, isManagerOfActive, isOwnerOfActive } = useStore();
+  const { activeStoreId, isManagerOfActive, isOwnerOfActive, scopeStoreId } = useStore();
   const [period, setPeriod] = useState(7);
   const [historyData, setHistoryData] = useState<DailyResult[]>([]);
   const [actionsOpen, setActionsOpen] = useState(false);
@@ -106,10 +106,18 @@ export default function DashboardTab() {
 
   useEffect(() => {
     if (!isManagerOfActive || !activeStoreId) { setEquipoEstado('idle'); return; }
+    // ⛔ Esta RPC resuelve la tienda SERVER-SIDE: se espera a que el servidor
+    // la confirme (ver `scopeStoreId`), si no pinta la serie de la tienda
+    // anterior bajo el nombre de la nueva.
+    if (scopeStoreId !== activeStoreId) { setEquipoEstado('cargando'); return; }
     let cancelado = false;
     setEquipoEstado('cargando');
-    const hasta = new Date().toISOString().split('T')[0];
-    const desde = new Date(Date.now() - 30 * 864e5).toISOString().split('T')[0];
+    // Día de BOGOTÁ, no UTC (4-sep-2026): de 19:00 a medianoche `hasta` era
+    // MAÑANA y la serie de 30 días dibujaba una caída a cero en el borde
+    // derecho justo en el turno de la tarde. El resto del archivo ya usaba
+    // bogotaToday(); estas dos líneas quedaron afuera.
+    const hasta = bogotaToday();
+    const desde = shiftDiasISO(hasta, -30);
     // admin_daily_reports_range agrega POR DÍA en el servidor. Leer order_results
     // crudo acá sería un error: PostgREST corta en 1000 filas y las tasas
     // saldrían calculadas sobre una muestra truncada sin avisar.
@@ -144,7 +152,7 @@ export default function DashboardTab() {
         setEquipoEstado('ok');
       });
     return () => { cancelado = true; };
-  }, [isManagerOfActive, activeStoreId]);
+  }, [isManagerOfActive, activeStoreId, scopeStoreId]);
 
   // ─────────────────────────────────────────────────────────────
   // QUÉ HIZO CADA OPERADORA — desglose por persona del período.
@@ -293,13 +301,20 @@ export default function DashboardTab() {
     // gate, cada montaje del Dashboard de una operadora disparaba un 42501 (que
     // se tragaba en silencio) y el ranking nunca era para ella de todos modos.
     if (!user || !isManagerOfActive) return;
+    // ⛔ Se espera a que el servidor CONFIRME la tienda (4-sep-2026): sin esto
+    // el ranking corría en el acto al cambiar de tienda, ganaba la carrera al
+    // UPDATE de set_active_store y mostraba a las operadoras de la OTRA tienda
+    // con sus números hasta la próxima marca. Y un error dejaba el ranking
+    // anterior dibujado como si fuera el actual: ahora se vacía.
+    if (scopeStoreId !== activeStoreId) { setOperatorRanking([]); return; }
     let cancelled = false;
     const today = bogotaToday();
     // El scope por tienda lo resuelve la RPC server-side vía
     // _resolve_scope_store() (admin → su tienda activa). No pasamos p_store_id
     // para no depender de que la migration del parámetro esté aplicada (PGRST202).
     supabase.rpc('get_daily_operator_stats', { p_date: today }).then(({ data, error }) => {
-      if (cancelled || error || !data) return;
+      if (cancelled) return;
+      if (error || !data) { setOperatorRanking([]); return; }
       const ranking = (data as Array<{ operator_id: string; display_name: string; conf: number; canc: number; noresp: number }>)
         .map(r => {
           const total = Number(r.conf) + Number(r.canc) + Number(r.noresp);
@@ -325,7 +340,7 @@ export default function DashboardTab() {
       if (!cancelled) setOperatorRanking(ranking);
     });
     return () => { cancelled = true; };
-  }, [user, isManagerOfActive, counter, activeStoreId]); // re-fetch al marcar algo Y al cambiar de tienda (la RPC resuelve scope server-side)
+  }, [user, isManagerOfActive, counter, activeStoreId, scopeStoreId]); // re-fetch al marcar algo Y al cambiar de tienda (la RPC resuelve scope server-side)
 
   // Load orders from DB for dashboard stats (filtrado por tienda activa)
   useEffect(() => {

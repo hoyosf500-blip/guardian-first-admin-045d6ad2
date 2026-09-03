@@ -116,7 +116,13 @@ function faltaLaMigracion(err: { code?: string; message?: string } | null): bool
 
 export function useSegAsignaciones() {
   const { user } = useAuth();
-  const { activeStoreId, isManagerOfActive } = useStore();
+  const { activeStoreId, isManagerOfActive, scopeStoreId } = useStore();
+  // `operator_activity_stats` resuelve la tienda SERVER-SIDE: al cambiar de
+  // tienda podía devolver la presencia de la ANTERIOR, el filtro dejaba a
+  // todas afuera y el reparto se saltaba en silencio (4-sep-2026). Por ref
+  // para no tocar las deps del reparto.
+  const scopeOkRef = useRef(false);
+  scopeOkRef.current = scopeStoreId === activeStoreId;
 
   /** order_id → operator_id, solo del día de hoy. */
   const [asignaciones, setAsignaciones] = useState<Map<string, string>>(new Map());
@@ -260,6 +266,15 @@ export function useSegAsignaciones() {
         //   · `null`  → no se pudo medir → se reparte entre todas (fallar abierto).
         //   · vacío   → nadie activo → NO hay destinatarios, el quórum de abajo
         //               corta y se reintenta en unos minutos.
+        // Con el scope del servidor sin confirmar no se pregunta: la respuesta
+        // sería de otra tienda. Se sale como "sin quórum" y el reintento de
+        // cada 5 min lo agarra cuando aterrice.
+        if (!scopeOkRef.current) {
+          return {
+            asignados: 0, ignorados: 0, sinOperadores: false, desbalance: 0,
+            entre: 0, ausentes: operadores.length, sinQuorum: true,
+          };
+        }
         const presentes = await presenciaDeHoy();
         const filtrados = presentes === null
           ? operadores

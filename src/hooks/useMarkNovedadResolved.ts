@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { OrderData } from '@/lib/orderUtils';
-import { bogotaToday } from '@/lib/utils';
+import { hoyEn, horaAhoraEn } from '@/lib/utils';
 import { buildNovedadAction, NovedadResultTipo } from '@/lib/novedadGestion';
 import { toast } from 'sonner';
 
@@ -56,7 +56,7 @@ async function mensajeDeInvoke(err: unknown): Promise<string> {
 
 export function useMarkNovedadResolved() {
   const { user } = useAuth();
-  const { activeStoreId } = useStore();
+  const { activeStoreId, activeStore } = useStore();
   const [marking, setMarking] = useState<string | null>(null);
 
   const markNovedad = useCallback(
@@ -69,12 +69,10 @@ export function useMarkNovedadResolved() {
       if (!user || !order) return { ok: false, dropi: 'no_aplica' };
       const key = order.dbId || order.externalId || order.phone;
       setMarking(key);
-      const today = bogotaToday();
-      const now = new Date().toLocaleTimeString('es-CO', {
-        hour: '2-digit',
-        minute: '2-digit',
-        timeZone: 'America/Bogota',
-      });
+      // Día y hora en la zona de la TIENDA (GT es UTC−6): con Bogotá fijo, una
+      // gestión de las 23:15 en Guatemala se anotaba mañana (4-sep-2026).
+      const today = hoyEn(activeStore?.country_code);
+      const now = horaAhoraEn(activeStore?.country_code);
       const solution = (nota || '').replace(/\s+/g, ' ').trim();
       const vaADropi = !!opts?.dropi && tipo !== 'sin_respuesta' && !!order.externalId;
       let dropi: DropiResultado = 'no_aplica';

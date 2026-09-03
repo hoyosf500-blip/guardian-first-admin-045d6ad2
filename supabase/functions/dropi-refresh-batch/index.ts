@@ -50,7 +50,7 @@ function jsonResp(body: unknown, status = 200, headers: Record<string, string> =
  *    El guardián `src/test/edgeVersionPing.test.ts` exige que exista y que el
  *    ping se conteste ANTES de cualquier auth.
  */
-const VERSION = "dropi-refresh-batch 2026-08-30.3 ymd-restaurada";
+const VERSION = "dropi-refresh-batch 2026-09-04.1 historial-por-tienda";
 
 /** YYYY-MM-DD para una fecha desplazada `daysBack` días respecto a hoy (UTC).
  *
@@ -237,9 +237,14 @@ Deno.serve(async (req) => {
           for (const hr of extractStatusHistoryRows(o, uuid, storeId)) histRows.push(hr);
         }
         if (histRows.length > 0) {
+          // ⛔ POR TIENDA (4-sep-2026). Con `onConflict: "dropi_history_id"` a
+          // secas —índice UNIQUE global— la entrada de Ecuador con el mismo id
+          // que una de Colombia se descartaba en silencio (ignoreDuplicates), y
+          // la línea de tiempo salía con estados faltantes. Exige el índice
+          // `uq_osh_store_history` (20260904130000) aplicado ANTES del deploy.
           const { error: histErr } = await sbAdmin
             .from("order_status_history")
-            .upsert(histRows, { onConflict: "dropi_history_id", ignoreDuplicates: true });
+            .upsert(histRows, { onConflict: "store_id,dropi_history_id", ignoreDuplicates: true });
           if (histErr) {
             console.warn(`dropi-refresh-batch: historial no ingerido (${histErr.message})`);
           } else {

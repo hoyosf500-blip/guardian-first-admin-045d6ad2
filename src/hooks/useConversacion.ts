@@ -59,7 +59,7 @@ const CHAT_TTL_MS = 60_000;
 const cacheHilo = new Map<string, { at: number; mensajes: MensajeConversacion[]; ventana: VentanaHilo | null }>();
 
 export function useConversacion(externalId: string | null | undefined, activo: boolean) {
-  const { activeStoreId } = useStore();
+  const { activeStoreId, activeStore } = useStore();
   const [mensajes, setMensajes] = useState<MensajeConversacion[]>([]);
   const [estado, setEstado] = useState<EstadoHilo>('inicial');
   const [error, setError] = useState('');
@@ -87,7 +87,7 @@ export function useConversacion(externalId: string | null | undefined, activo: b
     try {
       // EC lee por ImporChat, CO por Chatea Pro. La respuesta tiene la MISMA
       // forma en las dos, así que de acá para abajo no cambia nada.
-      const fn = await fnCanal(activeStoreId, 'chat');
+      const fn = await fnCanal(activeStoreId, 'chat', activeStore?.country_code);
       const { data, error: err } = await supabase.functions.invoke(fn, {
         body: { store_id: activeStoreId, external_id: externalId },
       });

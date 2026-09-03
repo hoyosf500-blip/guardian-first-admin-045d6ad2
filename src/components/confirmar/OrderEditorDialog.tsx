@@ -238,7 +238,12 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
       if (withLines) setRequoting(false);
       else setQuoteLoading(false);
     }
-  }, [order.externalId]);
+    // `activeStoreId` en las deps (4-sep-2026): con el diálogo montado, cambiar
+    // de tienda y reabrir sobre un pedido con el MISMO número (los rangos de
+    // GT y CO se solapan) cotizaba y editaba con el storeId de la tienda
+    // anterior. El comentario del body ya decía que el número no identifica
+    // una empresa; las deps no lo cumplían.
+  }, [order.externalId, activeStoreId]);
 
   // Reset completo al abrir (posiblemente con otro pedido) + quote inicial.
   useEffect(() => {

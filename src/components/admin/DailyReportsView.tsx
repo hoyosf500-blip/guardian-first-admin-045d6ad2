@@ -10,7 +10,7 @@ import {
   Tooltip as RTooltip, ResponsiveContainer,
 } from 'recharts';
 import PresetDateRangePicker from '@/components/PresetDateRangePicker';
-import { useActiveStoreId } from '@/contexts/StoreContext';
+import { useActiveStoreId, useStore } from '@/contexts/StoreContext';
 import { confRateByCohort, CONF_TARGET_PCT, CONF_DIA_TARGET_PCT } from '@/lib/confirmationRate';
 import CancelledReasonsModal from '@/components/admin/CancelledReasonsModal';
 import { TiltCard, StatTile, GaugeRing } from '@/components/ui3d';
@@ -165,6 +165,10 @@ export default function DailyReportsView() {
   // Las RPCs resuelven la tienda server-side; el dep fuerza el refetch al
   // cambiar de tienda para no dejar la tabla de la tienda anterior en pantalla.
   const activeStoreId = useActiveStoreId();
+  // Las tres RPCs de abajo resuelven la tienda SERVER-SIDE: se espera a que el
+  // servidor la confirme (ver `scopeStoreId` en StoreContext), si no pintan
+  // los reportes de la tienda anterior bajo el nombre de la nueva (4-sep-2026).
+  const { scopeStoreId } = useStore();
   const today = useMemo(() => new Date(), []);
   const sevenAgo = useMemo(() => { const d = new Date(); d.setDate(d.getDate() - 6); return d; }, []);
 
@@ -182,6 +186,7 @@ export default function DailyReportsView() {
   const [errMsg, setErrMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (activeStoreId && scopeStoreId !== activeStoreId) { setLoading(true); return; }
     setLoading(true);
     setErrMsg(null);
     // .bind(supabase) es OBLIGATORIO: si solo hacés `const rpc = supabase.rpc`
@@ -281,7 +286,7 @@ export default function DailyReportsView() {
     // activeStoreId es dep A PROPÓSITO: las RPCs resuelven la tienda server-side
     // y sin él la tabla quedaba con los datos de la tienda anterior al cambiar.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to, activeStoreId]);
+  }, [from, to, activeStoreId, scopeStoreId]);
 
   useEffect(() => { void load(); }, [load]);
 
