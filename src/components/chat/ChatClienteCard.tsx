@@ -224,6 +224,7 @@ export default function ChatClienteCard({
           open={escribiendo}
           onOpenChange={setEscribiendo}
           externalId={String(externalId)}
+          dbId={orderId}
           nombre={nombre}
           estado={estado}
           phone={phone}

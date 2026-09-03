@@ -1,6 +1,7 @@
 import { MessageCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import PanelConversacion from '@/components/seguimiento/PanelConversacion';
+import { useAtencionPedido } from '@/hooks/useAtencionPedido';
 import type { ModuloEnvio } from '@/hooks/useEnviarWhatsapp';
 import type { DatosPedido } from '@/lib/plantillasMeta';
 import type { ActividadChatOrden } from '@/lib/actividadChat';
@@ -19,10 +20,14 @@ import type { ActividadChatOrden } from '@/lib/actividadChat';
  * que lo abren (SegBoard, CrmTable, CallView, CrmCallView, NovedadView y la
  * card de chat) siguen llamándolo igual, con los mismos props.
  */
-export default function EscribirWhatsappDialog({ open, onOpenChange, externalId, nombre, estado, phone, actividad, datos, modulo, onEnviado }: {
+export default function EscribirWhatsappDialog({ open, onOpenChange, externalId, dbId, nombre, estado, phone, actividad, datos, modulo, onEnviado }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   externalId: string;
+  /** `orders.id`. Con esto el pedido queda marcado como EN ATENCIÓN mientras el
+   *  chat está abierto, para que no se le escriba (ni se le llame) dos veces.
+   *  Opcional: sin él el chat funciona igual, solo que sin la marca. */
+  dbId?: string | null;
   nombre?: string | null;
   estado?: string | null;
   /** Opcional: si viene, el contador de Seguimiento baja apenas se envía, sin
@@ -38,6 +43,11 @@ export default function EscribirWhatsappDialog({ open, onOpenChange, externalId,
   modulo?: ModuloEnvio;
   onEnviado?: () => void;
 }) {
+  // Mientras este chat está abierto, el pedido queda EN ATENCIÓN: es lo que
+  // evita que dos personas le escriban o lo llamen a la vez. Se suelta al
+  // cerrar. El dueño no marca nada (ver el hook).
+  useAtencionPedido(dbId, open);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* ⛔ El clic NO puede salir de acá (28-ago-2026, reportado por el dueño:

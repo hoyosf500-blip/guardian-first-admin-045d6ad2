@@ -22,6 +22,7 @@ import { copiarAlPortapapeles } from '@/lib/portapapeles';
 import { useSessionState } from '@/hooks/useSessionState';
 import { TiltCard } from '@/components/ui3d';
 import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDialog';
+import LockBadge from '@/components/LockBadge';
 import AccionPrincipal from '@/components/seguimiento/AccionPrincipal';
 import BotonLlamar from '@/components/seguimiento/BotonLlamar';
 import { tocaLlamar } from '@/lib/escalarLlamada';
@@ -709,6 +710,13 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
         >
           {o.nombre || 'Sin nombre'}
         </span>
+        {/* ⛔ "EN ATENCIÓN POR X" (3-sep-2026). El badge existía desde hacía
+            meses pero solo se dibujaba en la vista LISTA — y la vista por
+            defecto de Seguimiento es el TABLERO, así que en la práctica no lo
+            veía nadie. Es el mismo error ya cometido con un chip nuevo puesto
+            en Lista y reportado como hecho: verificar la pieza no es verificar
+            la pantalla. */}
+        <LockBadge lockedBy={o.lockedBy} lockedAt={o.lockedAt} className="mt-1" />
         {/* El número, COPIABLE de un clic (pedido del equipo, 28-ago-2026: lo
             necesitan para pegarlo en Dropi). Antes era texto suelto dentro de
             una tarjeta clicable: seleccionarlo con el mouse abría el pedido, así
@@ -1066,6 +1074,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           open={escribiendo}
           onOpenChange={setEscribiendo}
           externalId={String(o.externalId)}
+          dbId={o.dbId}
           nombre={o.nombre}
           estado={o.estado}
           phone={o.phone}

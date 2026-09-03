@@ -1749,6 +1749,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
                   open={escribiendoWa}
                   onOpenChange={setEscribiendoWa}
                   externalId={String(o.externalId)}
+                  dbId={o.dbId}
                   nombre={o.nombre}
                   estado={o.estado}
                   phone={o.phone}

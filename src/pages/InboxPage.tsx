@@ -16,7 +16,9 @@ import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDia
 import PanelConversacion from '@/components/seguimiento/PanelConversacion';
 import AccionPrincipal from '@/components/seguimiento/AccionPrincipal';
 import SelloGestion from '@/components/comun/SelloGestion';
+import LockBadge from '@/components/LockBadge';
 import { useSelloGestion, type EstadoSello, type Sello } from '@/hooks/useSelloGestion';
+import { useAtencionPedido } from '@/hooks/useAtencionPedido';
 
 // Re-render cada 60s para que "hace 2 h" suba solo, sin re-fetch.
 function useMinuteTick(): void {
@@ -255,6 +257,10 @@ function FilaCola({ o, seleccionada, onSelect, sello, estadoSello, miId }: {
             <SelloGestion sello={sello} estado={estadoSello} miId={miId} compacto />
           </span>
         )}
+        {/* El sello dice quién lo tocó ANTES; esto dice quién lo tiene ABIERTO
+            AHORA. Son dos preguntas distintas y las dos hacen falta para no
+            escribirle dos veces al mismo cliente. */}
+        <LockBadge lockedBy={o.lockedBy} lockedAt={o.lockedAt} className="mt-1" />
       </span>
     </button>
   );
@@ -386,6 +392,12 @@ export default function InboxPage() {
     if (sel) return;
     setSelId(items[0]?.dbId ?? null);
   }, [ancha, sel, items]);
+
+  // En pantalla ancha la conversación se abre AL LADO de la cola, sin el cuadro
+  // modal — así que el candado que pone el diálogo no corre. Se marca acá: el
+  // cliente que estoy atendiendo queda tomado mientras lo tenga seleccionado, y
+  // se suelta solo al pasar al siguiente.
+  useAtencionPedido(sel?.dbId ?? null, Boolean(ancha && sel));
 
   // ¿El feed del canal podría estar caído? Si el sync falla o lleva mucho sin
   // correr, esta lista puede estar INCOMPLETA — y un "Nadie esperando" en verde
@@ -693,6 +705,7 @@ export default function InboxPage() {
           open={!!abierto}
           onOpenChange={(v) => { if (!v) setAbierto(null); }}
           externalId={String(abierto.externalId)}
+          dbId={abierto.dbId}
           nombre={abierto.nombre}
           estado={abierto.estado}
           phone={abierto.phone}

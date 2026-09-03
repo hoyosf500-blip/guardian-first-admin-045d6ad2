@@ -36,6 +36,11 @@ export interface InboxItem {
    *  apaga — justo en la pantalla donde la ventana está abierta con seguridad. */
   salienteAt: number | null;
   leidoAt: number;
+  /** Quién lo tiene EN ATENCIÓN ahora mismo, y desde cuándo. Con esto la
+   *  bandeja dibuja «En atención por X» y dos personas no le escriben al mismo
+   *  cliente a la vez. `null` = libre. */
+  lockedBy: string | null;
+  lockedAt: string | null;
   /** Días que lleva EN SU ESTADO ACTUAL (desde `last_movement_at`), no desde
    *  que nació el pedido. `null` si Dropi no reporta el movimiento — y `null`
    *  se dibuja "—", nunca 0: no saber cuántos días lleva no es "llegó hoy". */
@@ -67,13 +72,15 @@ const TOPE = 500;
 
 const COLUMNAS =
   'id, external_id, nombre, phone, estado, ciudad, direccion, producto, valor, guia, '
-  + 'transportadora, last_movement_at, chat_entrante_at, chat_saliente_at, chat_leido_at';
+  + 'transportadora, last_movement_at, chat_entrante_at, chat_saliente_at, chat_leido_at, '
+  + 'locked_by, locked_at';
 
 type Fila = {
   id: string; external_id: string | null; nombre: string | null; phone: string | null;
   estado: string | null; ciudad: string | null; direccion: string | null; producto: string | null; valor: number | null;
   guia: string | null; transportadora: string | null; last_movement_at: string | null;
   chat_entrante_at: string | null; chat_saliente_at: string | null; chat_leido_at: string | null;
+  locked_by: string | null; locked_at: string | null;
 };
 
 /**
@@ -204,6 +211,8 @@ export function useInboxEsperando(storeId: string | null) {
         entranteAt: entranteAt ?? 0,
         salienteAt,
         leidoAt,
+        lockedBy: r.locked_by,
+        lockedAt: r.locked_at,
         // floor: 20 h en el mismo estado son 0 días completos, no "1". Misma
         // cuenta que `diasSinMovimiento` en `segPulso`.
         diasEnEstado: r.last_movement_at

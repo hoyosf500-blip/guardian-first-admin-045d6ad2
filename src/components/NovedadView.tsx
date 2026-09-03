@@ -11,6 +11,7 @@ import { copyToClipboard } from '@/lib/clipboard';
 import { useMarkNovedadResolved } from '@/hooks/useMarkNovedadResolved';
 import { useRecordGestion } from '@/hooks/useRecordGestion';
 import { usePedidoALaVista } from '@/hooks/useBitacoraPedido';
+import { useAtencionPedido } from '@/hooks/useAtencionPedido';
 import { useSelloGestion } from '@/hooks/useSelloGestion';
 import SelloGestion from '@/components/comun/SelloGestion';
 import { NovedadResultTipo } from '@/lib/novedadGestion';
@@ -117,6 +118,11 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
   // El hook abre, mide y cierra solo cuando cambia `o`. Si mientras estuvo
   // abierta hubo alguna gestion escribe `cerro`; si no hubo ninguna, `salto`.
   const { marcarGestion } = usePedidoALaVista(o ? { externalId: o.externalId, phone: o.phone } : null);
+
+  // Y mientras la ficha está abierta, la novedad queda EN ATENCIÓN: dos
+  // asesoras trabajando la misma novedad terminan llamando al mismo cliente.
+  // Mismo candado corto que Confirmar; se suelta al pasar a la siguiente.
+  useAtencionPedido(o?.dbId ?? null, Boolean(o));
 
   // ⛔ EL SELLO DE "YA LO TOCÓ" (3-sep-2026). Esta cola era la ÚNICA de las
   // cuatro que no leía las gestiones: no mostraba nada, ni siquiera si alguien
@@ -760,6 +766,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
           open={escribiendo}
           onOpenChange={setEscribiendo}
           externalId={o.externalId}
+          dbId={o.dbId}
           nombre={o.nombre}
           estado={o.estado}
           phone={o.phone}

@@ -71,6 +71,10 @@ describe('la reja de "quién trabaja la cola" vive en rolesTrabajo.ts', () => {
       join('hooks', 'useInactivityGuard.ts'),
       join('components', 'InactivityGuard.tsx'),
       join('components', 'CallView.tsx'),
+      // Marca "en atención" (3-sep-2026): reclama el pedido con la MISMA
+      // `claim_order` de Confirmar, así que hereda el mismo riesgo — si el dueño
+      // reclamara al mirar, le escondería el cliente al equipo 15 minutos.
+      join('hooks', 'useAtencionPedido.ts'),
     ];
     const sinImportar = obligados.filter(
       (rel) => !/from ['"]@\/lib\/rolesTrabajo['"]/.test(readFileSync(join(SRC, rel), 'utf8')),
@@ -90,5 +94,49 @@ describe('la reja de "quién trabaja la cola" vive en rolesTrabajo.ts', () => {
     // Y al cerrar la pestaña solo se suelta el candado PROPIO: `release_order`
     // corriendo como admin puede soltar el de otra persona.
     expect(src).toMatch(/claimedByMeRef\.current === o\.dbId\) void releaseOrder/);
+  });
+});
+
+/**
+ * ⛔ NADIE RECLAMA UN PEDIDO SIN PASAR POR LA REJA.
+ *
+ * `claim_order` esconde el pedido de la cola de llamadas de TODO el equipo por
+ * 15 minutos. Ya pasó una vez: el dueño abría una ficha en Confirmar para ver
+ * cómo iba la operación y le quitaba el cliente a sus asesoras. Desde el
+ * 3-sep-2026 hay una segunda puerta —la marca de "en atención" de Seguimiento,
+ * Novedades y la bandeja— y tiene que cumplir la misma regla.
+ *
+ * Por eso la lista de quién puede tomar el candado es CERRADA: agregar un
+ * tercer lugar obliga a pasar por acá y a mirar la reja.
+ */
+describe('el candado de "en atención" solo lo pone quien trabaja', () => {
+  it('solo dos archivos usan useOrderLock, y los dos tienen la reja', () => {
+    const usan = tsFiles(SRC)
+      // El archivo que DEFINE el hook no cuenta como usuario.
+      .filter((f) => !f.endsWith(join('hooks', 'useOrderLock.ts')))
+      .filter((f) => /useOrderLock\s*\(/.test(sinComentarios(readFileSync(f, 'utf8'))));
+
+    expect(usan.map((f) => f.replace(SRC, 'src')).sort()).toEqual([
+      join('src', 'components', 'CallView.tsx'),
+      join('src', 'hooks', 'useAtencionPedido.ts'),
+    ].sort());
+
+    for (const abs of usan) {
+      const src = sinComentarios(readFileSync(abs, 'utf8'));
+      expect(
+        /soloObserva\s*\(/.test(src),
+        `${abs.replace(SRC, 'src')} reclama pedidos sin preguntar si el que mira solo observa`,
+      ).toBe(true);
+    }
+  });
+
+  it('la marca se SUELTA cuando la pantalla se cierra', () => {
+    // Sin el release, un pedido queda escondido de la cola de llamadas hasta que
+    // vence el TTL de 15 min. Con la asesora saltando de chat en chat, eso deja
+    // la cola de Confirmar vaciándose sola.
+    const src = sinComentarios(readFileSync(join(SRC, 'hooks', 'useAtencionPedido.ts'), 'utf8'));
+    expect(/releaseOrder\(/.test(src)).toBe(true);
+    // Y solo el candado PROPIO: `release_order` como admin puede soltar el ajeno.
+    expect(/mioRef\.current === dbId/.test(src)).toBe(true);
   });
 });

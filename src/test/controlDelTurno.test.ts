@@ -19,7 +19,13 @@ const leer = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8');
 function sinComentarios(src: string): string {
   return src
     .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('\n')
+    // OJO: se parte con \r? tambien. Con archivos en CRLF (git los
+    // normaliza solo) cada linea termina en retorno de carro, y el punto de
+    // una regex NO lo cruza: la de abajo no matcheaba y los comentarios NO se
+    // borraban. Eso rompe el helper en las DOS direcciones — una comprobacion
+    // negativa da rojo por una palabra que solo estaba en un comentario, y una
+    // POSITIVA pasa en verde con el texto viviendo solo en un comentario.
+    .split(/\r?\n/)
     .map((l) => l.replace(/(?<!:)\/\/.*$/, ''))
     .join('\n');
 }
@@ -175,5 +181,38 @@ describe('el reparto vuelve a correr durante el día', () => {
     // Repartir viendo el mapa vacío "porque todavía no leí" le apila a una sola
     // persona todo lo que no tenía dueño. Es un bug ya cometido (28-ago-2026).
     expect(/asig\.cargado/.test(src)).toBe(true);
+  });
+});
+
+/**
+ * ⛔ NO SE LE ASIGNA TRABAJO A QUIEN NO ESTÁ TRABAJANDO.
+ *
+ * Pedido del dueño (3-sep-2026): *"si no hay actividad no le puede asignar"*.
+ * Hasta hoy bastaba con haber marcado entrada: quien fichaba a las 8, se iba a
+ * las 9 y no volvía seguía recibiendo un tercio de la cola a las 3 de la tarde,
+ * y ese tercio no lo trabajaba nadie. Es medio problema del sistema de
+ * auto-asignación que se apagó en mayo-2026 (pedidos con dueño y sin gestión).
+ */
+describe('el reparto mira la actividad, no la marca de entrada', () => {
+  const src = sinComentarios(leer('src/hooks/useSegAsignaciones.ts'));
+
+  it('la presencia exige señal reciente', () => {
+    expect(/presentesActivos\s*\(/.test(src), 'la presencia sigue saliendo de first_action_at a secas').toBe(true);
+  });
+
+  /**
+   * ⛔ El fallback que deshacía el filtro justo en el caso que importa: con
+   * NADIE activo, repartía entre el plantel completo.
+   */
+  it('sin nadie activo NO se cae al plantel completo', () => {
+    expect(
+      /filtrados\.length > 0 \? filtrados : operadores/.test(src),
+      'este fallback reparte entre todas cuando no hay nadie trabajando',
+    ).toBe(false);
+  });
+
+  it('pero si la lectura FALLA sí se reparte entre todas', () => {
+    // Fallar cerrado sería peor: dejaría sin trabajo asignado a quien sí vino.
+    expect(/presentes === null/.test(src)).toBe(true);
   });
 });

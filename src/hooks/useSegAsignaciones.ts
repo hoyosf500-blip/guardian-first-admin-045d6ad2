@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { repartirCola, desbalance, type AsignacionExistente } from '@/lib/repartoEquitativo';
+import { presentesActivos, type FilaPresencia } from '@/lib/presenciaReparto';
 import { bogotaToday } from '@/lib/utils';
 
 /**
@@ -85,23 +86,24 @@ const sbSuelto = supabase as unknown as {
 };
 
 /**
- * Quiénes dieron señal de vida HOY. `null` = no se pudo leer (y entonces el
- * reparto NO excluye a nadie — ver el comentario en `repartir`).
+ * Quiénes pueden recibir trabajo AHORA: los que están TRABAJANDO, no los que
+ * abrieron el CRM en algún momento del día.
  *
- * Se cuenta como presente quien tenga `first_action_at`: es la marca que deja el
- * heartbeat al minuto de abrir el CRM, así que alguien que acaba de llegar y
- * todavía no gestionó nada ya entra al reparto.
+ * ⛔ CAMBIÓ EL 3-SEP-2026, por pedido del dueño: *"si no hay actividad no le
+ * puede asignar"*. Antes bastaba con tener `first_action_at`, o sea con haber
+ * marcado entrada: quien fichaba a las 8, se iba a las 9 y no volvía seguía
+ * recibiendo un tercio de la cola a las 3 de la tarde — y ese tercio no lo
+ * trabajaba NADIE. Ahora se exige además señal reciente (`last_active_at`).
+ *
+ * `null` = no se pudo leer. Es distinto de un conjunto vacío, que significa
+ * "nadie está trabajando ahora"; el llamador los trata distinto.
  */
 async function presenciaDeHoy(): Promise<Set<string> | null> {
   const { data, error } = await (supabase.rpc as unknown as (
     fn: string, args: Record<string, unknown>,
   ) => Promise<{ data: unknown; error: unknown }>)('operator_activity_stats', { p_range: 'today' });
   if (error || !Array.isArray(data)) return null;
-  const s = new Set<string>();
-  for (const r of data as Array<{ operator_id?: string; first_action_at?: string | null }>) {
-    if (r.operator_id && r.first_action_at) s.add(String(r.operator_id));
-  }
-  return s;
+  return presentesActivos(data as FilaPresencia[], Date.now());
 }
 
 /** Postgres: relación o función inexistente → la migración no corrió. */
@@ -251,16 +253,34 @@ export function useSegAsignaciones() {
         // empezando), se reparte entre todas. Repartirle a alguien que no vino
         // se corrige re-repartiendo; NO repartirle a quien sí vino la deja sin
         // trabajo asignado todo el día.
+        // ⛔ Y "nadie está trabajando" NO es lo mismo que "no se pudo leer"
+        // (3-sep-2026). Antes las dos cosas caían en el mismo `: operadores` y
+        // el reparto le daba cola al equipo entero justamente cuando nadie
+        // estaba conectado. Ahora:
+        //   · `null`  → no se pudo medir → se reparte entre todas (fallar abierto).
+        //   · vacío   → nadie activo → NO hay destinatarios, el quórum de abajo
+        //               corta y se reintenta en unos minutos.
         const presentes = await presenciaDeHoy();
-        const filtrados = presentes && presentes.size > 0
-          ? operadores.filter((id) => presentes.has(id))
-          : operadores;
+        const filtrados = presentes === null
+          ? operadores
+          : operadores.filter((id) => presentes.has(id));
         // ⛔ `entre` es a QUIÉNES les tocó de verdad, y sube al llamador para que
         // el aviso no mienta. El mensaje decía «Entre N asesoras» con el plantel
         // COMPLETO aunque el reparto hubiera ido solo a las presentes: con 5 en
         // la tienda y 3 trabajando, avisaba "entre 5". Y ese aviso es lo único
         // que el jefe mira para saber si el reparto salió bien.
-        const destinatarios = filtrados.length > 0 ? filtrados : operadores;
+        // ⛔ SIN FALLBACK A `operadores`. Acá había un `filtrados.length > 0 ?
+        // filtrados : operadores` que deshacía el filtro justo en el caso que
+        // importa: con NADIE activo, repartía entre todo el plantel. Si no hay a
+        // quién asignarle, no se asigna — el reintento de cada 5 min lo agarra
+        // apenas alguien se ponga a trabajar.
+        //
+        // La ÚNICA excepción es el botón manual: si un jefe aprieta "repartir"
+        // con nadie activo, manda él y se reparte entre el plantel. Sin esto el
+        // botón contestaría «No hay asesoras en esta tienda», que es falso —
+        // asesoras hay, lo que no hay es actividad— y el jefe saldría a buscar
+        // un problema de configuración que no existe.
+        const destinatarios = filtrados.length > 0 || !opts?.forzar ? filtrados : operadores;
         const entre = destinatarios.length;
         const ausentes = Math.max(0, operadores.length - entre);
 

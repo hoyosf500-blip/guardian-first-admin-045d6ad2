@@ -1120,6 +1120,7 @@ export default function OrderDetailPage() {
           open={escribiendo}
           onOpenChange={setEscribiendo}
           externalId={String(order.external_id)}
+          dbId={order.id}
           nombre={order.nombre}
           estado={order.estado}
           phone={order.phone}

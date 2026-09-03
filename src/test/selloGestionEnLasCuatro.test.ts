@@ -25,7 +25,13 @@ const leer = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8');
 function sinComentarios(src: string): string {
   return src
     .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('\n')
+    // OJO: se parte con \r? tambien. Con archivos en CRLF (git los
+    // normaliza solo) cada linea termina en retorno de carro, y el punto de
+    // una regex NO lo cruza: la de abajo no matcheaba y los comentarios NO se
+    // borraban. Eso rompe el helper en las DOS direcciones — una comprobacion
+    // negativa da rojo por una palabra que solo estaba en un comentario, y una
+    // POSITIVA pasa en verde con el texto viviendo solo en un comentario.
+    .split(/\r?\n/)
     .map((l) => l.replace(/(?<!:)\/\/.*$/, ''))
     .join('\n');
 }
