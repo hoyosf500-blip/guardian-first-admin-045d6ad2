@@ -47,6 +47,22 @@ export function horaBogota(iso: string): string {
   return `${hh}:${mm}`;
 }
 
+/**
+ * La HORA del día en Bogotá (0-23) de un instante ISO.
+ *
+ * Es la cubeta del mapa de calor. Misma aritmética que `horaBogota` —restar el
+ * offset y leer en UTC—, nunca `toLocaleString`, que convierte dos veces.
+ *
+ * `null` si el ISO no se puede leer: una hora inventada movería una gestión de
+ * franja y el mapa acusaría a alguien por una hora en la que sí trabajó.
+ */
+export function horaDelDiaBogota(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  return new Date(t - OFFSET_BOGOTA_HORAS * 3_600_000).getUTCHours();
+}
+
 /** Corre `ymd` en `dias` (negativo = hacia atrás). Sin locales. */
 export function correrDia(ymd: string, dias: number): string {
   const r = rangoDiaBogota(ymd);

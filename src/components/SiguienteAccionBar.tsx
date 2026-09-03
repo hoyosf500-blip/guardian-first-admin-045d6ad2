@@ -1,15 +1,16 @@
 import { useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { AlertTriangle, MapPin, Phone, Clock, RotateCcw, Truck, Check, ArrowRight } from 'lucide-react';
+import { AlertTriangle, MapPin, Phone, Clock, RotateCcw, Truck, Check, ArrowRight, Inbox, MessageSquareDashed } from 'lucide-react';
 import { useOrders } from '@/contexts/OrderContext';
 import { useStore } from '@/contexts/StoreContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { siguienteAccion, type AccionKey } from '@/lib/siguienteAccion';
+import { siguienteAccion, HORAS_BANDEJA_URGENTE, type AccionKey } from '@/lib/siguienteAccion';
 import { segVisiblesParaCola } from '@/lib/segVisibles';
 import { useSegTouchIndex } from '@/hooks/useSegTouchIndex';
 import { useOpenIncidences } from '@/hooks/useOpenIncidences';
 import { splitNovedades } from '@/lib/novedadesSplit';
 import { soloObserva } from '@/lib/rolesTrabajo';
+import { useInboxEsperando } from '@/hooks/useInboxEsperando';
 import { cn } from '@/lib/utils';
 
 /**
@@ -37,6 +38,8 @@ import { cn } from '@/lib/utils';
 
 const ICONO: Record<AccionKey, typeof AlertTriangle> = {
   cargando:    Clock,
+  bandeja:     Inbox,
+  sin_respuesta: MessageSquareDashed,
   novedades:   AlertTriangle,
   agencia:     MapPin,
   confirmar:   Phone,
@@ -95,6 +98,28 @@ export default function SiguienteAccionBar() {
   const { closed, avisosAgencia } = useSegTouchIndex(activeStoreId);
   const { openIds } = useOpenIncidences(activeStoreId);
 
+  // ⛔ LA BANDEJA NO ESTABA EN LA ESCALERA (3-sep-2026). `ESCALERA` no tenía
+  // ningún escalón a `/inbox`: con 40 clientes sin contestar, esta barra mandaba
+  // a cualquier otro lado y nunca ahí. Es el mismo hueco que ya costó caro en
+  // Colombia — la pantalla celebraba «todos atendidos 🎉» con 39 esperando, 22
+  // de ellos hacía más de un día.
+  //
+  // El hook es el MISMO que usa `/inbox`: una consulta y un canal de realtime,
+  // no un bucle nuevo. Ver el comentario de `useInboxEsperando`.
+  const bandeja = useInboxEsperando(activeStoreId);
+  // ⛔ Solo se cuenta con `status === 'ok'`. `sin_medir` / `not_ready` / `error`
+  // van en `null` y el escalón NO se dispara: un cero inventado acá mandaría a
+  // la asesora a una bandeja vacía, y —peor— un cero que en realidad es "no sé"
+  // dejaría a 39 personas esperando sin que la barra diga nada.
+  const bandejaOk = bandeja.status === 'ok';
+  const bandejaUrgentes = useMemo(() => {
+    if (!bandejaOk) return null;
+    const corte = Date.now() - HORAS_BANDEJA_URGENTE * 3_600_000;
+    return bandeja.items.filter((i) => i.entranteAt <= corte).length;
+  }, [bandejaOk, bandeja.items]);
+  const bandejaEsperando = bandejaOk ? bandeja.items.length - (bandejaUrgentes ?? 0) : null;
+  const sinRespuesta = bandejaOk ? bandeja.sinRespuesta.length : null;
+
   // La MISMA población que muestra la pantalla de Seguimiento (ventana 45d +
   // dedup + cierres del equipo). Con segData crudo la barra contaba trabajo
   // que la pantalla ya descarta — pedidos cerrados ayer, duplicados, pedidos
@@ -113,8 +138,13 @@ export default function SiguienteAccionBar() {
   const novedadesAbiertas = split.conocido ? split.porGestionar.length : null;
 
   const accion = useMemo(
-    () => siguienteAccion({ workQueue, novedadesQueue, segData: segVisibles, segCargado: segLoaded, avisosAgencia, novedadesAbiertas }),
-    [workQueue, novedadesQueue, segVisibles, segLoaded, avisosAgencia, novedadesAbiertas],
+    () => siguienteAccion({
+      workQueue, novedadesQueue, segData: segVisibles, segCargado: segLoaded,
+      avisosAgencia, novedadesAbiertas,
+      bandejaEsperando, bandejaUrgentes, sinRespuesta,
+    }),
+    [workQueue, novedadesQueue, segVisibles, segLoaded, avisosAgencia, novedadesAbiertas,
+     bandejaEsperando, bandejaUrgentes, sinRespuesta],
   );
 
   // Todavía no se leyó la cola: no se dibuja NADA. Un "Todo al día" en verde

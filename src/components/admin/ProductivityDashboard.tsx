@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import {
   Loader2, RefreshCw, TrendingUp, AlertTriangle, Clock, CheckCircle2,
@@ -22,6 +22,10 @@ import { bogotaToday } from '@/lib/utils';
 import { isRpcMissing } from '@/lib/rpcError';
 import AdvisorCard from '@/components/admin/AdvisorCard';
 import AlertaEquipoStrip from '@/components/admin/AlertaEquipoStrip';
+import MapaCalorEquipo from '@/components/admin/MapaCalorEquipo';
+import { useInboxEsperando } from '@/hooks/useInboxEsperando';
+import { useSelloGestion } from '@/hooks/useSelloGestion';
+import { resumirSinVuelta } from '@/lib/plantillasSinVuelta';
 import { buildAdvisorVMs } from '@/lib/advisorCardVM';
 import { useLiveTeam } from '@/hooks/useLiveTeam';
 import { useResponsabilidadAsesor } from '@/hooks/useResponsabilidadAsesor';
@@ -232,6 +236,25 @@ export default function ProductivityDashboard() {
   // Roster completo de la tienda → mostrar SIEMPRE a los asesores, incluidos los
   // inactivos (dejaron de trabajar) que la RPC de productividad esconde.
   const { roster: advisorRoster } = useAdvisorRoster(activeStoreId);
+
+  // ── «Les escribió y no volvió a mirar», por persona ────────────────────────
+  // El caso que reportó el dueño del supervisor. Se cruzan dos cosas que ya
+  // existen: los clientes colgados (la segunda canasta de la bandeja) y el
+  // sello de gestión, que es lo único que dice QUIÉN tocó cada teléfono.
+  //
+  // ⛔ La atribución NO sale de `chat_saliente_tipo`: esa columna dice si el
+  // mensaje fue plantilla o directo, no quién lo mandó, y el bot manda
+  // plantillas todo el día. Ver `plantillasSinVuelta.ts`.
+  const { sinRespuesta: colgados } = useInboxEsperando(activeStoreId);
+  const telefonosColgados = useMemo(
+    () => colgados.map((c) => c.phone).filter(Boolean),
+    [colgados],
+  );
+  const { selloDe, estado: estadoSelloColgados } = useSelloGestion(activeStoreId, telefonosColgados);
+  const sinVuelta = useMemo(
+    () => resumirSinVuelta(colgados, selloDe, estadoSelloColgados === 'ok'),
+    [colgados, selloDe, estadoSelloColgados],
+  );
   const fraccionTurnoHoy = (() => {
     const tot = schedule.workEndSec - schedule.workStartSec;
     if (tot <= 0) return 1;
@@ -788,8 +811,19 @@ export default function ProductivityDashboard() {
               {/* ⛔ ARRIBA DE LAS TARJETAS, no dentro de "Ver detalle". El dueño
                   reportó que no volvía a ver las alertas de inactividad: el
                   número existía, pero colapsado en cada tarjeta, una por una. */}
-              <AlertaEquipoStrip vms={advisorVMs} isToday={isToday} />
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <AlertaEquipoStrip vms={advisorVMs} isToday={isToday} sinVuelta={sinVuelta.porAsesora} />
+              {/* Hora por hora, todo el equipo junto. Va ARRIBA de las tarjetas
+                  porque contesta antes la pregunta del dueño («¿quién estuvo
+                  trabajando y a qué hora?») y porque, con equipo grande, es la
+                  única vista donde entran todas de un vistazo. */}
+              <MapaCalorEquipo
+                storeId={activeStoreId}
+                asesores={advisorVMs.map((vm) => ({ operatorId: vm.operatorId, name: vm.name }))}
+              />
+              {/* Tres columnas en pantallas anchas (3-sep-2026): estaba fijo en
+                  dos, así que con 8 asesoras eran cuatro filas de tarjetas altas
+                  y el dueño no veía al equipo sin scrollear. */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
                 {advisorVMs.map((vm) => (
                   <AdvisorCard
                     key={vm.operatorId}

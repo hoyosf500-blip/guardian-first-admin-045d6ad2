@@ -221,8 +221,12 @@ export function useSegAsignaciones() {
     async (
       orderIdsPorUrgencia: string[],
       /** `forzar` = lo apretó un jefe a mano: se reparte con quien haya. El
-       *  automático NO fuerza — espera a que llegue el equipo. */
-      opts?: { forzar?: boolean },
+       *  automático NO fuerza — espera a que llegue el equipo.
+       *
+       *  `cargaBase` = lo que le FALTA a cada una (no lo que le tocó), para que
+       *  el trabajo nuevo vaya a la que ya terminó. Ver `repartoEquitativo.ts`:
+       *  es TODO O NADA, un hueco invalida el mapa entero. */
+      opts?: { forzar?: boolean; cargaBase?: Map<string, number> },
     ): Promise<EstadoReparto | null> => {
       if (!activeStoreId || !isManagerOfActive || !soportado) return null;
       setRepartiendo(true);
@@ -275,6 +279,7 @@ export function useSegAsignaciones() {
           pedidos: orderIdsPorUrgencia.map((orderId) => ({ orderId })),
           operadores: destinatarios,
           yaAsignados,
+          cargaBase: opts?.cargaBase,
         });
 
         if (plan.motivoSinAsignar === 'sin_operadores') {
@@ -334,6 +339,49 @@ export function useSegAsignaciones() {
     [activeStoreId, isManagerOfActive, soportado, cargar],
   );
 
+  /**
+   * "Pedir más": la asesora que terminó se carga pedidos SIN DUEÑO, para sí
+   * misma, sin que haga falta un jefe conectado.
+   *
+   * ── Por qué es una RPC aparte y no `repartir` ──────────────────────────────
+   * `repartir_seguimiento` es manager-only, así que el reparto solo pasa
+   * mientras el dueño o el supervisor tienen Seguimiento abierto. La persona que
+   * vacía su lote a media mañana no tenía forma de recibir más.
+   * `tomar_seguimiento` (20260903180000) es member-only y **siempre para
+   * `auth.uid()`**: no hay parámetro de operador, así que por esta vía nadie
+   * puede endosarle trabajo a otro.
+   *
+   * ⛔ Se mandan SOLO pedidos que hoy no tienen dueño. El servidor lo revalida
+   * igual (`ON CONFLICT DO NOTHING`), pero filtrar acá evita gastar el tope en
+   * pedidos ajenos y devolver menos de los que sí se podían tomar. Y es la
+   * misma regla de siempre: no se le roba un pedido a quien ya lo tiene.
+   *
+   * Devuelve cuántos se tomaron de verdad (los cuenta el server, no el plan
+   * local), o `null` si no se pudo.
+   */
+  const tomarMas = useCallback(
+    async (candidatosPorUrgencia: string[], cuantos = 20): Promise<number | null> => {
+      if (!activeStoreId || !user || !soportado) return null;
+      const libres = candidatosPorUrgencia.filter((id) => !asignaciones.has(id));
+      if (libres.length === 0) return 0;
+
+      const { data, error } = await (supabase.rpc as unknown as (
+        fn: string, args: Record<string, unknown>,
+      ) => Promise<{ data: unknown; error: { code?: string; message?: string } | null }>)(
+        'tomar_seguimiento',
+        { p_store_id: activeStoreId, p_order_ids: libres.slice(0, 50), p_limite: cuantos },
+      );
+
+      if (faltaLaMigracion(error)) { setSoportado(false); return null; }
+      if (error) return null;
+
+      await cargar(); // la verdad la tiene el server
+      const fila = (Array.isArray(data) ? data[0] : data) as { tomados?: number } | null;
+      return fila?.tomados ?? 0;
+    },
+    [activeStoreId, user, soportado, asignaciones, cargar],
+  );
+
   /** ¿Este pedido es mío hoy? */
   const esMio = useCallback(
     (orderId: string | null | undefined): boolean =>
@@ -350,6 +398,7 @@ export function useSegAsignaciones() {
     repartiendo,
     repartir,
     reasignar,
+    tomarMas,
     esMio,
     recargar: cargar,
   };

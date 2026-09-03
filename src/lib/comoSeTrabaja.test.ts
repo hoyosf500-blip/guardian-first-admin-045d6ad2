@@ -36,7 +36,11 @@ describe('GUARDIÁN: el protocolo escrito es el protocolo que corre', () => {
     // Si mañana se agrega un escalón 7 y se olvida documentarlo, la pantalla lo
     // omitiría en silencio y la asesora nunca sabría que existe.
     const conEscalon: AccionKey[] = [
-      'novedades', 'agencia', 'confirmar', 'detenidos', 'rescate', 'seguimiento',
+      // `bandeja` y `sin_respuesta` entraron el 3-sep-2026. Hasta ese día la
+      // escalera NO tenía ningún escalón a `/inbox`: con 40 clientes sin
+      // contestar, la barra mandaba a cualquier otro lado y nunca ahí.
+      'bandeja', 'novedades', 'agencia', 'confirmar', 'sin_respuesta',
+      'detenidos', 'rescate', 'seguimiento',
     ];
     expect(ESCALERA.map((e) => e.key).sort()).toEqual([...conEscalon].sort());
   });

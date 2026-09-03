@@ -68,27 +68,6 @@ function EtiquetaCarril({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Barritas de gestiones por hora del turno. */
-function Barritas({ serie }: { serie: { hora: number; cantidad: number }[] }) {
-  if (serie.length === 0) return null;
-  const max = Math.max(1, ...serie.map((s) => s.cantidad));
-  return (
-    <span className="inline-flex items-end gap-[2px] h-6" role="img" aria-label="Gestiones por hora">
-      {serie.map((s) => {
-        const px = s.cantidad === 0 ? 2 : Math.max(3, Math.round((s.cantidad / max) * 22));
-        return (
-          <span
-            key={s.hora}
-            className={`w-[4px] rounded-sm ${s.cantidad === 0 ? 'bg-muted-foreground/25' : 'bg-accent/70'}`}
-            style={{ height: `${px}px` }}
-            title={`${s.hora}:00 — ${s.cantidad} ${s.cantidad === 1 ? 'gestión' : 'gestiones'}`}
-          />
-        );
-      })}
-    </span>
-  );
-}
-
 /**
  * Una línea de ritmo: el número grande, su etiqueta y la cuenta que lo produce.
  *
@@ -169,12 +148,21 @@ export default function AdvisorCard({
 
   const rt = ringTone(vm.anilloPct);
   const d = vm.detalle;
-  const serie = isToday ? vm.hourly : [];
-  // Una sola serie, y va colgada del carril donde está el trabajo (ver el
-  // comentario del bloque de ritmo).
-  const hayBarritas = isToday && serie.length > 0;
-  const barritasConfirmar = hayBarritas && vm.carril !== 'seguimiento' ? <Barritas serie={serie} /> : null;
-  const barritasSeguimiento = hayBarritas && vm.carril === 'seguimiento' ? <Barritas serie={serie} /> : null;
+
+  // ⛔ LAS BARRITAS POR HORA SE FUERON, Y NO ES UN RECORTE (3-sep-2026).
+  //
+  // Salían de `useLiveTeam.hourly`, que lee las 400 marcas MÁS RECIENTES de
+  // toda la tienda (`EVENT_SCAN_LIMIT`). El propio hook lo advertía: en un
+  // equipo grande *"las horas más viejas subcontarían"*. Con cinco asesoras a
+  // ~120 gestiones ese tope se pasa antes del mediodía, así que la franja de la
+  // mañana salía corta — y sobre esa franja el dueño le reclama a una persona.
+  //
+  // El reemplazo honesto es el mapa de calor de arriba (`MapaCalorEquipo`), que
+  // lee el día entero paginando y distingue "no trabajó" de "no se sabe".
+  // Borrarlas en vez de dejarlas apagadas es a propósito: un dato que miente y
+  // sigue ahí, alguien lo vuelve a dibujar.
+  const barritasConfirmar = null;
+  const barritasSeguimiento = null;
 
   return (
     <article className={`relative flex flex-col gap-3.5 overflow-hidden rounded-2xl border ${CARD_RING[vm.atencion]} bg-card/40 shadow-card3d hairline-top p-4`}>

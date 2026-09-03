@@ -60,6 +60,10 @@ import { findSegList, esAccionable, type SegListSlug } from './segLists';
 import { estadoAvisoAgencia } from './avisoAgencia';
 
 export type AccionKey =
+  /** Un cliente escribió y nadie le contestó. Ver `HORAS_BANDEJA_URGENTE`. */
+  | 'bandeja'
+  /** Le escribimos y no contestó: falta el 2º intento. */
+  | 'sin_respuesta'
   | 'novedades'
   | 'agencia'
   | 'confirmar'
@@ -107,6 +111,20 @@ function contarLista(segData: OrderData[], slug: SegListSlug): number {
 const rutaSeg = (slug: SegListSlug) => `/seguimiento?lista=${slug}`;
 
 /**
+ * A partir de cuántas horas un cliente esperando MANDA SOBRE TODO.
+ *
+ * ── La decisión del dueño (3-sep-2026) ──────────────────────────────────────
+ * Se le ofrecieron tres órdenes y eligió éste: *"primero si lleva +3 horas"*.
+ * Con menos de 3 h la bandeja entra después de Novedades y Agencia.
+ *
+ * El equilibrio que compra: una persona que lleva media mañana esperando
+ * respuesta manda sobre un paquete detenido —porque se va a ir a la
+ * competencia— pero un «ok, gracias» sin contestar NO tapa un paquete que se
+ * devuelve mañana. Poner la bandeja siempre primera hacía exactamente eso.
+ */
+export const HORAS_BANDEJA_URGENTE = 3;
+
+/**
  * La escalera, ESCRITA UNA SOLA VEZ.
  *
  * `siguienteAccion` saca de acá el "por qué" que muestra la barra, y la pantalla
@@ -132,8 +150,17 @@ export interface EscalonDoc {
 
 export const ESCALERA: readonly EscalonDoc[] = [
   {
-    key: 'novedades',
+    key: 'bandeja',
     orden: 1,
+    nombre: 'Clientes esperando respuesta',
+    porque: 'Escribieron y nadie les contestó. Una persona esperando se va a la competencia.',
+    queHacer:
+      'Se contesta. Los que llevan más de 3 horas van ANTES que todo lo demás: a esa altura el cliente ya cree que no le van a responder. Los de menos de 3 horas entran después de Novedades y Agencia, porque un paquete que se devuelve mañana no puede esperar a que alguien conteste un «gracias».',
+    ruta: '/inbox',
+  },
+  {
+    key: 'novedades',
+    orden: 2,
     nombre: 'Novedades abiertas',
     porque: 'La transportadora tiene el paquete detenido esperando respuesta.',
     queHacer:
@@ -142,7 +169,7 @@ export const ESCALERA: readonly EscalonDoc[] = [
   },
   {
     key: 'agencia',
-    orden: 2,
+    orden: 3,
     nombre: 'Paquetes esperando en la agencia',
     porque: 'La transportadora lo guarda unos días y después lo devuelve sin avisar.',
     queHacer:
@@ -151,7 +178,7 @@ export const ESCALERA: readonly EscalonDoc[] = [
   },
   {
     key: 'confirmar',
-    orden: 3,
+    orden: 4,
     nombre: 'Pedidos por confirmar',
     porque: 'Un pedido sin confirmar a los 4 días se cancela solo.',
     queHacer:
@@ -159,8 +186,17 @@ export const ESCALERA: readonly EscalonDoc[] = [
     ruta: '/confirmar',
   },
   {
+    key: 'sin_respuesta',
+    orden: 5,
+    nombre: 'Les escribimos y no contestaron',
+    porque: 'Salió un mensaje y nadie volvió a mirar si respondieron.',
+    queHacer:
+      'Se hace el SEGUNDO intento. Mandar una plantilla y no volver a mirar no es haber gestionado: el pedido queda igual de solo que antes, pero con la sensación de que ya se atendió. Si tampoco contesta, se llama.',
+    ruta: '/inbox',
+  },
+  {
     key: 'detenidos',
-    orden: 4,
+    orden: 6,
     nombre: 'Pedidos detenidos',
     porque: 'Llevan +72 h sin moverse. Acá se le reclama a la transportadora, no al cliente.',
     queHacer:
@@ -169,7 +205,7 @@ export const ESCALERA: readonly EscalonDoc[] = [
   },
   {
     key: 'rescate',
-    orden: 5,
+    orden: 7,
     nombre: 'Rescate de devoluciones',
     porque: 'Cancelado no es perdido: en julio, 32 de 49 pedidos re-emitidos terminaron entregados.',
     queHacer:
@@ -178,7 +214,7 @@ export const ESCALERA: readonly EscalonDoc[] = [
   },
   {
     key: 'seguimiento',
-    orden: 6,
+    orden: 8,
     nombre: 'El resto de Seguimiento',
     porque: 'Indemnizaciones vencidas, pendientes de guía y reparto.',
     queHacer:
@@ -258,6 +294,22 @@ export interface SiguienteAccionInput {
    * se pudo medir", y la incertidumbre no puede esconder trabajo real.
    */
   novedadesAbiertas?: number | null;
+  /**
+   * Clientes que escribieron y siguen sin respuesta, y cuántos de ellos llevan
+   * más de `HORAS_BANDEJA_URGENTE`.
+   *
+   * ⛔ `null`/ausente = NO SE PUDO MEDIR, y entonces el escalón no se dispara.
+   * Es la misma regla que ya tiene `novedadesAbiertas`, y acá pesa el doble: la
+   * bandeja distingue explícitamente «nadie esperando» de «todavía no puedo
+   * medir quién espera» (`useInboxEsperando`), justo por el incidente de
+   * Colombia — la pantalla celebraba «todos atendidos 🎉» con 39 clientes
+   * esperando, 22 de ellos hacía más de un día. Un escalón que se dispara con
+   * un cero inventado es el mismo error, al revés.
+   */
+  bandejaEsperando?: number | null;
+  bandejaUrgentes?: number | null;
+  /** Clientes a los que les escribimos y no contestaron: falta el 2º intento. */
+  sinRespuesta?: number | null;
 }
 
 /**
@@ -266,7 +318,31 @@ export interface SiguienteAccionInput {
  * más cómoda, y la más cómoda nunca es la que vence.
  */
 export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
-  const { workQueue, novedadesQueue, segData, segCargado = true, avisosAgencia, novedadesAbiertas } = input;
+  const {
+    workQueue, novedadesQueue, segData, segCargado = true, avisosAgencia, novedadesAbiertas,
+    bandejaEsperando, bandejaUrgentes, sinRespuesta,
+  } = input;
+
+  // ── 0. Bandeja URGENTE: alguien esperando hace más de 3 h ─────────
+  // Manda sobre todo, incluso sobre una novedad. Decisión del dueño: a esa
+  // altura el cliente ya cree que no le van a contestar, y eso no se recupera
+  // resolviendo el paquete al día siguiente.
+  const urgentesBandeja = bandejaUrgentes ?? 0;
+  if (urgentesBandeja > 0) {
+    return {
+      key: 'bandeja',
+      cuantos: urgentesBandeja,
+      titulo: urgentesBandeja === 1
+        ? 'Contestale: lleva más de 3 horas esperando'
+        : `Contestales: ${urgentesBandeja} llevan más de 3 horas esperando`,
+      etiqueta: urgentesBandeja === 1
+        ? '1 cliente esperando hace +3 h'
+        : `${urgentesBandeja} clientes esperando hace +3 h`,
+      porque: doc('bandeja').porque,
+      ruta: '/inbox',
+      tono: 'urgente',
+    };
+  }
 
   // ── 1. Novedades ──────────────────────────────────────────────────
   // Solo las que Dropi todavía deja gestionar. Ver `novedadesAbiertas`.
@@ -336,6 +412,22 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
     };
   }
 
+  // ── 2.5. Bandeja: los que llevan menos de 3 h ─────────────────────
+  const esperandoBandeja = bandejaEsperando ?? 0;
+  if (esperandoBandeja > 0) {
+    return {
+      key: 'bandeja',
+      cuantos: esperandoBandeja,
+      titulo: esperandoBandeja === 1
+        ? 'Contestale al cliente que escribió'
+        : `Contestales a los ${esperandoBandeja} clientes que escribieron`,
+      etiqueta: esperandoBandeja === 1 ? '1 cliente esperando respuesta' : `${esperandoBandeja} clientes esperando respuesta`,
+      porque: doc('bandeja').porque,
+      ruta: '/inbox',
+      tono: 'atencion',
+    };
+  }
+
   // ── 3. Confirmar ──────────────────────────────────────────────────
   // `!o.result` = todavía no se gestionó hoy. Mismo criterio que usa el guard.
   const porConfirmar = workQueue.reduce((n, o) => (o.result ? n : n + 1), 0);
@@ -348,6 +440,25 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
       porque: doc('confirmar').porque,
       ruta: '/confirmar',
       tono: 'atencion',
+    };
+  }
+
+  // ── 3.5. Les escribimos y no contestaron ──────────────────────────
+  // El caso del supervisor que manda la plantilla de un clic y no vuelve a
+  // mirar. Va DESPUÉS de Confirmar porque el 2º intento no vence hoy; va antes
+  // que Detenidos porque acá todavía hay un cliente que se puede recuperar.
+  const deuda = sinRespuesta ?? 0;
+  if (deuda > 0) {
+    return {
+      key: 'sin_respuesta',
+      cuantos: deuda,
+      titulo: deuda === 1
+        ? 'Hacé el 2º intento con el que no contestó'
+        : `Hacé el 2º intento con ${deuda} que no contestaron`,
+      etiqueta: deuda === 1 ? '1 sin respuesta desde ayer' : `${deuda} sin respuesta`,
+      porque: doc('sin_respuesta').porque,
+      ruta: '/inbox',
+      tono: 'normal',
     };
   }
 

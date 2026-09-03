@@ -126,3 +126,97 @@ describe('GUARDIÁN: el reparto no puede sorprender', () => {
     expect(total).toBe(31);
   });
 });
+
+/**
+ * `cargaBase` — la que terminó recibe más (pedido del dueño, 3-sep-2026).
+ *
+ * Sin esto, "si una asesora terminó que se le carguen más pedidos" no puede
+ * pasar: la carga por defecto cuenta pedidos ASIGNADOS, así que la que ya
+ * despachó los suyos pesa igual que la que no tocó ninguno.
+ */
+describe('repartirCola — equilibrar por lo que FALTA', () => {
+  /** Marcela (a) terminó sus 4; Johana (b) no tocó ninguno de los suyos. */
+  const asignadosDeAyer: AsignacionExistente[] = [
+    { orderId: 'v1', operatorId: 'a' }, { orderId: 'v2', operatorId: 'a' },
+    { orderId: 'v3', operatorId: 'a' }, { orderId: 'v4', operatorId: 'a' },
+    { orderId: 'v5', operatorId: 'b' }, { orderId: 'v6', operatorId: 'b' },
+    { orderId: 'v7', operatorId: 'b' }, { orderId: 'v8', operatorId: 'b' },
+  ];
+
+  it('SIN cargaBase se parte por mitades — el comportamiento viejo, intacto', () => {
+    const r = repartirCola({
+      pedidos: cola(4), operadores: ['a', 'b'], yaAsignados: asignadosDeAyer,
+    });
+    // Las dos entran con 4 asignados, así que los 4 nuevos van 2 y 2.
+    expect(r.nuevas.filter((x) => x.operatorId === 'a')).toHaveLength(2);
+    expect(r.nuevas.filter((x) => x.operatorId === 'b')).toHaveLength(2);
+  });
+
+  it('CON cargaBase el trabajo nuevo va a la que ya terminó', () => {
+    const r = repartirCola({
+      pedidos: cola(4),
+      operadores: ['a', 'b'],
+      yaAsignados: asignadosDeAyer,
+      cargaBase: new Map([['a', 0], ['b', 4]]),   // lo que le FALTA a cada una
+    });
+    expect(r.nuevas.filter((x) => x.operatorId === 'a')).toHaveLength(4);
+    expect(r.nuevas.filter((x) => x.operatorId === 'b')).toHaveLength(0);
+    // Y quedan parejas en lo pendiente, que es la vara que importa.
+    expect(r.cargaFinal.get('a')).toBe(4);
+    expect(r.cargaFinal.get('b')).toBe(4);
+  });
+
+  it('no cuenta dos veces: con cargaBase los ya asignados NO se vuelven a sumar', () => {
+    const r = repartirCola({
+      pedidos: cola(2),
+      operadores: ['a', 'b'],
+      yaAsignados: asignadosDeAyer,
+      cargaBase: new Map([['a', 1], ['b', 1]]),
+    });
+    // 1 de base + 1 nuevo cada una. Si se sumaran los 4 asignados daría 5 y 5.
+    expect(r.cargaFinal.get('a')).toBe(2);
+    expect(r.cargaFinal.get('b')).toBe(2);
+  });
+
+  /**
+   * ⛔ EL CASO QUE JUSTIFICA LA GUARDA. `turnoDelEquipo` devuelve
+   * `sinTocar: number | null` y su regla es que "cero nunca sustituye a 'no se
+   * pudo medir'". Si un `null` se colara como 0, esa persona entraría como la
+   * más libre del turno y se llevaría TODO el trabajo nuevo — precisamente
+   * porque no se la pudo medir.
+   */
+  it('si falta el dato de UNA sola, se ignora el mapa entero y se reparte como siempre', () => {
+    const r = repartirCola({
+      pedidos: cola(4),
+      operadores: ['a', 'b'],
+      yaAsignados: asignadosDeAyer,
+      cargaBase: new Map([['a', 0]]),          // falta 'b'
+    });
+    expect(r.nuevas.filter((x) => x.operatorId === 'a')).toHaveLength(2);
+    expect(r.nuevas.filter((x) => x.operatorId === 'b')).toHaveLength(2);
+  });
+
+  it('un número basura tampoco se toma por bueno', () => {
+    for (const malo of [Number.NaN, -1, Infinity]) {
+      const r = repartirCola({
+        pedidos: cola(4),
+        operadores: ['a', 'b'],
+        yaAsignados: asignadosDeAyer,
+        cargaBase: new Map([['a', malo], ['b', 4]]),
+      });
+      expect(r.nuevas.filter((x) => x.operatorId === 'a')).toHaveLength(2);
+    }
+  });
+
+  it('sigue sin robarle un pedido a nadie', () => {
+    const r = repartirCola({
+      pedidos: [...asignadosDeAyer.map((a) => ({ orderId: a.orderId })), ...cola(3)],
+      operadores: ['a', 'b'],
+      yaAsignados: asignadosDeAyer,
+      cargaBase: new Map([['a', 0], ['b', 4]]),
+    });
+    const ids = r.nuevas.map((x) => x.orderId);
+    for (const a of asignadosDeAyer) expect(ids).not.toContain(a.orderId);
+    expect(ids).toHaveLength(3);
+  });
+});

@@ -38,20 +38,29 @@ describe('quién trabaja la cola', () => {
   });
 });
 
-describe('a quién se le traba la pantalla — más estrecho A PROPÓSITO', () => {
+describe('a quién se le traba la pantalla', () => {
   it('a la operadora sí', () => {
     expect(seLeBloqueaLaPantalla(ESTEFANO)).toBe(true);
   });
 
-  it('al SUPERVISOR no: se le mide, pero trabarlo deja al equipo sin quien lo destrabe', () => {
-    // ⛔ No es el mismo bug que `trabajaLaCola` corrige. Roberto SÍ se mide
-    // (nudge suave + botón de pausa + reparto + jornada); lo único que no se le
-    // hace es trabarle la pantalla 5 minutos.
+  it('al SUPERVISOR también — decisión del dueño, 3-sep-2026', () => {
+    // ⛔ ESTO CAMBIÓ, y el cambio fue deliberado. Hasta el 3-sep Roberto quedaba
+    // exento: se le medía (nudge suave, botón de pausa, reparto, jornada) pero
+    // no se le trababa la pantalla, porque es quien destraba al equipo.
+    //
+    // El dueño lo revirtió con un caso encima de la mesa: el supervisor manda
+    // plantillas de un clic, hace UN intento y no vuelve a mirar si contestaron.
+    // «A los supervisores también se les cuenta porque trabajan menos.» Un aviso
+    // que no traba a quien menos rinde es un adorno.
+    //
+    // Si esta prueba se pone roja porque alguien volvió a eximir al supervisor,
+    // que sea con el dato de cuántas veces el equipo quedó esperándolo —
+    // no de memoria.
     expect(trabajaLaCola(ROBERTO)).toBe(true);
-    expect(seLeBloqueaLaPantalla(ROBERTO)).toBe(false);
+    expect(seLeBloqueaLaPantalla(ROBERTO)).toBe(true);
   });
 
-  it('al dueño nunca', () => {
+  it('al dueño nunca — mirar la operación no puede costarle una pantalla trabada', () => {
     expect(seLeBloqueaLaPantalla(FABIAN)).toBe(false);
     expect(seLeBloqueaLaPantalla(CLIENTE_DUENO)).toBe(false);
   });

@@ -65,24 +65,93 @@ const TERMINALES = new Set(['ENTREGADO', 'CANCELADO', 'ARCHIVADO GHOST', 'ARCHIV
 // tope — es una limitación conocida, no un cero silencioso.
 const TOPE = 500;
 
+const COLUMNAS =
+  'id, external_id, nombre, phone, estado, ciudad, direccion, producto, valor, guia, '
+  + 'transportadora, last_movement_at, chat_entrante_at, chat_saliente_at, chat_leido_at';
+
+type Fila = {
+  id: string; external_id: string | null; nombre: string | null; phone: string | null;
+  estado: string | null; ciudad: string | null; direccion: string | null; producto: string | null; valor: number | null;
+  guia: string | null; transportadora: string | null; last_movement_at: string | null;
+  chat_entrante_at: string | null; chat_saliente_at: string | null; chat_leido_at: string | null;
+};
+
+/**
+ * A partir de cuántas horas sin respuesta el mensaje pasa a ser una DEUDA.
+ *
+ * ── Por qué existe esta segunda canasta (pedido del dueño, 3-sep-2026) ──────
+ * Textual: *"tengo un supervisor que manda plantillas con el botón en
+ * automático, hace un solo intento y no está pendiente si respondieron"*.
+ *
+ * Eso hoy es invisible en TODAS las pantallas. El estado ya existía con nombre
+ * propio —`estadoConversacion` devuelve `'sin_respuesta'`, *"le escribimos y el
+ * cliente nunca contestó nada"*— y se usaba en un solo lugar decorativo: un
+ * sufijo de texto en una tarjeta. La bandeja, mientras tanto, mira exactamente
+ * lo contrario (quién nos escribió a nosotros).
+ *
+ * Seis horas y no una: un mensaje mandado a las 11 se reclama a las 17, dentro
+ * del mismo turno. Menos convertiría en deuda a cada mensaje recién enviado y
+ * la lista se llenaría de trabajo que todavía no lo es — que es como muere una
+ * cola de prioridad.
+ */
+export const HORAS_SIN_RESPUESTA = 6;
+
+/** Más viejo que esto ya no es "falta el 2º intento", es historia. */
+const DIAS_VENTANA_SIN_RESPUESTA = 7;
+
+export interface InboxDosColas {
+  /** Nos escribieron y nadie contestó. La bandeja de siempre. */
+  esperando: InboxItem[];
+  /** Les escribimos y no contestaron: falta el 2º intento. */
+  sinRespuesta: InboxItem[];
+}
+
 export function useInboxEsperando(storeId: string | null) {
   const [items, setItems] = useState<InboxItem[]>([]);
+  const [sinRespuesta, setSinRespuesta] = useState<InboxItem[]>([]);
   // Arranca en 'cargando', NO en 'ok': con 'ok'+vacío la pantalla afirmaría
   // "nadie esperando" sobre datos que todavía no llegaron (el bug de la casa).
   const [status, setStatus] = useState<InboxStatus>('cargando');
   const seqRef = useRef(0);
 
   const load = useCallback(async () => {
-    if (!storeId) { setItems([]); setStatus('cargando'); return; }
+    if (!storeId) { setItems([]); setSinRespuesta([]); setStatus('cargando'); return; }
     const seq = ++seqRef.current;
-    const { data, error } = await supabase
-      .from('orders')
-      .select('id, external_id, nombre, phone, estado, ciudad, direccion, producto, valor, guia, transportadora, last_movement_at, chat_entrante_at, chat_saliente_at, chat_leido_at')
-      .eq('store_id', storeId)
-      .not('chat_entrante_at', 'is', null)
-      .order('chat_entrante_at', { ascending: false })
-      .limit(TOPE);
+
+    // ⛔ DOS CONSULTAS, UN SOLO HOOK Y UN SOLO CANAL DE REALTIME.
+    //
+    // Un `.or()` no sirve acá: las dos canastas se ordenan por columnas
+    // distintas —quién espera hace más, por `chat_entrante_at`; a quién le
+    // debemos el 2º intento, por `chat_saliente_at`— y con un solo `order` la
+    // segunda mitad caería fuera del tope de 500 sin que nadie se entere. Eso
+    // es un cero silencioso, justo lo que esta pantalla vino a corregir.
+    //
+    // Lo que NO se hace es un hook aparte: esto lo monta también la barra del
+    // turno, que vive en TODAS las rutas, y la memoria
+    // `crm_lento_cinco_bucles_realtime` mide 112 peticiones/min con la pantalla
+    // quieta por acumular bucles. Dos SELECT en paralelo cuestan un viaje; un
+    // hook más costaría un canal más, para siempre.
+    const [conEntrante, sinEntrante] = await Promise.all([
+      supabase
+        .from('orders')
+        .select(COLUMNAS)
+        .eq('store_id', storeId)
+        .not('chat_entrante_at', 'is', null)
+        .order('chat_entrante_at', { ascending: false })
+        .limit(TOPE),
+      // Los que NUNCA escribieron: `estadoConversacion` los llama
+      // 'sin_respuesta' y no entran en la consulta de arriba por definición.
+      supabase
+        .from('orders')
+        .select(COLUMNAS)
+        .eq('store_id', storeId)
+        .is('chat_entrante_at', null)
+        .not('chat_saliente_at', 'is', null)
+        .order('chat_saliente_at', { ascending: false })
+        .limit(TOPE),
+    ]);
     if (seq !== seqRef.current) return;
+    const { data, error } = conEntrante;
     if (error) {
       const code = (error as { code?: string }).code;
       const msg = (error as { message?: string }).message || '';
@@ -90,25 +159,33 @@ export function useInboxEsperando(storeId: string | null) {
       // prendida todavía, no es un error que avisar.
       setStatus(code === '42703' || /does not exist|column/i.test(msg) ? 'not_ready' : 'error');
       setItems([]);
+      setSinRespuesta([]);
       return;
     }
-    type Fila = {
-      id: string; external_id: string | null; nombre: string | null; phone: string | null;
-      estado: string | null; ciudad: string | null; direccion: string | null; producto: string | null; valor: number | null;
-      guia: string | null; transportadora: string | null; last_movement_at: string | null;
-      chat_entrante_at: string | null; chat_saliente_at: string | null; chat_leido_at: string | null;
-    };
+
     const filas = (data ?? []) as unknown as Fila[];
-    const out: InboxItem[] = [];
-    for (const r of filas) {
+    // ⛔ Si la SEGUNDA consulta falló, la primera canasta se pinta igual (es la
+    // de siempre y su dato está completo) pero la segunda va VACÍA y no se
+    // afirma nada sobre ella. La pantalla lo dice; no dibuja un cero.
+    const filasSinEntrante = sinEntrante.error
+      ? []
+      : ((sinEntrante.data ?? []) as unknown as Fila[]);
+
+    const ahora = Date.now();
+    const umbralMs = HORAS_SIN_RESPUESTA * 3_600_000;
+    const pisoMs = ahora - DIAS_VENTANA_SIN_RESPUESTA * 86_400_000;
+
+    const esperandoOut: InboxItem[] = [];
+    const deudaOut: InboxItem[] = [];
+
+    const clasificar = (r: Fila) => {
+      if (TERMINALES.has((r.estado || '').toUpperCase().trim())) return;
       const entranteAt = r.chat_entrante_at ? Date.parse(r.chat_entrante_at) : null;
-      if (entranteAt == null) continue;
       const salienteAt = r.chat_saliente_at ? Date.parse(r.chat_saliente_at) : null;
-      const leidoAt = r.chat_leido_at ? Date.parse(r.chat_leido_at) : Date.now();
+      const leidoAt = r.chat_leido_at ? Date.parse(r.chat_leido_at) : ahora;
       const estado = estadoConversacion({ salienteAt, salienteTipo: null, entranteAt, leidoAt });
-      if (estado !== 'espera_respuesta') continue;
-      if (TERMINALES.has((r.estado || '').toUpperCase().trim())) continue;
-      out.push({
+
+      const item = (): InboxItem => ({
         dbId: String(r.id),
         externalId: r.external_id || '',
         nombre: r.nombre || 'Cliente',
@@ -120,22 +197,46 @@ export function useInboxEsperando(storeId: string | null) {
         valor: r.valor != null ? Number(r.valor) : null,
         guia: r.guia,
         transportadora: r.transportadora,
-        entranteAt,
+        // `entranteAt` es 0 SOLO en la canasta de deuda, donde el cliente nunca
+        // escribió. La pantalla de esa canasta no lo usa (ordena y muestra por
+        // `salienteAt`); ponerlo en 0 es preferible a mentir con `Date.now()`,
+        // que se leería como "escribió recién".
+        entranteAt: entranteAt ?? 0,
         salienteAt,
         leidoAt,
         // floor: 20 h en el mismo estado son 0 días completos, no "1". Misma
         // cuenta que `diasSinMovimiento` en `segPulso`.
         diasEnEstado: r.last_movement_at
-          ? Math.max(0, Math.floor((Date.now() - Date.parse(r.last_movement_at)) / 86_400_000))
+          ? Math.max(0, Math.floor((ahora - Date.parse(r.last_movement_at)) / 86_400_000))
           : null,
       });
-    }
+
+      if (estado === 'espera_respuesta') { esperandoOut.push(item()); return; }
+
+      // Le escribimos y la última palabra sigue siendo nuestra. Es deuda solo
+      // cuando pasó el umbral: un mensaje de hace diez minutos no es un
+      // descuido, y meterlo acá llenaría la lista de trabajo que no lo es.
+      if (estado === 'conversado' || estado === 'sin_respuesta') {
+        if (salienteAt == null) return;
+        if (ahora - salienteAt < umbralMs) return;
+        if (salienteAt < pisoMs) return;   // más de una semana: ya es historia
+        deudaOut.push(item());
+      }
+    };
+
+    for (const r of filas) clasificar(r);
+    for (const r of filasSinEntrante) clasificar(r);
+
     // Quien lleva MÁS esperando, primero: es a quien más urge no dejar enfriar.
-    out.sort((a, b) => a.entranteAt - b.entranteAt);
-    setItems(out);
+    esperandoOut.sort((a, b) => a.entranteAt - b.entranteAt);
+    // Y en la deuda, aquel a quien le escribimos hace más y sigue sin contestar.
+    deudaOut.sort((a, b) => (a.salienteAt ?? 0) - (b.salienteAt ?? 0));
+
+    setItems(esperandoOut);
+    setSinRespuesta(deudaOut);
     // Ni una sola fila con dato de chat en toda la tienda = nadie lo está
     // midiendo. No se puede afirmar «todos atendidos» sobre eso.
-    setStatus(filas.length === 0 ? 'sin_medir' : 'ok');
+    setStatus(filas.length === 0 && filasSinEntrante.length === 0 ? 'sin_medir' : 'ok');
   }, [storeId]);
 
   useEffect(() => { void load(); }, [load]);
@@ -156,5 +257,8 @@ export function useInboxEsperando(storeId: string | null) {
     return () => { if (t) clearTimeout(t); void supabase.removeChannel(ch); };
   }, [storeId, instanciaId]);
 
-  return useMemo(() => ({ items, status, recargar: load }), [items, status, load]);
+  return useMemo(
+    () => ({ items, sinRespuesta, status, recargar: load }),
+    [items, sinRespuesta, status, load],
+  );
 }

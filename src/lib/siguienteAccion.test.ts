@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { siguienteAccion, hayTrabajo, type SiguienteAccionInput } from './siguienteAccion';
+import { siguienteAccion, hayTrabajo, ESCALERA, type SiguienteAccionInput } from './siguienteAccion';
 import { esAccionable } from './segLists';
 import type { OrderData } from './orderUtils';
 
@@ -370,5 +370,105 @@ describe('novedades: solo cuentan las que Dropi todavía deja gestionar', () => 
       expect(r.cuantos).toBe(84);
       expect(r.porque).not.toContain('cerró');
     }
+  });
+});
+
+/**
+ * LA BANDEJA EN LA ESCALERA (3-sep-2026).
+ *
+ * ⛔ Hasta hoy `ESCALERA` no tenía NINGÚN escalón a `/inbox`: con 40 clientes
+ * sin contestar, la barra mandaba a cualquier otro lado y nunca ahí. Es el
+ * mismo hueco que ya costó caro en Colombia — la pantalla celebraba «todos
+ * atendidos 🎉» mientras 39 clientes esperaban, 22 de ellos hacía más de un día.
+ *
+ * El orden lo eligió el dueño: **+3 h manda sobre todo; menos de 3 h entra
+ * después de Novedades y Agencia**.
+ */
+describe('la bandeja y el 2º intento', () => {
+  const novedad = { ...base, estado: 'NOVEDAD' };
+
+  it('un cliente esperando hace +3 h manda SOBRE las novedades', () => {
+    const r = siguienteAccion({
+      workQueue: [], novedadesQueue: [novedad], segData: [],
+      bandejaUrgentes: 2, bandejaEsperando: 5,
+    });
+    expect(r.key).toBe('bandeja');
+    expect(r.cuantos).toBe(2);
+    expect(r.ruta).toBe('/inbox');
+    expect(r.tono).toBe('urgente');
+  });
+
+  /**
+   * ⛔ El equilibrio que se compró al NO ponerla siempre primera: un «ok,
+   * gracias» sin contestar no puede tapar un paquete que se devuelve mañana.
+   */
+  it('con menos de 3 h, la novedad va primero', () => {
+    const r = siguienteAccion({
+      workQueue: [], novedadesQueue: [novedad], segData: [],
+      bandejaUrgentes: 0, bandejaEsperando: 5,
+    });
+    expect(r.key).toBe('novedades');
+  });
+
+  it('sin novedades ni agencia, los de menos de 3 h sí salen — antes que Confirmar', () => {
+    const r = siguienteAccion({
+      workQueue: [porConfirm], novedadesQueue: [], segData: [],
+      bandejaUrgentes: 0, bandejaEsperando: 4,
+    });
+    expect(r.key).toBe('bandeja');
+    expect(r.cuantos).toBe(4);
+    expect(r.tono).toBe('atencion');
+  });
+
+  it('el 2º intento va DESPUÉS de Confirmar, y antes que detenidos', () => {
+    const conConfirmar = siguienteAccion({
+      workQueue: [porConfirm], novedadesQueue: [], segData: [], sinRespuesta: 9,
+    });
+    expect(conConfirmar.key).toBe('confirmar');
+
+    const sinConfirmar = siguienteAccion({
+      workQueue: [], novedadesQueue: [], segData: [detenido], sinRespuesta: 9,
+    });
+    expect(sinConfirmar.key).toBe('sin_respuesta');
+    expect(sinConfirmar.cuantos).toBe(9);
+    expect(sinConfirmar.ruta).toBe('/inbox');
+  });
+
+  /**
+   * ⛔ EL CERO QUE NO SE PUDO MEDIR. `useInboxEsperando` distingue
+   * explícitamente «nadie esperando» de «todavía no puedo medir quién espera»,
+   * por el incidente de Colombia. Un escalón que se dispara con un cero
+   * inventado —o que se calla cuando en realidad no sabe— repite ese error.
+   */
+  it('sin el dato de la bandeja, los escalones nuevos NO se disparan', () => {
+    for (const v of [null, undefined]) {
+      const r = siguienteAccion({
+        workQueue: [], novedadesQueue: [], segData: [],
+        bandejaUrgentes: v, bandejaEsperando: v, sinRespuesta: v,
+      });
+      expect(r.key).toBe('al_dia');
+    }
+  });
+
+  it('la bandeja en cero deja pasar al resto de la escalera', () => {
+    const r = siguienteAccion({
+      workQueue: [porConfirm], novedadesQueue: [], segData: [],
+      bandejaUrgentes: 0, bandejaEsperando: 0, sinRespuesta: 0,
+    });
+    expect(r.key).toBe('confirmar');
+  });
+
+  it('los dos escalones nuevos están documentados en ESCALERA', () => {
+    // La barra y `/como-se-trabaja` leen de la MISMA lista: un escalón sin
+    // ficha rompería la página de protocolo con un `undefined`.
+    for (const k of ['bandeja', 'sin_respuesta'] as const) {
+      const doc = ESCALERA.find((e) => e.key === k);
+      expect(doc, `falta la ficha de ${k} en ESCALERA`).toBeTruthy();
+      expect(doc!.queHacer.length).toBeGreaterThan(40);
+    }
+    // Y el orden no se repite ni se saltea.
+    const ordenes = ESCALERA.map((e) => e.orden);
+    expect(new Set(ordenes).size).toBe(ordenes.length);
+    expect([...ordenes].sort((a, b) => a - b)).toEqual(ordenes);
   });
 });

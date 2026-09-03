@@ -72,18 +72,33 @@ export function soloObserva(r: RolEnLaTienda): boolean {
  * A quién puede TRABARLE la pantalla el guard de inactividad (el 3er aviso
  * bloquea 5 minutos reales).
  *
- * ⛔ Es MÁS ESTRECHO que `trabajaLaCola`, y es a propósito — no es el bug B de
- * arriba repetido. Al supervisor se le mide el trabajo (se le cuenta, se le
- * avisa, tiene botón de pausa), pero trabarle la pantalla cinco minutos deja al
- * equipo sin la persona que lo destraba: es el que llama a la transportadora,
- * el que resuelve la novedad rara y el que reparte la cola. El costo de
- * equivocarse no es simétrico.
+ * ── El supervisor SÍ se traba (decisión del dueño, 3-sep-2026) ──────────────
+ * Hasta hoy esta función era MÁS ESTRECHA que `trabajaLaCola`: excluía al
+ * supervisor con este argumento, que era real y hay que dejar escrito porque
+ * sigue siendo el riesgo de este cambio —
  *
- * Es la misma decisión ya tomada con las dos varas de ritmo (asesor 20/12 vs
- * dueño 25/15): dos umbrales distintos, deliberados y escritos.
+ *   *"trabarle la pantalla cinco minutos deja al equipo sin la persona que lo
+ *   destraba: es el que llama a la transportadora, el que resuelve la novedad
+ *   rara y el que reparte la cola."*
+ *
+ * El dueño lo revirtió a conciencia, con un caso concreto encima de la mesa: el
+ * supervisor manda plantillas con el botón de un clic, hace UN intento y no
+ * vuelve a mirar si contestaron. Textual: *"a los supervisores también se les
+ * cuenta porque trabajan menos; al supervisor también se le muestran las
+ * alertas"*. Un aviso que no traba a quien menos rinde no es un aviso, es un
+ * adorno — y el rango no puede ser el motivo de estar exento.
+ *
+ * ⛔ NO se borró el argumento viejo: sigue arriba porque es el costo que se
+ * aceptó, no un error que se corrigió. Si mañana el equipo queda esperando a un
+ * supervisor trabado, ésta es la línea que hay que discutir — con el dato de
+ * cuántas veces pasó, no de memoria.
+ *
+ * Queda con nombre propio y con el mismo parámetro aunque hoy no lo mire: el
+ * concepto "a quién se le traba" es distinto de "a quién se le mide", y el día
+ * que se vuelvan a separar, se separan acá y en ningún otro lado.
  */
 export function seLeBloqueaLaPantalla(
   r: RolEnLaTienda & { isManagerOfActive: boolean },
 ): boolean {
-  return trabajaLaCola(r) && !r.isManagerOfActive;
+  return trabajaLaCola(r);
 }

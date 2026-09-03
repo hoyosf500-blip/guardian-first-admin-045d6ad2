@@ -3,7 +3,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import { bogotaToday } from '@/lib/utils';
 import { bogotaSecondsOfDay } from '@/lib/inactivityWindow';
-import { repartirPorHora } from '@/lib/ritmoEnVivo';
 
 /**
  * Datos EN VIVO del equipo para las tarjetas de asesor de Productividad
@@ -68,10 +67,17 @@ export interface LiveOperator {
    */
   firstConfirmarMs: number | null;
   firstSegMs: number | null;
-  /** Gestiones por hora del día (Bogotá) para las barritas del turno. OJO: puede
-   *  estar CAPADA a las ~400 marcas más recientes (EVENT_SCAN_LIMIT) — en equipos
-   *  chicos cubre el día entero; en uno grande, las horas más viejas subcontarían. */
-  hourly: { hora: number; cantidad: number }[];
+  // ⛔ `hourly` SE ELIMINÓ (3-sep-2026). Repartía las marcas por hora del día,
+  // pero salía de las ~400 filas más recientes de TODA la tienda
+  // (EVENT_SCAN_LIMIT): con cinco asesoras a ~120 gestiones ese tope se pasa
+  // antes del mediodía y las horas de la mañana subcontaban. El dueño mira esa
+  // franja para hablar con una persona, así que un número corto ahí no es un
+  // detalle. Lo reemplaza `useMapaCalorDia`, que pagina el día completo.
+  //
+  // Se BORRÓ en vez de dejarse apagado: un dato que miente y sigue declarado,
+  // alguien lo vuelve a dibujar. `EVENT_SCAN_LIMIT` se queda para lo que sí
+  // sirve — hallar la última señal de cada persona, que solo necesita filas
+  // recientes.
 }
 
 export interface LiveTeam {
@@ -171,7 +177,6 @@ export function useLiveTeam(): LiveTeam {
     // barritas del turno). Distinto de lastWork (que guarda la MÁS reciente): acá
     // se recorre TODA marca, no solo la primera vista.
     const firstWorkByOp = new Map<string, number>();
-    const horasByOp = new Map<string, number[]>();
     // Primera marca POR CARRIL: cada ritmo se mide con su propio reloj (ver
     // `firstConfirmarMs` / `firstSegMs` en LiveOperator).
     const firstConfByOp = new Map<string, number>();
@@ -186,10 +191,6 @@ export function useLiveTeam(): LiveTeam {
       if (!Number.isFinite(ms)) return;
       masTemprano(firstWorkByOp, opId, ms);
       masTemprano(carril === 'confirmar' ? firstConfByOp : firstSegByOp, opId, ms);
-      const hora = Math.floor(bogotaSecondsOfDay(new Date(ms)) / 3600);
-      const arr = horasByOp.get(opId) ?? [];
-      arr.push(hora);
-      horasByOp.set(opId, arr);
     };
     if (!results.error) for (const r of (results.data as { operator_id: string | null; result: string; created_at: string }[] ?? [])) {
       noteWork(r.operator_id, r.created_at, accionResultado(r.result));
@@ -229,7 +230,6 @@ export function useLiveTeam(): LiveTeam {
       const workFirstMs = firstWorkByOp.get(id);
       const firstCandidates = [mouseFirstMs, workFirstMs ?? NaN].filter((x): x is number => Number.isFinite(x));
       const firstSignalMs = firstCandidates.length ? Math.min(...firstCandidates) : null;
-      const hourly = repartirPorHora(horasByOp.get(id) ?? []);
       // Señal más reciente entre mouse y trabajo.
       const candidates = [mouseMin, lastWorkMin].filter((x): x is number => x != null);
       const lastSignalMin = candidates.length ? Math.min(...candidates) : null;
@@ -251,7 +251,7 @@ export function useLiveTeam(): LiveTeam {
         lastSignalMin, lastWorkMin,
         ultimaAccion: work?.label ?? null,
         enLinea, estado,
-        firstSignalMs, hourly,
+        firstSignalMs,
         // El reloj de cada carril sale SOLO de su propia fuente. Nunca cae al
         // mouse ni a `firstSignalMs`: si no marcó nada en ese carril no hay
         // ritmo que calcular, y rellenarlo daría un cero con cara de dato.

@@ -1,5 +1,6 @@
 import { AlertTriangle } from 'lucide-react';
 import type { AdvisorVM } from '@/lib/advisorCardVM';
+import { textoSinVuelta } from '@/lib/plantillasSinVuelta';
 
 /**
  * Lo que hay que mirar HOY del equipo, en una sola franja.
@@ -27,10 +28,22 @@ import type { AdvisorVM } from '@/lib/advisorCardVM';
  * habla del día de hoy**: en un rango de 7 o 30 días "sin marcar hace 40 min" no
  * significa nada.
  */
-export default function AlertaEquipoStrip({ vms, isToday }: {
+export default function AlertaEquipoStrip({ vms, isToday, sinVuelta }: {
   vms: AdvisorVM[];
   /** El rango seleccionado es HOY. En rangos largos la franja no sale. */
   isToday: boolean;
+  /**
+   * operatorId → clientes a los que les escribió y siguen sin respuesta, sin
+   * segundo intento (de `resumirSinVuelta`).
+   *
+   * Es el caso que reportó el dueño: *"manda plantillas con el botón en
+   * automático, hace un solo intento y no está pendiente si respondieron"*.
+   *
+   * ⛔ Ausente = no se pudo medir, y entonces NO se dibuja la línea. Un cero
+   * acá se leería como "no dejó a nadie colgado", que es la buena noticia falsa
+   * de siempre.
+   */
+  sinVuelta?: Map<string, number>;
 }) {
   if (!isToday) return null;
 
@@ -44,6 +57,8 @@ export default function AlertaEquipoStrip({ vms, isToday }: {
           `${avisos} aviso${avisos === 1 ? '' : 's'} sin trabajar${min > 0 ? ` (${min} min)` : ''}`,
         );
       }
+      const colgados = textoSinVuelta(sinVuelta?.get(vm.operatorId) ?? 0);
+      if (colgados) partes.push(colgados);
       return { id: vm.operatorId, name: vm.name, partes };
     })
     .filter((f) => f.partes.length > 0);
@@ -75,7 +90,9 @@ export default function AlertaEquipoStrip({ vms, isToday }: {
           falsa que este proyecto ya pagó. */}
       <p className="text-[10px] text-muted-foreground mt-2 leading-snug">
         Esto se mide solo mientras tienen el CRM abierto. Que alguien no aparezca acá no
-        prueba que estuvo trabajando — puede no haber entrado.
+        prueba que estuvo trabajando — puede no haber entrado. «Sin respuesta y sin 2º
+        intento» se le cuenta a quien tocó ese cliente por última vez; lo que mandó el bot,
+        sin que nadie lo tocara, no se le cuenta a nadie.
       </p>
     </div>
   );

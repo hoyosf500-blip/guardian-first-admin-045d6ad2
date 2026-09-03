@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { MessageSquare, Phone, MapPin, Package, Clock, Inbox, CheckCircle2, Loader2 } from 'lucide-react';
 import { useStore } from '@/contexts/StoreContext';
-import { useInboxEsperando, type InboxItem } from '@/hooks/useInboxEsperando';
+import { useInboxEsperando, HORAS_SIN_RESPUESTA, type InboxItem } from '@/hooks/useInboxEsperando';
 import { useImporchatSyncHealth } from '@/hooks/useImporchatSyncHealth';
 import { useCanalChat, nombreCanal } from '@/hooks/useCanalChat';
 import { sourceSyncChat } from '@/lib/canalChat';
@@ -327,7 +327,23 @@ function TarjetaLista({ o, sello, estadoSello, miId, children }: {
 
 export default function InboxPage() {
   const { activeStoreId, activeStore } = useStore();
-  const { items, status } = useInboxEsperando(activeStoreId);
+  const { items: esperan, sinRespuesta, status } = useInboxEsperando(activeStoreId);
+
+  /**
+   * Las dos canastas de la bandeja.
+   *
+   * ── «Sin respuesta» (3-sep-2026) ──────────────────────────────────────────
+   * Pedido del dueño: *"tengo un supervisor que manda plantillas con el botón
+   * en automático, hace un solo intento y no está pendiente si respondieron"*.
+   * Eso no aparecía en ninguna pantalla del CRM: la bandeja mira quién nos
+   * escribió a NOSOTROS, y a esta gente le escribimos nosotros.
+   *
+   * Van como dos vistas de la misma pantalla y no como dos pantallas: es el
+   * mismo trabajo (abrir el chat y escribir) sobre el mismo hilo, y separarlas
+   * en rutas obligaría a la asesora a acordarse de visitar la segunda.
+   */
+  const [vista, setVista] = useState<'esperan' | 'deuda'>('esperan');
+  const items = vista === 'esperan' ? esperan : sinRespuesta;
   // El canal se pregunta por tienda: Ecuador atiende por ImporChat y Colombia
   // por Chatea Pro. Escribirlo a mano mandaba a la asesora colombiana a revisar
   // la app de otro país.
@@ -403,21 +419,50 @@ export default function InboxPage() {
             <Inbox size={20} strokeWidth={2.25} />
           </span>
           Escribieron
-          {items.length > 0 && (
+          {esperan.length > 0 && (
             <span className="text-sm font-mono tabular-nums px-2.5 py-1 rounded-full bg-danger/14 border border-danger/30 text-danger">
-              {items.length}
+              {esperan.length}
             </span>
           )}
-          {masDeUnDia > 0 && (
+          {vista === 'esperan' && masDeUnDia > 0 && (
             <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-danger/10 border border-danger/30 text-danger">
               {masDeUnDia} {masDeUnDia === 1 ? 'lleva' : 'llevan'} más de un día
             </span>
           )}
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Clientes que escribieron y nadie contestó todavía. El de arriba es el que lleva más esperando —
-          a ninguno se lo deja enfriar.
+          {vista === 'esperan'
+            ? 'Clientes que escribieron y nadie contestó todavía. El de arriba es el que lleva más esperando — a ninguno se lo deja enfriar.'
+            : `Les escribimos y no contestaron hace más de ${HORAS_SIN_RESPUESTA} horas. Acá va el 2º intento: mandar una plantilla y no volver a mirar no es haber gestionado.`}
         </p>
+
+        {/* Las dos canastas. La segunda solo aparece cuando hay alguien: una
+            pestaña vacía permanente enseña a no mirar ninguna de las dos. */}
+        {(sinRespuesta.length > 0 || vista === 'deuda') && (
+          <div className="mt-3 inline-flex rounded-xl border border-border bg-card/40 p-0.5">
+            <button
+              type="button"
+              onClick={() => { setVista('esperan'); setSelId(null); }}
+              className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
+                vista === 'esperan' ? 'bg-accent/18 text-accent' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Nos escribieron
+              <span className="ml-1.5 font-mono tabular-nums">{esperan.length}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setVista('deuda'); setSelId(null); }}
+              className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
+                vista === 'deuda' ? 'bg-warning/18 text-warning' : 'text-muted-foreground hover:text-foreground'
+              }`}
+              title="Les escribimos y no contestaron. Falta el segundo intento."
+            >
+              Sin respuesta
+              <span className="ml-1.5 font-mono tabular-nums">{sinRespuesta.length}</span>
+            </button>
+          </div>
+        )}
         {/* ⛔ Acá había otro `ImporchatSyncBadge`. Desde el 28-ago-2026 el badge
             vive en `ProtectedLayout`, al lado del de Dropi, para que se vea
             también en Confirmar y Seguimiento. El banner rojo de abajo, que es
@@ -467,8 +512,14 @@ export default function InboxPage() {
             <CheckCircle2 size={24} />
           </span>
           <div>
-            <p className="text-sm font-semibold text-foreground">Nadie esperando respuesta</p>
-            <p className="text-xs text-muted-foreground mt-1">Todos los que escribieron ya fueron atendidos 🎉</p>
+            <p className="text-sm font-semibold text-foreground">
+              {vista === 'esperan' ? 'Nadie esperando respuesta' : 'Nadie quedó sin respuesta'}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {vista === 'esperan'
+                ? 'Todos los que escribieron ya fueron atendidos 🎉'
+                : `A todos los que les escribimos hace más de ${HORAS_SIN_RESPUESTA} horas ya les contestaron 🎉`}
+            </p>
           </div>
         </div>
       )}

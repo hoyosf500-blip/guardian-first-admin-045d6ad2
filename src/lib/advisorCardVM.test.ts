@@ -50,7 +50,7 @@ describe('ritmo: el "19" viene con su conteo y su tiempo (no es 19 pedidos)', ()
   const NOW = 1_700_000_000_000;
   const live = (over: Partial<import('./advisorCardVM').LiveLite> = {}): import('./advisorCardVM').LiveLite => ({
     estado: 'trabajando', ultimaAccion: 'confirmó', lastWorkMin: 1, enLinea: true,
-    firstSignalMs: NOW - 5 * 3600 * 1000, hourly: [], total: 98, ...over,
+    firstSignalMs: NOW - 5 * 3600 * 1000, total: 98, ...over,
   });
 
   it('hoy: expone las gestiones y los minutos que las produjeron', () => {
@@ -103,7 +103,7 @@ describe('mostrar SIEMPRE a los asesores (roster): inactivos y apertura', () => 
   it('apertura: se activó hoy pero no marcó → soloApertura, NO inactivo', () => {
     const live = {
       estado: 'presente_sin_marcar' as const, ultimaAccion: null, lastWorkMin: null,
-      enLinea: true, firstSignalMs: NOW - 3 * 3600 * 1000, hourly: [], total: 0,
+      enLinea: true, firstSignalMs: NOW - 3 * 3600 * 1000, total: 0,
     };
     const [vm] = buildAdvisorVMs(baseInput({
       nowMs: NOW, isToday: true, rows: [row()],

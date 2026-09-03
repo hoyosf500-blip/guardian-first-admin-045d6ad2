@@ -53,6 +53,29 @@ export interface RepartoInput {
   /** Lo que YA está asignado hoy. No se toca: robarle un pedido a quien ya lo
    *  empezó es peor que un reparto desparejo. */
   yaAsignados?: AsignacionExistente[];
+  /**
+   * Carga de partida por operadora: lo que le FALTA, no lo que le tocó.
+   *
+   * ── Por qué hace falta (pedido del dueño, 3-sep-2026) ──────────────────────
+   * Textual: *"si una asesora terminó, que se le carguen más pedidos"*. Sin
+   * esto no puede pasar. La carga por defecto cuenta pedidos **asignados**, así
+   * que Marcela —que ya despachó sus 40— y Johana —que no tocó ninguno de sus
+   * 40— pesan igual: 40 y 40. Lo que entra a media mañana se parte por mitades
+   * y la que está libre queda esperando mientras la otra se hunde.
+   *
+   * Pasando `sinTocar` (lo calcula `turnoDelEquipo.ts`) Marcela entra con 0 y
+   * se lleva el trabajo nuevo, que es exactamente lo que se pidió.
+   *
+   * ⛔ TODO O NADA. Quien lo arma tiene que pasar un número por CADA operadora
+   * de `operadores`, o no pasar el mapa. `sinTocar` es `number | null` —
+   * `turnoDelEquipo.ts` es explícito en que *"cero nunca sustituye a 'no se
+   * pudo medir'"*—, y un `null` colado como 0 le apilaría todo el trabajo nuevo
+   * justo a la persona que no se pudo medir. Ante la duda: no se pasa el mapa y
+   * se reparte como siempre.
+   *
+   * Ausente ⇒ comportamiento idéntico al de antes de existir este parámetro.
+   */
+  cargaBase?: Map<string, number>;
 }
 
 export interface RepartoResultado {
@@ -86,8 +109,18 @@ export function repartirCola(input: RepartoInput): RepartoResultado {
   const { pedidos, operadores } = input;
   const yaAsignados = input.yaAsignados ?? [];
 
+  // `cargaBase` solo se acepta si trae un número usable para CADA operadora.
+  // Un hueco haría entrar a esa persona con 0 y se llevaría todo lo nuevo —
+  // convirtiendo un "no se pudo medir" en el peor reparto posible.
+  const baseCompleta =
+    input.cargaBase != null &&
+    operadores.every((op) => {
+      const v = input.cargaBase!.get(op);
+      return typeof v === 'number' && Number.isFinite(v) && v >= 0;
+    });
+
   const carga = new Map<string, number>();
-  for (const op of operadores) carga.set(op, 0);
+  for (const op of operadores) carga.set(op, baseCompleta ? input.cargaBase!.get(op)! : 0);
 
   const dueñoDe = new Map<string, string>();
   for (const a of yaAsignados) {
@@ -95,7 +128,12 @@ export function repartirCola(input: RepartoInput): RepartoResultado {
     // Un asignado a alguien que YA NO está en la lista (se fue del turno) sigue
     // contando como suyo — no se le roba —, pero no suma carga a nadie de la
     // lista actual, así el resto no queda penalizado por su ausencia.
-    if (carga.has(a.operatorId)) carga.set(a.operatorId, (carga.get(a.operatorId) ?? 0) + 1);
+    //
+    // Con `cargaBase` NO se vuelve a sumar: el número que llega ya es "lo que le
+    // falta", y sumarle encima los asignados contaría dos veces el mismo pedido.
+    if (!baseCompleta && carga.has(a.operatorId)) {
+      carga.set(a.operatorId, (carga.get(a.operatorId) ?? 0) + 1);
+    }
   }
 
   const pendientes = pedidos.filter((p) => !dueñoDe.has(p.orderId));

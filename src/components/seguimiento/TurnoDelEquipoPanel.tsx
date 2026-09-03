@@ -1,4 +1,4 @@
-import { AlertTriangle, Users } from 'lucide-react';
+import { AlertTriangle, HandHelping, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { TurnoDelEquipo } from '@/lib/turnoDelEquipo';
 
@@ -28,6 +28,21 @@ interface Props {
   onRepartir?: () => void;
   repartiendo?: boolean;
   /**
+   * "Pedir más": la asesora que YA terminó se carga trabajo huérfano, sola.
+   *
+   * ── Por qué (pedido del dueño, 3-sep-2026) ────────────────────────────────
+   * *"Si una asesora terminó, que se le carguen más pedidos."* El reparto
+   * automático es manager-only, así que quien vaciaba su lote a media mañana no
+   * tenía forma de recibir más hasta que un jefe se conectara.
+   *
+   * ⛔ El botón SOLO aparece cuando las dos cosas son ciertas: **ella está al
+   * día** y **hay pedidos sin dueño**. Ofrecer trabajo que no existe —o
+   * pedírselo a quien todavía tiene los suyos sin tocar— es la forma exacta en
+   * que un botón se aprende a ignorar.
+   */
+  onPedirMas?: () => void;
+  pidiendo?: boolean;
+  /**
    * Quién está mirando el panel. Desde el 28-ago-2026 lo ven TODAS, no solo los
    * jefes — y la asesora entraba a buscar su propio nombre entre cuatro filas
    * para saber cuánto le faltaba. Su fila va primera y marcada.
@@ -40,8 +55,16 @@ interface Props {
 /** `null` = no se pudo medir. NUNCA se dibuja como 0 — ver la regla en turnoDelEquipo.ts. */
 const cifra = (n: number | null) => (n === null ? '—' : String(n));
 
-export default function TurnoDelEquipoPanel({ resumen, nombreDe, onRepartir, repartiendo, yoId }: Props) {
+export default function TurnoDelEquipoPanel({
+  resumen, nombreDe, onRepartir, repartiendo, onPedirMas, pidiendo, yoId,
+}: Props) {
   const { filas, sinDueno, totalAccionable, tocadosTotal, medible } = resumen;
+
+  // ¿Terminé lo mío Y hay trabajo de nadie? Las DOS condiciones, o no se ofrece.
+  // `sinTocar === 0` en vez de `!sinTocar` a propósito: `null` es "no se pudo
+  // medir", y no se le puede decir "terminaste" a quien no se pudo medir.
+  const miFila = yoId ? filas.find((f) => f.operatorId === yoId) : undefined;
+  const puedoPedirMas = Boolean(onPedirMas && miFila?.sinTocar === 0 && sinDueno > 0);
 
   // Mi fila primero. El orden entre las demás NO se toca (viene calculado desde
   // `turnoDelEquipo`): solo se sube la propia, que es la única que la asesora
@@ -80,18 +103,32 @@ export default function TurnoDelEquipoPanel({ resumen, nombreDe, onRepartir, rep
             <span className="font-mono tabular-nums">{sinDueno}</span> sin dueño
           </span>
         )}
-        {onRepartir && (
-          <button
-            type="button"
-            disabled={repartiendo}
-            onClick={onRepartir}
-            className="ml-auto shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-accent/40 bg-accent/12 text-accent text-[11px] font-semibold hover:bg-accent/20 transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            title="Reparte la cola accionable de hoy entre las asesoras, equilibrando la carga. Volver a correrlo NO le quita el trabajo a quien ya lo tiene."
-          >
-            <Users size={12} aria-hidden="true" />
-            {repartiendo ? 'Repartiendo…' : 'Repartir la cola de hoy'}
-          </button>
-        )}
+        <span className="ml-auto flex shrink-0 items-center gap-2">
+          {puedoPedirMas && (
+            <button
+              type="button"
+              disabled={pidiendo}
+              onClick={onPedirMas}
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-success/45 bg-success/12 text-success text-[11px] font-semibold hover:bg-success/20 transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success"
+              title="Terminaste los tuyos y quedan pedidos que no son de nadie. Esto te asigna algunos a vos; no le quita el trabajo a ninguna compañera."
+            >
+              <HandHelping size={12} aria-hidden="true" />
+              {pidiendo ? 'Cargando…' : `Pedir más (${sinDueno} sin dueño)`}
+            </button>
+          )}
+          {onRepartir && (
+            <button
+              type="button"
+              disabled={repartiendo}
+              onClick={onRepartir}
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-accent/40 bg-accent/12 text-accent text-[11px] font-semibold hover:bg-accent/20 transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              title="Reparte la cola accionable de hoy entre las asesoras, equilibrando la carga. Volver a correrlo NO le quita el trabajo a quien ya lo tiene."
+            >
+              <Users size={12} aria-hidden="true" />
+              {repartiendo ? 'Repartiendo…' : 'Repartir la cola de hoy'}
+            </button>
+          )}
+        </span>
       </div>
 
       {!medible && (

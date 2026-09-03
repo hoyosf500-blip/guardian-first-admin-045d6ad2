@@ -70,7 +70,6 @@ export interface LiveLite {
   lastWorkMin: number | null;
   enLinea: boolean;
   firstSignalMs: number | null;
-  hourly: { hora: number; cantidad: number }[];
   total: number;
   /** Gestiones de HOY por carril + el reloj de cada uno. Opcionales para que un
    *  llamador viejo (o un test) siga compilando: sin ellos no hay ritmo de
@@ -164,7 +163,6 @@ export interface AdvisorVM {
   // Entrada
   entroHora: string | null;     // ISO de la primera señal (la UI formatea)
   tardeMin: number | null;      // minutos tarde (>0) o null
-  hourly: { hora: number; cantidad: number }[];
   // Métricas de la cara (etiquetas en cristiano)
   trabajo: number;              // = atendidos (SOLO Confirmar)
   /** Gestiones fuera de Confirmar: seguimiento + novedades + rescate. Existe
@@ -567,7 +565,6 @@ export function buildAdvisorVMs(input: BuildAdvisorsInput): AdvisorVM[] {
       segHoy,
       entroHora: isToday ? turnoStart : null,
       tardeMin,
-      hourly: live?.hourly ?? [],
       trabajo: atendidos,
       otroTrabajo,
       soloOtroTrabajo,

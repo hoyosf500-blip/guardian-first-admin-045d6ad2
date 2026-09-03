@@ -466,8 +466,17 @@ describe('la bandeja no puede afirmar un cero sobre datos que no existen', () =>
 
   it('sin una sola fila con dato de chat, el estado es `sin_medir`, no `ok`', () => {
     expect(/'sin_medir'/.test(hook)).toBe(true);
+    // La regla es que el `ok` DEPENDA de que haya llegado alguna fila. Se
+    // comprueba la condición, no su forma exacta: desde el 3-sep-2026 el hook
+    // trae dos canastas (los que nos escribieron y los que no contestaron) y la
+    // línea pasó a mirar las dos. Pinnear el literal viejo habría dado rojo por
+    // un cambio correcto — y peor, habría empujado a "arreglarlo" volviendo a
+    // mirar una sola.
+    const i = hook.indexOf("'sin_medir' : 'ok'");
+    expect(i, 'el estado final tiene que decidirse entre sin_medir y ok').toBeGreaterThan(-1);
+    const condicion = hook.slice(Math.max(0, i - 160), i);
     expect(
-      /filas\.length === 0 \? 'sin_medir' : 'ok'/.test(hook),
+      /\.length === 0/.test(condicion),
       'el `ok` final tiene que depender de que haya llegado alguna fila',
     ).toBe(true);
   });

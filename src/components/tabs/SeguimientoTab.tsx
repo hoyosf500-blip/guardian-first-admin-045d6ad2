@@ -21,6 +21,7 @@ import { cicloContacto, enEspera, ESPERA_REINTENTO_MIN, textoEspera } from '@/li
 import { useRefreshVisibleOrders } from '@/hooks/useRefreshVisibleOrders';
 import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List, Search, User as UserIcon, Users, Moon, Eye, EyeOff, Phone } from 'lucide-react';
 import { toast } from 'sonner';
+import { trabajaLaCola } from '@/lib/rolesTrabajo';
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
 import { TiltCard, CountUp, GaugeRing } from '@/components/ui3d';
@@ -33,7 +34,7 @@ import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { cn, bogotaToday } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
@@ -124,7 +125,7 @@ export default function SeguimientoTab() {
   const { segData, segLoaded, segLoading, segLastUpdate, loadSegData, mySegTouchedToday, gestionSegPorTelefono, ultimaGestionSeg, coverageSegError, segError } = useOrders();
   // El cutoff de "muertos" depende del país de la tienda activa (EC cicla más
   // lento que CO). Patrón de CrmCallView: leer activeStore?.country_code.
-  const { activeStore, activeStoreId, isManagerOfActive } = useStore();
+  const { activeStore, activeStoreId, isManagerOfActive, isOwnerOfActive } = useStore();
   // Nombre de cada asesora para la tarjeta "el equipo hoy" (cache compartido:
   // una sola lectura de profiles por sesión, no una por tarjeta).
   const { nameOf: nombreDeAsesora } = useOperatorNames();
@@ -149,7 +150,7 @@ export default function SeguimientoTab() {
   // eliminó y el trabajo de devoluciones/oficina hoy se hace en Seguimiento.
   // El banner dice lo que ENTRÓ desde la última vez que lo diste por visto; la
   // X marca visto (sin eso reaparecería en el próximo poll de 10 min).
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { banner: alertaCambios, markSeen: marcarVisto, dismissBanner } = useChangeAlerts(user?.id, activeStoreId);
   const descartarAlerta = useCallback(() => {
     marcarVisto('seguimiento');
@@ -360,6 +361,56 @@ export default function SeguimientoTab() {
     [dedupedByDate, asig],
   );
 
+  // Vista de dueño (pieza D). Se calcula sobre la COLA ACCIONABLE, la misma
+  // población que el hero y que el guard de inactividad — si midiera otra cosa,
+  // el dueño y su equipo estarían mirando números distintos del mismo día.
+  //
+  // ⛔ VA ARRIBA DEL REPARTO A PROPÓSITO (3-sep-2026). Antes vivía más abajo,
+  // pero ahora el reparto lo necesita para saber a quién le FALTA trabajo. Un
+  // `useCallback` que lo mencione en sus dependencias estando declarado después
+  // revienta en el render con un ReferenceError de TDZ — no es un detalle de
+  // estilo, es el orden que lo hace funcionar.
+  const resumenTurno = useMemo(
+    () => turnoDelEquipo({
+      accionables: dedupedByDate.filter(esAccionable),
+      asignaciones: asig.asignaciones,
+      gestionEquipo: gestionSegPorTelefono,
+      // Lo que registré yo cuenta igual que lo del equipo — es la MISMA
+      // definición de "gestionado" que usa el hero de arriba y el filtro
+      // "Ocultar gestionados". Sin esto, el panel contaba distinto que el hero
+      // y la misma pantalla mostraba "9 de 32" y "21 de 32" a la vez.
+      mios: mySegTouchedToday,
+      operadores: asig.operadores,
+      // `coverageSegError` = la lectura de gestiones del día falló. Sin esto,
+      // "0 tocados" se leería como "no trabajaron" y el dueño reclamaría por un
+      // dato que nunca se pudo leer.
+      gestionCargada: !coverageSegError,
+    }),
+    [dedupedByDate, asig.asignaciones, asig.operadores, gestionSegPorTelefono, mySegTouchedToday, coverageSegError],
+  );
+
+  /**
+   * Lo que le FALTA a cada asesora, para que el trabajo nuevo vaya a la que ya
+   * terminó (pedido del dueño: *"si una asesora terminó que se le carguen más
+   * pedidos"*).
+   *
+   * ⛔ TODO O NADA. `sinTocar` es `number | null` y `turnoDelEquipo` es
+   * explícito: *"cero nunca sustituye a 'no se pudo medir'"*. Si a UNA sola le
+   * falta el dato, se devuelve `undefined` y el reparto vuelve a equilibrar por
+   * asignados, como siempre. Colar ese `null` como 0 la haría pasar por la más
+   * libre del turno y se llevaría TODO el trabajo nuevo — justo a la persona
+   * que no se pudo medir.
+   */
+  const cargaPendientePorAsesora = useMemo((): Map<string, number> | undefined => {
+    if (resumenTurno.filas.length === 0) return undefined;
+    const m = new Map<string, number>();
+    for (const f of resumenTurno.filas) {
+      if (f.sinTocar == null) return undefined;
+      m.set(f.operatorId, f.sinTocar);
+    }
+    return m;
+  }, [resumenTurno]);
+
   // Reparto de la cola del día. Vive acá (y no dentro del panel) porque el
   // ORDEN importa: se manda la cola accionable ordenada por urgencia, para que
   // cada asesora reciba una mezcla parecida en vez de que una cargue con todo
@@ -369,7 +420,7 @@ export default function SeguimientoTab() {
       .filter((o) => esAccionable(o) && o.dbId)
       .sort((a, b) => (horasSinMovimiento(b) ?? 0) - (horasSinMovimiento(a) ?? 0))
       .map((o) => String(o.dbId));
-    const r = await asig.repartir(ids, { forzar: opts?.forzar });
+    const r = await asig.repartir(ids, { forzar: opts?.forzar, cargaBase: cargaPendientePorAsesora });
     if (!r) { if (!opts?.silencioso) toast.error('No se pudo repartir la cola'); return r; }
     // ⛔ Todavía no llegó el equipo: NO es un error y NO se avisa en el camino
     // automático — a las 8 de la mañana un cartel diciendo "no se repartió" cada
@@ -410,9 +461,47 @@ export default function SeguimientoTab() {
         + (r.ignorados > 0 ? ` ${r.ignorados} ya tenían dueño.` : ''),
     });
     return r;
-  }, [dedupedByDate, asig]);
+  }, [dedupedByDate, asig, cargaPendientePorAsesora]);
   /** El botón del panel: lo apretó una persona, así que MANDA ella. */
   const repartirAMano = useCallback(() => { void repartirColaDeHoy({ forzar: true }); }, [repartirColaDeHoy]);
+
+  /**
+   * "Pedir más" — la asesora que terminó se carga pedidos huérfanos, sin
+   * depender de que un jefe esté conectado.
+   *
+   * Se mandan los MÁS URGENTES primero (mismo orden que el reparto): si va a
+   * llevarse diez, que sean los diez que vencen antes, no diez cualquiera.
+   */
+  const [pidiendoMas, setPidiendoMas] = useState(false);
+  const pedirMasPedidos = useCallback(async () => {
+    setPidiendoMas(true);
+    try {
+      const candidatos = dedupedByDate
+        .filter((o) => esAccionable(o) && o.dbId)
+        .sort((a, b) => (horasSinMovimiento(b) ?? 0) - (horasSinMovimiento(a) ?? 0))
+        .map((o) => String(o.dbId));
+      const n = await asig.tomarMas(candidatos);
+      if (n == null) {
+        toast.error('No se pudo cargar más trabajo', {
+          description: 'Probá de nuevo en un momento. Mientras tanto la cola sigue siendo de todas: agarrá de arriba.',
+        });
+        return;
+      }
+      if (n === 0) {
+        // Puede pasar sin que nada falle: entre que se dibujó el botón y se
+        // apretó, otra compañera se los llevó. No es un error.
+        toast.message('Ya no quedaban pedidos sin dueño', {
+          description: 'Otra compañera se los llevó recién. La cola igual es de todas: podés seguir con cualquiera.',
+        });
+        return;
+      }
+      toast.success(`${n} pedido${n === 1 ? '' : 's'} más ${n === 1 ? 'es tuyo' : 'son tuyos'}`, {
+        description: 'Son los más urgentes de los que no tenían dueño. A nadie se le quitó trabajo.',
+      });
+    } finally {
+      setPidiendoMas(false);
+    }
+  }, [dedupedByDate, asig]);
 
   // ⛔ EL REPARTO SE HACE SOLO (28-ago-2026). Medido en producción: `seg_asignaciones`
   // tenía CERO filas — la herramienta existía, funcionaba y estaba probada, pero
@@ -420,97 +509,68 @@ export default function SeguimientoTab() {
   // nadie lo apretó nunca. Las tres asesoras miraban la misma pila de 605
   // pedidos y cada una elegía por su cuenta.
   //
-  // Corre UNA vez por día, la primera vez que un jefe abre Seguimiento con la
-  // cola ya cargada. Tres guardas para no repetirlo:
-  //   · `yaIntentadoRef` — no se dispara dos veces en la misma sesión aunque el
-  //     tablero se vuelva a renderizar.
-  //   · la llave de localStorage por tienda+día — no se repite al recargar (F5).
-  //   · `asig.cargado` + `asignaciones.size === 0` — si ya hay reparto, no toca
-  //     nada. Los DOS: ver abajo.
+  // ── AHORA CORRE VARIAS VECES AL DÍA (3-sep-2026) ───────────────────────────
   //
-  // ⛔ EL DÍA SE SELLA DESPUÉS, Y SOLO SI DE VERDAD REPARTIÓ (28-ago-2026).
-  // Antes se sellaba ANTES de llamar, para no reintentar en bucle. Pero el
-  // reparto ahora puede decir "todavía no llegó el equipo" (quórum), y sellar
-  // eso dejaba el día entero sin reparto por haber abierto el CRM temprano —
-  // que es exactamente lo que hace un jefe. Se sella al confirmar que asignó, y
-  // los reintentos se espacian con `ultimoIntentoRef` para no golpear la base.
+  // Hasta hoy corría UNA sola vez por día: la primera vez que un jefe abría
+  // Seguimiento. Dos cortes lo apagaban para el resto de la jornada —
+  // `asig.asignaciones.size > 0` y un sello en localStorage por tienda+día.
   //
-  // ⛔ Se exige `asig.cargado`, NO `!asig.cargando` (bug propio, 28-ago-2026).
-  // `cargando` arranca en false y solo se prende dentro de `cargar()`: hay un
-  // render en el que no está cargando y tampoco leyó. Volviendo acá desde otra
-  // pantalla la cola ya está en `OrderContext`, así que ese hueco era alcanzable
-  // — y repartir viendo el mapa vacío "porque todavía no leí" recalcula el
-  // equilibrio desde cero y le apila a una sola persona todo lo que no tenía
-  // dueño. La llave del día tapaba el caso normal, no el de otra máquina, otro
-  // jefe o una ventana de incógnito.
-  const yaIntentadoRef = useRef(false);
+  // El costo de eso, medido leyendo el código: **los pedidos que entran después
+  // del reparto de la mañana quedan sin dueño hasta mañana, y la asesora que
+  // vacía su lote no vuelve a recibir nada**. Es exactamente lo que reportó el
+  // dueño: *"si una asesora terminó, que se le carguen más pedidos"*.
+  //
+  // ⛔ REPETIRLO ES SEGURO, Y LAS DOS CAPAS DE ABAJO YA ESTABAN HECHAS PARA
+  // ESTO — solo faltaba que alguien las llamara:
+  //   · `repartirCola` (repartoEquitativo.ts): *"el reparto se puede correr más
+  //     de una vez al día… equilibrar por carga respeta lo ya asignado y solo
+  //     reparte lo que falta"*.
+  //   · la RPC `repartir_seguimiento`: `ON CONFLICT (order_id, dia) DO NOTHING`,
+  //     documentado como *"lo que hace seguro volver a correr el reparto durante
+  //     el día"*. A nadie se le quita un pedido que ya tiene.
+  //
+  // Lo que SÍ se conserva intacto, porque cada guarda tapa un incidente real:
+  //   · `asig.cargado` — NO `!asig.cargando` (bug propio, 28-ago-2026).
+  //     `cargando` arranca en false y solo se prende dentro de `cargar()`: hay
+  //     un render en el que no está cargando y tampoco leyó. Repartir viendo el
+  //     mapa vacío "porque todavía no leí" recalcula el equilibrio desde cero y
+  //     le apila a una sola persona todo lo que no tenía dueño.
+  //   · `segLoaded && dedupedByDate.length > 0` — no repartir una lista vacía.
+  //   · el quórum, adentro de `useSegAsignaciones`.
+  //
+  // Y se agrega el corte que reemplaza al sello: **solo se llama si hay
+  // accionables SIN DUEÑO**. Sin trabajo huérfano no hay nada que repartir, así
+  // que no se golpea la base cada cinco minutos por gusto.
   const ultimoIntentoRef = useRef(0);
   useEffect(() => {
     if (!isManagerOfActive || !asig.soportado || !asig.cargado) return;
-    if (yaIntentadoRef.current || !activeStoreId) return;
-    // Sin cola cargada no se reparte: repartir una lista vacía sellaría el día
-    // sin haber asignado nada.
+    if (!activeStoreId) return;
     if (!segLoaded || dedupedByDate.length === 0) return;
-    if (asig.asignaciones.size > 0) return;
-    // ⛔ `bogotaToday()`, no el idiom de doble conversión. Ver el bloque de
-    // useSegAsignaciones: `new Date(toLocaleString(...))` aplica el offset dos
-    // veces y a partir de las 19:00 devolvía el día SIGUIENTE. Acá el efecto era
-    // peor que una lista vacía: se sellaba la llave de MAÑANA en localStorage,
-    // así que el reparto automático quedaba apagado PARA SIEMPRE desde el día
-    // siguiente — sin ningún error, simplemente dejaba de correr, y las tres
-    // asesoras volvían a mirar la misma pila eligiendo por su cuenta.
-    const hoy = bogotaToday();
-    const llave = `guardian.repartoAuto:${activeStoreId}:${hoy}`;
-    try {
-      // Limpieza: los navegadores donde el bug de arriba YA selló una llave con
-      // fecha futura quedarían bloqueados hasta que llegue ese día. Arreglar el
-      // cálculo no los desbloquea solo. De paso deja de acumular una llave por
-      // día para siempre — se borra todo lo que no sea el sello de HOY.
-      const viejas: string[] = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('guardian.repartoAuto:') && k !== llave) viejas.push(k);
-      }
-      viejas.forEach(k => localStorage.removeItem(k));
-      if (localStorage.getItem(llave)) return;
-    } catch { /* sin storage: alcanza con los refs */ }
+    // Nada huérfano ⇒ nada que repartir. Reemplaza al sello del día: en vez de
+    // "ya corrí hoy" (que dejaba el trabajo nuevo sin dueño), la condición pasa
+    // a ser "hay algo de quién nadie se hizo cargo".
+    if (resumenTurno.sinDueno === 0) return;
     // El efecto se re-evalúa con cada refresco del tablero. Un reintento cada
     // 5 min alcanza para agarrar a la segunda asesora apenas marca entrada, sin
     // consultar la presencia en cada push de realtime.
     const REINTENTO_MS = 5 * 60_000;
     if (Date.now() - ultimoIntentoRef.current < REINTENTO_MS) return;
     ultimoIntentoRef.current = Date.now();
-    void repartirColaDeHoy({ silencioso: true }).then((r) => {
-      // ⛔ Solo se sella si REPARTIÓ. `sinQuorum` es "todavía no": sellar ahí
-      // dejaba al equipo sin reparto todo el día por haber abierto temprano.
-      // `null` (no se pudo) tampoco sella — se reintenta.
-      if (!r || r.sinQuorum) return;
-      yaIntentadoRef.current = true;
-      try { localStorage.setItem(llave, '1'); } catch { /* sin storage: el ref alcanza para esta sesión */ }
-    });
-  }, [isManagerOfActive, asig.soportado, asig.cargado, asig.asignaciones, activeStoreId, segLoaded, dedupedByDate.length, repartirColaDeHoy]);
+    void repartirColaDeHoy({ silencioso: true });
+  }, [isManagerOfActive, asig.soportado, asig.cargado, activeStoreId, segLoaded, dedupedByDate.length, resumenTurno.sinDueno, repartirColaDeHoy]);
 
-  // Vista de dueño (pieza D). Se calcula sobre la COLA ACCIONABLE, la misma
-  // población que el hero y que el guard de inactividad — si midiera otra cosa,
-  // el dueño y su equipo estarían mirando números distintos del mismo día.
-  const resumenTurno = useMemo(
-    () => turnoDelEquipo({
-      accionables: dedupedByDate.filter(esAccionable),
-      asignaciones: asig.asignaciones,
-      gestionEquipo: gestionSegPorTelefono,
-      // Lo que registré yo cuenta igual que lo del equipo — es la MISMA
-      // definición de "gestionado" que usa el hero de arriba y el filtro
-      // "Ocultar gestionados". Sin esto, el panel contaba distinto que el hero
-      // y la misma pantalla mostraba "9 de 32" y "21 de 32" a la vez.
-      mios: mySegTouchedToday,
-      operadores: asig.operadores,
-      // `coverageSegError` = la lectura de gestiones del día falló. Sin esto,
-      // "0 tocados" se leería como "no trabajaron" y el dueño reclamaría por un
-      // dato que nunca se pudo leer.
-      gestionCargada: !coverageSegError,
-    }),
-    [dedupedByDate, asig.asignaciones, asig.operadores, gestionSegPorTelefono, mySegTouchedToday, coverageSegError],
-  );
+  // Limpieza del sello viejo (`guardian.repartoAuto:*`): ya no se usa, y dejarlo
+  // acumula una llave por día en cada navegador para siempre. Corre una vez.
+  useEffect(() => {
+    try {
+      const viejas: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('guardian.repartoAuto:')) viejas.push(k);
+      }
+      viejas.forEach((k) => localStorage.removeItem(k));
+    } catch { /* sin storage: no hay nada que limpiar */ }
+  }, []);
 
   // Actividad de chat VERIFICADA contra ImporChat (la escribe importchat-sync
   // en orders.chat_saliente_at). Es la fuente del CICLO de cada pedido.
@@ -1601,6 +1661,8 @@ export default function SeguimientoTab() {
               nombreDe={nombreDeAsesora}
               onRepartir={isManagerOfActive ? repartirAMano : undefined}
               repartiendo={asig.repartiendo}
+              onPedirMas={trabajaLaCola({ isAdmin, isOwnerOfActive }) ? pedirMasPedidos : undefined}
+              pidiendo={pidiendoMas}
               yoId={user?.id ?? null}
             />
           </motion.div>
