@@ -64,6 +64,7 @@ import {
   type SiblingOrder,
 } from "../_shared/dropiOrderLiveness.ts";
 import { settleAuditRow, deriveSettleFromPayload } from "../_shared/settleAudit.ts";
+import { respuestaPing } from "../_shared/versionEdge.ts";
 
 interface ChangeCarrierBody {
   externalId?: string;
@@ -1055,6 +1056,12 @@ async function resolveClientAndLines(
   return { ok: true, client, lines };
 }
 
+/** Se despliega A MANO. `POST .../dropi-change-carrier?ping=1` contesta esta marca.
+ *  Esta funcion es parte de la cadena que puede DUPLICAR un pedido en Dropi,
+ *  y hasta hoy no habia forma de saber que version corria: el arreglo
+ *  "exactamente UNO vivo" de julio-2026 se desplego sin poder comprobarlo. */
+const VERSION = "dropi-change-carrier 2026-09-03.1 exactamente-uno-vivo-comprobable";
+
 Deno.serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);
   const jsonErr = (error: string, status: number) =>
@@ -1084,6 +1091,7 @@ Deno.serve(async (req: Request) => {
   };
 
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  { const p = respuestaPing(req, VERSION, corsHeaders); if (p) return p; }
 
   // Presupuesto de wall-clock: el pipeline apila hasta ~10 llamadas a Dropi de
   // 30s c/u sin tope total — la plataforma puede matar la función DESPUÉS del

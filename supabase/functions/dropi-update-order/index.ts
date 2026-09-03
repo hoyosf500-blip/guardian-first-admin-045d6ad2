@@ -58,6 +58,7 @@ import { loadStoreConfig, isStoreMember } from "../_shared/dropiStoreConfig.ts";
 import { checkOrderLivenessWeb } from "../_shared/dropiOrderLiveness.ts";
 // Fallback web + retarget a hermana viva: EXTRAÍDOS a _shared/dropiConfirmOrder
 // (2026-07-13) para compartirlos con dropi-cron y dropi-update-order-full.
+import { respuestaPing } from "../_shared/versionEdge.ts";
 import {
   normalizeStatus,
   FUNNEL_RANK,
@@ -211,12 +212,20 @@ async function dropiSanityCheck(
   return { ok, httpStatus: res.status, message };
 }
 
+/** Se despliega A MANO. `POST .../dropi-update-order?ping=1` contesta esta marca.
+ *  Esta funcion es parte de la cadena que puede DUPLICAR un pedido en Dropi,
+ *  y hasta hoy no habia forma de saber que version corria: el arreglo
+ *  "exactamente UNO vivo" de julio-2026 se desplego sin poder comprobarlo. */
+const VERSION = "dropi-update-order 2026-09-03.1 confirmar-no-crea-pedidos";
+
 Deno.serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);
 
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
+
+  { const p = respuestaPing(req, VERSION, corsHeaders); if (p) return p; }
 
   try {
     // ---- Auth: require a Supabase-authenticated caller (JWT in Authorization) ----

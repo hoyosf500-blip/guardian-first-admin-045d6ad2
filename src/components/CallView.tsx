@@ -30,7 +30,12 @@ import { MAX_DAILY_ATTEMPTS, COOLDOWN_LABEL } from '@/lib/confirmarQueue';
 import OrderLabels from '@/components/confirmar/OrderLabels';
 import { useOrderAttempts } from '@/hooks/useOrderAttempts';
 import { useRefreshOrderRow } from '@/hooks/useRefreshOrderRow';
-import { dupAlertsFor, overchargeFor, type ConfirmarOrderAlerts } from '@/lib/orderAlerts';
+import { dupAlertsFor, overchargeFor, type ConfirmarOrderAlerts, type ActiveDupAlert } from '@/lib/orderAlerts';
+import { avisoAntesDeConfirmar } from '@/lib/confirmarSinDuplicar';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import NotesPanel from '@/components/order-notes/NotesPanel';
 import ChatClienteCard from '@/components/chat/ChatClienteCard';
 import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDialog';
@@ -896,7 +901,39 @@ export default function CallView({ items, alerts }: Props) {
     },
   });
 
+  // Pregunta pendiente por pedido duplicado (ver el bloque de handleMark).
+  // `decididoDuplicado` guarda los pedidos por los que ella YA respondió, para
+  // no volver a preguntar lo mismo. Es un ref y no un estado: cambiarlo no
+  // tiene que repintar la ficha en medio de una llamada.
+  const [preguntaDuplicado, setPreguntaDuplicado] = useState<
+    { titulo: string; detalle: string; gemelos: ActiveDupAlert[] } | null
+  >(null);
+  const decididoDuplicado = useRef<Set<string>>(new Set());
+
   const handleMark = async (result: string, reason?: string) => {
+    // ⛔ EL SEGUNDO PEDIDO DEL MISMO CLIENTE NO SE CONFIRMA EN SILENCIO
+    // (3-sep-2026). El chip de DUPLICADO ya existía y ya detectaba los dos
+    // pendientes del mismo teléfono en la cola — pero era SOLO un chip: la
+    // tecla 1, el atajo VIP y el botón confirmaban igual. Confirmar los dos
+    // hace que Dropi le genere guía a cada uno: dos paquetes, dos fletes, y
+    // después alguien entra al panel de Dropi a cancelar uno a mano. Ese es el
+    // trabajo de más que el dueño prohibió: *"le dio en confirmar y se
+    // duplica"*.
+    //
+    // No cancela ni esconde nada: pide una DECISIÓN. Ella mira los dos y dice
+    // si son distintos — cancelar por sospecha ya mató el pedido real de un
+    // cliente (auditoría 13-ago-2026). Y no se repregunta por el mismo pedido:
+    // repreguntar enseña a apretar "sí" sin leer. Ver `confirmarSinDuplicar`.
+    if (result === 'conf' && !markingRef.current) {
+      const aviso = avisoAntesDeConfirmar(
+        dupAlertsFor(alerts?.dupByPhone, o),
+        decididoDuplicado.current.has(String(o.dbId ?? o.externalId ?? '')),
+      );
+      if (aviso.frena) {
+        setPreguntaDuplicado({ titulo: aviso.titulo, detalle: aviso.detalle, gemelos: aviso.gemelos });
+        return;
+      }
+    }
     // Candado por ACCIÓN (ver markingRef arriba): mientras haya un marcado en
     // vuelo, ningún otro click entra — ni sobre este pedido ni sobre el
     // siguiente, que es el que el doble-click despachaba a ciegas.
@@ -1913,6 +1950,35 @@ export default function CallView({ items, alerts }: Props) {
           }}
         />
       )}
+
+      {/* La pregunta que frena el doble despacho. Dos salidas y ninguna
+          escondida: se confirma igual (son dos pedidos de verdad) o se vuelve
+          a mirarlos. NO se ofrece cancelar desde acá a propósito — cancelar por
+          sospecha ya mató el pedido real de un cliente (auditoría 13-ago-2026);
+          la cancelación tiene su propio camino, con su motivo. */}
+      <AlertDialog open={!!preguntaDuplicado} onOpenChange={(op) => { if (!op) setPreguntaDuplicado(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle size={18} className="text-warning" aria-hidden="true" />
+              {preguntaDuplicado?.titulo}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{preguntaDuplicado?.detalle}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Mejor los reviso</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                decididoDuplicado.current.add(String(o.dbId ?? o.externalId ?? ''));
+                setPreguntaDuplicado(null);
+                void handleMark('conf');
+              }}
+            >
+              Son pedidos distintos — confirmar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

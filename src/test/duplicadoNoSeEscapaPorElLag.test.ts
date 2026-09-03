@@ -95,6 +95,35 @@ describe('⛔ el duplicado no se escapa por el lag del espejo', () => {
     expect(iRep, 'se calcula después de armar la lista a subir: no la filtra').toBeLessThan(iTargets);
   });
 
+  /**
+   * ⛔ CONFIRMAR NO PUEDE DESPACHAR DOS VECES AL MISMO CLIENTE.
+   *
+   * *"Le dio en confirmar y se duplica"* (dueño, 3-sep-2026). El chip de
+   * DUPLICADO ya existía y ya veía los dos pendientes del mismo teléfono en la
+   * cola — pero era SOLO un chip: la tecla 1, el atajo VIP y el botón
+   * confirmaban igual. Un aviso que se puede ignorar sin decir nada no es un
+   * candado.
+   */
+  it('confirmar pregunta ANTES cuando el cliente tiene otro pedido en curso', () => {
+    const call = sinComentarios(
+      readFileSync(join(process.cwd(), 'src', 'components', 'CallView.tsx'), 'utf8'),
+    );
+    expect(call, 'CallView ya no consulta el aviso de duplicado antes de confirmar')
+      .toMatch(/avisoAntesDeConfirmar\(/);
+    // Llamarla no alcanza: hay que ACTUAR sobre la respuesta. Sin esto, un
+    // `if (false)` dejaba el guárdian en verde con el candado desactivado
+    // — comprobado reinyectándolo.
+    expect(call, 'se calcula el aviso pero no se frena con él')
+      .toMatch(/if\s*\(\s*aviso\.frena\s*\)/);
+    const iAviso = call.indexOf('avisoAntesDeConfirmar(');
+    const iMark = call.indexOf('await doMark(');
+    expect(iAviso, 'el aviso se consulta DESPUÉS de marcar: ya salió la guía')
+      .toBeLessThan(iMark);
+    // Y la salida tiene que existir: si no, una recompra real queda trabada.
+    expect(call, 'no queda forma de confirmar una recompra real')
+      .toMatch(/decididoDuplicado\.current\.add/);
+  });
+
   /** Sin esto, el arreglo vive en main y el runtime sigue duplicando. */
   it('las dos funciones del camino Shopify→Dropi pueden decir qué versión corren', () => {
     for (const fn of ['shopify-push-dropi', 'shopify-auto-push']) {

@@ -50,6 +50,16 @@ const REQUERIDAS = [
   // entra, el código está en main y los pedidos se siguen duplicando igual.
   "shopify-push-dropi",
   "shopify-auto-push",
+  // La cadena de EDICIÓN/CONFIRMACIÓN, agregada el 3-sep-2026. Es la que puede
+  // dejar DOS pedidos vivos en Dropi cuando se cambia la transportadora (Dropi
+  // no sabe editar: recrea con id nuevo y hay que matar el viejo). El arreglo
+  // "exactamente UNO vivo" es de julio-2026 y su propia nota dice que se
+  // desplegó «sin probe read-only posible»: nunca se pudo comprobar que esté
+  // corriendo. Y el diálogo de edición YA le echa la culpa a una versión vieja
+  // cuando el pedido queda duplicado (OrderEditorDialog: «falta el redeploy»).
+  "dropi-change-carrier",
+  "dropi-update-order",
+  "dropi-update-order-full",
 ] as const;
 
 /** Lo primero que aparece en el handler y ya es "auth". El ping va antes. */

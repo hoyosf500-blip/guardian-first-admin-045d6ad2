@@ -40,6 +40,7 @@ import { dropiWebFetch, WebFallbackError, normUp } from "../_shared/dropiWebQuot
 import { dropiGetOrderV2Detail } from "../_shared/dropiOrderLiveness.ts";
 import { mismoDestino } from "../_shared/destinoMatch.ts";
 import { estadoDeConflicto } from "../_shared/dropiEstadoConflicto.ts";
+import { respuestaPing } from "../_shared/versionEdge.ts";
 
 interface EditPayload {
   externalId: string;
@@ -106,6 +107,12 @@ async function dropiPutCustomer(
 // 2026-07-12, #6110807).
 const STUB_SIGNAL_RE = /error sql desconocido|no (se )?encontr/i;
 
+/** Se despliega A MANO. `POST .../dropi-update-order-full?ping=1` contesta esta marca.
+ *  Esta funcion es parte de la cadena que puede DUPLICAR un pedido en Dropi,
+ *  y hasta hoy no habia forma de saber que version corria: el arreglo
+ *  "exactamente UNO vivo" de julio-2026 se desplego sin poder comprobarlo. */
+const VERSION = "dropi-update-order-full 2026-09-03.1 el-put-que-conserva-el-id";
+
 Deno.serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);
 
@@ -137,6 +144,7 @@ Deno.serve(async (req: Request) => {
   };
 
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  { const p = respuestaPing(req, VERSION, corsHeaders); if (p) return p; }
 
   try {
     const authHeader = req.headers.get("Authorization");
