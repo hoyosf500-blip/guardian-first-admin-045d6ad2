@@ -51,3 +51,17 @@ scripts/dropi-sandbox-test.mjs
 # el 11-ago-2026 una integration-key de Dropi terminó publicada en `main`.
 chateapro-token-*.txt
 *.key
+
+# ⛔ Capturas de pantalla/API que se hacen para diagnosticar (3-sep-2026).
+# NUNCA van al repo: `imporchat-convo1.json` traia 22 telefonos y nombres de
+# clientes REALES de Ecuador, y entro por un `git add -A` distraido. Son
+# volcados de la UI de terceros para mirar un bug; se leen y se tiran.
+chat-center-estado.yml
+dropi-nav.json
+dropi-orders-setting.json
+dropi-shop.json
+imporchat-convo*.json
+imporchat-nav.json
+imporchat-novedad-acciones.json
+imporchat-seg-*.json
+subs*.json
