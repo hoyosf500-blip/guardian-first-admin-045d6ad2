@@ -62,3 +62,40 @@ export function uniquePhones(items: Array<{ phone: string | null | undefined }>)
   }
   return [...set];
 }
+
+/**
+ * ⛔ LOS REPETIDOS DENTRO DEL PROPIO LOTE (3-sep-2026).
+ *
+ * `isBlockedByDuplicate` compara contra los pedidos que YA están en Dropi. No
+ * mira el lote contra sí mismo — y "Subir todos" sube uno por uno en un bucle.
+ * Si dos ventas de Shopify distintas traen el MISMO teléfono, las dos pasaban el
+ * filtro (ninguna estaba aún en Dropi) y las dos se subían con segundos de
+ * diferencia: dos órdenes reales, dos guías con números consecutivos, doble
+ * flete. Es exactamente lo que reportaron el 3-sep-2026 en Colombia 2 — tienda
+ * que tiene el robot APAGADO, o sea que el duplicado salió de este botón.
+ *
+ * Se queda el PRIMERO de cada teléfono y los demás esperan. No se pierden: la
+ * asesora los ve en la lista con su motivo, y si de verdad son dos pedidos
+ * distintos los sube con "No es duplicado".
+ *
+ * ⛔ El override manda: un pedido que la asesora ya marcó como "No es duplicado"
+ * NO se frena acá. Ella miró los dos y decidió; el sistema no le discute.
+ *
+ * Devuelve los ids que hay que dejar para después (nunca el primero).
+ */
+export function repetidosEnElLote(
+  items: Array<{ id: string; phone: string | null | undefined }>,
+  overrides: Set<string> = new Set(),
+): Set<string> {
+  const vistos = new Set<string>();
+  const repetidos = new Set<string>();
+  for (const it of items) {
+    if (overrides.has(it.id)) continue;
+    const n = normalizePhone(it.phone);
+    // Sin teléfono no se puede afirmar que sean el mismo cliente: no se frena.
+    if (!n) continue;
+    if (vistos.has(n)) repetidos.add(it.id);
+    else vistos.add(n);
+  }
+  return repetidos;
+}

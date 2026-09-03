@@ -8,7 +8,7 @@ import { useShopifyManualMarks } from '@/hooks/useShopifyManualMarks';
 import { useShopifyPushAttempts } from '@/hooks/useShopifyPushAttempts';
 import { useDuplicatePhones } from '@/hooks/useDuplicatePhones';
 import { useAutoPushHealth } from '@/hooks/useAutoPushHealth';
-import { dupMatchesFor, isBlockedByDuplicate, uniquePhones } from '@/lib/duplicatePhones';
+import { dupMatchesFor, isBlockedByDuplicate, repetidosEnElLote, uniquePhones } from '@/lib/duplicatePhones';
 import { matchesQuery } from '@/lib/textSearch';
 import { supabase } from '@/integrations/supabase/client';
 import { bogotaToday, formatCOP } from '@/lib/utils';
@@ -346,8 +346,17 @@ export default function ShopifyPendingPanel() {
     if (!activeStoreId || bulkRunning) return;
     setBulkRunning(true); setBulkConfirm(false);
     // Omite duplicados: nunca subir en lote algo que ya está en Dropi.
-    const skipped = visible.filter(p => isBlockedByDuplicate(p, dupMap, dupOverrides));
-    const targets = visible.filter(p => !isBlockedByDuplicate(p, dupMap, dupOverrides));
+    // ⛔ Y TAMPOCO EL LOTE CONTRA SÍ MISMO (3-sep-2026). `isBlockedByDuplicate`
+    // compara contra lo que YA está en Dropi; dos ventas de Shopify distintas
+    // con el MISMO teléfono no estaban ninguna, así que las dos pasaban el
+    // filtro y este bucle las subía con segundos de diferencia: dos órdenes
+    // reales, dos guías con números consecutivos, doble flete. Es el duplicado
+    // que reportaron en Colombia 2 — tienda con el robot APAGADO, o sea que
+    // salió de este botón. Se sube el primero de cada teléfono; el resto queda
+    // en la lista con su motivo. Ver `repetidosEnElLote`.
+    const repetidos = repetidosEnElLote(visible, dupOverrides);
+    const skipped = visible.filter(p => isBlockedByDuplicate(p, dupMap, dupOverrides) || repetidos.has(p.id));
+    const targets = visible.filter(p => !isBlockedByDuplicate(p, dupMap, dupOverrides) && !repetidos.has(p.id));
 
     // Camino "el botón no hace nada": si TODOS los visibles están bloqueados
     // por duplicado, no hay nada que invocar (el guard es correcto) — pero hay
@@ -379,8 +388,12 @@ export default function ShopifyPendingPanel() {
         const r = await confirmPush(p.id, undefined, dupOverrides.has(p.id));
         if (r.ok) { okCount++; markDone(p.id); }
         else {
+          // El servidor explica CUÁL es el duplicado y por qué todavía no se ve
+          // en el CRM (el «gemelo invisible»: Dropi tarda en devolver la orden
+          // recién creada). Pisar eso con una frase genérica le quitaba a la
+          // asesora justo el dato con el que puede decidir.
           const msg = r.blocked === 'duplicate_phone'
-            ? 'bloqueado por duplicado (teléfono ya en Dropi)'
+            ? (r.error || 'bloqueado por duplicado (teléfono ya en Dropi)')
             : (r.error || 'error');
           fails.push({ name: p.name, error: msg });
           newErrors[p.id] = msg;

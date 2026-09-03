@@ -77,6 +77,24 @@ describe('⛔ el duplicado no se escapa por el lag del espejo', () => {
     expect(sinComentarios(puro)).not.toMatch(/\borders\b/);
   });
 
+  /**
+   * ⛔ EL LOTE CONTRA SÍ MISMO. El duplicado del 3-sep-2026 fue en Colombia 2,
+   * que tiene el robot Shopify APAGADO: salió del botón "Subir todos". El filtro
+   * del panel compara contra lo que YA está en Dropi, y dos ventas nuevas del
+   * mismo teléfono no estaban ninguna — las dos se subían en el mismo bucle.
+   * Este botón existe en las TRES tiendas, con robot o sin él.
+   */
+  it('"Subir todos" no sube dos veces el mismo teléfono en el mismo lote', () => {
+    const panel = sinComentarios(
+      readFileSync(join(process.cwd(), 'src', 'components', 'confirmar', 'ShopifyPendingPanel.tsx'), 'utf8'),
+    );
+    expect(panel, 'el lote volvió a compararse solo contra Dropi, no contra sí mismo')
+      .toMatch(/repetidosEnElLote\(/);
+    const iRep = panel.indexOf('repetidosEnElLote(');
+    const iTargets = panel.indexOf('const targets =');
+    expect(iRep, 'se calcula después de armar la lista a subir: no la filtra').toBeLessThan(iTargets);
+  });
+
   /** Sin esto, el arreglo vive en main y el runtime sigue duplicando. */
   it('las dos funciones del camino Shopify→Dropi pueden decir qué versión corren', () => {
     for (const fn of ['shopify-push-dropi', 'shopify-auto-push']) {

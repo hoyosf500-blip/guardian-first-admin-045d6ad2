@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildDupMap, dupMatchesFor, isBlockedByDuplicate, uniquePhones,
   type ExistingOrder,
+  repetidosEnElLote,
 } from './duplicatePhones';
 
 const ex = (phone_norm: string, external_id: string, estado = 'PENDIENTE'): ExistingOrder => ({
@@ -58,5 +59,46 @@ describe('uniquePhones', () => {
       { phone: '' },
     ]);
     expect(out.sort()).toEqual(['001112222', '991234567'].sort());
+  });
+});
+
+/**
+ * ⛔ EL CASO DE COLOMBIA 2 (3-sep-2026). Dos guías con números consecutivos
+ * para la misma clienta. Colombia 2 tiene el robot Shopify APAGADO, así que el
+ * duplicado salió de "Subir todos": el filtro compara contra lo que YA está en
+ * Dropi, y dos ventas nuevas del mismo teléfono no estaban ninguna.
+ */
+describe('los repetidos dentro del propio lote', () => {
+  const p = (id: string, phone: string | null) => ({ id, phone });
+
+  it('dos ventas con el mismo teléfono: sube la primera, la segunda espera', () => {
+    const r = repetidosEnElLote([p('a', '3148664637'), p('b', '3148664637'), p('c', '3001112233')]);
+    expect(r.has('a')).toBe(false);
+    expect(r.has('b')).toBe(true);
+    expect(r.has('c')).toBe(false);
+  });
+
+  it('compara por los últimos 9 dígitos: el indicativo no lo esconde', () => {
+    expect(repetidosEnElLote([p('a', '+57 314 866 4637'), p('b', '3148664637')]).has('b')).toBe(true);
+  });
+
+  it('teléfonos distintos no se frenan entre sí', () => {
+    expect(repetidosEnElLote([p('a', '3001112233'), p('b', '3009998877')]).size).toBe(0);
+  });
+
+  /** Sin teléfono no se puede afirmar que sean el mismo cliente. */
+  it('sin teléfono no frena a nadie', () => {
+    expect(repetidosEnElLote([p('a', null), p('b', ''), p('c', null)]).size).toBe(0);
+  });
+
+  /** La asesora miró los dos y decidió: el sistema no le discute. */
+  it('"No es duplicado" manda: el pedido marcado no se frena', () => {
+    const r = repetidosEnElLote([p('a', '3148664637'), p('b', '3148664637')], new Set(['b']));
+    expect(r.has('b')).toBe(false);
+  });
+
+  it('un lote vacío o de uno no frena nada', () => {
+    expect(repetidosEnElLote([]).size).toBe(0);
+    expect(repetidosEnElLote([p('a', '3148664637')]).size).toBe(0);
   });
 });
