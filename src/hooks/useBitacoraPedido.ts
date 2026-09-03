@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
+import { soloObserva } from '@/lib/rolesTrabajo';
 import {
   INTERVALO_MS,
   TOPE_LOTE,
@@ -83,8 +84,10 @@ export interface RegistrarOpciones {
  * normal del primer render, no un error.
  */
 export function useBitacoraPedido() {
-  const { user } = useAuth();
-  const { activeStoreId } = useStore();
+  const { user, isAdmin } = useAuth();
+  const { activeStoreId, isOwnerOfActive } = useStore();
+  // El dueno MIRA, no trabaja: abrir un pedido no puede tener NINGUN efecto.
+  const observa = soloObserva({ isAdmin, isOwnerOfActive });
 
   useEffect(() => {
     suscriptores += 1;
@@ -101,6 +104,19 @@ export function useBitacoraPedido() {
   return useCallback(
     (evento: EventoPedido, opts: RegistrarOpciones = {}): void => {
       if (!user || !activeStoreId) return;
+      // ⛔ AL DUENO NO SE LE ANOTA NADA (3-sep-2026). Textual: *"a mi como dueno
+      // no me debo contar para nada; si yo me paro en un pedido yo no lo bloqueo
+      // porque yo no llamo ni hago nada"*.
+      //
+      // Sin esta reja, mirar la operacion le escribia `abrio`, `cerro` y —lo
+      // peor— `salto`: el dueno revisando pedidos quedaba registrado como
+      // alguien que los abre y pasa de largo sin gestionar. Ese numero lo lee el
+      // en `/actividad`, en el mapa de calor y en el resumen por persona, y lo
+      // habria estado comparando contra el trabajo real de su equipo.
+      //
+      // Es la MISMA regla que ya cumplen el heartbeat, el reclamo de pedidos y
+      // la marca de "en atencion" — esta era la unica puerta que faltaba.
+      if (observa) return;
       COLA.push({
         store_id: activeStoreId,
         operator_id: user.id,
@@ -113,7 +129,7 @@ export function useBitacoraPedido() {
       });
       if (COLA.length >= TOPE_LOTE) void vaciar();
     },
-    [user, activeStoreId],
+    [user, activeStoreId, observa],
   );
 }
 

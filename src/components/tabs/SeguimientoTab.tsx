@@ -473,7 +473,7 @@ export default function SeguimientoTab() {
    * llevarse diez, que sean los diez que vencen antes, no diez cualquiera.
    */
   const [pidiendoMas, setPidiendoMas] = useState(false);
-  const pedirMasPedidos = useCallback(async () => {
+  const pedirMasPedidos = useCallback(async (opts?: { automatico?: boolean }) => {
     setPidiendoMas(true);
     try {
       const candidatos = dedupedByDate
@@ -482,12 +482,16 @@ export default function SeguimientoTab() {
         .map((o) => String(o.dbId));
       const n = await asig.tomarMas(candidatos);
       if (n == null) {
+        // En automatico NO se avisa de un fallo: ella no pidio nada, y un cartel
+        // rojo por algo que no hizo solo la asusta. Se reintenta en un minuto.
+        if (opts?.automatico) return;
         toast.error('No se pudo cargar más trabajo', {
           description: 'Probá de nuevo en un momento. Mientras tanto la cola sigue siendo de todas: agarrá de arriba.',
         });
         return;
       }
       if (n === 0) {
+        if (opts?.automatico) return;
         // Puede pasar sin que nada falle: entre que se dibujó el botón y se
         // apretó, otra compañera se los llevó. No es un error.
         toast.message('Ya no quedaban pedidos sin dueño', {
@@ -495,13 +499,64 @@ export default function SeguimientoTab() {
         });
         return;
       }
+      // Cuando la carga fue automatica SI se avisa, y se dice que fue sola:
+      // que aparezcan pedidos nuevos en la pantalla sin explicacion se lee como
+      // un error del sistema, y encima ella no sabria que ya tiene mas trabajo.
       toast.success(`${n} pedido${n === 1 ? '' : 's'} más ${n === 1 ? 'es tuyo' : 'son tuyos'}`, {
-        description: 'Son los más urgentes de los que no tenían dueño. A nadie se le quitó trabajo.',
+        description: opts?.automatico
+          ? 'Terminaste los tuyos, así que te cargué los más urgentes de los que no tenían dueño. A nadie se le quitó trabajo.'
+          : 'Son los más urgentes de los que no tenían dueño. A nadie se le quitó trabajo.',
       });
     } finally {
       setPidiendoMas(false);
     }
   }, [dedupedByDate, asig]);
+
+  /**
+   * LA RECARGA NO PUEDE DEPENDER DE UN BOTON (3-sep-2026).
+   *
+   * Textual del dueno: *"que Guardian se asegure que el asesor nunca este
+   * quieto; si ya termino y no vio o no presiono el boton de pedir mas, que el
+   * mismo Guardian se lo de; eso no depende de un boton, no es escalable"*.
+   *
+   * Tiene razon, y hay precedente en esta misma casa: el reparto del turno
+   * existia, funcionaba y estaba probado, y `seg_asignaciones` tenia CERO filas
+   * porque dependia de que alguien se acordara de apretar un boton todos los
+   * dias. Nadie lo apreto NUNCA. Un boton que hay que recordar es una funcion
+   * apagada con pasos extra.
+   *
+   * Ahora, cuando termina lo suyo y hay trabajo sin dueno, se le carga solo. El
+   * boton se queda como respaldo visible —para pedir mas ANTES de terminar—
+   * pero el sistema ya no depende de que alguien lo vea.
+   *
+   * Las rejas, cada una por su razon:
+   *  - `trabajaLaCola` — al dueno NUNCA se le asigna nada. El mira.
+   *  - `medible` — si no se pudo leer lo gestionado hoy, `sinTocar` viene en
+   *    null y "ya termino" seria una suposicion. No se actua sobre eso.
+   *  - `sinTocar === 0` estricto, NO `!sinTocar`: null no es cero.
+   *  - un minuto entre recargas — este efecto se re-evalua con cada latido del
+   *    tablero y con cada push de realtime; sin el piso, terminar dispararia
+   *    una rafaga de llamadas a la base.
+   */
+  const ultimaRecargaRef = useRef(0);
+  useEffect(() => {
+    if (!trabajaLaCola({ isAdmin, isOwnerOfActive })) return;
+    if (!asig.soportado || !asig.cargado || !activeStoreId) return;
+    if (!segLoaded || dedupedByDate.length === 0) return;
+    if (!resumenTurno.medible) return;
+    if (resumenTurno.sinDueno === 0) return;
+    const miFila = user ? resumenTurno.filas.find((f) => f.operatorId === user.id) : undefined;
+    // Solo cuando de verdad TERMINO lo suyo: cargarle mas a quien todavia tiene
+    // pendientes le apila trabajo encima en vez de ayudarla.
+    if (!miFila || miFila.sinTocar !== 0) return;
+    const ahora = Date.now();
+    if (ahora - ultimaRecargaRef.current < 60_000) return;
+    ultimaRecargaRef.current = ahora;
+    void pedirMasPedidos({ automatico: true });
+  }, [
+    isAdmin, isOwnerOfActive, asig.soportado, asig.cargado, activeStoreId,
+    segLoaded, dedupedByDate.length, resumenTurno, user, pedirMasPedidos,
+  ]);
 
   // ⛔ EL REPARTO SE HACE SOLO (28-ago-2026). Medido en producción: `seg_asignaciones`
   // tenía CERO filas — la herramienta existía, funcionaba y estaba probada, pero
@@ -1661,7 +1716,7 @@ export default function SeguimientoTab() {
               nombreDe={nombreDeAsesora}
               onRepartir={isManagerOfActive ? repartirAMano : undefined}
               repartiendo={asig.repartiendo}
-              onPedirMas={trabajaLaCola({ isAdmin, isOwnerOfActive }) ? pedirMasPedidos : undefined}
+              onPedirMas={trabajaLaCola({ isAdmin, isOwnerOfActive }) ? () => { void pedirMasPedidos(); } : undefined}
               pidiendo={pidiendoMas}
               yoId={user?.id ?? null}
             />

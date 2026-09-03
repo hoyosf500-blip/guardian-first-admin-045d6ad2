@@ -627,6 +627,35 @@ export default function ConfirmarTab({ profile }: Props) {
     o => !o.result && !esAplazado(o) && !isLockedByOther(o, user?.id ?? null, Date.now()),
   ).length;
 
+  /**
+   * LO QUE EL TITULAR NO ESTA CONTANDO, DICHO CON NOMBRE Y NUMERO.
+   *
+   * Pedido del dueno (3-sep-2026): *"que Guardian no esconda pedidos, que
+   * siempre muestre el total en vivo de lo que hay"*.
+   *
+   * `pending` resta dos poblaciones a proposito y las dos son correctas —un
+   * pedido que otra esta atendiendo no es trabajo mio, y un reagendado para el
+   * viernes no vence hoy— pero restarlas EN SILENCIO hace que el numero baje
+   * solo y nadie sepa por que. Desde el 3-sep eso empeoro: marcar "en atencion"
+   * ahora tambien pasa desde Seguimiento, Novedades y la bandeja, asi que la
+   * cola de Confirmar puede encogerse porque una companera abrio un chat en
+   * otra pantalla.
+   *
+   * Ninguno de los dos se vuelve a sumar al titular: se NOMBRAN al lado. Es la
+   * misma regla que ya se aplico con los que estan enfriando ("35 clientes con
+   * llamadas disponibles" que el equipo daba por terminados) y con los chips de
+   * listas, que muestran lo pendiente en grande y el total al lado.
+   */
+  const ahoraTitular = Date.now();
+  const enAtencionPorOtras = visibleQueue.filter(
+    o => !o.result && isLockedByOther(o, user?.id ?? null, ahoraTitular),
+  ).length;
+  const reagendados = visibleQueue.filter(
+    o => !o.result && esAplazado(o, ahoraTitular) && !isLockedByOther(o, user?.id ?? null, ahoraTitular),
+  ).length;
+  /** El total VIVO de pendientes de la tienda: sin restarle nada a nadie. */
+  const pendientesTotales = pending + enAtencionPorOtras + reagendados;
+
   return (
     <div className="relative max-w-5xl mx-auto space-y-5">
       {/* Header-hero (MOLDE 1): los dos orbes hechos a mano que vivían sueltos
@@ -1034,6 +1063,26 @@ export default function ConfirmarTab({ profile }: Props) {
                   <div className="tilt-layer-3">
                     <CountUp value={pending} className="text-[52px] font-extrabold text-accent leading-none num-glow-accent" />
                     <div className="hud-label mt-2">por confirmar</div>
+                    {/* El numero grande es lo que ELLA puede llamar ahora. Lo que
+                        queda afuera se nombra acá, para que la cola no parezca
+                        encogerse sola. Solo aparece cuando hay algo: una linea
+                        siempre presente se vuelve parte del fondo. */}
+                    {pendientesTotales > pending && (
+                      <div className="mt-1.5 text-[11px] text-muted-foreground leading-snug">
+                        <span className="font-mono tabular-nums font-semibold text-foreground">{pendientesTotales}</span>
+                        {' '}en la tienda
+                        {enAtencionPorOtras > 0 && (
+                          <> · <span className="font-mono tabular-nums">{enAtencionPorOtras}</span>{' '}
+                            {enAtencionPorOtras === 1 ? 'lo está atendiendo' : 'los están atendiendo'} otra compañera
+                          </>
+                        )}
+                        {reagendados > 0 && (
+                          <> · <span className="font-mono tabular-nums">{reagendados}</span>{' '}
+                            reagendado{reagendados === 1 ? '' : 's'} para otro día
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Los MISMOS conf/canc/noresp dibujados como partes de su

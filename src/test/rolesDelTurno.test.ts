@@ -75,6 +75,10 @@ describe('la reja de "quién trabaja la cola" vive en rolesTrabajo.ts', () => {
       // `claim_order` de Confirmar, así que hereda el mismo riesgo — si el dueño
       // reclamara al mirar, le escondería el cliente al equipo 15 minutos.
       join('hooks', 'useAtencionPedido.ts'),
+      // La bitacora (3-sep-2026): sin la reja, el dueno mirando pedidos quedaba
+      // registrado como alguien que los ABRE Y PASA DE LARGO sin gestionar — y
+      // ese numero se compara despues contra el trabajo real del equipo.
+      join('hooks', 'useBitacoraPedido.ts'),
     ];
     const sinImportar = obligados.filter(
       (rel) => !/from ['"]@\/lib\/rolesTrabajo['"]/.test(readFileSync(join(SRC, rel), 'utf8')),

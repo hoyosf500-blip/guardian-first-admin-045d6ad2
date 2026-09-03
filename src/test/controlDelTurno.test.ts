@@ -216,3 +216,76 @@ describe('el reparto mira la actividad, no la marca de entrada', () => {
     expect(/presentes === null/.test(src)).toBe(true);
   });
 });
+
+/**
+ * AL DUENO NO SE LE CUENTA NADA.
+ *
+ * Textual (3-sep-2026): *"a mi como dueno no me debo contar para nada; si yo me
+ * paro en un pedido yo no lo bloqueo porque yo no llamo ni hago nada"*.
+ *
+ * La regla ya la cumplian el heartbeat, el reclamo de pedidos y la marca de "en
+ * atencion". Faltaba la bitacora: mirar un pedido le escribia `abrio`, `cerro`
+ * y —lo peor— `salto`, o sea quedaba anotado como alguien que abre pedidos y
+ * pasa de largo sin gestionar. Ese numero lo lee el mismo en /actividad y en el
+ * mapa de calor, comparado contra el trabajo real de su equipo.
+ */
+describe('el dueno mira y no deja rastro', () => {
+  it('la bitacora no escribe nada para quien solo observa', () => {
+    const src = sinComentarios(leer('src/hooks/useBitacoraPedido.ts'));
+    expect(/soloObserva\s*\(/.test(src), 'la bitacora anota al dueno como si trabajara').toBe(true);
+    expect(/if\s*\(\s*observa\s*\)\s*return;/.test(src)).toBe(true);
+  });
+});
+
+/**
+ * LA RECARGA NO PUEDE DEPENDER DE UN BOTON.
+ *
+ * Textual: *"si ya termino y no vio o no presiono el boton de pedir mas, que el
+ * mismo Guardian se lo de; eso no depende de un boton, no es escalable"*.
+ *
+ * Y hay precedente exacto: el reparto del turno existia, funcionaba y estaba
+ * probado, y `seg_asignaciones` tenia CERO filas porque dependia de que alguien
+ * apretara un boton todos los dias. Nadie lo apreto nunca.
+ */
+describe('al que termino se le carga trabajo solo', () => {
+  const src = sinComentarios(leer('src/components/tabs/SeguimientoTab.tsx'));
+
+  it('existe una recarga automatica, no solo el boton', () => {
+    expect(/automatico:\s*true/.test(src), 'la recarga sigue dependiendo de que alguien apriete el boton').toBe(true);
+  });
+
+  it('no se le carga a quien todavia tiene pendientes', () => {
+    expect(/sinTocar !== 0/.test(src), 'apilarle trabajo a quien no termino no la ayuda').toBe(true);
+  });
+
+  it('no se actua sobre una suposicion: sin poder medir, no se recarga', () => {
+    expect(/resumenTurno\.medible/.test(src)).toBe(true);
+  });
+});
+
+/**
+ * GUARDIAN NO ESCONDE PEDIDOS EN SILENCIO.
+ *
+ * Textual: *"que Guardian no esconda pedidos, que siempre muestre el total en
+ * vivo de lo que hay"*.
+ *
+ * El titular de Confirmar resta dos poblaciones —lo que otra esta atendiendo y
+ * lo reagendado— y las dos restas son correctas. Lo que no puede pasar es que
+ * sean invisibles: desde el 3-sep la marca de "en atencion" tambien se pone
+ * desde Seguimiento, Novedades y la bandeja, asi que la cola puede encogerse
+ * porque una companera abrio un chat en OTRA pantalla.
+ */
+describe('lo que el titular no cuenta, lo nombra', () => {
+  const src = sinComentarios(leer('src/components/tabs/ConfirmarTab.tsx'));
+
+  it('se calcula el total vivo, no solo lo que queda despues de restar', () => {
+    expect(/pendientesTotales/.test(src)).toBe(true);
+    expect(/enAtencionPorOtras/.test(src)).toBe(true);
+  });
+
+  it('y se dibuja en pantalla, no solo se calcula', () => {
+    const jsx = leer('src/components/tabs/ConfirmarTab.tsx');
+    expect(/\{pendientesTotales\}/.test(jsx), 'el total se calcula y no se muestra').toBe(true);
+    expect(/atendiendo/.test(jsx)).toBe(true);
+  });
+});
