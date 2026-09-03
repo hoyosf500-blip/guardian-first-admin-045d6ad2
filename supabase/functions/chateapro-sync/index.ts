@@ -49,7 +49,7 @@ import { cambiosDeChat, type ContactoCp, type PedidoCruce } from "../_shared/cha
 
 const SOURCE = "chateapro-sync";
 /** ⛔ Subirla en el mismo commit que cambie algo: si no, el ping miente. */
-const VERSION = "chateapro-sync 2026-09-03.2 rescate-por-telefono-y-alarma-que-sirve";
+const VERSION = "chateapro-sync 2026-09-03.3 la-senal-ya-no-se-come-el-rescate";
 
 /** Tope de la API (lo dice la spec; más devuelve 400). */
 const PAGINA = 100;
@@ -338,7 +338,17 @@ Deno.serve(async (req) => {
           }
 
           for (const o of aMirar) {
-            if (Date.now() - t0 > BUDGET_MS) break;
+            // ⛔ Corta dejando la RESERVA DEL RESCATE, no al filo del presupuesto.
+            // Esta fase lee hilos de a uno y su apetito no tiene techo; la fase 5
+            // exige `BUDGET_MS - RESERVA_RESCATE_MS` para arrancar. Cortando en
+            // `BUDGET_MS` esta fase se comía esa ventana entera y el rescate no
+            // corría NUNCA — con una sola tienda no se nota (la corrida medida
+            // tardó 64 s), pero con dos la segunda entra al bucle pasados ~65 s
+            // y ya no alcanza. Otra vez "¿queda algo?" en vez de "¿queda
+            // suficiente?", que es lo que dejó 82 corridas colgadas en Ecuador.
+            // La señal es reanudable —la cola se reordena sola cada corrida—;
+            // el rescate, en cambio, es el que hace que la tarjeta tenga botón.
+            if (Date.now() - t0 > BUDGET_MS - RESERVA_RESCATE_MS) break;
             if (!o.phone) continue;
             const sus = await buscarSuscriptorPorTelefono(cfg, String(o.phone), String(tienda?.country_code || "CO"));
             // Sin contacto no hay conversación que leer. NO es "no confirmó":
