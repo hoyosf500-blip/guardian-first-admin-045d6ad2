@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 
 /**
@@ -249,8 +249,11 @@ describe('ninguna pantalla nombra el canal del otro país', () => {
    */
   it('el badge mira el sync de SU canal, no uno fijo', () => {
     expect(/nombreCanal\(/.test(badge), 'el texto visible debe salir de nombreCanal()').toBe(true);
+    // El source ya no se escribe acá: sale de `sourceSyncChat`, que es el
+    // mismo que usa /inbox. Tener la elección en dos lados fue justamente el
+    // bug: el badge la hacía bien y /inbox no la hacía.
     expect(
-      /'chateapro-sync'/.test(badge) && /'importchat-sync'/.test(badge),
+      /sourceSyncChat\(/.test(badge),
       'tiene que elegir el source por canal: en Colombia vigila chateapro-sync',
     ).toBe(true);
     expect(
@@ -591,5 +594,87 @@ describe('la señal de confirmación no puede quedarse ciega en silencio', () =>
 
   it('un hilo que no se pudo leer es `sin_dato`', () => {
     expect(/if \(!hilo\)/.test(senal) && /"sin_dato"/.test(senal)).toBe(true);
+  });
+});
+
+/**
+ * ⛔ LA RED QUE AVISA QUE LA LISTA PUEDE ESTAR INCOMPLETA (3-sep-2026).
+ *
+ * `/inbox` es la pantalla que ya celebró un cero sobre 39 clientes sin
+ * contestar. La defensa que se puso entonces es un aviso —«el sync está
+ * fallando, esta lista puede estar incompleta»— que se enciende leyendo la
+ * salud del sync en `sync_logs`.
+ *
+ * Pero la llamaba **sin `source`**, o sea siempre contra `importchat-sync`.
+ * En Colombia esa consulta no devuelve ni una fila (ese sync es de Ecuador), el
+ * estado sale `never`, y el aviso solo se encendía con `failing`/`critical`.
+ * Resultado: en Colombia ese aviso **no se encendía nunca**, por rota que
+ * estuviera la conexión. La red existía y no estaba enchufada.
+ */
+describe('el aviso de "esta lista puede estar incompleta" tiene que servir en las dos', () => {
+  const inbox = sinComentarios(leer('src/pages/InboxPage.tsx'));
+  const badge = sinComentarios(leer('src/components/chat/ImporchatSyncBadge.tsx'));
+
+  it('el `source` sale del canal de la tienda, en UN solo lugar', () => {
+    expect(/export function sourceSyncChat/.test(canal)).toBe(true);
+    expect(/sourceSyncChat\(/.test(inbox), '/inbox tiene que pedir la salud del sync de SU canal').toBe(true);
+    expect(/sourceSyncChat\(/.test(badge)).toBe(true);
+  });
+
+  it('⛔ nadie llama a `useImporchatSyncHealth` sin decir cuál sync mirar', () => {
+    // Con un solo argumento cae al default `importchat-sync`, que en Colombia
+    // no existe: es exactamente el bug.
+    const culpables: string[] = [];
+    for (const f of ['src/pages/InboxPage.tsx', 'src/components/chat/ImporchatSyncBadge.tsx', 'src/components/tabs/AdminTab.tsx', 'src/components/ProtectedLayout.tsx']) {
+      const src = sinComentarios(leer(f));
+      for (const [i, l] of src.split('\n').entries()) {
+        if (/useImporchatSyncHealth\([^,)]*\)/.test(l) && !/^\s*(export )?function/.test(l)) {
+          culpables.push(`${f}:${i + 1} → ${l.trim()}`);
+        }
+      }
+    }
+    expect(culpables, 'sin `source` la consulta va contra el sync de Ecuador').toEqual([]);
+  });
+
+  it('«nunca corrió» también desconfía de la lista', () => {
+    // "El sync nunca corrió" no es una razón para confiar: es la más fuerte
+    // para desconfiar. Quedaba fuera y era justo donde caía Colombia.
+    expect(/status === 'never'/.test(inbox)).toBe(true);
+  });
+});
+
+/**
+ * ⛔ Ninguna pantalla le nombra a la asesora un canal que su tienda no usa.
+ *
+ * Ya pasó tres veces (2-sep-2026): el cargando del hilo, el globo del tablero y
+ * el encabezado de «Escribieron» decían "ImporChat" en Colombia, que es la app
+ * de OTRO país. El 3-sep apareció la cuarta, y sobre una cifra de plata: la
+ * tarjeta de cancelaciones decía *"Verificado contra ImporChat"* citando como
+ * fuente una app que la operación colombiana no usa.
+ */
+describe('⛔ el nombre del canal NO se escribe a mano en una pantalla', () => {
+  it('solo `nombreCanal` puede decir "ImporChat"', () => {
+    const culpables: string[] = [];
+    const mirar = (dir: string) => {
+      for (const e of readdirSync(join(raiz, dir))) {
+        const rel = `${dir}/${e}`;
+        if (statSync(join(raiz, rel)).isDirectory()) { mirar(rel); continue; }
+        if (!/\.tsx$/.test(e) || /\.test\./.test(e)) continue;
+        const src = sinComentarios(leer(rel))
+          // Los comentarios JSX ({/* … */}) no los quita `sinComentarios`.
+          .replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
+        for (const [i, l] of src.split('\n').entries()) {
+          // `ImporchatSyncBadge` / `useImporchatSyncHealth` son NOMBRES DE
+          // CÓDIGO, no texto que lea nadie.
+          const limpio = l.replace(/Imporchat[A-Za-z]*/g, '');
+          if (/Impor\s?[Cc]hat/.test(limpio)) culpables.push(`${rel}:${i + 1} → ${l.trim().slice(0, 120)}`);
+        }
+      }
+    };
+    mirar('src');
+    expect(
+      culpables,
+      'usá `nombreCanal(useCanalChat())`: en Colombia se atiende por Chatea Pro y nombrar ImporChat manda a la asesora a la app de otro país',
+    ).toEqual([]);
   });
 });

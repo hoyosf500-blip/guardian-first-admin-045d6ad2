@@ -3,6 +3,7 @@ import { CheckCircle2, AlertTriangle, AlertCircle, Loader2, Clock, KeyRound } fr
 import { useImporchatSyncHealth, type ImporchatSyncStatus } from '@/hooks/useImporchatSyncHealth';
 import { useStore } from '@/contexts/StoreContext';
 import { useCanalChat, nombreCanal } from '@/hooks/useCanalChat';
+import { sourceSyncChat } from '@/lib/canalChat';
 
 // Badge de salud de ImporChat (lo que el cliente nos escribe). Verde/amarillo/rojo
 // según corrió-y-guardó, MÁS un aviso propio de la llave de 7 días: si vence y no
@@ -52,7 +53,7 @@ export default function ImporchatSyncBadge({ size = 'sm', className = '' }: Prop
   // si no hubiera nadie esperando. Ese silencio dejó 39 clientes sin contestar,
   // 22 de ellos por más de un día (medido el 2-sep-2026).
   const nombre = nombreCanal(canal);
-  const q = useImporchatSyncHealth(activeStoreId, canal === 'chateapro' ? 'chateapro-sync' : 'importchat-sync');
+  const q = useImporchatSyncHealth(activeStoreId, sourceSyncChat(canal));
   useMinuteTick();
 
   if (q.isLoading) {

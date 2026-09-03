@@ -5,6 +5,7 @@ import { useStore } from '@/contexts/StoreContext';
 import { useInboxEsperando, type InboxItem } from '@/hooks/useInboxEsperando';
 import { useImporchatSyncHealth } from '@/hooks/useImporchatSyncHealth';
 import { useCanalChat, nombreCanal } from '@/hooks/useCanalChat';
+import { sourceSyncChat } from '@/lib/canalChat';
 import { haceCuantoMs } from '@/lib/actividadChat';
 import { getWhatsAppPhone, formatPhone } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
@@ -49,11 +50,15 @@ function BotonResponder({ onClick, disabled }: { onClick: () => void; disabled?:
 export default function InboxPage() {
   const { activeStoreId, activeStore } = useStore();
   const { items, status } = useInboxEsperando(activeStoreId);
-  const salud = useImporchatSyncHealth(activeStoreId);
   // El canal se pregunta por tienda: Ecuador atiende por ImporChat y Colombia
   // por Chatea Pro. Escribirlo a mano mandaba a la asesora colombiana a revisar
   // la app de otro país.
-  const canalNombre = nombreCanal(useCanalChat());
+  const canal = useCanalChat();
+  const canalNombre = nombreCanal(canal);
+  // ⛔ CON EL `source` DEL CANAL. Sin él esta consulta iba siempre contra
+  // `importchat-sync` y en Colombia no devolvía ni una fila, así que el aviso
+  // de abajo no se encendía NUNCA. Ver `sourceSyncChat`.
+  const salud = useImporchatSyncHealth(activeStoreId, sourceSyncChat(canal));
   const recordContacto = useRecordGestion();
 
   // Las plantillas aprobadas se piden AL ENTRAR, no cuando la asesora ya apretó
@@ -68,7 +73,12 @@ export default function InboxPage() {
   // correr, esta lista puede estar INCOMPLETA — y un "Nadie esperando" en verde
   // sobre un feed muerto es una mentira tranquilizadora (hallazgo P1). El badge
   // vive acá (no solo en /admin) para que la operadora que trabaja el inbox lo vea.
-  const feedDudoso = salud.data?.status === 'failing' || salud.data?.status === 'critical';
+  // ⛔ `never` TAMBIÉN es dudoso. "El sync nunca corrió" no es una razón para
+  // confiar en la lista: es la razón más fuerte para desconfiar. Quedaba fuera
+  // y era justo el estado en el que caía Colombia por el bug del `source`.
+  const feedDudoso = salud.data?.status === 'failing'
+    || salud.data?.status === 'critical'
+    || salud.data?.status === 'never';
 
   return (
     <div className="max-w-3xl mx-auto">

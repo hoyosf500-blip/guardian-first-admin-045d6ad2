@@ -17,6 +17,7 @@ import { SEMANTIC_COLORS } from '@/components/logistics/charts/chartTokens';
 import { rowsToCsv, downloadCsv } from '@/lib/csvExport';
 import { formatCOP } from '@/lib/utils';
 import type { LogisticsFilters } from '@/lib/logistics.types';
+import { useCanalChat, nombreCanal } from '@/hooks/useCanalChat';
 
 /**
  * /logistica → Cancelaciones. Responde, con plata y no con porcentajes sueltos:
@@ -327,6 +328,11 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
   // Denominador por producto: query APARTE. Sin ella la pantalla sigue igual.
   const porProducto = useCancelacionesPorProducto({ fromDate: filters.fromDate, toDate: filters.toDate });
   const { resumen: r, rows } = s;
+  // ⛔ Por dónde atiende ESTA tienda. La tarjeta decía "Verificado contra
+  // ImporChat" en las tres tiendas, y ImporChat es el canal de Ecuador: al
+  // dueño de Colombia se le estaba citando como fuente una app que su
+  // operación no usa, sobre una cifra de plata cancelada.
+  const canalNombre = nombreCanal(useCanalChat());
   const [verTodo, setVerTodo] = useState(false);
 
   const detalle = useMemo(
@@ -600,7 +606,7 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
                   {pctTecho(r.gestion.pctSinGestion)} del total. Acá el motivo anotado no se verificó con nadie.
                 </p>
               </div>
-              {/* Verificado contra ImporChat, no contra lo declarado: de las
+              {/* Verificado contra el chat, no contra lo declarado: de las
                   conversaciones LEÍDAS, ¿a cuántos jamás les salió NI UN
                   mensaje del negocio? Sin lecturas no se dibuja (null ≠ 0). */}
               {r.gestion.sinMensajeWhatsapp != null && (
@@ -609,7 +615,7 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
                     {r.gestion.sinMensajeWhatsapp} sin NI UN mensaje de WhatsApp del negocio = {formatCOP(r.gestion.sinMensajeWhatsappValor)}
                   </p>
                   <p className="text-[11px] text-muted-foreground mt-0.5">
-                    Verificado contra ImporChat sobre {r.gestion.chatLeidos} conversaciones leídas — no es lo que se declaró, es lo que salió de verdad.
+                    Verificado contra {canalNombre} sobre {r.gestion.chatLeidos} conversaciones leídas — no es lo que se declaró, es lo que salió de verdad.
                   </p>
                 </div>
               )}

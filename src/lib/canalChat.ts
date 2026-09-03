@@ -65,6 +65,24 @@ export async function fnCanal(storeId: string, base: 'chat' | 'send' | 'plantill
   return `${canal}-${base}`;
 }
 
+/**
+ * El `source` con el que ESTE canal escribe en `sync_logs`.
+ *
+ * ⛔ Vive acá y no en cada pantalla (3-sep-2026). El badge lo elegía bien, pero
+ * `/inbox` llamaba a `useImporchatSyncHealth(activeStoreId)` **sin source**, o
+ * sea contra `importchat-sync`. En Colombia esa consulta no devuelve ni una
+ * fila —ese sync es de Ecuador—, el estado sale `never`, y el aviso «esta lista
+ * puede estar incompleta» solo se enciende con `failing`/`critical`.
+ *
+ * Resultado: en Colombia **ese aviso no se encendía nunca**. Es exactamente la
+ * red que existe para que un "Nadie esperando respuesta" no sea una mentira
+ * tranquilizadora sobre un feed muerto — la misma pantalla que ya celebró un
+ * cero sobre 39 clientes sin contestar.
+ */
+export function sourceSyncChat(canal: CanalChat | null): string {
+  return canal === 'chateapro' ? 'chateapro-sync' : 'importchat-sync';
+}
+
 /** Solo para las pruebas: olvidar lo cacheado. */
 export function _limpiarCacheCanal(): void {
   cache.clear();
