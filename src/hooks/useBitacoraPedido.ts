@@ -215,9 +215,14 @@ export function usePedidoALaVista(pedido: { externalId?: string | null; phone?: 
   /** Registrar algo Y contarlo como gestión, que es el caso normal. */
   const registrarGestion = useCallback(
     (evento: EventoPedido, opts: RegistrarOpciones = {}) => {
-      marcarGestion();
+      const externalId = opts.externalId ?? actual.current?.externalId ?? clave;
+      // Con externalId, `registrar` ya la suma en GESTIONES_EN_VIVO (que
+      // `cerrarActual` agrega a las de esta instancia): contarla también acá
+      // la dejaba DOBLE en `detalle.gestiones` (revisión 3-sep-2026). Solo sin
+      // externalId —el Map no la ve— se cuenta localmente.
+      if (!externalId) marcarGestion();
       registrarRef.current(evento, {
-        externalId: opts.externalId ?? actual.current?.externalId ?? clave,
+        externalId,
         phone: opts.phone ?? actual.current?.phone ?? tel,
         ...opts,
       });

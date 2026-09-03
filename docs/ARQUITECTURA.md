@@ -552,5 +552,18 @@ pedido, append-only, sin UPDATE ni DELETE para nadie).
 
 Dónde se ve: `/actividad` (por persona y día, paginado), `/pedido/:id` (bitácora del pedido),
 `/admin → Productividad` (mapa de calor hora por hora, pausas, tarjetas) y el correo de las 21:00
-(`resumen-diario`: quién entró, a qué hora, cuánto hizo). Lo que NO existe: alertas de inactividad
-al dueño sin estar conectado (exige un cron nuevo) y un histórico de reasignaciones/candados.
+(`resumen-diario`: quién entró, a qué hora, cuánto hizo) y, desde el 3-sep-2026, el correo de
+`alertas-inactividad` (cron cada 10 min en horario laboral: ≥30 min sin gestión sin pausa declarada,
+o sin entrar 45 min después del turno; dedupe en `alertas_dueno`, lógica pura en
+`_shared/alertasInactividad.ts`). Lo que NO existe: un histórico de reasignaciones/candados.
+
+**El "día" de todas las lecturas es el de Bogotá (decisión 3-sep-2026).** `action_date`,
+`result_date`, el trigger que protege la novedad resuelta, `useLiveTeam`, la cobertura y el mapa
+de calor usan `bogotaToday()`. Guatemala (UTC−6) queda 1 h corrida en el borde de medianoche; se
+intentó escribir la marca de novedad con el día de la tienda y quedó invisible para todos los
+lectores. Si algún día se mueve, se mueve TODO junto (escritores, lectores y el trigger SQL), no
+un archivo.
+
+**`dropi-webhook` contesta 200 siempre**, también cuando el UPDATE/INSERT falla: Dropi reintenta
+en loop ante un 5xx y el reintento no arregla un fallo de la base. Desde el 3-sep-2026 esa pérdida
+queda en `sync_logs` (`warn`, source `dropi-webhook`) y el cron de ~10 min la repara.

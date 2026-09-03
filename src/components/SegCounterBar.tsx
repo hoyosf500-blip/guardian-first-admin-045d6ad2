@@ -6,6 +6,7 @@ import { CheckCircle2, ListChecks, Hourglass, Users, AlertTriangle, Eye, SkipFor
 import { bogotaToday } from '@/lib/utils';
 import { isSegCloser } from '@/lib/segDailyReview';
 import { useBitacoraDia } from '@/hooks/useBitacoraDia';
+import { pollWhenVisible } from '@/lib/pollWhenVisible';
 import { useStoreSchedule } from '@/hooks/useStoreSchedule';
 import { scheduleFromMinutes, bogotaSecondsOfDay } from '@/lib/inactivityWindow';
 import { horarioNetoSeconds, horarioNetoTranscurridoSec } from '@/lib/jornadaMath';
@@ -102,8 +103,15 @@ export default function SegCounterBar() {
   // Va SIN ranking entre compañeras, decisión del dueño: la competencia abierta
   // empuja al descreme (agarrar solo los pedidos fáciles), que es justo lo que
   // `MezclaTrabajoPanel` existe para detectar.
-  const { resumen: bitacora, estado: estadoBitacora } = useBitacoraDia(activeStoreId, bogotaToday(), user?.id ?? null);
+  const { resumen: bitacora, estado: estadoBitacora, recargar: recargarBitacora } = useBitacoraDia(activeStoreId, bogotaToday(), user?.id ?? null);
   const mio = bitacora[0] ?? null;
+  // "N abriste · N pasaste sin gestionar" quedaba congelado desde la carga de
+  // la pestaña (revisión 3-sep-2026): la bitácora no tiene realtime. Cada 3 min
+  // con la pestaña visible, y al volver a ella.
+  useEffect(
+    () => pollWhenVisible(() => { void recargarBitacora(); }, 3 * 60_000, { runOnVisible: true }),
+    [recargarBitacora],
+  );
 
   // La META, que hasta hoy solo alimentaba el semáforo del dueño y ella nunca
   // veía. Prorrateada al turno transcurrido con la función que ya existe: a las

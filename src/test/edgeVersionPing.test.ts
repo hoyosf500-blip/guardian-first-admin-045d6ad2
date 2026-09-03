@@ -66,6 +66,10 @@ const REQUERIDAS = [
   // dentro de un try/catch). `dropi-refresh-batch` ya estaba en la lista; a
   // esta le faltaba la marca y por eso el deploy del 4-sep no se pudo comprobar.
   "dropi-refresh-order",
+  // 3-sep-2026: el webhook es público y nunca dijo qué versión corre; las
+  // alertas al dueño son un cron nuevo que, si no se despliega, no avisa nada.
+  "dropi-webhook",
+  "alertas-inactividad",
 ] as const;
 
 /** Lo primero que aparece en el handler y ya es "auth". El ping va antes. */

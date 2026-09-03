@@ -27,6 +27,37 @@ import { mapDropiOrderToRow } from "../_shared/dropiOrderMapper.ts";
 // FUNNEL_RANK/normalizeStatus: el mismo orden del funnel que usa
 // dropi-update-order para verificar PUTs — acá alimenta el guard anti-retroceso.
 import { FUNNEL_RANK, normalizeStatus } from "../_shared/dropiConfirmOrder.ts";
+import { respuestaPing } from "../_shared/versionEdge.ts";
+
+// Marca de versión (3-sep-2026): esta función es pública (verify_jwt=false) y
+// hasta hoy no decía qué código corre. Ver _shared/versionEdge.ts.
+const VERSION = "dropi-webhook 2026-09-04.1 lo-que-no-entra-queda-en-sync-logs";
+
+/**
+ * Lo que el webhook NO pudo escribir queda en `sync_logs` (3-sep-2026).
+ *
+ * Se sigue contestando 200: Dropi reintenta en loop ante un 5xx y no hay
+ * garantía de que el reintento sirva (el UPDATE falló por la base, no por el
+ * payload). Pero antes el fallo solo iba a `console.error`, que nadie mira:
+ * el pedido quedaba con el estado viejo hasta que el cron (cada ~10 min)
+ * lo trajera de nuevo, y nadie sabía que el webhook estaba perdiendo. Ahora
+ * aparece en el "Historial de sincronizaciones" de Admin como `warn`, con el
+ * pedido. Best-effort: si tampoco se puede escribir esto, se loguea y ya.
+ */
+// deno-lint-ignore no-explicit-any
+async function anotarPerdida(sbAdmin: any, storeId: string | null, accion: string, externalId: string, detalle: string) {
+  try {
+    const fila: Record<string, unknown> = {
+      source: "dropi-webhook", status: "warn", synced_count: 0,
+      error_message: `${accion} #${externalId}: ${detalle}`.slice(0, 500),
+    };
+    if (storeId) fila.store_id = storeId;
+    const { error } = await sbAdmin.from("sync_logs").insert(fila);
+    if (error) console.error("[dropi-webhook] no pude anotar la pérdida en sync_logs:", error.message);
+  } catch (e) {
+    console.error("[dropi-webhook] no pude anotar la pérdida en sync_logs:", e instanceof Error ? e.message : String(e));
+  }
+}
 
 function json(body: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
@@ -52,6 +83,7 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return json({ ok: false, error: "POST only" }, 405, corsHeaders);
   }
+  { const p = respuestaPing(req, VERSION, corsHeaders); if (p) return p; }
 
   // ---- Secreto OBLIGATORIO (fail-closed) ----
   // Preferimos el header sobre ?secret= (el query string se filtra a access-logs/proxies).
@@ -179,6 +211,7 @@ Deno.serve(async (req) => {
       const { error: updErr } = await sbAdmin.from("orders").update(patch).eq("id", existing.id);
       if (updErr) {
         console.error("[dropi-webhook] update falló", externalId, updErr.message);
+        await anotarPerdida(sbAdmin, storeId, "webhook no pudo actualizar", externalId, `${status || "sin estado"} — ${updErr.message}. El cron lo trae en la próxima corrida.`);
         return json({ ok: false, action: "update_failed", external_id: externalId }, 200, corsHeaders);
       }
       console.log("[dropi-webhook] actualizado", externalId, "->", status, guia ? `guía ${guia}` : "");
@@ -223,6 +256,7 @@ Deno.serve(async (req) => {
       .select("id");
     if (insErr) {
       console.error("[dropi-webhook] insert falló", externalId, insErr.message);
+      await anotarPerdida(sbAdmin, storeId, "webhook no pudo insertar el pedido nuevo", externalId, `${insErr.message}. El cron lo trae en la próxima corrida.`);
       return json({ ok: false, action: "insert_failed", external_id: externalId }, 200, corsHeaders);
     }
     // ignoreDuplicates puede DESCARTAR el insert en silencio: ahora el único
@@ -237,8 +271,14 @@ Deno.serve(async (req) => {
     console.log("[dropi-webhook] insertado nuevo", externalId, "tienda", storeId);
     return json({ ok: true, action: "inserted", external_id: externalId, estado: status }, 200, corsHeaders);
   } catch (err) {
-    // Nunca devolvemos 5xx: Dropi reintentaría en loop. Log + ack.
-    console.error("[dropi-webhook] error inesperado", externalId, err instanceof Error ? err.message : String(err));
+    // Nunca devolvemos 5xx: Dropi reintentaría en loop. Log + ack, y la
+    // pérdida queda anotada donde el dueño la ve.
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[dropi-webhook] error inesperado", externalId, msg);
+    try {
+      const sbAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      await anotarPerdida(sbAdmin, null, "webhook falló", externalId, `${msg}. El cron lo trae en la próxima corrida.`);
+    } catch { /* ya se logueó arriba */ }
     return json({ ok: false, action: "error_acked", external_id: externalId }, 200, corsHeaders);
   }
 });

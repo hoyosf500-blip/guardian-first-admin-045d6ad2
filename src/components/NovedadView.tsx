@@ -335,7 +335,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
             <button onClick={copyPhone} className="text-cyan font-mono tabular-nums hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded">{formatPhone(o.phone)}</button>
             <a
               href={'tel:+' + getWhatsAppPhone(o.phone, countryCode)}
-              onClick={() => { marcarGestion(); void recordContacto(o.phone, 'LLAMADA', 'llamó', o.externalId); }}
+              onClick={() => { void recordContacto(o.phone, 'LLAMADA', 'llamó', o.externalId); }}
               className="pill pill-info ml-1 inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full no-underline transition-colors hover:brightness-110"
             >
               <Phone size={10} aria-hidden="true" /> Llamar

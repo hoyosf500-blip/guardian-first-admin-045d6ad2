@@ -23,3 +23,9 @@ verify_jwt = false
 # llama con la service-role key como Bearer (pasa el gateway) + x-cron-secret.
 [functions.shopify-auto-push]
 verify_jwt = false
+
+# alertas-inactividad la dispara pg_cron (cada 10 min) SIN JWT de Supabase; se
+# valida adentro con x-cron-secret (app_settings.cron_shared_secret), igual que
+# shopify-auto-push. Ver 20260904160000_alertas_dueno_cron.sql.
+[functions.alertas-inactividad]
+verify_jwt = false
