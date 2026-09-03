@@ -91,6 +91,37 @@ export interface SiguienteAccion {
   ruta: string;
   /** Urgencia, para el tono visual. */
   tono: 'urgente' | 'atencion' | 'normal' | 'listo';
+  /**
+   * Lo que queda DEBAJO del escalón que manda. Ver `EscalonPendiente`.
+   *
+   * Vacío cuando no hay nada más, y ausente jamás: es un arreglo siempre.
+   */
+  otros: EscalonPendiente[];
+}
+
+/**
+ * Un escalón que tiene trabajo pero no es el que manda ahora.
+ *
+ * ⛔ POR QUE ESTO EXISTE (3-sep-2026, reportado por el dueno en produccion).
+ * La barra devolvia UN escalon y tiraba el resto. Con la bandeja de Colombia en
+ * 51 clientes esperando hace mas de 3 horas, el escalon de la bandeja gana
+ * SIEMPRE — y va a seguir ganando hasta que alguien vacie esos 51. Durante todo
+ * ese tiempo la barra no nombraba las novedades ni los pedidos por confirmar:
+ * no es que los pusiera despues, es que no existian en la pantalla.
+ *
+ * Eso choca de frente con la regla del dueno: *"que Guardian no esconda
+ * pedidos, que siempre muestre el total de lo que hay que trabajar"*. Un
+ * backlog en el primer escalon no puede volver invisible a todo lo de abajo.
+ *
+ * La prioridad NO cambia — la eligio el dueno y sigue mandando quien manda. Lo
+ * que cambia es que lo demas se NOMBRA al lado, con su numero y su ruta.
+ */
+export interface EscalonPendiente {
+  key: Exclude<AccionKey, 'al_dia' | 'cargando'>;
+  cuantos: number;
+  /** Lo mismo que muestra la barra en neutro: "4 novedades abiertas". */
+  etiqueta: string;
+  ruta: string;
 }
 
 /** ¿Este pedido cae en esa lista SLA? Slug renombrado → false, nunca excepción. */
@@ -317,11 +348,24 @@ export interface SiguienteAccionInput {
  * instrucción. Si la persona tiene que elegir entre pantallas va a elegir la
  * más cómoda, y la más cómoda nunca es la que vence.
  */
+/** Un escalon todavia sin `otros`: lo agrega el ensamblado del final. */
+type Escalon = Omit<SiguienteAccion, 'otros'>;
+
 export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
   const {
     workQueue, novedadesQueue, segData, segCargado = true, avisosAgencia, novedadesAbiertas,
     bandejaEsperando, bandejaUrgentes, sinRespuesta,
   } = input;
+
+  // ⛔ SE EVALUA LA ESCALERA ENTERA, NO SE CORTA EN EL PRIMERO.
+  //
+  // Hasta el 3-sep-2026 cada escalon hacia `return` y lo de abajo no llegaba a
+  // calcularse. Con 51 clientes esperando hace +3 h en la bandeja, el primer
+  // escalon gana todos los dias y las novedades y los pedidos por confirmar
+  // dejaban de existir en la pantalla. Ahora se juntan TODOS los que tienen
+  // trabajo: el primero sigue siendo el que manda —la prioridad no se toca— y
+  // el resto se nombra al lado. Ver `EscalonPendiente`.
+  const escalones: Escalon[] = [];
 
   // ── 0. Bandeja URGENTE: alguien esperando hace más de 3 h ─────────
   // Manda sobre todo, incluso sobre una novedad. Decisión del dueño: a esa
@@ -329,7 +373,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
   // resolviendo el paquete al día siguiente.
   const urgentesBandeja = bandejaUrgentes ?? 0;
   if (urgentesBandeja > 0) {
-    return {
+    escalones.push({
       key: 'bandeja',
       cuantos: urgentesBandeja,
       titulo: urgentesBandeja === 1
@@ -341,7 +385,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
       porque: doc('bandeja').porque,
       ruta: '/inbox',
       tono: 'urgente',
-    };
+    });
   }
 
   // ── 1. Novedades ──────────────────────────────────────────────────
@@ -349,7 +393,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
   const novedades = novedadesAbiertas ?? novedadesQueue.length;
   const esperando = novedadesAbiertas == null ? 0 : Math.max(0, novedadesQueue.length - novedadesAbiertas);
   if (novedades > 0) {
-    return {
+    escalones.push({
       key: 'novedades',
       cuantos: novedades,
       titulo: novedades === 1 ? 'Resolvé la novedad abierta' : `Resolvé las ${novedades} novedades abiertas`,
@@ -361,7 +405,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
         : doc('novedades').porque,
       ruta: '/novedades',
       tono: 'urgente',
-    };
+    });
   }
 
   // ── 2. Agencia con reloj ──────────────────────────────────────────
@@ -384,7 +428,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
         : contarLista(segData, 'agencia_2d'))
     : 0;
   if (agenciaUrge > 0) {
-    return {
+    escalones.push({
       key: 'agencia',
       cuantos: agenciaUrge,
       titulo: agenciaUrge === 1
@@ -396,10 +440,10 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
       porque: doc('agencia').porque,
       ruta: rutaSeg('agencia_5d'),
       tono: 'urgente',
-    };
+    });
   }
   if (agenciaAviso > 0) {
-    return {
+    escalones.push({
       key: 'agencia',
       cuantos: agenciaAviso,
       titulo: agenciaAviso === 1
@@ -409,13 +453,13 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
       porque: doc('agencia').porque,
       ruta: rutaSeg('agencia_2d'),
       tono: 'urgente',
-    };
+    });
   }
 
   // ── 2.5. Bandeja: los que llevan menos de 3 h ─────────────────────
   const esperandoBandeja = bandejaEsperando ?? 0;
   if (esperandoBandeja > 0) {
-    return {
+    escalones.push({
       key: 'bandeja',
       cuantos: esperandoBandeja,
       titulo: esperandoBandeja === 1
@@ -425,14 +469,14 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
       porque: doc('bandeja').porque,
       ruta: '/inbox',
       tono: 'atencion',
-    };
+    });
   }
 
   // ── 3. Confirmar ──────────────────────────────────────────────────
   // `!o.result` = todavía no se gestionó hoy. Mismo criterio que usa el guard.
   const porConfirmar = workQueue.reduce((n, o) => (o.result ? n : n + 1), 0);
   if (porConfirmar > 0) {
-    return {
+    escalones.push({
       key: 'confirmar',
       cuantos: porConfirmar,
       titulo: porConfirmar === 1 ? 'Confirmá el pedido pendiente' : `Confirmá los ${porConfirmar} pedidos pendientes`,
@@ -440,7 +484,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
       porque: doc('confirmar').porque,
       ruta: '/confirmar',
       tono: 'atencion',
-    };
+    });
   }
 
   // ── 3.5. Les escribimos y no contestaron ──────────────────────────
@@ -449,7 +493,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
   // que Detenidos porque acá todavía hay un cliente que se puede recuperar.
   const deuda = sinRespuesta ?? 0;
   if (deuda > 0) {
-    return {
+    escalones.push({
       key: 'sin_respuesta',
       cuantos: deuda,
       titulo: deuda === 1
@@ -459,13 +503,13 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
       porque: doc('sin_respuesta').porque,
       ruta: '/inbox',
       tono: 'normal',
-    };
+    });
   }
 
   // ── 4. Detenidos ──────────────────────────────────────────────────
   const detenidos = segCargado ? contarLista(segData, 'detenidos_3d') : 0;
   if (detenidos > 0) {
-    return {
+    escalones.push({
       key: 'detenidos',
       cuantos: detenidos,
       titulo: detenidos === 1 ? 'Reclamá el pedido detenido' : `Reclamá los ${detenidos} pedidos detenidos`,
@@ -473,13 +517,13 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
       porque: doc('detenidos').porque,
       ruta: rutaSeg('detenidos_3d'),
       tono: 'atencion',
-    };
+    });
   }
 
   // ── 5. Rescate de devoluciones ────────────────────────────────────
   const rescate = segCargado ? contarLista(segData, 'devolucion_reciente') : 0;
   if (rescate > 0) {
-    return {
+    escalones.push({
       key: 'rescate',
       cuantos: rescate,
       titulo: rescate === 1 ? 'Intentá rescatar la devolución' : `Intentá rescatar ${rescate} devoluciones`,
@@ -487,7 +531,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
       porque: doc('rescate').porque,
       ruta: rutaSeg('devolucion_reciente'),
       tono: 'normal',
-    };
+    });
   }
 
   // ── 6. Catch-all de Seguimiento ───────────────────────────────────
@@ -496,7 +540,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
   // dejaban la barra en verde mientras el guard regañaba.
   const restoSeg = segCargado ? segData.reduce((n, o) => (esAccionable(o) ? n + 1 : n), 0) : 0;
   if (restoSeg > 0) {
-    return {
+    escalones.push({
       key: 'seguimiento',
       cuantos: restoSeg,
       titulo: restoSeg === 1 ? 'Gestioná el pedido de Seguimiento' : `Gestioná los ${restoSeg} pedidos de Seguimiento`,
@@ -504,7 +548,30 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
       porque: doc('seguimiento').porque,
       ruta: '/seguimiento',
       tono: 'normal',
-    };
+    });
+  }
+
+  // ── El escalon que manda, y lo que queda debajo ───────────────────
+  if (escalones.length > 0) {
+    const [primero, ...resto] = escalones;
+    // Un escalon no se nombra dos veces. La bandeja tiene dos tramos (+3 h y
+    // el resto) y la agencia tambien (5 dias y 2 dias): son el MISMO trabajo en
+    // la MISMA pantalla, y dos chips al mismo lugar solo ensucian.
+    const vistos = new Set<string>([primero.key]);
+    // ⛔ El catch-all cuenta TODOS los accionables de Seguimiento, incluidos los
+    // que ya tienen escalon propio (agencia, detenidos). Como escalon principal
+    // eso nunca se ve —solo llega cuando los otros estan en cero— pero al
+    // ponerlo AL LADO de ellos sumaria los mismos pedidos dos veces. Un numero
+    // inflado en la barra vale menos que no ponerlo: se omite.
+    const haySegPropio = escalones.some((e) => e.key === 'agencia' || e.key === 'detenidos' || e.key === 'rescate');
+    const otros: EscalonPendiente[] = [];
+    for (const e of resto) {
+      if (vistos.has(e.key)) continue;
+      if (e.key === 'seguimiento' && haySegPropio) continue;
+      vistos.add(e.key);
+      otros.push({ key: e.key as EscalonPendiente['key'], cuantos: e.cuantos, etiqueta: e.etiqueta, ruta: e.ruta });
+    }
+    return { ...primero, otros };
   }
 
   // ── Sin la cola de Seguimiento no se puede afirmar nada ───────────
@@ -519,6 +586,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
       porque: 'Todavía no se leyó la cola de Seguimiento.',
       ruta: '/seguimiento',
       tono: 'normal',
+      otros: [],
     };
   }
 
@@ -531,6 +599,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
     porque: 'No hay nada que venza ahora. Los pedidos en tránsito se vigilan, no se gestionan.',
     ruta: '/seguimiento',
     tono: 'listo',
+    otros: [],
   };
 }
 

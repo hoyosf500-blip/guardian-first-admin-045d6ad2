@@ -27,8 +27,12 @@ import {
   type ShopifyPendingLike,
   type PushedRecord,
 } from "../_shared/autoPushSelect.ts";
+import { respuestaPing } from "../_shared/versionEdge.ts";
 
 const SHOPIFY_API_VERSION = "2024-10";
+/** Se despliega A MANO. `POST .../shopify-auto-push?ping=1` contesta esta marca:
+ *  sin ella no hay forma de saber si el robot que corre cada 15 min es el nuevo. */
+const VERSION = "shopify-auto-push 2026-09-03.1 ping-para-poder-comprobarlo";
 const MIN_AGE_MS = 30 * 60 * 1000;     // gracia: dejar que Dropify lo suba solo primero
 const MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000; // techo: no perseguir pedidos viejos
 const ERROR_COOLDOWN_MS = 2 * 60 * 60 * 1000; // reintento de 'error' no antes de 2 h
@@ -313,6 +317,8 @@ async function processStore(
 Deno.serve(async (req: Request) => {
   const cors = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  { const p = respuestaPing(req, VERSION, cors); if (p) return p; }
+
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;

@@ -1,0 +1,88 @@
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+/**
+ * ⛔ GUARDIÁN — ningún candado anti-duplicado puede depender SOLO del espejo.
+ *
+ * El 3-sep-2026 una asesora mandó la foto de un pedido con DOS guías, con
+ * números consecutivos (…880 y …881). Los tres candados que existían —el del
+ * robot, el del panel y el del servidor— preguntaban lo mismo: *¿este teléfono
+ * ya tiene una orden en `orders`?*. Y `orders` es el espejo de Dropi: la fila
+ * entra cuando el cron la importa, no cuando la orden se crea. Por esa ventana
+ * pasaban dos ventas del mismo cliente sin que nadie las viera.
+ *
+ * Esta prueba exige que el push consulte ADEMÁS una fuente sin lag —nuestro
+ * propio registro de intentos— y que lo haga ANTES de crear nada en Dropi.
+ * Preguntar después de crear la orden no es un candado: es un informe.
+ */
+
+const RAIZ = join(process.cwd(), 'supabase', 'functions');
+const push = readFileSync(join(RAIZ, 'shopify-push-dropi', 'index.ts'), 'utf8');
+const puro = readFileSync(join(RAIZ, '_shared', 'gemeloInvisible.ts'), 'utf8');
+
+/**
+ * Comentarios fuera. `\r?\n` y NO `\n` a secas: con finales CRLF, un `.` no
+ * cruza el `\r` y el borrado de comentarios falla en silencio — una afirmación
+ * positiva pasaría en verde con el texto viviendo solo dentro de un comentario.
+ * Ya mordió en tres guardianes de este repo.
+ */
+const sinComentarios = (src: string): string =>
+  src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split(/\r?\n/)
+    .map((l) => l.replace(/(?<!:)\/\/.*$/, ''))
+    .join('\n');
+
+const codigo = sinComentarios(push);
+
+describe('⛔ el duplicado no se escapa por el lag del espejo', () => {
+  it('el push consulta una fuente SIN lag: nuestro registro de intentos', () => {
+    expect(
+      /from\(["']shopify_pushed_orders["']\)[\s\S]{0,400}?payload/.test(codigo),
+      'el push ya no lee el teléfono de shopify_pushed_orders: vuelve a depender solo del espejo',
+    ).toBe(true);
+    expect(codigo).toMatch(/elegirGemeloCiego/);
+  });
+
+  it('pregunta ANTES de crear en Dropi, no después', () => {
+    const iGuard = codigo.indexOf('findInvisibleTwin(sb');
+    const iClaim = codigo.indexOf('status: "pending"');
+    const iPost = codigo.indexOf('integrations/orders/myorders');
+    expect(iGuard, 'no se llama al guard del gemelo invisible').toBeGreaterThan(-1);
+    expect(iGuard, 'el guard corre DESPUÉS del claim: ya sería tarde').toBeLessThan(iClaim);
+    expect(iGuard, 'el guard corre DESPUÉS del POST a Dropi: eso no es un candado, es un informe')
+      .toBeLessThan(iPost);
+  });
+
+  /**
+   * La recompra legítima tiene que seguir teniendo salida. Sin el escape, un
+   * cliente que compra dos veces el mismo día queda trabado sin forma de
+   * destrabarlo — la venta perdida en silencio que la regla del 18-jul-2026
+   * vino justamente a arreglar.
+   */
+  it('respeta el escape manual "No es duplicado"', () => {
+    const iEscape = codigo.indexOf('if (!allowDuplicate');
+    const iGuard = codigo.indexOf('findInvisibleTwin(sb');
+    expect(iEscape).toBeGreaterThan(-1);
+    expect(iEscape, 'el guard quedó fuera del escape: una recompra real no se podría subir nunca')
+      .toBeLessThan(iGuard);
+  });
+
+  /**
+   * Si la lógica pura decidiera leyendo `orders`, volvería a tener el mismo
+   * lag y el arreglo sería decorativo.
+   */
+  it('la decisión pura no vuelve a apoyarse en el espejo', () => {
+    expect(sinComentarios(puro)).not.toMatch(/\borders\b/);
+  });
+
+  /** Sin esto, el arreglo vive en main y el runtime sigue duplicando. */
+  it('las dos funciones del camino Shopify→Dropi pueden decir qué versión corren', () => {
+    for (const fn of ['shopify-push-dropi', 'shopify-auto-push']) {
+      const src = readFileSync(join(RAIZ, fn, 'index.ts'), 'utf8');
+      expect(src, `${fn} no declara VERSION`).toMatch(/^const VERSION = "/m);
+      expect(src, `${fn} no contesta el ping`).toMatch(/respuestaPing\(\s*req/);
+    }
+  });
+});

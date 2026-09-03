@@ -23,8 +23,14 @@ import { WebFallbackError, normUp, decodeJwtSub, dropiWebFetch, quoteCarriers } 
 import { resolveDestCity, noCoverageMessage } from "../_shared/dropiCityCatalog.ts";
 import { dropiCountryNameFor, paisUsaCentavos } from "../_shared/dropiCountry.ts";
 import { allocateOrderDiscount, isCodOvercharge } from "./discount.ts";
+import { elegirGemeloCiego, VENTANA_GEMELO_MS, type FilaPush, type Gemelo } from "../_shared/gemeloInvisible.ts";
+import { respuestaPing } from "../_shared/versionEdge.ts";
 
 const SHOPIFY_API_VERSION = "2024-10";
+/** Se despliega A MANO: Lovable no redespliega edge functions al publicar.
+ *  `POST .../shopify-push-dropi?ping=1` contesta esta marca — es la unica forma de saber si
+ *  el arreglo del gemelo invisible llego de verdad al runtime. */
+const VERSION = "shopify-push-dropi 2026-09-03.1 gemelo-invisible-por-telefono";
 
 interface ShopifyLineItem {
   product_id: number;
@@ -659,9 +665,47 @@ async function findDuplicatesServiceRole(
     .map((o) => ({ external_id: o.external_id, estado: o.estado }));
 }
 
+/**
+ * El gemelo invisible: las DOS consultas, la decisión vive en `_shared`.
+ *
+ * Toda la explicación —por qué los tres candados que ya había no lo veían, y
+ * por qué esto no cambia ninguna regla de negocio— está en
+ * `_shared/gemeloInvisible.ts`, que es además lo único que se puede probar
+ * (`npm test` no corre las pruebas de las edge functions).
+ */
+async function findInvisibleTwin(
+  // deno-lint-ignore no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sb: any, storeId: string, phoneNorm: string, shopifyOrderId: string,
+): Promise<Gemelo | null> {
+  const desde = new Date(Date.now() - VENTANA_GEMELO_MS).toISOString();
+  const { data } = await sb.from("shopify_pushed_orders")
+    .select("shopify_order_id, dropi_order_id, payload")
+    .eq("store_id", storeId)
+    .gte("pushed_at", desde)
+    .in("status", ["created", "pending", "unknown"])
+    .limit(500);
+  const filas = (data || []) as FilaPush[];
+
+  // Cuáles de esos intentos YA se ven en el espejo. Sobre esos manda el guard
+  // de siempre (que conoce la regla ENTREGADO = recompra), no éste.
+  const ids = filas.map((f) => f.dropi_order_id).filter((x): x is string => !!x);
+  const espejadas = new Set<string>();
+  if (ids.length > 0) {
+    const { data: yaEspejadas } = await sb.from("orders")
+      .select("external_id").eq("store_id", storeId).in("external_id", ids);
+    for (const r of ((yaEspejadas || []) as Array<{ external_id: string | null }>)) {
+      if (r.external_id) espejadas.add(String(r.external_id));
+    }
+  }
+  return elegirGemeloCiego(filas, phoneNorm, shopifyOrderId, espejadas);
+}
+
 Deno.serve(async (req: Request) => {
   const cors = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  { const p = respuestaPing(req, VERSION, cors); if (p) return p; }
+
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -1141,6 +1185,21 @@ Deno.serve(async (req: Request) => {
             p_store_id: storeId, p_phones: [phoneNorm],
           });
           if (!dupErr && Array.isArray(dups)) list = dups as Array<{ external_id?: string; estado?: string }>;
+        }
+        // El gemelo que el espejo todavía no muestra. Va ANTES de mirar `list`
+        // porque justamente cubre el caso en que `list` viene vacía por lag.
+        const gemelo = await findInvisibleTwin(sb, storeId, phoneNorm, shopifyOrderId);
+        if (gemelo) {
+          return json({
+            ok: false,
+            blocked: "duplicate_phone",
+            error: `Hace un rato ya se subió a Dropi un pedido con este mismo teléfono ` +
+              `(venta de Shopify #${gemelo.shopify_order_id}` +
+              `${gemelo.dropi_order_id ? `, orden Dropi #${gemelo.dropi_order_id}` : ""}). ` +
+              `Todavía no aparece en el CRM porque Dropi tarda en devolverla. ` +
+              `Si de verdad son dos pedidos distintos, subilo con "No es duplicado".`,
+            duplicates: [{ external_id: gemelo.dropi_order_id ?? undefined }],
+          }, 409, cors);
         }
         if (list.length > 0) {
           const top = list.slice(0, 5);

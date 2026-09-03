@@ -199,6 +199,42 @@ export default function SiguienteAccionBar() {
           {mira ? accion.etiqueta : accion.titulo}
         </span>
         <span className="min-w-0 truncate text-[11px] text-muted-foreground">{accion.porque}</span>
+
+        {/*
+          ⛔ LO QUE QUEDA DEBAJO, NOMBRADO (3-sep-2026, reportado en producción).
+
+          La barra manda a UN lugar a propósito: si la asesora elige entre
+          pantallas elige la más cómoda, y la más cómoda nunca es la que vence.
+          Eso sigue igual — el botón grande de la derecha lleva al escalón que
+          manda y la prioridad no se tocó.
+
+          Lo que estaba mal era otra cosa: con la bandeja de Colombia en 51
+          clientes esperando hace más de 3 horas, ese escalón gana TODOS los
+          días hasta que alguien vacíe los 51 — y mientras tanto las novedades y
+          los pedidos por confirmar no aparecían en ningún lado de esta barra.
+          No es que fueran después: no existían en la pantalla. Choca de frente
+          con la regla del dueño: *"que Guardian no esconda pedidos, que siempre
+          muestre el total de lo que hay que trabajar"*.
+
+          Los chips se encogen los últimos (el `porque` cede el espacio primero):
+          entre explicar y mostrar trabajo pendiente, gana el trabajo.
+        */}
+        {accion.otros.map((o) => (
+          <button
+            key={o.key}
+            type="button"
+            onClick={() => navigate(o.ruta)}
+            title={`También hay trabajo acá: ${o.etiqueta}`}
+            className={cn(
+              'shrink-0 rounded-lg border border-border/60 bg-surface/60 px-1.5 py-0.5',
+              'text-[10px] font-medium text-muted-foreground transition-colors',
+              'hover:text-foreground hover:border-border',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current',
+            )}
+          >
+            +{o.cuantos} {o.etiqueta.replace(/^\d+\s*/, '')}
+          </button>
+        ))}
       </div>
 
       <button

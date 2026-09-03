@@ -44,6 +44,12 @@ const REQUERIDAS = [
   "chateapro-send",
   "chateapro-plantillas",
   "chateapro-sync",
+  // Las dos del camino Shopify→Dropi. Se agregan el 3-sep-2026 con el arreglo
+  // del gemelo invisible (el duplicado con dos guías que reportó una asesora):
+  // el arreglo vive ENTERO en el runtime de estas dos, así que si el deploy no
+  // entra, el código está en main y los pedidos se siguen duplicando igual.
+  "shopify-push-dropi",
+  "shopify-auto-push",
 ] as const;
 
 /** Lo primero que aparece en el handler y ya es "auth". El ping va antes. */

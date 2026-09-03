@@ -472,3 +472,77 @@ describe('la bandeja y el 2º intento', () => {
     expect([...ordenes].sort((a, b) => a - b)).toEqual(ordenes);
   });
 });
+
+/**
+ * ⛔ EL BACKLOG DEL PRIMER ESCALÓN NO PUEDE BORRAR LO DEMÁS.
+ *
+ * Reportado por el dueño el 3-sep-2026 con la bandeja de Colombia en 51
+ * clientes esperando hace más de 3 horas: ese escalón gana todos los días
+ * hasta que alguien vacíe los 51, y mientras tanto la barra no nombraba ni
+ * las novedades ni los pedidos por confirmar. Su regla es al revés:
+ * *"que Guardian no esconda pedidos, que siempre muestre el total"*.
+ *
+ * La prioridad NO se toca. Lo que se exige acá es que lo de abajo se NOMBRE.
+ */
+describe('lo que queda debajo del escalón que manda', () => {
+  const conTodo: SiguienteAccionInput = {
+    workQueue: [porConfirm, porConfirm, porConfirm],
+    novedadesQueue: [{ ...base, estado: 'NOVEDAD' }],
+    segData: [],
+    bandejaEsperando: 2,
+    bandejaUrgentes: 51,
+  };
+
+  it('la bandeja con 51 esperando sigue mandando — la prioridad del dueño no cambia', () => {
+    expect(siguienteAccion(conTodo).key).toBe('bandeja');
+    expect(siguienteAccion(conTodo).cuantos).toBe(51);
+  });
+
+  it('pero las novedades y los pedidos por confirmar SIGUEN NOMBRADOS, con su número', () => {
+    const otros = siguienteAccion(conTodo).otros;
+    const nov = otros.find((o) => o.key === 'novedades');
+    const conf = otros.find((o) => o.key === 'confirmar');
+    expect(nov?.cuantos).toBe(1);
+    expect(nov?.ruta).toBe('/novedades');
+    expect(conf?.cuantos).toBe(3);
+    expect(conf?.ruta).toBe('/confirmar');
+  });
+
+  it('un escalón no se nombra dos veces: los 2 de menos de 3 h no repiten la bandeja', () => {
+    const otros = siguienteAccion(conTodo).otros;
+    expect(otros.filter((o) => o.key === 'bandeja')).toHaveLength(0);
+  });
+
+  it('el que manda nunca se repite en la lista de abajo', () => {
+    const r = siguienteAccion(conTodo);
+    expect(r.otros.some((o) => o.key === r.key)).toBe(false);
+  });
+
+  /**
+   * El catch-all cuenta TODOS los accionables de Seguimiento, agencia y
+   * detenidos incluidos. Como escalón principal nunca se ve junto a ellos,
+   * pero ponerlo AL LADO sumaría los mismos pedidos dos veces. Un número
+   * inflado en la barra vale menos que no ponerlo.
+   */
+  it('no suma dos veces: con agencia presente, el catálogo general no se nombra', () => {
+    const r = siguienteAccion({ ...vacio, novedadesQueue: [{ ...base, estado: 'NOVEDAD' }], segData: [enAgencia] });
+    expect(r.key).toBe('novedades');
+    expect(r.otros.some((o) => o.key === 'agencia')).toBe(true);
+    expect(r.otros.some((o) => o.key === 'seguimiento')).toBe(false);
+  });
+
+  it('sin nada más, la lista de abajo va vacía (no null, no undefined)', () => {
+    expect(siguienteAccion({ ...vacio, novedadesQueue: [{ ...base, estado: 'NOVEDAD' }] }).otros).toEqual([]);
+    expect(siguienteAccion(vacio).otros).toEqual([]);
+  });
+
+  /**
+   * ⛔ Sin la cola de Seguimiento leída no se afirma nada — y menos aún un
+   * "todo al día". El refactor que juntó los escalones estuvo a una línea de
+   * convertir este `return` en un `push`, que habría dejado caer el caso a
+   * `al_dia`: exactamente el bug que este archivo documenta desde agosto.
+   */
+  it('con la cola sin leer sigue diciendo "cargando", NUNCA "al día"', () => {
+    expect(siguienteAccion({ ...vacio, segCargado: false }).key).toBe('cargando');
+  });
+});
