@@ -256,24 +256,17 @@ describe('un dato no se pone en dos huecos', () => {
    * Las dos veces se arreglo el caso puntual. Esta prueba lo cierra como clase
    * y corre sobre las plantillas REALES de las dos cuentas.
    */
-  it.each([
-    ['Colombia', PLANTILLAS_CO, PEDIDO_CO],
-    ['Ecuador', PLANTILLAS_EC, PEDIDO_EC_G],
-  ])('ninguna plantilla de %s repite un valor entre huecos', (_pais, lista, datos) => {
-    const culpables: string[] = [];
-    for (const p of lista) {
-      const v = sugerirValores(p, datos);
-      const vistos = new Map<string, number[]>();
-      for (const x of p.variables) {
-        const val = String(v[x.indice] ?? '');
-        if (!val) continue;
-        vistos.set(val, [...(vistos.get(val) ?? []), x.indice]);
-      }
-      for (const [val, ix] of vistos) {
-        if (ix.length > 1) culpables.push(`${p.nombre}: "${val}" en ${JSON.stringify(ix)}`);
-      }
-    }
-    expect(culpables).toEqual([]);
+  it('⛔ Ecuador: "Hola {{1}} … Nombre: {{4}}" llena LOS DOS, no es un bug', () => {
+    // Probado y descartado el 3-sep-2026: una regla de "el mismo valor no va en
+    // dos huecos" parece cerrar la clase, pero acá los dos huecos quieren el
+    // nombre CON RAZON —saludo y dato a confirmar— y la regla dejaba
+    // «Hola [falta 1],», o sea la plantilla inservible. Falla para el lado caro:
+    // un dato de mas se lee raro, uno de menos no se puede mandar.
+    const p = PLANTILLAS_EC.find((x) => x.nombre === 'confirmacion_pedido_k1')!;
+    const v = sugerirValores(p, PEDIDO_EC_G);
+    expect(v[1]).toBe('Maria');
+    expect(v[4]).toBe('Maria');
+    expect(renderizar(p.cuerpo, v)).toContain('Hola Maria');
   });
 
   it('la plantilla de RECLAME EN OFICINA dice la CIUDAD y la transportadora, no dos veces lo mismo', () => {

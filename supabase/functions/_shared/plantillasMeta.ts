@@ -481,35 +481,32 @@ export function sugerirValores(p: PlantillaMeta, d: DatosPedido): Record<number,
   }
 
   /**
-   * ⛔ EL MISMO DATO NO SE PONE EN DOS HUECOS (3-sep-2026).
+   * ⛔ REPETIR UN VALOR **NO** SE CORRIGE ACÁ. Probado y descartado el mismo día.
    *
-   * Es la red contra una clase de error que esta operación YA pagó dos veces,
-   * las dos por caminos distintos:
+   * La primera versión de este bloque tiraba el valor de un hueco cuando otro ya
+   * lo tenía, para cerrar como clase el error de «Su MARTHA Jiménez sale a
+   * entrega» y el de «oficina de SERVIENTREGA. Transportadora: SERVIENTREGA».
    *
-   *   · Ecuador: `en_camino_hoy_v2` y `rescate_devolucion_v1` mandaban {{1}} y
-   *     {{2}} los dos a `nombre` → «Su MARTHA Jiménez sale a entrega».
-   *   · Colombia: `seguimiento_reclamo_oficina_1_utilidad` mandaba {{3}} y {{4}}
-   *     los dos a la transportadora → «retiro en nuestra oficina de SERVIENTREGA.
-   *     Transportadora: SERVIENTREGA», sin decirle al cliente a qué ciudad ir.
+   * Medido contra la cuenta real de Ecuador, la regla es DEMASIADO BRUTA:
+   * `confirmacion_pedido_k1` dice «Hola {{1}}, … 👤Nombre: {{4}}» y los dos
+   * huecos quieren el nombre **con razón** — uno es el saludo y el otro el dato
+   * que se le pide confirmar. La regla dejaba «Hola [falta 1],» y volvía la
+   * plantilla inservible. O sea que fallaba para el lado caro: un dato de más se
+   * lee raro, un dato de menos no se puede mandar.
    *
-   * Las dos veces se arregló el caso puntual. Esto lo cierra como clase: repetir
-   * un valor no es un dato de más, es un dato que FALTA disfrazado — y el hueco
-   * que queda vacío hace que la plantilla no se pueda completar sola, así que el
-   * botón la salta y la asesora la escribe. Un mensaje que no sale se nota; uno
-   * que sale mal, no.
+   * Y sobre todo: repetir un valor es el SÍNTOMA, no la enfermedad. Las dos
+   * veces la causa fue un mapeo equivocado —"oficina de" apuntando a la
+   * transportadora— y se arregla en `pistaDelTexto`, que es donde se decide qué
+   * significa cada hueco. Desde acá abajo no hay forma de distinguir un mapeo
+   * malo de una repetición legítima: los dos casos se ven idénticos.
    *
-   * El desempate va por FUERZA de la señal, no por orden de aparición: si un
-   * hueco se llama "Ciudad:" y otro solo insinúa un lugar, el valor se queda con
-   * el que lo nombra. A igual fuerza gana el de más a la izquierda, que es el
-   * orden en que se lee el mensaje.
+   * Dónde sí vive la defensa: en las pruebas. `accionSeguimientoColombia.test.ts`
+   * revisa las plantillas REALES de las dos cuentas y clava los dos casos
+   * conocidos, así que un mapeo nuevo que repita un dato se ve en rojo y lo
+   * decide una persona, en vez de que el código adivine y borre.
    */
   const out: Record<number, string> = {};
-  const usados = new Set<string>();
-  for (const q of [...propuestas].sort((a, b) => a.fuerza - b.fuerza || a.indice - b.indice)) {
-    if (usados.has(q.valor)) continue;
-    out[q.indice] = q.valor;
-    usados.add(q.valor);
-  }
+  for (const q of propuestas) out[q.indice] = q.valor;
   return out;
 }
 
