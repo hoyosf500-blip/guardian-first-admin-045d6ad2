@@ -219,12 +219,17 @@ export default function ChatClienteCard({
         </>
       )}
 
+      {/* ⛔ Este diálogo NO recibe `dbId`, y es a propósito. Esta tarjeta vive
+          DENTRO de la ficha de llamada, de Novedades y del detalle del pedido, y
+          esas pantallas YA marcan el pedido en atención. Si el chat volviera a
+          reclamarlo, `claim_order` lo RENOVARÍA (renueva cuando el lock ya es
+          propio) y al cerrar el chat soltaría el candado de la pantalla que lo
+          contiene — otra asesora podría tomar el cliente en plena llamada. */}
       {escribiendo && (
         <EscribirWhatsappDialog
           open={escribiendo}
           onOpenChange={setEscribiendo}
           externalId={String(externalId)}
-          dbId={orderId}
           nombre={nombre}
           estado={estado}
           phone={phone}

@@ -40,6 +40,21 @@ import { useOrderLock } from '@/hooks/useOrderLock';
  * puede costarle un cliente al equipo: ese error ya se pagó en Confirmar, donde
  * el dueño abría una ficha y `claim_order` se la escondía a TODAS por 15 min.
  */
+/**
+ * Cuantos lugares de la pantalla sostienen el candado de cada pedido.
+ *
+ * ⛔ SIN ESTO SE SUELTA UN CANDADO AJENO. `claim_order` RENUEVA cuando el lock
+ * ya es propio (`locked_by = auth.uid()`), asi que dos partes de la misma
+ * pantalla pueden "tomar" el mismo pedido y creer las dos que es suyo. La
+ * primera en cerrarse lo soltaba por las dos — y en una ficha de llamada eso
+ * significa que otra asesora puede tomar el cliente MIENTRAS la primera esta
+ * hablando con el, que es justo el bug que este candado vino a evitar.
+ *
+ * Es por sesion (memoria del modulo), que es exactamente el alcance correcto:
+ * lo que hay que contar son los lugares de ESTA pantalla.
+ */
+const SOSTENIDOS = new Map<string, number>();
+
 export function useAtencionPedido(dbId: string | null | undefined, activo: boolean): void {
   const { isAdmin } = useAuth();
   const { isOwnerOfActive } = useStore();
@@ -59,12 +74,18 @@ export function useAtencionPedido(dbId: string | null | undefined, activo: boole
       // porque la persona lo eligió. Que otra lo tenga tomado no es motivo para
       // sacárselo de la vista —seguir el hilo de un chat no le hace daño a
       // nadie—; lo que no pasa es que se lo tome ella también.
-      if (r.ok) mioRef.current = dbId;
+      if (r.ok) {
+        mioRef.current = dbId;
+        SOSTENIDOS.set(dbId, (SOSTENIDOS.get(dbId) ?? 0) + 1);
+      }
     });
     return () => {
       cancelado = true;
       if (mioRef.current === dbId) {
         mioRef.current = null;
+        const quedan = (SOSTENIDOS.get(dbId) ?? 1) - 1;
+        if (quedan > 0) { SOSTENIDOS.set(dbId, quedan); return; }
+        SOSTENIDOS.delete(dbId);
         void releaseOrder(dbId);
       }
     };

@@ -289,3 +289,64 @@ describe('lo que el titular no cuenta, lo nombra', () => {
     expect(/atendiendo/.test(jsx)).toBe(true);
   });
 });
+
+/**
+ * UN CANDADO NO SE SUELTA POR OTRO.
+ *
+ * `claim_order` RENUEVA cuando el lock ya es propio (`locked_by = auth.uid()`),
+ * asi que dos partes de la MISMA pantalla pueden "tomar" el mismo pedido y
+ * creer las dos que es suyo. La primera en cerrarse lo soltaba por las dos.
+ *
+ * Reproducido el 3-sep-2026: la asesora esta en una llamada (la ficha ya tiene
+ * el pedido tomado), abre el chat del cliente desde la tarjeta de conversacion,
+ * lo cierra — y su propio candado desaparece. Otra asesora puede tomarle el
+ * cliente MIENTRAS habla con el, que es justo lo que este candado vino a
+ * evitar.
+ */
+describe('el candado no se lo suelta nadie por error', () => {
+  it('la marca de atencion cuenta cuantos la sostienen', () => {
+    const src = sinComentarios(leer('src/hooks/useAtencionPedido.ts'));
+    expect(/SOSTENIDOS/.test(src), 'sin conteo, dos partes de la pantalla se sueltan el candado entre si').toBe(true);
+    expect(/if \(quedan > 0\)/.test(src)).toBe(true);
+  });
+
+  /**
+   * La tarjeta de chat se dibuja DENTRO de pantallas que ya marcan atencion
+   * (ficha de llamada, Novedades, detalle del pedido). Si volviera a reclamar,
+   * el conteo la salvaria del caso simple — pero la ficha de llamada reclama
+   * por su cuenta, fuera del conteo, y ahi no habria red.
+   */
+  it('la tarjeta de chat no reclama por su cuenta', () => {
+    const src = sinComentarios(leer('src/components/chat/ChatClienteCard.tsx'));
+    expect(/dbId=/.test(src), 'la tarjeta de chat no puede reclamar: vive dentro de pantallas que ya lo hacen').toBe(false);
+  });
+});
+
+/**
+ * BUSCAR NO PUEDE PARECER QUE HAY MENOS TRABAJO.
+ *
+ * Regla del dueno, textual: *"que los pedidos no se escondan, eso esta
+ * prohibido; siempre que se muestre el total que hay que trabajar"*.
+ */
+describe('la bandeja no esconde ni celebra de mas', () => {
+  const src = leer('src/pages/InboxPage.tsx');
+
+  it('buscar y no encontrar NO dibuja el cartel de "todos atendidos"', () => {
+    expect(/items\.length === 0 && busca\.trim\(\)/.test(src)).toBe(true);
+    expect(/items\.length === 0 && !busca\.trim\(\)/.test(src)).toBe(true);
+  });
+
+  it('resolver no saca de la lista: la ordena', () => {
+    const logica = sinComentarios(src);
+    expect(/estaResuelto/.test(logica)).toBe(true);
+    // Si en vez de ordenar se filtrara por resuelto, el pedido desapareceria.
+    expect(
+      /filtrados\.filter\(\(o\) => !estaResuelto/.test(logica),
+      'resolver esconderia el cliente en vez de bajarlo al final',
+    ).toBe(false);
+  });
+
+  it('el contador cuenta la cola completa, no lo que dejo ver el buscador', () => {
+    expect(/cola\.filter\(estaResuelto\)/.test(src)).toBe(true);
+  });
+});

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { MessageSquare, Phone, MapPin, Package, Clock, Inbox, CheckCircle2, Loader2 } from 'lucide-react';
+import { MessageSquare, Phone, MapPin, Package, Clock, Inbox, CheckCircle2, Loader2, Search } from 'lucide-react';
 import { useStore } from '@/contexts/StoreContext';
 import { useInboxEsperando, HORAS_SIN_RESPUESTA, type InboxItem } from '@/hooks/useInboxEsperando';
 import { useImporchatSyncHealth } from '@/hooks/useImporchatSyncHealth';
@@ -19,6 +19,8 @@ import SelloGestion from '@/components/comun/SelloGestion';
 import LockBadge from '@/components/LockBadge';
 import { useSelloGestion, type EstadoSello, type Sello } from '@/hooks/useSelloGestion';
 import { useAtencionPedido } from '@/hooks/useAtencionPedido';
+import { matchesQuery } from '@/lib/textSearch';
+import { toast } from 'sonner';
 
 // Re-render cada 60s para que "hace 2 h" suba solo, sin re-fetch.
 function useMinuteTick(): void {
@@ -116,10 +118,13 @@ function actividadDe(o: InboxItem) {
  * `plano`: en la lista angosta estos botones comparten fila con "Leer y
  * contestar", así que salen sueltos, sin envoltorio propio.
  */
-function Acciones({ o, cc, onLlamar, plano, className }: {
+function Acciones({ o, cc, onLlamar, onResolver, resuelto, plano, className }: {
   o: InboxItem;
   cc?: string | null;
   onLlamar: (phone: string) => void;
+  /** Marcar que este cliente ya no espera nada. Ver `BotonResuelto`. */
+  onResolver: (o: InboxItem) => void;
+  resuelto: boolean;
   plano?: boolean;
   className?: string;
 }) {
@@ -138,6 +143,7 @@ function Acciones({ o, cc, onLlamar, plano, className }: {
           fallback={null}
         />
       )}
+      <BotonResuelto resuelto={resuelto} onClick={() => onResolver(o)} />
       <a
         href={'tel:+' + getWhatsAppPhone(o.phone, cc)}
         onClick={() => onLlamar(o.phone)}
@@ -157,6 +163,49 @@ function Acciones({ o, cc, onLlamar, plano, className }: {
   );
   if (plano) return botones;
   return <div className={`flex gap-2 flex-wrap ${className || ''}`}>{botones}</div>;
+}
+
+/**
+ * "RESUELTO" — lo que la asesora aprieta cuando este cliente ya no espera nada.
+ *
+ * ── Por qué hace falta (pedido del dueño, 3-sep-2026) ───────────────────────
+ * *"En el inbox poner también un botón de resuelto, para que el asesor marque
+ * lo que va terminando."*
+ *
+ * La bandeja lista a quien escribió último. Si la asesora CONTESTA, el cliente
+ * sale solo (el chat cambia de mano). Pero si lo resuelve de otra forma —lo
+ * llamó, era un "gracias", el pedido ya se despachó— el cliente se queda ahí
+ * para siempre y la cola nunca llega a cero. Una cola que no baja se aprende a
+ * ignorar, y esa es la muerte de esta pantalla.
+ *
+ * ⛔ RESOLVER NO ESCONDE NADA. El dueño fue explícito: *"que los pedidos no se
+ * escondan, eso está prohibido; siempre que se muestre el total que hay que
+ * trabajar"*. El cliente resuelto SIGUE en la lista, marcado y al final, y el
+ * encabezado cuenta las dos cosas. Lo único que cambia es el orden y el color.
+ *
+ * Y no inventa un estado nuevo: escribe una gestión normal (`touchpoints`), la
+ * misma que ya alimenta el sello de "ya lo tocó". Por eso sobrevive a recargar
+ * la página, lo ven las compañeras, y si el cliente vuelve a escribir el pedido
+ * reaparece esperando — porque su mensaje pasa a ser más nuevo que la gestión.
+ */
+function BotonResuelto({ resuelto, onClick }: { resuelto: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={resuelto}
+      title={resuelto
+        ? 'Ya lo marcaste resuelto. Sigue en la lista, al final, hasta que el cliente vuelva a escribir.'
+        : 'Este cliente ya no espera nada: lo llamaste, se resolvió, o no hacía falta contestar.'}
+      className={`flex-1 min-w-[110px] text-[11px] py-2.5 rounded-xl font-semibold inline-flex items-center justify-center gap-1.5 border transition-colors ${
+        resuelto
+          ? 'bg-success/14 border-success/40 text-success cursor-default'
+          : 'bg-card/40 border-border text-muted-foreground hover:text-success hover:border-success/40'
+      }`}
+    >
+      <CheckCircle2 size={13} /> {resuelto ? 'Resuelto' : 'Marcar resuelto'}
+    </button>
+  );
 }
 
 /** El botón de siempre: abre el cuadro completo con todas las plantillas. */
@@ -184,16 +233,25 @@ function BotonResponder({ onClick, disabled }: { onClick: () => void; disabled?:
  * vez que se armó este panel — la pantalla se desbordó a lo ancho y había que
  * scrollear de lado para ver la barra lateral.
  */
-function FilaCola({ o, seleccionada, onSelect, sello, estadoSello, miId }: {
+function FilaCola({ o, seleccionada, onSelect, sello, estadoSello, miId, resuelto }: {
   o: InboxItem;
   seleccionada: boolean;
   onSelect: () => void;
   sello: Sello | null;
   estadoSello: EstadoSello;
   miId: string | null;
+  /** Ya se atendió. Se APAGA y baja al final — nunca se saca de la lista. */
+  resuelto?: boolean;
 }) {
-  const t = tono(o.entranteAt);
+  // ⛔ Resuelto se APAGA, no desaparece: el dueño fue explícito en que esconder
+  // pedidos está prohibido. El reloj rojo/ámbar tampoco tiene sentido en algo
+  // ya atendido — si siguiera en rojo, la lista mentiría sobre la urgencia.
+  const t = resuelto
+    ? { chip: 'bg-success/12 border-success/25 text-success', dot: 'bg-success', texto: 'text-success' }
+    : tono(o.entranteAt);
   const contexto = [o.producto, o.ciudad].filter(Boolean).join(' · ');
+  // El check va ADEMAS del tono apagado: en blanco y negro, o para quien no
+  // distingue colores, la opacidad sola no dice nada.
   return (
     <button
       type="button"
@@ -203,7 +261,7 @@ function FilaCola({ o, seleccionada, onSelect, sello, estadoSello, miId }: {
         seleccionada
           ? 'bg-accent/10 border-l-accent'
           : 'border-l-transparent hover:bg-card/60'
-      }`}
+      } ${resuelto ? 'opacity-55' : ''}`}
     >
       <span className="relative shrink-0">
         <span
@@ -221,7 +279,8 @@ function FilaCola({ o, seleccionada, onSelect, sello, estadoSello, miId }: {
       <span className="min-w-0 flex-1 block">
         <span className="flex items-baseline gap-2 min-w-0">
           <span className="text-sm font-bold text-foreground truncate min-w-0">{o.nombre}</span>
-          <span className={`ml-auto shrink-0 text-[10px] font-mono tabular-nums font-bold ${t.texto}`}>
+          <span className={`ml-auto shrink-0 inline-flex items-center gap-1 text-[10px] font-mono tabular-nums font-bold ${t.texto}`}>
+            {resuelto && <CheckCircle2 size={11} aria-label="Resuelto" />}
             {haceCuantoMs(o.entranteAt)}
           </span>
         </span>
@@ -349,7 +408,7 @@ export default function InboxPage() {
    * en rutas obligaría a la asesora a acordarse de visitar la segunda.
    */
   const [vista, setVista] = useState<'esperan' | 'deuda'>('esperan');
-  const items = vista === 'esperan' ? esperan : sinRespuesta;
+  const cola = vista === 'esperan' ? esperan : sinRespuesta;
   // El canal se pregunta por tienda: Ecuador atiende por ImporChat y Colombia
   // por Chatea Pro. Escribirlo a mano mandaba a la asesora colombiana a revisar
   // la app de otro país.
@@ -375,10 +434,83 @@ export default function InboxPage() {
   // Quién tocó cada uno de estos clientes, de todas las pantallas. Los teléfonos
   // se piden en un solo viaje para toda la cola, no una consulta por tarjeta.
   const telefonosCola = useMemo(
-    () => items.map((i) => i.phone).filter(Boolean),
-    [items],
+    () => cola.map((i) => i.phone).filter(Boolean),
+    [cola],
   );
   const { selloDe, estado: estadoSello, miId } = useSelloGestion(activeStoreId, telefonosCola);
+
+  const llamar = (phone: string) => { void recordContacto(phone, 'LLAMADA', 'llamó'); };
+
+  /**
+   * ¿Este cliente ya está resuelto? Su última gestión es MÁS NUEVA que su
+   * último mensaje.
+   *
+   * No hay estado nuevo ni columna nueva: sale del sello de gestión que esta
+   * pantalla ya lee. Por eso sobrevive a recargar, lo ven las compañeras, y si
+   * el cliente vuelve a escribir vuelve a estar esperando — su mensaje pasa a
+   * ser más nuevo que la gestión, y la comparación se da vuelta sola.
+   *
+   * ⛔ Con el sello sin leer (`estadoSello !== 'ok'`) NADIE está resuelto. Dar
+   * por resuelto lo que no se pudo medir es la misma buena noticia falsa que
+   * esta pantalla ya cometió una vez, celebrando «todos atendidos 🎉» con 39
+   * clientes esperando.
+   */
+  const estaResuelto = useCallback((o: InboxItem): boolean => {
+    if (estadoSello !== 'ok') return false;
+    const sello = o.phone ? selloDe(o.phone) : null;
+    if (!sello) return false;
+    const t = Date.parse(sello.createdAt);
+    return Number.isFinite(t) && t > o.entranteAt;
+  }, [estadoSello, selloDe]);
+
+  const marcarResuelto = useCallback((o: InboxItem) => {
+    if (!o.phone) {
+      toast.error('Este pedido no tiene teléfono, así que no puedo dejar la marca.');
+      return;
+    }
+    void recordContacto(o.phone, 'SEG', 'Resuelto: no espera respuesta', o.externalId || undefined);
+    toast.success('Marcado como resuelto', {
+      description: 'Queda al final de la lista, no se esconde. Si el cliente vuelve a escribir, vuelve a aparecer arriba.',
+    });
+  }, [recordContacto]);
+
+  /**
+   * El buscador. Pedido del dueño: *"que en el inbox puedan buscar también
+   * números y chat"*.
+   *
+   * Busca por nombre, teléfono, número de pedido, producto y ciudad — el
+   * teléfono además sin separadores, porque nadie lo escribe con guiones. Es
+   * un filtro de VISTA: el encabezado sigue contando la cola completa, así que
+   * buscar nunca hace parecer que hay menos trabajo del que hay.
+   */
+  const [busca, setBusca] = useState('');
+
+  /**
+   * La lista que se dibuja: filtrada por el buscador y con los resueltos al
+   * FINAL, nunca fuera.
+   *
+   * ⛔ `sort` sobre una copia. Ordenar el array que viene del hook lo mutaría
+   * en su sitio y el próximo render partiría de un orden distinto al que el
+   * hook cree tener.
+   */
+  const items = useMemo(() => {
+    const filtrados = busca.trim()
+      ? cola.filter((o) => matchesQuery(
+          [o.nombre, o.phone, o.phone?.replace(/\D/g, ''), o.externalId, o.producto, o.ciudad],
+          busca,
+        ))
+      : cola;
+    const resueltos = new Set(filtrados.filter(estaResuelto).map((o) => o.dbId));
+    if (resueltos.size === 0) return filtrados;
+    return [...filtrados].sort(
+      (a, b) => Number(resueltos.has(a.dbId)) - Number(resueltos.has(b.dbId)),
+    );
+  }, [cola, busca, estaResuelto]);
+
+  /** Cuántos de la cola COMPLETA están resueltos. Sobre `cola`, no sobre lo
+   *  filtrado: el encabezado cuenta el trabajo real, no lo que dejó ver el
+   *  buscador. */
+  const cuantosResueltos = useMemo(() => cola.filter(estaResuelto).length, [cola, estaResuelto]);
 
   // La cola avanza sola: si el seleccionado ya no está (le contestaron y salió
   // de la lista), pasa al siguiente en vez de dejar el panel vacío. Ese detalle
@@ -411,12 +543,15 @@ export default function InboxPage() {
   // Cuántos llevan más de un día. Es el número que dice si la cola se está
   // trabajando o solo se está mirando — y no se puede leer de un vistazo
   // contando tarjetas.
+  // ⛔ Sobre `cola`, NO sobre `items`. `items` es lo que quedo despues del
+  // buscador: contar ahi haria que escribir un nombre en la busqueda bajara
+  // el numero de "llevan mas de un dia" — la cola pareceria mejor de lo que
+  // esta por haber tecleado algo. Esconder trabajo esta prohibido.
   const masDeUnDia = useMemo(
-    () => items.filter((i) => Date.now() - i.entranteAt >= 86_400_000).length,
-    [items],
+    () => cola.filter((i) => Date.now() - i.entranteAt >= 86_400_000).length,
+    [cola],
   );
 
-  const llamar = (phone: string) => { void recordContacto(phone, 'LLAMADA', 'llamó'); };
 
   return (
     // ⛔ `overflow-x-hidden` y `w-full`: la red de seguridad del desborde. Si
@@ -479,6 +614,43 @@ export default function InboxPage() {
             vive en `ProtectedLayout`, al lado del de Dropi, para que se vea
             también en Confirmar y Seguimiento. El banner rojo de abajo, que es
             propio de este listado, no se toca. */}
+
+        {/* Buscador. Pedido del dueño: *"que en el inbox puedan buscar también
+            números y chat"*. Busca por nombre, teléfono (con y sin guiones),
+            número de pedido, producto y ciudad.
+
+            ⛔ Es un filtro de VISTA. La línea de abajo sigue contando la cola
+            COMPLETA, para que buscar nunca haga parecer que hay menos trabajo
+            del que hay — que es exactamente lo prohibido. */}
+        {(cola.length > 0 || busca) && (
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <div className="relative min-w-0 flex-1 max-w-md">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+              <input
+                type="search"
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder="Buscar por nombre, teléfono o número de pedido…"
+                className="w-full rounded-xl border border-border bg-card/40 py-2 pl-9 pr-3 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              />
+            </div>
+            <span className="text-[11px] text-muted-foreground">
+              {busca.trim() && (
+                <>
+                  <span className="font-mono tabular-nums font-semibold text-foreground">{items.length}</span>
+                  {' '}de{' '}
+                </>
+              )}
+              <span className="font-mono tabular-nums font-semibold text-foreground">{cola.length}</span>
+              {' '}en la cola
+              {cuantosResueltos > 0 && (
+                <> · <span className="font-mono tabular-nums text-success">{cuantosResueltos}</span>{' '}
+                  ya resuelto{cuantosResueltos === 1 ? '' : 's'}
+                </>
+              )}
+            </span>
+          </div>
+        )}
       </header>
 
       {feedDudoso && (
@@ -518,7 +690,27 @@ export default function InboxPage() {
         </div>
       )}
 
-      {status === 'ok' && items.length === 0 && (
+      {/* ⛔ Buscar y no encontrar NO es "no hay nadie esperando". Sin esta rama,
+          escribir un teléfono que no está en la cola dibujaba el cartel verde de
+          "todos atendidos 🎉" sobre una cola llena — el error que esta pantalla
+          ya cometió una vez de verdad, con 39 clientes esperando. */}
+      {status === 'ok' && items.length === 0 && busca.trim() && (
+        <div className="flex flex-col items-center justify-center py-16 gap-2 text-center">
+          <p className="text-sm font-semibold text-foreground">Nadie con «{busca.trim()}»</p>
+          <p className="text-xs text-muted-foreground">
+            Hay <span className="font-mono tabular-nums">{cola.length}</span> en la cola; ninguno coincide.
+          </p>
+          <button
+            type="button"
+            onClick={() => setBusca('')}
+            className="mt-1 text-[11px] font-semibold text-accent hover:underline"
+          >
+            Ver la cola completa
+          </button>
+        </div>
+      )}
+
+      {status === 'ok' && items.length === 0 && !busca.trim() && (
         <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
           <span className="w-12 h-12 rounded-2xl bg-success/14 border border-success/30 text-success flex items-center justify-center" aria-hidden="true">
             <CheckCircle2 size={24} />
@@ -567,6 +759,7 @@ export default function InboxPage() {
                   sello={selloDe(o.phone)}
                   estadoSello={estadoSello}
                   miId={miId}
+                  resuelto={estaResuelto(o)}
                 />
               ))}
             </div>
@@ -627,7 +820,7 @@ export default function InboxPage() {
                   </p>
                 )}
 
-                <Acciones o={sel} cc={cc} onLlamar={llamar} className="px-4 pb-4 pt-0" />
+                <Acciones o={sel} cc={cc} onLlamar={llamar} onResolver={marcarResuelto} resuelto={estaResuelto(sel)} className="px-4 pb-4 pt-0" />
               </>
             ) : (
               <div className="p-10 text-center text-sm text-muted-foreground">
@@ -693,7 +886,7 @@ export default function InboxPage() {
                     pierde exactamente así (ver `imporchat_miedo_no_es_rechazo`).
                     El envío rápido no se saca: queda al lado. */}
                 <BotonResponder onClick={() => setAbierto(o)} disabled={!o.externalId} />
-                <Acciones o={o} cc={cc} onLlamar={llamar} plano />
+                <Acciones o={o} cc={cc} onLlamar={llamar} onResolver={marcarResuelto} resuelto={estaResuelto(o)} plano />
               </div>
             </TarjetaLista>
           ))}
