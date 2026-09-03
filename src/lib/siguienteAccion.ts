@@ -341,6 +341,20 @@ export interface SiguienteAccionInput {
   bandejaUrgentes?: number | null;
   /** Clientes a los que les escribimos y no contestaron: falta el 2º intento. */
   sinRespuesta?: number | null;
+  /**
+   * Cuántas de esas novedades llevan más de 24 h esperando respuesta.
+   *
+   * Regla del dueño (3-sep-2026): *"las novedades deben estar en 0 y con este
+   * sistema no puede pasar más de 24 h sin dar respuesta"*. No cambia el ORDEN
+   * de la escalera — las novedades ya eran lo primero después de la bandeja
+   * urgente — cambia lo que la barra DICE: una novedad de hace tres horas y una
+   * de hace tres días eran el mismo número y no son el mismo problema.
+   *
+   * ⛔ `null`/ausente = no se pudo medir → la barra habla como antes, sin
+   * reclamar. Un cero inventado acá diría "ninguna vencida" sobre pedidos que
+   * llevan días parados. Ver `contarNovedadesVencidas`.
+   */
+  novedadesVencidas?: number | null;
 }
 
 /**
@@ -354,7 +368,7 @@ type Escalon = Omit<SiguienteAccion, 'otros'>;
 export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
   const {
     workQueue, novedadesQueue, segData, segCargado = true, avisosAgencia, novedadesAbiertas,
-    bandejaEsperando, bandejaUrgentes, sinRespuesta,
+    bandejaEsperando, bandejaUrgentes, sinRespuesta, novedadesVencidas,
   } = input;
 
   // ⛔ SE EVALUA LA ESCALERA ENTERA, NO SE CORTA EN EL PRIMERO.
@@ -392,17 +406,33 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
   // Solo las que Dropi todavía deja gestionar. Ver `novedadesAbiertas`.
   const novedades = novedadesAbiertas ?? novedadesQueue.length;
   const esperando = novedadesAbiertas == null ? 0 : Math.max(0, novedadesQueue.length - novedadesAbiertas);
+  // Las que ya pasaron las 24 h se NOMBRAN aparte: es la vara del dueño y es la
+  // diferencia entre un pendiente y un reclamo. `null` = no se midió → se habla
+  // como antes.
+  const vencidas = novedadesVencidas != null && novedadesVencidas > 0
+    ? Math.min(novedadesVencidas, novedades)
+    : 0;
   if (novedades > 0) {
     escalones.push({
       key: 'novedades',
       cuantos: novedades,
-      titulo: novedades === 1 ? 'Resolvé la novedad abierta' : `Resolvé las ${novedades} novedades abiertas`,
-      etiqueta: novedades === 1 ? '1 novedad abierta' : `${novedades} novedades abiertas`,
+      titulo: vencidas > 0
+        ? (vencidas === 1
+            ? 'Respondé la novedad que lleva más de 24 h parada'
+            : `Respondé las ${vencidas} novedades que llevan más de 24 h paradas`)
+        : (novedades === 1 ? 'Resolvé la novedad abierta' : `Resolvé las ${novedades} novedades abiertas`),
+      etiqueta: vencidas > 0
+        ? (vencidas === 1
+            ? `1 novedad parada hace +24 h (de ${novedades})`
+            : `${vencidas} novedades paradas hace +24 h (de ${novedades})`)
+        : (novedades === 1 ? '1 novedad abierta' : `${novedades} novedades abiertas`),
       // Se nombra lo que NO es trabajo. Sin esta línea, el que ayer leyó "84" y
       // hoy lee "14" va a creer que se perdieron pedidos.
-      porque: esperando > 0
-        ? `${doc('novedades').porque} (${esperando} más están en estado NOVEDAD pero la transportadora ya cerró la incidencia: no se pueden gestionar.)`
-        : doc('novedades').porque,
+      porque: vencidas > 0
+        ? 'Ninguna novedad puede pasar de 24 h sin respuesta: la transportadora tiene el paquete parado y cada día que pasa lo acerca a la devolución.'
+        : esperando > 0
+          ? `${doc('novedades').porque} (${esperando} más están en estado NOVEDAD pero la transportadora ya cerró la incidencia: no se pueden gestionar.)`
+          : doc('novedades').porque,
       ruta: '/novedades',
       tono: 'urgente',
     });

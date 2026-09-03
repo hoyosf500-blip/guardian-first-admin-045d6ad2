@@ -546,3 +546,55 @@ describe('lo que queda debajo del escalón que manda', () => {
     expect(siguienteAccion({ ...vacio, segCargado: false }).key).toBe('cargando');
   });
 });
+
+/**
+ * ⛔ LA VARA DE LAS 24 HORAS (dueño, 3-sep-2026): *"las novedades deben estar
+ * en 0 y con este sistema no puede pasar más de 24 h sin dar respuesta"*.
+ * El ORDEN de la escalera no cambia — las novedades ya eran lo primero después
+ * de la bandeja urgente — cambia lo que la barra RECLAMA.
+ */
+describe('la novedad que lleva más de un día parada', () => {
+  const conNovedades = (vencidas: number | null): SiguienteAccionInput => ({
+    ...vacio,
+    novedadesQueue: [
+      { ...base, estado: 'NOVEDAD' }, { ...base, estado: 'NOVEDAD' }, { ...base, estado: 'NOVEDAD' },
+    ],
+    novedadesVencidas: vencidas,
+  });
+
+  it('cuando hay vencidas, la barra las nombra y dice cuántas de cuántas', () => {
+    const r = siguienteAccion(conNovedades(2));
+    expect(r.key).toBe('novedades');
+    expect(r.etiqueta).toContain('2');
+    expect(r.etiqueta).toContain('+24 h');
+    expect(r.titulo).toContain('24 h');
+    expect(r.porque).toContain('24 h');
+  });
+
+  it('el total sigue siendo el total: las vencidas NO reemplazan al número real', () => {
+    expect(siguienteAccion(conNovedades(2)).cuantos).toBe(3);
+    expect(siguienteAccion(conNovedades(2)).etiqueta).toContain('de 3');
+  });
+
+  it('sin vencidas habla como siempre', () => {
+    const r = siguienteAccion(conNovedades(0));
+    expect(r.etiqueta).toBe('3 novedades abiertas');
+  });
+
+  /** ⛔ Un cero inventado diría "ninguna vencida" sobre pedidos parados hace días. */
+  it('si no se pudo medir, NO reclama: habla como antes', () => {
+    const r = siguienteAccion(conNovedades(null));
+    expect(r.etiqueta).toBe('3 novedades abiertas');
+  });
+
+  /** Un dato inconsistente (más vencidas que novedades) no puede imprimir un absurdo. */
+  it('nunca dice más vencidas que novedades hay', () => {
+    expect(siguienteAccion(conNovedades(99)).etiqueta).toContain('3 novedades paradas');
+  });
+
+  it('el escalón sigue siendo el mismo y en el mismo lugar de la escalera', () => {
+    const r = siguienteAccion({ ...conNovedades(3), bandejaUrgentes: 5 });
+    expect(r.key).toBe('bandeja');
+    expect(r.otros.some((o) => o.key === 'novedades')).toBe(true);
+  });
+});

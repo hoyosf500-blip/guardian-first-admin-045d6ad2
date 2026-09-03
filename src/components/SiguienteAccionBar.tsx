@@ -9,6 +9,7 @@ import { segVisiblesParaCola } from '@/lib/segVisibles';
 import { useSegTouchIndex } from '@/hooks/useSegTouchIndex';
 import { useOpenIncidences } from '@/hooks/useOpenIncidences';
 import { splitNovedades } from '@/lib/novedadesSplit';
+import { contarNovedadesVencidas } from '@/lib/novedadesVencidas';
 import { soloObserva } from '@/lib/rolesTrabajo';
 import { useInboxEsperando } from '@/hooks/useInboxEsperando';
 import { cn } from '@/lib/utils';
@@ -136,15 +137,24 @@ export default function SiguienteAccionBar() {
   // dato) devuelve `null` y la barra cuenta todo, como antes.
   const split = useMemo(() => splitNovedades(novedadesQueue, openIds), [novedadesQueue, openIds]);
   const novedadesAbiertas = split.conocido ? split.porGestionar.length : null;
+  // ⛔ Las que llevan +24 h se cuentan SOBRE LAS GESTIONABLES, no sobre la cola
+  // entera: las que la transportadora ya cerró no se pueden responder, y
+  // reclamarlas sería mandar al equipo a una cola donde no hay nada que hacer
+  // (el mismo error del «84 novedades» que en realidad eran 14). Sin el split
+  // conocido no se mide nada. Ver `contarNovedadesVencidas`.
+  const novedadesVencidas = useMemo(
+    () => (split.conocido ? contarNovedadesVencidas(split.porGestionar, Date.now()) : null),
+    [split],
+  );
 
   const accion = useMemo(
     () => siguienteAccion({
       workQueue, novedadesQueue, segData: segVisibles, segCargado: segLoaded,
-      avisosAgencia, novedadesAbiertas,
+      avisosAgencia, novedadesAbiertas, novedadesVencidas,
       bandejaEsperando, bandejaUrgentes, sinRespuesta,
     }),
     [workQueue, novedadesQueue, segVisibles, segLoaded, avisosAgencia, novedadesAbiertas,
-     bandejaEsperando, bandejaUrgentes, sinRespuesta],
+     novedadesVencidas, bandejaEsperando, bandejaUrgentes, sinRespuesta],
   );
 
   // Todavía no se leyó la cola: no se dibuja NADA. Un "Todo al día" en verde
