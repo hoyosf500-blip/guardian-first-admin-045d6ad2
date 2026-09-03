@@ -19,6 +19,7 @@ const ConfirmarPage = lazy(() => import("@/pages/ConfirmarPage"));
 const SeguimientoPage = lazy(() => import("@/pages/SeguimientoPage"));
 const NovedadesPage = lazy(() => import("@/pages/NovedadesPage"));
 const InboxPage = lazy(() => import("@/pages/InboxPage"));
+const ActividadPage = lazy(() => import("@/pages/ActividadPage"));
 const AdminPage = lazy(() => import("@/pages/AdminPage"));
 const OrderDetailPage = lazy(() => import("@/pages/OrderDetailPage"));
 const LogisticsPage = lazy(() => import("@/pages/LogisticsPage"));
@@ -82,6 +83,12 @@ const App = () => (
                   <Route path="/confirmar" element={route(<ConfirmarPage />)} />
                   <Route path="/seguimiento" element={route(<SeguimientoPage />)} />
                   <Route path="/inbox" element={route(<InboxPage />)} />
+                  {/* La bitacora del turno. Ruta para TODOS a proposito: la
+                      asesora ve la suya y el jefe ve la de todas — lo decide la
+                      RLS de `order_events`, no esta ruta. Esconderla de la
+                      asesora la volveria una vigilancia secreta; mostrandosela,
+                      es la prueba con la que se defiende. */}
+                  <Route path="/actividad" element={route(<ActividadPage />)} />
                   <Route path="/novedades" element={route(<NovedadesPage />)} />
                   <Route path="/admin" element={route(<AdminPage />)} />
                   <Route path="/logistica" element={route(<LogisticsPage />)} />

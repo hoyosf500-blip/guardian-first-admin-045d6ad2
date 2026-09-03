@@ -13,7 +13,7 @@ import { useState, useEffect, useRef, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { BarChart3, Phone, Package, Settings, LogOut, Menu, AlertTriangle, RefreshCw, X, Truck, DollarSign, Building2, BookOpen, Inbox } from 'lucide-react';
+import { History, BarChart3, Phone, Package, Settings, LogOut, Menu, AlertTriangle, RefreshCw, X, Truck, DollarSign, Building2, BookOpen, Inbox } from 'lucide-react';
 import SiguienteAccionBar from '@/components/SiguienteAccionBar';
 import WelcomeGate from '@/components/WelcomeGate';
 import NovedadesButton from '@/components/NovedadesButton';
@@ -73,6 +73,9 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/seguimiento', icon: Package, label: 'Seguimiento', section: 'CRM' },
   { path: '/inbox', icon: Inbox, label: 'Escribieron', section: 'CRM' },
   { path: '/novedades', icon: AlertTriangle, label: 'Novedades', section: 'Gestión' },
+  // Sin `managerOnly`: cada quien ve SU bitacora, el jefe ve la de todas. La
+  // reja vive en la RLS de `order_events`. Ver ActividadPage.
+  { path: '/actividad', icon: History, label: 'Actividad', section: 'Gestión' },
   // Para TODOS: el protocolo del turno. No hay rol que no necesite saber qué
   // se hace primero — y hasta hoy ninguno de los ocho destinos lo explicaba.
   { path: '/como-se-trabaja', icon: BookOpen, label: 'Cómo se trabaja', section: 'Protocolo' },

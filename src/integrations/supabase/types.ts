@@ -944,6 +944,50 @@ export type Database = {
           },
         ]
       }
+      order_events: {
+        Row: {
+          created_at: string
+          detalle: Json
+          evento: string
+          external_id: string | null
+          id: string
+          ms_en_pantalla: number | null
+          operator_id: string
+          phone: string | null
+          store_id: string
+        }
+        Insert: {
+          created_at?: string
+          detalle?: Json
+          evento: string
+          external_id?: string | null
+          id?: string
+          ms_en_pantalla?: number | null
+          operator_id: string
+          phone?: string | null
+          store_id: string
+        }
+        Update: {
+          created_at?: string
+          detalle?: Json
+          evento?: string
+          external_id?: string | null
+          id?: string
+          ms_en_pantalla?: number | null
+          operator_id?: string
+          phone?: string | null
+          store_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_events_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_labels: {
         Row: {
           created_at: string

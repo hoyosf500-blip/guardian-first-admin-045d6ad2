@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { bogotaToday } from '@/lib/utils';
 import { emitirGestion } from '@/lib/eventosGestion';
+import { useBitacoraPedido } from '@/hooks/useBitacoraPedido';
 
 // SEG/RESCUE/NOVEDAD son GESTIONES (cuentan como trabajo resuelto/tocado).
 // LLAMADA/WHATSAPP son INTENTOS DE CONTACTO — se registran para que el trabajo
@@ -79,9 +80,22 @@ const VENTANA_ANTIDUP_MS = 60_000;
 export function useRecordGestion() {
   const { user } = useAuth();
   const { activeStoreId } = useStore();
+  const bitacora = useBitacoraPedido();
 
   return useCallback(
-    async (phone: string, module: GestionModule, action: string): Promise<ResultadoGestion> => {
+    /**
+     * `externalId` es OPCIONAL y solo alimenta la bitácora (`order_events`).
+     *
+     * ⛔ No se agrega a `touchpoints`: esa tabla se guarda por teléfono, la
+     * consultan siete pantallas y varias RPC desplegadas, y cambiarle la forma
+     * es DDL sobre una tabla caliente (REGLA #0). El número de pedido —que es
+     * lo que faltaba para saber SOBRE CUÁL pedido fue la gestión cuando el
+     * cliente tiene dos— va en la bitácora, que nació con él.
+     *
+     * Cuando el llamador no lo pasa, la gestión se registra igual: queda sin
+     * pedido, que es exactamente lo que pasaba antes. Nunca se inventa.
+     */
+    async (phone: string, module: GestionModule, action: string, externalId?: string | null): Promise<ResultadoGestion> => {
       if (!user || !activeStoreId || !phone) return FALLO;
 
       // ⛔ Repetición reciente: se DESCARTA el INSERT pero se devuelve `ok`.
@@ -119,8 +133,18 @@ export function useRecordGestion() {
         operatorId: user.id,
         at: fila?.created_at || now.toISOString(),
       });
+      // La bitácora va DESPUÉS y por separado: es un espejo para poder
+      // reconstruir el turno, no la gestión en sí. Si falla, la gestión ya está
+      // guardada y los contadores ya se movieron — no puede arrastrar nada.
+      // `LLAMADA`/`WHATSAPP` no son gestiones sino intentos de contacto, así que
+      // van con su propio nombre: contarlos como gestión en la bitácora sería
+      // repetir en otra tabla la confusión que el prefijo evita en ésta.
+      bitacora(
+        module === 'LLAMADA' ? 'llamo' : module === 'WHATSAPP' ? 'escribio' : 'gestiono',
+        { externalId, phone, detalle: { modulo: module, accion: action } },
+      );
       return resultado;
     },
-    [user, activeStoreId],
+    [user, activeStoreId, bitacora],
   );
 }

@@ -10,6 +10,7 @@ import { useSessionState } from '@/hooks/useSessionState';
 import { copyToClipboard } from '@/lib/clipboard';
 import { useMarkNovedadResolved } from '@/hooks/useMarkNovedadResolved';
 import { useRecordGestion } from '@/hooks/useRecordGestion';
+import { usePedidoALaVista } from '@/hooks/useBitacoraPedido';
 import { NovedadResultTipo } from '@/lib/novedadGestion';
 import { AuroraBackdrop } from '@/components/ui3d';
 import {
@@ -103,6 +104,17 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
 
   const callIdx = Math.max(0, Math.min(derivedIdx, visibleItems.length - 1));
   const o = visibleItems[callIdx];
+  // ⛔ LA BITACORA (3-sep-2026). Pedido del dueño despues de que una operadora
+  // dijera que habia tocado una novedad y no hubiera forma de comprobarlo.
+  //
+  // Esta pantalla es la que mas lo necesitaba: se recorren veinte novedades con
+  // las flechas y se gestionan tres, y hasta hoy pasar de largo no dejaba
+  // ningun rastro. "No la vio" y "la vio y la salto" se veian IGUAL — y son dos
+  // conversaciones distintas con la asesora.
+  //
+  // El hook abre, mide y cierra solo cuando cambia `o`. Si mientras estuvo
+  // abierta hubo alguna gestion escribe `cerro`; si no hubo ninguna, `salto`.
+  const { marcarGestion } = usePedidoALaVista(o ? { externalId: o.externalId, phone: o.phone } : null);
   // Borrador de solución según la guía OFICIAL de Dropi para esa transportadora
   // y esa novedad (hojas «Estados y Novedades»): con el teléfono del pedido
   // puesto y huecos para lo que acordó la asesora. Solo Ecuador. Nunca se
@@ -199,6 +211,9 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
       );
       if (r.dropi === 'rechazado' || r.dropi === 'sin_red') setDropiRechazo(r.mensaje || 'sin detalle');
       if (!r.ok) return;
+      // Hubo gestion sobre este pedido: el proximo paso al siguiente es `cerro`,
+      // no `salto`.
+      marcarGestion();
       setDropiRechazo(null);
       if (tipo === 'sin_respuesta') {
         navCall(1);
@@ -297,7 +312,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
             <button onClick={copyPhone} className="text-cyan font-mono tabular-nums hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded">{formatPhone(o.phone)}</button>
             <a
               href={'tel:+' + getWhatsAppPhone(o.phone, countryCode)}
-              onClick={() => void recordContacto(o.phone, 'LLAMADA', 'llamó')}
+              onClick={() => { marcarGestion(); void recordContacto(o.phone, 'LLAMADA', 'llamó', o.externalId); }}
               className="pill pill-info ml-1 inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full no-underline transition-colors hover:brightness-110"
             >
               <Phone size={10} aria-hidden="true" /> Llamar
