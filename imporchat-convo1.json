@@ -1,0 +1,317 @@
+{
+  "count": 52,
+  "bubbles": [
+    {
+      "t": "Eduardo\n+593991913485\n·\nContacto Inicial",
+      "left": 304,
+      "right": 585,
+      "cls": "min-w-0 flex-1"
+    },
+    {
+      "t": "Eduardo",
+      "left": 304,
+      "right": 585,
+      "cls": "flex items-center gap-2 min-w-0"
+    },
+    {
+      "t": "+593991913485\n·\nContacto Inicial",
+      "left": 304,
+      "right": 585,
+      "cls": "flex items-center gap-2 mt-1 flex-wrap"
+    },
+    {
+      "t": "+593991913485",
+      "left": 304,
+      "right": 405,
+      "cls": "inline-flex items-center gap-1 text-[12p"
+    },
+    {
+      "t": "Contacto Inicial",
+      "left": 425,
+      "right": 548,
+      "cls": "relative"
+    },
+    {
+      "t": "Gafas Inteligentes G58 · Audio Bluetooth, Llamadas y Traducción",
+      "left": 301,
+      "right": 501,
+      "cls": "text-[11px] font-semibold text-violet-80"
+    },
+    {
+      "t": "miércoles, 26 de agosto de 2026",
+      "left": 252,
+      "right": 894,
+      "cls": "relative my-6 md:my-8 select-none"
+    },
+    {
+      "t": "Reenviar\nError al enviar: \n(131053)\nEnviado por IA Contacto Inicial:\n22:57",
+      "left": 252,
+      "right": 894,
+      "cls": "flex justify-end"
+    },
+    {
+      "t": "Error al enviar:",
+      "left": 569,
+      "right": 642,
+      "cls": ""
+    },
+    {
+      "t": "(131053)",
+      "left": 646,
+      "right": 688,
+      "cls": "opacity-90"
+    },
+    {
+      "t": "Enviado por IA Contacto Inicial:",
+      "left": 544,
+      "right": 874,
+      "cls": "text-[13px] font-bold text-gray-800 mb-1"
+    },
+    {
+      "t": "22:57",
+      "left": 842,
+      "right": 886,
+      "cls": "absolute bottom-1 right-2 text-xs flex i"
+    },
+    {
+      "t": "Enviado por IA Contacto Inicial:\n\n\"Claro, aquí tienes los detalles de los audífonos que estamos hablando:\nAUDIFONOS K12\n🔊 Características:\n- Equipados con tecnología Bluetooth 5.3 para una vinculación rápida y estable.\n- Sistema de cancelación de ruido ANC para inmersión sonora total.\n- Calidad de audio Hi-Fi, ideales tanto para música como para llamadas.\n- Auriculares True Wireless, sin enredos de cables.\n- Formato ergonómico para un ajuste seguro y confortable.\n\n22:57",
+      "left": 252,
+      "right": 894,
+      "cls": "flex justify-end"
+    },
+    {
+      "t": "\"Claro, aquí tienes los detalles de los audífonos que estamos hablando:\nAUDIFONOS K12\n🔊 Características:\n- Equipados con tecnología Bluetooth 5.3 para una vinculación rápida y estable.\n- Sistema de cancelación de ruido ANC para inmersión sonora total.\n- Calidad de audio Hi-Fi, ideales tanto para música como para llamadas.\n- Auriculares True Wireless, sin enredos de cables.\n- Formato ergonómico para un ajuste seguro y confortable.",
+      "left": 465,
+      "right": 874,
+      "cls": "text-[15px] md:text-sm pb-2 inline-block"
+    },
+    {
+      "t": "Enviado por IA Contacto Inicial:\n\nAUDIFONOS M20\n🎧 Características:\n- Disfruta de llamadas claras y música ininterrumpida, aislando el ruido ambiental.\n- Pantalla digital para visualizar el estado de la batería.\n- Compartimento de carga de gran capacidad.\n\n22:57",
+      "left": 252,
+      "right": 894,
+      "cls": "flex justify-end"
+    },
+    {
+      "t": "AUDIFONOS M20\n🎧 Características:\n- Disfruta de llamadas claras y música ininterrumpida, aislando el ruido ambiental.\n- Pantalla digital para visualizar el estado de la batería.\n- Compartimento de carga de gran capacidad.",
+      "left": 465,
+      "right": 874,
+      "cls": "text-[15px] md:text-sm pb-2 inline-block"
+    },
+    {
+      "t": "Enviado por IA Contacto Inicial:\n\n¿Te gustaría realizar un pedido? Los AUDIFONOS K12 cuestan $13.00 y los M20 $15.00. También hay combos disponibles si deseas más de uno. 🛍️\"\n\n22:57",
+      "left": 252,
+      "right": 894,
+      "cls": "flex justify-end"
+    },
+    {
+      "t": "¿Te gustaría realizar un pedido? Los AUDIFONOS K12 cuestan $13.00 y los M20 $15.00. También hay combos disponibles si deseas más de uno. 🛍️\"",
+      "left": 465,
+      "right": 874,
+      "cls": "text-[15px] md:text-sm pb-2 inline-block"
+    },
+    {
+      "t": "Y las gafas\n\n23:00",
+      "left": 252,
+      "right": 894,
+      "cls": "flex justify-start"
+    },
+    {
+      "t": "Y las gafas",
+      "left": 272,
+      "right": 438,
+      "cls": "text-[15px] md:text-sm pb-2 inline-block"
+    },
+    {
+      "t": "Me muestra\n\n23:00",
+      "left": 252,
+      "right": 894,
+      "cls": "flex justify-start"
+    },
+    {
+      "t": "Me muestra",
+      "left": 272,
+      "right": 438,
+      "cls": "text-[15px] md:text-sm pb-2 inline-block"
+    },
+    {
+      "t": "Enviado por IA Contacto Inicial:\n23:00",
+      "left": 252,
+      "right": 894,
+      "cls": "flex justify-end"
+    },
+    {
+      "t": "23:00",
+      "left": 836,
+      "right": 886,
+      "cls": "absolute bottom-1 right-2 text-xs flex i"
+    },
+    {
+      "t": "Enviado por IA Contacto Inicial:\n\n\"Claro, las Gafas Bluetooth tienen un precio de $29.99. Están diseñadas con tecnología de bloqueo de rayos UV y ofrecen una conexión estable a múltiples dispositivos, siendo muy cómodas para uso prolongado.\n\n23:00",
+      "left": 252,
+      "right": 894,
+      "cls": "flex justify-end"
+    },
+    {
+      "t": "\"Claro, las Gafas Bluetooth tienen un precio de $29.99. Están diseñadas con tecnología de bloqueo de rayos UV y ofrecen una conexión estable a múltiples dispositivos, siendo muy cómodas para uso prolongado.",
+      "left": 465,
+      "right": 874,
+      "cls": "text-[15px] md:text-sm pb-2 inline-block"
+    },
+    {
+      "t": "Enviado por IA Contacto Inicial:\n\nSi te interesan, también hay combos disponibles:\n- 2 unidades por $34.99\n\n23:00",
+      "left": 252,
+      "right": 894,
+      "cls": "flex justify-end"
+    },
+    {
+      "t": "Si te interesan, también hay combos disponibles:\n- 2 unidades por $34.99",
+      "left": 574,
+      "right": 874,
+      "cls": "text-[15px] md:text-sm pb-2 inline-block"
+    },
+    {
+      "t": "Enviado por IA Contacto Inicial:\n\n¿Te gustaría hacer un pedido de las gafas o prefieres los audífonos K12? Recuerda que pagas al recibir. 🛍️\"\n\n23:00",
+      "left": 252,
+      "right": 894,
+      "cls": "flex justify-end"
+    },
+    {
+      "t": "¿Te gustaría hacer un pedido de las gafas o prefieres los audífonos K12? Recuerda que pagas al recibir. 🛍️\"",
+      "left": 465,
+      "right": 874,
+      "cls": "text-[15px] md:text-sm pb-2 inline-block"
+    },
+    {
+      "t": "Enviado por IA Contacto Inicial:\n\n\"Las Gafas Bluetooth tienen las siguientes características:\n- Uso cómodo: materiales livianos para un uso prolongado.\n- Tecnología de bloqueo de rayos UV: lentes polarizadas que protegen contra rayos dañinos.\n- Conectividad mejorada: conexión estable a múltiples dispositivos para una experiencia de audio fluida.\n- Diseño resistente al agua.\n\n23:00",
+      "left": 252,
+      "right": 894,
+      "cls": "flex justify-end"
+    },
+    {
+      "t": "\"Las Gafas Bluetooth tienen las siguientes características:\n- Uso cómodo: materiales livianos para un uso prolongado.\n- Tecnología de bloqueo de rayos UV: lentes polarizadas que protegen contra rayos dañinos.\n- Conectividad mejorada: conexión estable a múltiples dispositivos para una experiencia de audio fluida.\n- Diseño resistente al agua.",
+      "left": 465,
+      "right": 874,
+      "cls": "text-[15px] md:text-sm pb-2 inline-block"
+    },
+    {
+      "t": "Enviado por IA Contacto Inicial:\n\nEl precio es $29.99, y hay combos disponibles: 2 unidades por $34.99.\n\n23:00",
+      "left": 252,
+      "right": 894,
+      "cls": "flex justify-end"
+    },
+    {
+      "t": "El precio es $29.99, y hay combos disponibles: 2 unidades por $34.99.",
+      "left": 465,
+      "right": 874,
+      "cls": "text-[15px] md:text-sm pb-2 inline-block"
+    },
+    {
+      "t": "Enviado por IA Contacto Inicial:\n\n¿Te gustaría hacer un pedido? Recuerda que pagas al recibir. 🛍️\"\n\n23:00",
+      "left": 252,
+      "right": 894,
+      "cls": "flex justify-end"
+    },
+    {
+      "t": "¿Te gustaría hacer un pedido? Recuerda que pagas al recibir. 🛍️\"",
+      "left": 473,
+      "right": 874,
+      "cls": "text-[15px] md:text-sm pb-2 inline-block"
+    },
+    {
+      "t": "Bueno me gustaría las gafas\n\n23:02",
+      "left": 252,
+      "right": 894,
+      "cls": "flex justify-start"
+    },
+    {
+      "t": "Bueno me gustaría las gafas",
+      "left": 272,
+      "right": 445,
+      "cls": "text-[15px] md:text-sm pb-2 inline-block"
+    },
+    {
+      "t": "Enviado por IA Contacto Inicial:\n\n\"Perfecto, Eduardo! 😊 Vamos con las Gafas Bluetooth al precio de $29.99. También hay un combo disponible: si llevas 2 unidades, el precio es $34.99.\n\n23:02",
+      "left": 252,
+      "right": 894,
+      "cls": "flex justify-end"
+    },
+    {
+      "t": "\"Perfecto, Eduardo! 😊 Vamos con las Gafas Bluetooth al precio de $29.99. También hay un combo disponible: si llevas 2 unidades, el precio es $34.99.",
+      "left": 465,
+      "right": 874,
+      "cls": "text-[15px] md:text-sm pb-2 inline-block"
+    },
+    {
+      "t": "23:02",
+      "left": 836,
+      "right": 886,
+      "cls": "absolute bottom-1 right-2 text-xs flex i"
+    },
+    {
+      "t": "Enviado por IA Contacto Inicial:\n\nPara completar tu pedido, ¿me puedes indicar a qué ciudad te las enviamos y prefieres domicilio o retiro en agencia? Recuerda que pagas al recibir. 🛍️\"\n\n23:02",
+      "left": 252,
+      "right": 894,
+      "cls": "flex justify-end"
+    },
+    {
+      "t": "Para completar tu pedido, ¿me puedes indicar a qué ciudad te las enviamos y prefieres domicilio o retiro en agencia? Recuerda que pagas al recibir. 🛍️\"",
+      "left": 465,
+      "right": 874,
+      "cls": "text-[15px] md:text-sm pb-2 inline-block"
+    },
+    {
+      "t": "Si me gustaría las dos\n\n23:03",
+      "left": 252,
+      "right": 894,
+      "cls": "flex justify-start"
+    },
+    {
+      "t": "Si me gustaría las dos",
+      "left": 272,
+      "right": 438,
+      "cls": "text-[15px] md:text-sm pb-2 inline-block"
+    },
+    {
+      "t": "Gafas\n\n23:03",
+      "left": 252,
+      "right": 894,
+      "cls": "flex justify-start"
+    },
+    {
+      "t": "Gafas",
+      "left": 272,
+      "right": 438,
+      "cls": "text-[15px] md:text-sm pb-2 inline-block"
+    },
+    {
+      "t": "Enviado por IA Contacto Inicial:\n\n\"Excelente elección, Eduardo! 👓 Para confirmar tu pedido de 2 unidades de Gafas Bluetooth, el precio total es $34.99.\n\n23:04",
+      "left": 252,
+      "right": 894,
+      "cls": "flex justify-end"
+    },
+    {
+      "t": "\"Excelente elección, Eduardo! 👓 Para confirmar tu pedido de 2 unidades de Gafas Bluetooth, el precio total es $34.99.",
+      "left": 465,
+      "right": 874,
+      "cls": "text-[15px] md:text-sm pb-2 inline-block"
+    },
+    {
+      "t": "23:04",
+      "left": 836,
+      "right": 886,
+      "cls": "absolute bottom-1 right-2 text-xs flex i"
+    },
+    {
+      "t": "Enviado por IA Contacto Inicial:\n\n¿A qué ciudad te las enviamos y prefieres recibirlas a domicilio o retirar en agencia? Recuerda que pagas al recibir. 🛍️\"\n\n23:04",
+      "left": 252,
+      "right": 894,
+      "cls": "flex justify-end"
+    },
+    {
+      "t": "¿A qué ciudad te las enviamos y prefieres recibirlas a domicilio o retirar en agencia? Recuerda que pagas al recibir. 🛍️\"",
+      "left": 465,
+      "right": 874,
+      "cls": "text-[15px] md:text-sm pb-2 inline-block"
+    }
+  ]
+}

@@ -31,7 +31,7 @@ import {
   ChateaproError,
 } from "../_shared/chateaproApi.ts";
 
-const VERSION = "chateapro-plantillas 2026-09-02.5 envio-probado-en-vivo";
+const VERSION = "chateapro-plantillas 2026-09-03.1 mensajes-que-mandan-a-donde-es";
 
 /** Lo que `/whatsapp-template/list` devuelve de verdad (medido 2-sep-2026). */
 interface PlantillaCruda {
@@ -102,6 +102,12 @@ Deno.serve(async (req) => {
     const plantillas = parsearPlantillas(crudas);
 
     if (accion === "listar") {
+      // ⛔ Una lista vacia NO se devuelve muda (paridad con ImporChat). El
+      // selector con cero filas y sin texto se lee como "Guardian esta roto";
+      // el motivo real —Meta todavia no aprobo ninguna— es otra accion.
+      if (plantillas.length === 0) {
+        return json({ ok: true, plantillas: [], aviso: "La cuenta no tiene plantillas aprobadas por Meta." });
+      }
       return json({ ok: true, plantillas });
     }
 
@@ -113,6 +119,12 @@ Deno.serve(async (req) => {
 
     const elegida = plantillas.find((p) => p.nombre === nombre);
     if (!elegida) return json({ ok: false, error: `No encontré la plantilla "${nombre}" en esta cuenta` }, 404);
+    // ⛔ El servidor repite la comprobacion que hace la pantalla (paridad con
+    // ImporChat). Una plantilla con imagen de cabecera o con un boton de enlace
+    // propio NO se puede armar desde Guardian: el payload sale sin la cabecera
+    // y el mensaje llega roto. La pantalla ya las marca, pero la unica defensa
+    // que no depende de que la pantalla este bien es esta.
+    if (elegida.noSoportada) return json({ ok: false, error: elegida.noSoportada }, 409);
 
     // ⛔ Un hueco vacío NO se manda: Meta lo rechaza o, peor, llega un mensaje
     // con un espacio en blanco donde iba el nombre del cliente.
@@ -121,9 +133,15 @@ Deno.serve(async (req) => {
       return json({ ok: false, faltantes: huecos, error: "Faltan datos para completar la plantilla" }, 400);
     }
 
-    const { data: pedido } = await sb.from("orders")
+    const { data: pedido, error: pedErr } = await sb.from("orders")
       .select("phone, nombre").eq("store_id", storeId).eq("external_id", externalId).maybeSingle();
-    if (!pedido?.phone) return json({ ok: false, error: "Ese pedido no tiene teléfono" }, 409);
+    if (pedErr) throw new Error(pedErr.message);
+    // ⛔ Dos causas distintas, dos mensajes distintos (paridad con
+    // `chateapro-chat` y con ImporChat). Antes, un pedido que no existia en
+    // esta tienda respondia "Ese pedido no tiene telefono": la asesora se iba a
+    // buscar un telefono que si estaba, en vez de mirar en que tienda esta.
+    if (!pedido) return json({ ok: false, error: "No encontré ese pedido en esta tienda" }, 404);
+    if (!pedido.phone) return json({ ok: false, error: "Ese pedido no tiene teléfono" }, 409);
 
     // ⛔ Un cliente que compró y NUNCA escribió por WhatsApp no existe como
     // contacto en Chatea Pro. Antes eso terminaba acá con "no existe como
@@ -141,7 +159,12 @@ Deno.serve(async (req) => {
     // tabla es genérica (store_id + external_id + plantilla + día) y la regla
     // es la misma sin importar por dónde salga el mensaje. Una segunda tabla
     // con el mismo propósito es una segunda verdad esperando desalinearse.
-    const { fecha } = fechaHoraLocal("CO");
+    // ⛔ El dia lo pone el pais de la TIENDA, no un "CO" clavado. El
+    // `country_code` ya se leyo arriba para el indicativo y se ignoraba para el
+    // reloj; `chateapro-send` ya lo hacia bien. Con dos criterios en la misma
+    // familia de funciones, el candado de "un envio por dia" y la bitacora
+    // podrian caer en dias distintos.
+    const { fecha } = fechaHoraLocal(cc);
     const { error: claimErr } = await sb.from("importchat_envios").insert({
       store_id: storeId, external_id: externalId, plantilla: nombre, dia: fecha,
     });
@@ -187,15 +210,21 @@ Deno.serve(async (req) => {
       throw e;
     }
 
-    await sb.from("orders").update({
+    // ⛔ `supabase-js` NO lanza cuando la base rechaza: sin mirar `error`, un
+    // update fallido devuelve `ok: true` y nadie se entera nunca. Es el mismo
+    // modo de falla que dejaba las corridas del sync sin una sola fila de log.
+    const { error: updErr } = await sb.from("orders").update({
       chat_saliente_at: new Date().toISOString(),
       chat_saliente_tipo: "plantilla",
     }).eq("store_id", storeId).eq("external_id", externalId);
+    if (updErr) console.error(`[chateapro-plantillas] no se pudo marcar chat_saliente: ${updErr.message}`);
 
-    const { hora } = fechaHoraLocal("CO");
+    const { hora } = fechaHoraLocal(cc);
     const modulo = body?.modulo === "WHATSAPP" ? "WHATSAPP" : "SEG";
     const gestion = String(body?.gestion ?? "").trim().slice(0, 60) || `Mandé la plantilla ${nombre}`;
-    await sb.from("touchpoints").insert({
+    // Mismo criterio: la gestion que no queda registrada no le baja el numero a
+    // nadie y la asesora la vuelve a hacer. Si falla, que quede dicho.
+    const { error: tpErr } = await sb.from("touchpoints").insert({
       phone: pedido.phone,
       action: `${modulo}: ${gestion}`,
       operator_id: u.user.id,
@@ -203,6 +232,7 @@ Deno.serve(async (req) => {
       action_date: fecha,
       action_time: hora,
     });
+    if (tpErr) console.error(`[chateapro-plantillas] no se pudo registrar la gestion: ${tpErr.message}`);
 
     return json({
       ok: true, enviado_a: pedido.phone, plantilla: nombre,

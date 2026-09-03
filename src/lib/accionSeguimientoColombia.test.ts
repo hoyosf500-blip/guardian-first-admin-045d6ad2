@@ -232,3 +232,66 @@ describe('⛔ Ecuador no se movió', () => {
     expect(t).not.toMatch(/👉\s*V123456789/);
   });
 });
+
+/** El mismo pedido de Ecuador de mas arriba, a nivel de archivo. */
+const PEDIDO_EC_G: DatosPedido = {
+  nombre: 'MARIA JOSE PEREZ', guia: 'V123456789', transportadora: 'SERVIENTREGA',
+  ciudad: 'GUAYAQUIL', direccion: 'Av. Machala 123 y Portete',
+  producto: 'Gafas Inteligentes G58', valor: '45.90',
+  rastreoUrl: 'https://www.servientrega.com.ec/Tracking/?guia=V123456789',
+};
+
+describe('un dato no se pone en dos huecos', () => {
+  /**
+   * ⛔ La clase de error que esta operacion ya pago DOS VECES, por dos caminos.
+   *
+   *   · Ecuador (30-ago): `en_camino_hoy_v2` y `rescate_devolucion_v1` mandaban
+   *     {{1}} y {{2}} los dos a `nombre`. Al cliente le llegaba
+   *     «Su MARTHA Jimenez sale a entrega».
+   *   · Colombia (3-sep): `seguimiento_reclamo_oficina_1_utilidad` mandaba
+   *     {{3}} y {{4}} los dos a la transportadora. Al cliente le llegaba
+   *     «retiro en nuestra oficina de ENVIA. Transportadora: ENVIA» — o sea,
+   *     el mensaje que existe para decirle A DONDE IR no se lo decia.
+   *
+   * Las dos veces se arreglo el caso puntual. Esta prueba lo cierra como clase
+   * y corre sobre las plantillas REALES de las dos cuentas.
+   */
+  it.each([
+    ['Colombia', PLANTILLAS_CO, PEDIDO_CO],
+    ['Ecuador', PLANTILLAS_EC, PEDIDO_EC_G],
+  ])('ninguna plantilla de %s repite un valor entre huecos', (_pais, lista, datos) => {
+    const culpables: string[] = [];
+    for (const p of lista) {
+      const v = sugerirValores(p, datos);
+      const vistos = new Map<string, number[]>();
+      for (const x of p.variables) {
+        const val = String(v[x.indice] ?? '');
+        if (!val) continue;
+        vistos.set(val, [...(vistos.get(val) ?? []), x.indice]);
+      }
+      for (const [val, ix] of vistos) {
+        if (ix.length > 1) culpables.push(`${p.nombre}: "${val}" en ${JSON.stringify(ix)}`);
+      }
+    }
+    expect(culpables).toEqual([]);
+  });
+
+  it('la plantilla de RECLAME EN OFICINA dice la CIUDAD y la transportadora, no dos veces lo mismo', () => {
+    // "disponible para retiro en nuestra oficina de {{3}}. Transportadora: {{4}}"
+    const p = PLANTILLAS_CO.find((x) => x.nombre === 'seguimiento_reclamo_oficina_1_utilidad')!;
+    const v = sugerirValores(p, PEDIDO_CO);
+    expect(v[3]).toBe(PEDIDO_CO.ciudad);
+    expect(v[4]).toBe(PEDIDO_CO.transportadora);
+    expect(faltantes(p, v)).toEqual([]);
+    const t = renderizar(p.cuerpo, v);
+    expect(t).toContain('oficina de CALI');
+    expect(t).not.toMatch(/oficina de ENVIA/);
+  });
+
+  it('Colombia no pierde plantillas completables', () => {
+    // Medido el 3-sep-2026 sobre la cuenta real: 9 -> 12, y una de las 9 estaba
+    // mal (mandaba el dato repetido). Si este numero BAJA, algo se rompio.
+    const n = PLANTILLAS_CO.filter((p) => !p.noSoportada && completable(p)).length;
+    expect(n).toBeGreaterThanOrEqual(12);
+  });
+});

@@ -1,0 +1,90 @@
+{
+  "links": [
+    {
+      "t": "Dashboard",
+      "href": "/conexion-dashboard"
+    },
+    {
+      "t": "Chat Center",
+      "href": "/chat"
+    },
+    {
+      "t": "Lista de contactos",
+      "href": "/contactos"
+    },
+    {
+      "t": "Estado de contactos",
+      "href": "/estados_contactos_dinamico"
+    },
+    {
+      "t": "Valoraciones",
+      "href": "/valoraciones"
+    },
+    {
+      "t": "Pedidos",
+      "href": "/pedidos"
+    },
+    {
+      "t": "Transportadoras",
+      "href": "/transportadoras"
+    },
+    {
+      "t": "Carritos abandonados",
+      "href": "/shopify/abandonados"
+    },
+    {
+      "t": "Canal de Conexiones",
+      "href": "/canal-conexiones"
+    },
+    {
+      "t": "Asistentes AI",
+      "href": "/asistentes"
+    },
+    {
+      "t": "Dropi",
+      "href": "/dropi"
+    },
+    {
+      "t": "Aliclik",
+      "href": "/aliclik"
+    },
+    {
+      "t": "Shopify",
+      "href": "/shopify"
+    },
+    {
+      "t": "API para desarrolladores",
+      "href": "/api-metricas"
+    },
+    {
+      "t": "Calendario\nBeta",
+      "href": "/calendario"
+    },
+    {
+      "t": "Sedes y sucursales",
+      "href": "/establecimientos"
+    },
+    {
+      "t": "Configurar agentes",
+      "href": "/kanban_config"
+    },
+    {
+      "t": "Listado",
+      "href": "/productos"
+    },
+    {
+      "t": "Categorías",
+      "href": "/categorias"
+    },
+    {
+      "t": "Catálogos",
+      "href": "/catalogos"
+    }
+  ],
+  "menuish": [
+    "Guardar plantilla",
+    "Mis plantillas",
+    "Plantillas Kanban",
+    "Plantillas de seguimiento\n9"
+  ]
+}

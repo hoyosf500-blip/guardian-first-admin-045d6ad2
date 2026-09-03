@@ -339,7 +339,7 @@ function pistaDelTexto(cuerpo: string, indice: number): CampoPista | null {
   const pos = cuerpo.indexOf(`{{${indice}}}`);
   if (pos < 0) return null;
   const antes = cuerpo.slice(Math.max(0, pos - 40), pos);
-  if (/(hola|estimad[\p{L}/]*|apreciad[\p{L}/]*|buen[oa]s(\s+\p{L}+)?)[\s,¡!]*$/iu.test(antes)) return "nombre";
+  if (/(hola|hey|estimad[\p{L}/]*|apreciad[\p{L}/]*|buen[oa]s(\s+\p{L}+)?)[\s,¡!]*$/iu.test(antes)) return "nombre";
   if (/\b(su|tu|sus|tus)\s*$/iu.test(antes)) return "producto";
   if (/\b(pedido|orden|compra)\s+de\s*$/iu.test(antes)) return "producto";
   // ── Colombia habla en prosa, no con etiquetas (2-sep-2026) ────────────────
@@ -369,7 +369,31 @@ function pistaDelTexto(cuerpo: string, indice: number): CampoPista | null {
   if (/\bgu[ií]a\s*#?\s*$/iu.test(antes)) return "guia";
   if (/\bdirecci[oó]n(\s+registrada)?\s*$/iu.test(antes)) return "direccion";
   if (/\bciudad\s*(de\s*)?$/iu.test(antes)) return "ciudad";
-  if (/\b(transportadora|oficina\s+de)\s*$/iu.test(antes)) return "transportadora";
+  // ⛔ "nuestra oficina de {{3}}" es el LUGAR, no la transportadora (3-sep-2026).
+  //
+  // Medido sobre `seguimiento_reclamo_oficina_1_utilidad`, que es LA plantilla
+  // de la columna RECLAME EN OFICINA: dice «disponible para retiro en nuestra
+  // oficina de {{3}}. Transportadora: {{4}}». Con "oficina de" apuntando a la
+  // transportadora, los dos huecos recibían LO MISMO y al cliente le llegaba
+  // «retiro en nuestra oficina de SERVIENTREGA. Transportadora: SERVIENTREGA»:
+  // el mensaje existe para decirle A DÓNDE IR, y esa era justo la mitad que se
+  // perdía. Que la misma frase nombre la transportadora aparte no deja lugar a
+  // duda sobre cuál es cuál.
+  //
+  // Solo la forma de dos palabras SIN dos puntos. "Oficina de:" CON dos puntos
+  // es una etiqueta y la resuelve `REGLAS` un escalón antes (nivel 2), que
+  // sigue mandándola a transportadora — ahí no se toca nada, y por eso
+  // `interrapidisimo_bucle`, que lista "Oficina de:" y "Ciudad:" por separado,
+  // se comporta exactamente igual que antes.
+  if (/\boficina\s+de\s*$/iu.test(antes)) return "ciudad";
+  if (/\btransportadora\s*$/iu.test(antes)) return "transportadora";
+  // "tu envío gestionado con {{2}}" · "envío operado por {{1}}": el texto
+  // nombra a la transportadora sin usar la palabra. Literales a propósito.
+  if (/\b(gestionado\s+con|operado\s+por)\s*$/iu.test(antes)) return "transportadora";
+  // "Tu pedido {{1}} está pendiente" · "ya recibiste tu pedido {{1}}".
+  // ⛔ `orden` NO entra acá: "tu orden {{2}}" es el número de orden interno y
+  // tiene que seguir quedando vacío. Está decidido arriba y no se revierte.
+  if (/\b(pedido|compra)\s*$/iu.test(antes)) return "producto";
   if (/\$\s*$/.test(antes)) return "valor";
   return null;
 }
@@ -410,38 +434,81 @@ function porReglas(contra: string, d: DatosPedido): string {
   return "";
 }
 
+/**
+ * Qué propone cada hueco, y con cuánta fuerza.
+ *
+ * `fuerza` 1 es la señal más confiable. Se separa del reparto para que el
+ * desempate de más abajo pueda darle el valor al hueco que MEJOR lo justifica,
+ * y no simplemente al que aparece primero en el cuerpo.
+ */
+function propuestaDeHueco(
+  p: PlantillaMeta,
+  v: PlantillaMeta["variables"][number],
+  d: DatosPedido,
+): { fuerza: number; valor: string } | null {
+  // 1. Hueco de LINK: se llena con el link, o con nada. Va PRIMERO porque una
+  //    URL de rastreo contiene "tracking" y "courier", y cualquiera de esas dos
+  //    se lo roba. Sin link real queda vacío: la plantilla no se puede completar
+  //    y el botón la salta — que es lo correcto. Mandar la guía suelta ahí es
+  //    peor que no mandar el mensaje.
+  if (esUrl(v.ejemplo || "") || /\b(link|enlace|url)\b/.test(sinTildes(v.etiqueta || ""))) {
+    const u = texto(d.rastreoUrl);
+    return u ? { fuerza: 1, valor: u } : null;
+  }
+  // 2. Etiqueta con dos puntos ("Agencia: {{2}}"): el cuerpo NOMBRA el hueco.
+  //    Es lo más fuerte que hay, y por eso gana antes que cualquier pista.
+  if (v.etiqueta) {
+    const val = porReglas(sinTildes(v.etiqueta), d);
+    return val ? { fuerza: 2, valor: val } : null;
+  }
+  // 3. Lo que dice el texto justo antes ("Hola {{1}}", "su {{2}}").
+  const pista = pistaDelTexto(p.cuerpo, v.indice);
+  if (pista) {
+    const val = POR_PISTA[pista](d);
+    return val ? { fuerza: 3, valor: val } : null;
+  }
+  // 4. Último recurso: el ejemplo que guardó Meta. Es el más débil —es un
+  //    VALOR, no el nombre del campo— y por eso quedó al final.
+  const val = porReglas(sinTildes(v.ejemplo || ""), d);
+  return val ? { fuerza: 4, valor: val } : null;
+}
+
 export function sugerirValores(p: PlantillaMeta, d: DatosPedido): Record<number, string> {
-  const out: Record<number, string> = {};
+  const propuestas: Array<{ indice: number; fuerza: number; valor: string }> = [];
   for (const v of p.variables) {
-    // ── En orden de qué tan confiable es la señal ───────────────────────────
-    // 1. Hueco de LINK: se llena con el link, o con nada. Va PRIMERO porque una
-    //    URL de rastreo contiene "tracking" y "courier", y cualquiera de esas
-    //    dos se lo roba. Sin link real queda vacío: la plantilla no se puede
-    //    completar y el botón la salta — que es lo correcto. Mandar la guía
-    //    suelta ahí es peor que no mandar el mensaje.
-    if (esUrl(v.ejemplo || "") || /\b(link|enlace|url)\b/.test(sinTildes(v.etiqueta || ""))) {
-      const u = texto(d.rastreoUrl);
-      if (u) out[v.indice] = u;
-      continue;
-    }
-    // 2. Etiqueta con dos puntos ("Agencia: {{2}}"): el cuerpo NOMBRA el hueco.
-    //    Es lo más fuerte que hay, y por eso gana antes que cualquier pista.
-    if (v.etiqueta) {
-      const val = porReglas(sinTildes(v.etiqueta), d);
-      if (val) out[v.indice] = val;
-      continue;
-    }
-    // 3. Lo que dice el texto justo antes ("Hola {{1}}", "su {{2}}").
-    const pista = pistaDelTexto(p.cuerpo, v.indice);
-    if (pista) {
-      const val = POR_PISTA[pista](d);
-      if (val) out[v.indice] = val;
-      continue;
-    }
-    // 4. Último recurso: el ejemplo que guardó Meta. Es el más débil —es un
-    //    VALOR, no el nombre del campo— y por eso quedó al final.
-    const val = porReglas(sinTildes(v.ejemplo || ""), d);
-    if (val) out[v.indice] = val;
+    const q = propuestaDeHueco(p, v, d);
+    if (q) propuestas.push({ indice: v.indice, ...q });
+  }
+
+  /**
+   * ⛔ EL MISMO DATO NO SE PONE EN DOS HUECOS (3-sep-2026).
+   *
+   * Es la red contra una clase de error que esta operación YA pagó dos veces,
+   * las dos por caminos distintos:
+   *
+   *   · Ecuador: `en_camino_hoy_v2` y `rescate_devolucion_v1` mandaban {{1}} y
+   *     {{2}} los dos a `nombre` → «Su MARTHA Jiménez sale a entrega».
+   *   · Colombia: `seguimiento_reclamo_oficina_1_utilidad` mandaba {{3}} y {{4}}
+   *     los dos a la transportadora → «retiro en nuestra oficina de SERVIENTREGA.
+   *     Transportadora: SERVIENTREGA», sin decirle al cliente a qué ciudad ir.
+   *
+   * Las dos veces se arregló el caso puntual. Esto lo cierra como clase: repetir
+   * un valor no es un dato de más, es un dato que FALTA disfrazado — y el hueco
+   * que queda vacío hace que la plantilla no se pueda completar sola, así que el
+   * botón la salta y la asesora la escribe. Un mensaje que no sale se nota; uno
+   * que sale mal, no.
+   *
+   * El desempate va por FUERZA de la señal, no por orden de aparición: si un
+   * hueco se llama "Ciudad:" y otro solo insinúa un lugar, el valor se queda con
+   * el que lo nombra. A igual fuerza gana el de más a la izquierda, que es el
+   * orden en que se lee el mensaje.
+   */
+  const out: Record<number, string> = {};
+  const usados = new Set<string>();
+  for (const q of [...propuestas].sort((a, b) => a.fuerza - b.fuerza || a.indice - b.indice)) {
+    if (usados.has(q.valor)) continue;
+    out[q.indice] = q.valor;
+    usados.add(q.valor);
   }
   return out;
 }

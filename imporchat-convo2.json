@@ -1,0 +1,12 @@
+{
+  "product": "",
+  "count": 6,
+  "msgs": [
+    "BOT/negocio: Enviado por Shopify Confirmación:\n\nHola J Miguel, Acabo de recibir tu pedido de compra por el valor de $29.99\nQuiero confirmar tus datos de envío:\n\n✅Producto: 1 x Gafas Inteligentes G58 · Audio Bluetooth, Llamadas y Traducción\n👤Nombre: J Miguel\n📱Teléfono: 593983354287\n📍Dirección: Carlos Mantilla y Marieta de Veintimilla, San José de Moran\n🏙️Ciudad: QUITO\n\nPor favor, selecciona CONFIRMAR PEDIDO si tus datos son correctos ✅, o ACTUALIZAR INFORMACIÓN para corregirlos antes de proceder con el envío de tu producto. 🚚\n\nCONFIRMAR PEDIDO\nACTUALIZAR INFORMACIÓN",
+    "CLIENTE: Shopify Confirmación\nHola J Miguel, Acabo de recibir tu pedido de compra por el valor de $29.99 Quier\nCONFIRMAR PEDIDO",
+    "BOT/negocio: [IA] ¡Gracias! Tu pedido queda confirmado y lo estarás recibiendo en un plazo de 3 a 5 días laborables. En unos minutos te comparto tu guía 🚚",
+    "BOT/negocio: Enviado por Dropi Status:\n\nLa guía de envío de tu pedido ha sido generada. El tiempo estimado de entrega es de 2 a 3 días hábiles.\n\nDescargar Guía\nSeguimiento del pedido",
+    "BOT/negocio: Enviado por Dropi Status:\n\nLlego el día de entrega\n\nHoy tu pedido ha llegado 📦✅ a QUITO y está próximo a ser entregado en Carlos Mantilla y Marieta de Veintimilla - San José de Moran, en el horario de 9 am a 6 pm. ¡Te recordamos tener el valor total de 29.99 en efectivo! Agradecemos estar atento a las llamadas del courier 🚚 Revisa el estado de tu guía aquí https://www.servientrega.com.ec/Tracking/?guia=189425063&tipo=GUIA 😊.",
+    "BOT/negocio: Enviado por Dropi Status:\n\nEstimado cliente, le recordamos que al seleccionar pago contraentrega, usted se comprometió a recibir y pagar el pedido, conforme a la ley 67 del 2022 de Comercio Electrónico.\n\nEl costo del envío ya fue asumido por nuestra empresa.\nNecesitamos programar un nuevo intento de entrega lo antes posible por favor.\n\nEs importante contar con su disponibilidad para evitar cancelación del pedido y posibles restricciones en futuras compras.\n\nConfirmo recepción\nReprogramar entrega"
+  ]
+}

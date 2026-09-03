@@ -1,0 +1,254 @@
+{
+  "linkCount": 51,
+  "links": [
+    {
+      "t": "Español (Colombia)",
+      "href": "javascript:void(0);"
+    },
+    {
+      "t": "English",
+      "href": "javascript:void(0);"
+    },
+    {
+      "t": "Português (Brasil)",
+      "href": "javascript:void(0);"
+    },
+    {
+      "t": "Mi Historial de Wallet",
+      "href": "/dashboard/historywallet-credit"
+    },
+    {
+      "t": "Inicio",
+      "href": "/dashboard/home"
+    },
+    {
+      "t": "Dashboard",
+      "href": "/dashboard/resume"
+    },
+    {
+      "t": "Productos",
+      "href": "javascript:void(0);"
+    },
+    {
+      "t": "Catálogo",
+      "href": "/dashboard/search"
+    },
+    {
+      "t": "Proveedores",
+      "href": "/dashboard/providers"
+    },
+    {
+      "t": "Mis Pedidos",
+      "href": "javascript:void(0);"
+    },
+    {
+      "t": "Mis Pedidos",
+      "href": "/dashboard/orders"
+    },
+    {
+      "t": "Novedades",
+      "href": "/dashboard/novelties"
+    },
+    {
+      "t": "Configuración de pedidos",
+      "href": "/dashboard/orders/orders-setting"
+    },
+    {
+      "t": "Mis Garantias",
+      "href": "javascript:void(0);"
+    },
+    {
+      "t": "Garantias",
+      "href": "/dashboard/warranties"
+    },
+    {
+      "t": "Ordenes de despacho",
+      "href": "/dashboard/orders-dispatch"
+    },
+    {
+      "t": "Garantias Recolecciones",
+      "href": "/dashboard/warranties-recollection"
+    },
+    {
+      "t": "Mis Integraciones",
+      "href": "/dashboard/shop"
+    },
+    {
+      "t": "Configuraciones",
+      "href": "javascript:void(0);"
+    },
+    {
+      "t": "Datos Bancarios",
+      "href": "/dashboard/settings/bank-data"
+    },
+    {
+      "t": "Planes",
+      "href": "/dashboard/settings/plans"
+    },
+    {
+      "t": "Configuración de tienda",
+      "href": "/dashboard/settings/account"
+    },
+    {
+      "t": "Datos personales",
+      "href": "/dashboard/settings/personal-data"
+    },
+    {
+      "t": "Retiros de Saldo",
+      "href": "/dashboard/settings/withdrawals"
+    },
+    {
+      "t": "Mis Sesiones",
+      "href": "/dashboard/settings/my-sessions"
+    },
+    {
+      "t": "Historial de Cartera",
+      "href": "/dashboard/historywallet"
+    },
+    {
+      "t": "Mis Integraciones",
+      "href": "/dashboard/shop"
+    },
+    {
+      "t": "Configuraciones",
+      "href": "/dashboard/settingsplan"
+    },
+    {
+      "t": "Historial de Cartera",
+      "href": "/dashboard/historywallet"
+    },
+    {
+      "t": "Calendario",
+      "href": "/dashboard/calendar"
+    },
+    {
+      "t": "Marketing",
+      "href": "javascript:void(0);"
+    },
+    {
+      "t": "Campañas",
+      "href": "/dashboard/marketing/campaings"
+    },
+    {
+      "t": "Automatización",
+      "href": "/dashboard/automation"
+    },
+    {
+      "t": "Configuraciones",
+      "href": "/dashboard/marketing/settings"
+    },
+    {
+      "t": "Reportes",
+      "href": "javascript:void(0);"
+    },
+    {
+      "t": "Descargas",
+      "href": "/dashboard/reports/downloads"
+    },
+    {
+      "t": "Clientes",
+      "href": "/dashboard/customers"
+    },
+    {
+      "t": "Soporte",
+      "href": "/dashboard/support"
+    },
+    {
+      "t": "Transportadora",
+      "href": "javascript:void(0);"
+    },
+    {
+      "t": "Preferencias",
+      "href": "/dashboard/settings/distribution-companies"
+    },
+    {
+      "t": "CAS",
+      "href": "javascript:void(0);"
+    },
+    {
+      "t": "Bandeja",
+      "href": "/dashboard/cas/tray"
+    },
+    {
+      "t": "Tickets",
+      "href": "/dashboard/cas/tickets"
+    },
+    {
+      "t": "Emprendedor\nAgendarme",
+      "href": "https://calendly.com/onboardingdropi/capacitacion-emprendedores"
+    },
+    {
+      "t": "Agendarme",
+      "href": "https://calendly.com/onboardingdropi/capacitacion-emprendedores"
+    },
+    {
+      "t": "Logística Colombia\nAgendarme",
+      "href": "https://calendly.com/onboardingdropi/capacitacion-logistica-colombia"
+    },
+    {
+      "t": "Agendarme",
+      "href": "https://calendly.com/onboardingdropi/capacitacion-logistica-colombia"
+    },
+    {
+      "t": "Logística Chile\nAgendarme",
+      "href": "https://calendly.com/onboardingdropi/capacitacion-logistica-chile"
+    },
+    {
+      "t": "Agendarme",
+      "href": "https://calendly.com/onboardingdropi/capacitacion-logistica-chile"
+    },
+    {
+      "t": "Logística Ecuador\nAgendarme",
+      "href": "https://calendly.com/onboardingdropi/capacitacion-logistica-ecuador"
+    },
+    {
+      "t": "Agendarme",
+      "href": "https://calendly.com/onboardingdropi/capacitacion-logistica-ecuador"
+    }
+  ],
+  "menuItems": [
+    "Español (Colombia)",
+    "English",
+    "Português (Brasil)",
+    "Mi Historial de Wallet",
+    "Inicio",
+    "Dashboard",
+    "Productos",
+    "Catálogo  Proveedores",
+    "Catálogo",
+    "Proveedores",
+    "Mis Pedidos",
+    "Novedades",
+    "Configuración de pedidos",
+    "Mis Garantias",
+    "Garantias",
+    "Ordenes de despacho",
+    "Garantias Recolecciones",
+    "Mis Integraciones",
+    "Configuraciones",
+    "Datos Bancarios",
+    "Planes",
+    "Configuración de tienda",
+    "Datos personales",
+    "Retiros de Saldo",
+    "Mis Sesiones",
+    "Historial de Cartera",
+    "Calendario",
+    "Marketing",
+    "Campañas",
+    "Automatización",
+    "Reportes Descargas",
+    "Reportes",
+    "Descargas",
+    "Clientes",
+    "Soporte",
+    "Transportadora Preferencias",
+    "Transportadora",
+    "Preferencias",
+    "CAS Bandeja  Tickets",
+    "CAS",
+    "Bandeja  Tickets",
+    "Bandeja",
+    "Tickets"
+  ]
+}

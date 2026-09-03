@@ -29,7 +29,7 @@ import {
   ChateaproError,
 } from "../_shared/chateaproApi.ts";
 
-const VERSION = "chateapro-send 2026-09-02.5 envio-probado-en-vivo";
+const VERSION = "chateapro-send 2026-09-03.1 la-gestion-que-no-queda-se-avisa";
 
 /** ¿El texto que mandamos aparece en el hilo releído? Comparación floja a
  *  propósito: Chatea Pro puede recortar espacios o normalizar saltos de línea,
@@ -121,10 +121,14 @@ Deno.serve(async (req) => {
     }
 
     // ── Queda en el pedido y en la bitácora ───────────────────────────────
-    await sb.from("orders").update({
+    // ⛔ `supabase-js` NO lanza cuando la base rechaza: sin mirar `error`, un
+    // update fallido devuelve `ok: true` y nadie se entera nunca. Es el mismo
+    // modo de falla que dejaba las corridas del sync sin una sola fila de log.
+    const { error: updErr } = await sb.from("orders").update({
       chat_saliente_at: new Date().toISOString(),
       chat_saliente_tipo: "directo",
     }).eq("store_id", storeId).eq("external_id", externalId);
+    if (updErr) console.error(`[chateapro-send] no se pudo marcar chat_saliente: ${updErr.message}`);
 
     // Mismo prefijo que ImporChat: `SEG:` cuenta como gestión de Seguimiento y
     // `WHATSAPP:` como intento de contacto desde Confirmar. Si esto se
@@ -132,7 +136,9 @@ Deno.serve(async (req) => {
     const { fecha, hora } = fechaHoraLocal(cc);
     const modulo = body?.modulo === "WHATSAPP" ? "WHATSAPP" : "SEG";
     const accion = String(body?.accion ?? "").trim().slice(0, 60) || "Escribí por WhatsApp";
-    await sb.from("touchpoints").insert({
+    // Mismo criterio: la gestion que no queda registrada no le baja el numero a
+    // nadie y la asesora la vuelve a hacer. Si falla, que quede dicho.
+    const { error: tpErr } = await sb.from("touchpoints").insert({
       phone: pedido.phone,
       action: `${modulo}: ${accion}`,
       operator_id: u.user.id,
@@ -140,6 +146,7 @@ Deno.serve(async (req) => {
       action_date: fecha,
       action_time: hora,
     });
+    if (tpErr) console.error(`[chateapro-send] no se pudo registrar la gestion: ${tpErr.message}`);
 
     return json({ ok: true, confirmado: true, enviado_a: pedido.phone, mensajes: despues.mensajes });
   } catch (e) {

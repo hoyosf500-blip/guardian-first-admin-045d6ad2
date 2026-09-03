@@ -27,7 +27,7 @@ import {
   ChateaproError,
 } from "../_shared/chateaproApi.ts";
 
-const VERSION = "chateapro-chat 2026-09-02.5 envio-probado-en-vivo";
+const VERSION = "chateapro-chat 2026-09-03.1 abrir-el-chat-refresca-el-pedido";
 
 Deno.serve(async (req) => {
   const cors = getCorsHeaders(req);
@@ -95,6 +95,42 @@ Deno.serve(async (req) => {
     // `leido = true`: acabamos de leer el hilo de verdad, no es un dato viejo
     // de un sync. La ventana se calcula con el último mensaje DEL CLIENTE.
     const ventana = ventanaWhatsapp(hilo.ultimoEntranteMs, true);
+
+    // ── Efecto lateral barato: dejar el pedido fresco ─────────────────────
+    // ⛔ Faltaba, y en Ecuador está desde el principio (3-sep-2026).
+    //
+    // Acabamos de leer la conversación de verdad. Sin escribirla, la tarjeta
+    // del tablero sigue mostrando lo que dejó el sync —hasta 10 minutos viejo—
+    // aunque la asesora tenga el hilo abierto delante. Y lo caro no es el
+    // retraso: si el cliente escribió recién, la columna vieja dice "vencida" y
+    // la pantalla ofrece PLANTILLA, que se paga, sobre una ventana que estaba
+    // abierta y admitía un mensaje gratis.
+    //
+    // ⛔ NO se toca `chat_leido_at`. Es la cola de la fase 5 de `chateapro-sync`
+    // (rescate por teléfono) y su marca de "esto ya lo miré": escribirla acá
+    // sacaría al pedido de esa cola sin haber calculado las columnas que esta
+    // función NO calcula (riesgo, mudo, botón de confirmar).
+    //
+    // ⛔ Nunca se pisa con null: un hilo truncado daría `ultimoEntranteMs` nulo
+    // y borraría una medición buena, y después `chateapro-send` bloquearía un
+    // envío legítimo con esa columna vacía. Un null no borra un dato medido.
+    const salientes = hilo.mensajes.filter((m) => m.de === "negocio" && m.fechaMs != null);
+    const ultimoSaliente = salientes.length ? salientes[salientes.length - 1] : null;
+    const parche: Record<string, unknown> = {};
+    if (hilo.ultimoEntranteMs) {
+      parche.chat_entrante_at = new Date(hilo.ultimoEntranteMs).toISOString();
+    }
+    if (ultimoSaliente?.fechaMs) {
+      parche.chat_saliente_at = new Date(ultimoSaliente.fechaMs).toISOString();
+      parche.chat_saliente_tipo = ultimoSaliente.plantilla ? "plantilla" : "directo";
+    }
+    // Que no se pueda refrescar el pedido no invalida el hilo que ya leímos: se
+    // avisa por consola y la conversación se devuelve igual.
+    if (Object.keys(parche).length > 0) {
+      const { error: upErr } = await sb.from("orders").update(parche)
+        .eq("store_id", storeId).eq("external_id", externalId);
+      if (upErr) console.error("[chateapro-chat] no se pudo refrescar el pedido:", upErr.message);
+    }
 
     return json({
       ok: true,

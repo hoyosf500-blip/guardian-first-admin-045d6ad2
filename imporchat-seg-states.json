@@ -1,0 +1,31 @@
+{
+  "titles": [],
+  "switchCount": 9,
+  "switchesChecked": [
+    true,
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+    true,
+    true
+  ],
+  "stateBlocks": [
+    "PENDIENTE CONFIRMACION | Pedido nuevo que entra desde Dropi, desde tu webhook de Shopify o de una venta que cerró el bot. El cliente confirma por WhatsApp antes de despachar. | confirmacion_pedido_k1· 7 param",
+    "PENDIENTE CONFIRMACION",
+    "GUIA GENERADA | Ya se creó la guía de envío del pedido. | guia_generada_k1· 2 param",
+    "GUIA GENERADA",
+    "EN TRANSITO | El paquete va en camino al cliente. | zona_entrega_k1· 4 param",
+    "EN TRANSITO",
+    "RETIRO EN AGENCIA | El pedido está listo para retirar en la agencia. | retiro_agencia_k1· 1 param",
+    "RETIRO EN AGENCIA",
+    "NOVEDAD | Hubo una novedad con la entrega (dirección, ausencia, etc.). | novedadk2",
+    "NOVEDAD",
+    "ENTREGADA | El pedido fue entregado al cliente. | Solo mover de columna → entregada",
+    "ENTREGADA",
+    "DEVOLUCION | El pedido se devolvió al remitente. | Solo mover de columna → devolucion",
+    "DEVOLUCION"
+  ]
+}
