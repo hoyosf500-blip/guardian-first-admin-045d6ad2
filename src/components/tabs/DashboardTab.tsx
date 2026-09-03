@@ -799,7 +799,7 @@ export default function DashboardTab() {
     // aceptación personal o la del período del selector) y `total` de otro
     // alcance: el histórico quedaba con cifras incomparables.
     const { error } = await supabase.from('daily_reports').insert({ operator_id: user.id, report_date: today, report_type: 'cierre', store_id: activeStoreId,
-      data: { confirmados: myCounter.conf, cancelados: myCounter.canc, no_respondio: myCounter.noresp, total_gestionados: cierreTotal, tasa_confirmacion: cierreDiaPct ?? 0, pendientes_manana: pendLeft } });
+      data: { confirmados: myCounter.conf, cancelados: myCounter.canc, no_respondio: myCounter.noresp, total_gestionados: cierreTotal, tasa_confirmacion: cierreDiaPct ?? null, pendientes_manana: pendLeft } });
     if (error) toast.error(error.code === '23505' ? 'Ya enviaste el cierre de hoy' : 'Error');
     else toast.success('Cierre enviado correctamente');
   };

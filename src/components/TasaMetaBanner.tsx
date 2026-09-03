@@ -2,6 +2,7 @@ import { pollWhenVisible } from '@/lib/pollWhenVisible';
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useOrders } from '@/contexts/OrderContext';
+import { useStore } from '@/contexts/StoreContext';
 import { TrendingUp, TrendingDown, Target } from 'lucide-react';
 import { confRateOficial, confRateBySample, CONF_TARGET_PCT } from '@/lib/confirmationRate';
 
@@ -15,14 +16,27 @@ interface TasaRow {
 
 export default function TasaMetaBanner() {
   const { counter } = useOrders();
+  const { activeStoreId, scopeStoreId } = useStore();
   const [data, setData] = useState<TasaRow | null>(null);
+  const [fallo, setFallo] = useState(false);
 
+  // ⛔ La RPC resuelve la tienda SERVER-SIDE (profiles.active_store_id). Hasta
+  // el 4-sep-2026 esto no miraba ni `error` ni la tienda: al cambiar de tienda
+  // el banner seguía mostrando "14 conf · 61%" del país anterior para siempre
+  // (el `setData` viejo nunca se pisaba si la nueva lectura fallaba), y con la
+  // RPC caída no decía nada. Se espera a que el servidor confirme la tienda
+  // (`scopeStoreId`), se limpia al cambiar, y el fallo se dice.
   const load = useCallback(async () => {
-    const { data: rows } = await (supabase.rpc as unknown as (
+    if (!activeStoreId || scopeStoreId !== activeStoreId) return;
+    const { data: rows, error } = await (supabase.rpc as unknown as (
       fn: string
     ) => Promise<{ data: TasaRow[] | null; error: unknown }>)('operator_today_tasa');
-    if (rows && rows[0]) setData(rows[0]);
-  }, []);
+    if (error) { setFallo(true); setData(null); return; }
+    setFallo(false);
+    setData(rows && rows[0] ? rows[0] : null);
+  }, [activeStoreId, scopeStoreId]);
+
+  useEffect(() => { setData(null); setFallo(false); }, [activeStoreId]);
 
   useEffect(() => {
     load();
@@ -33,6 +47,13 @@ export default function TasaMetaBanner() {
     return pollWhenVisible(load, 15 * 60 * 1000, { runOnVisible: false });
   }, [load]);
 
+  if (fallo) {
+    return (
+      <div className="rounded-lg border border-muted-foreground/20 bg-muted px-4 py-2 text-xs text-muted-foreground">
+        No pude leer tu confirmación del día ahora mismo. No es un cero: es que no se pudo medir.
+      </div>
+    );
+  }
   if (!data) return null;
 
   // LA MATEMÁTICA OFICIAL (decisión del dueño 30-jul): confirmados ÷ GESTIONADOS

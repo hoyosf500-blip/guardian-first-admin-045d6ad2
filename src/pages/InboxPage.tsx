@@ -393,7 +393,7 @@ function TarjetaLista({ o, sello, estadoSello, miId, children }: {
 
 export default function InboxPage() {
   const { activeStoreId, activeStore } = useStore();
-  const { items: esperan, sinRespuesta, status } = useInboxEsperando(activeStoreId);
+  const { items: esperan, sinRespuesta, status, deudaError } = useInboxEsperando(activeStoreId);
 
   /**
    * Las dos canastas de la bandeja.
@@ -589,7 +589,7 @@ export default function InboxPage() {
 
         {/* Las dos canastas. La segunda solo aparece cuando hay alguien: una
             pestaña vacía permanente enseña a no mirar ninguna de las dos. */}
-        {(sinRespuesta.length > 0 || vista === 'deuda') && (
+        {(sinRespuesta.length > 0 || vista === 'deuda' || deudaError) && (
           <div className="mt-3 inline-flex rounded-xl border border-border bg-card/40 p-0.5">
             <button
               type="button"
@@ -714,7 +714,15 @@ export default function InboxPage() {
         </div>
       )}
 
-      {status === 'ok' && items.length === 0 && !busca.trim() && (
+      {/* ⛔ La canasta de deuda falló al leerse: NO se celebra un cero sobre
+          una consulta caída (4-sep-2026). Es el incidente de Colombia otra vez
+          — 39 clientes esperando y «todos atendidos 🎉» — en la misma pantalla. */}
+      {vista === 'deuda' && deudaError && (
+        <div className="rounded-2xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning">
+          No se pudo leer esta lista ahora mismo. No quiere decir que nadie haya quedado sin respuesta: reintentá en un momento.
+        </div>
+      )}
+      {status === 'ok' && items.length === 0 && !busca.trim() && !(vista === 'deuda' && deudaError) && (
         <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
           <span className="w-12 h-12 rounded-2xl bg-success/14 border border-success/30 text-success flex items-center justify-center" aria-hidden="true">
             <CheckCircle2 size={24} />

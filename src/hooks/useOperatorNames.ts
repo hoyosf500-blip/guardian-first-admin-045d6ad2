@@ -16,11 +16,21 @@ async function loadNames(): Promise<Record<string, string>> {
   // IIFE para que `inflight` sea un Promise con .catch/.finally (gotcha conocido).
   if (!inflight) {
     inflight = (async () => {
-      const { data } = await supabase.from('profiles').select('user_id, display_name');
+      const { data, error } = await supabase.from('profiles').select('user_id, display_name');
       const m: Record<string, string> = {};
       (data || []).forEach((p: { user_id: string; display_name: string }) => {
         if (p.user_id) m[p.user_id] = p.display_name || 'Asesora';
       });
+      // ⛔ Un fallo NO se cachea (4-sep-2026). Antes un timeout en el primer
+      // render dejaba `{}` guardado para toda la sesión: todas las asesoras
+      // salían como "Asesora" en todas las pantallas —el sello de "quién tocó
+      // este cliente" dejaba de identificar a nadie— hasta F5. Ahora el próximo
+      // consumidor vuelve a intentar.
+      if (error) {
+        console.warn('[useOperatorNames] no se pudieron leer los nombres:', error.message);
+        inflight = null;
+        return m;
+      }
       namesCache = m;
       return m;
     })();

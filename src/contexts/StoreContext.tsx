@@ -39,6 +39,16 @@ interface StoreState {
    */
   scopeSynced: boolean;
   /**
+   * La tienda que el SERVIDOR tiene confirmada como activa
+   * (`profiles.active_store_id`, vía `set_active_store`), o `null` mientras
+   * viaja la sincronización. Las RPCs que resuelven su alcance server-side
+   * (`_resolve_scope_store`) tienen que esperar `scopeStoreId === activeStoreId`
+   * antes de preguntar; si no, contestan con los números de la tienda ANTERIOR
+   * bajo el nombre de la nueva. `scopeSynced` no alcanzaba: arranca en true y
+   * nadie lo bajaba al cambiar de tienda (4-sep-2026).
+   */
+  scopeStoreId: string | null;
+  /**
    * ¿Falló la CARGA de tiendas (red/RLS)? Distinto de "cero tiendas": un error
    * de consulta jamás se muestra como vacío — sin esta bandera, un timeout de
    * WiFi dejaba stores=[] y ProtectedLayout mandaba a una operadora CON tienda
@@ -106,6 +116,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Arranca en true para no mostrar el aviso durante la carga inicial: recién
   // se pone en false si una sincronización REAL falla.
   const [scopeSynced, setScopeSynced] = useState(true);
+  // Ver el doc de `scopeStoreId` en StoreState. `null` hasta que el servidor
+  // confirme; se vuelve a null SINCRÓNICAMENTE al cambiar de tienda.
+  const [scopeStoreId, setScopeStoreId] = useState<string | null>(null);
   // Error de carga de tiendas — ver doc en StoreState.storesError.
   const [storesError, setStoresError] = useState(false);
   // Todas las tiendas del usuario suspendidas — ver doc en StoreState.hasSuspendedOnly.
@@ -139,6 +152,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return false;
     }
     setScopeSynced(ok);
+    setScopeStoreId(ok ? id : null);
     return ok;
   }, []);
 
@@ -278,6 +292,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const setActiveStoreId = useCallback((id: string) => {
     // Optimista: el UI cambia de inmediato, no bloqueamos la navegación.
     setActiveStoreIdState(id);
+    // Y el scope del servidor deja de estar confirmado HASTA que aterrice el
+    // UPDATE: quien pregunte por RPC con scope server-side espera.
+    setScopeStoreId(null);
     try { localStorage.setItem(LS_KEY, id); } catch { /* noop */ }
 
     // Sincronizar la tienda activa SERVER-SIDE (profiles.active_store_id), igual
@@ -323,10 +340,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const activeStore = stores.find(s => s.id === activeStoreId) ?? null;
   // Sincroniza el país del rastreo de transportadoras (getTrackingUrl) con la
   // tienda activa: EC usa GINTRACOM/LAAR/Servientrega-EC, CO sus propias URLs.
+  // Misma sincronización para la MONEDA: EC muestra USD con centavos en
+  // formatCOP (los montos EC como COP sin decimales perdían los centavos).
+  //
+  // ⛔ EN EL CUERPO DEL RENDER, no en un efecto (4-sep-2026). Las dos escriben
+  // una variable de MÓDULO, no estado: un `useEffect` corre DESPUÉS del commit
+  // y mutarla no agenda ningún re-render, así que el primer paint con la tienda
+  // nueva usaba el país anterior — montos de Ecuador sin centavos, una guía
+  // LAAR contra el mapa colombiano. Intermitente y no reproducible a pedido,
+  // que es lo peor. La asignación es idempotente y barata: va antes de que
+  // los hijos rendericen. El efecto queda por si algo vuelve a montar tarde.
+  setTrackingCountry(activeStore?.country_code);
+  setCurrencyCountry(activeStore?.country_code);
   useEffect(() => {
     setTrackingCountry(activeStore?.country_code);
-    // Misma sincronización para la MONEDA: EC muestra USD con centavos en
-    // formatCOP (los montos EC como COP sin decimales perdían los centavos).
     setCurrencyCountry(activeStore?.country_code);
   }, [activeStore?.country_code]);
   const isOwnerOfActive = activeStore?.role === 'owner';
@@ -337,7 +364,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   return (
     <StoreContext.Provider value={{
       loading, stores, activeStoreId, activeStore, isOwnerOfActive, isManagerOfActive, needsSetup,
-      scopeSynced, storesError, hasSuspendedOnly, setActiveStoreId, refresh,
+      scopeSynced, scopeStoreId, storesError, hasSuspendedOnly, setActiveStoreId, refresh,
     }}>
       {children}
     </StoreContext.Provider>

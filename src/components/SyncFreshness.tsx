@@ -58,11 +58,12 @@ export default function SyncFreshness({ onAuditClick }: Props) {
   // Reloj local: re-renderiza cada 30s para que "hace X min" nunca quede viejo
   // entre recargas de sync_logs (el poll es cada 2 min).
   const [, setNowTick] = useState(0);
+  const [leerFallo, setLeerFallo] = useState(false);
 
   const load = useCallback(async () => {
     if (!activeStoreId) return;
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('sync_logs')
       .select('status, synced_count, total_count, created_at, error_message')
       .eq('store_id', activeStoreId)
@@ -73,7 +74,13 @@ export default function SyncFreshness({ onAuditClick }: Props) {
       .in('source', ['dropi-cron', 'dropi'])
       .order('created_at', { ascending: false })
       .limit(12);
-    setLogs((data as LogRow[]) || []);
+    // ⛔ El error se tragaba (4-sep-2026): con la base lenta, `logs` quedaba
+    // vacío y el componente devolvía null — ni pastilla verde ni banner rojo,
+    // justo cuando el cron también suele estar caído. La ausencia de banner se
+    // leía igual que "cargando". Ahora la lectura fallida se dice.
+    setLeerFallo(Boolean(error));
+    if (error) console.warn('[SyncFreshness] no se pudo leer sync_logs:', error.message);
+    setLogs(error ? [] : ((data as LogRow[]) || []));
     setLoading(false);
   }, [activeStoreId]);
 
@@ -139,7 +146,18 @@ export default function SyncFreshness({ onAuditClick }: Props) {
     }
   };
 
-  if (!activeStoreId || logs.length === 0) return null;
+  if (!activeStoreId) return null;
+  if (leerFallo) {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 rounded-full border border-warning/40 bg-warning/10 px-2.5 py-1 text-[11px] font-semibold text-warning"
+        title="No se pudo leer sync_logs: no sé si los pedidos están al día. Reintentá en un momento."
+      >
+        Estado del sync: no se pudo leer
+      </span>
+    );
+  }
+  if (logs.length === 0) return null;
 
   const now = Date.now();
   const last = logs[0];

@@ -79,6 +79,16 @@ export function useChangeAlerts(userId: string | undefined, storeId?: string | n
         .or('estado.ilike.%OFICINA%,estado.ilike.%RECLAME%'),
     ]);
 
+    // ⛔ Un COUNT fallido llega con `count: null`, y `?? 0` lo volvía un cero
+    // (4-sep-2026): el primer poll caído guardaba 0/0/0 como línea base, y el
+    // siguiente poll bueno anunciaba «Nuevos: 40 novedades» falsas; al revés,
+    // un fallo intermitente ponía el badge en 0 sobre novedades que sí
+    // entraron. Un poll que no se pudo medir se salta entero.
+    if (novRes.error || devRes.error || ofiRes.error) {
+      console.warn('[useChangeAlerts] conteo fallido, se salta este poll:',
+        novRes.error?.message ?? devRes.error?.message ?? ofiRes.error?.message);
+      return;
+    }
     const nov = novRes.count ?? 0;
     const dev = devRes.count ?? 0;
     const ofi = ofiRes.count ?? 0;

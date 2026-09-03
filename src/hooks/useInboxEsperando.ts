@@ -118,11 +118,19 @@ interface Snapshot {
   items: InboxItem[];
   sinRespuesta: InboxItem[];
   status: InboxStatus;
+  /**
+   * ⛔ La SEGUNDA canasta ("les escribimos y no contestaron") falló al leerse.
+   * `sinRespuesta` va vacía y NO se puede afirmar nada sobre ella. Hasta el
+   * 4-sep-2026 esta bandera no existía: si solo esa consulta fallaba, `status`
+   * quedaba 'ok' y la pantalla decía «Nadie quedó sin respuesta 🎉» sobre una
+   * cola llena — el incidente de Colombia otra vez, en la misma pantalla.
+   */
+  deudaError: boolean;
 }
 
 // Arranca en 'cargando', NO en 'ok': con 'ok'+vacío la pantalla afirmaría
 // "nadie esperando" sobre datos que todavía no llegaron (el bug de la casa).
-const VACIO: Snapshot = { items: [], sinRespuesta: [], status: 'cargando' };
+const VACIO: Snapshot = { items: [], sinRespuesta: [], status: 'cargando', deudaError: false };
 
 /**
  * ⛔ UNA SOLA CONSULTA Y UN SOLO CANAL PARA TODA LA APP (3-sep-2026).
@@ -197,7 +205,7 @@ async function cargarTienda(storeId: string | null): Promise<void> {
       // 42703 = la migración de columnas de chat no corrió: la función no está
       // prendida todavía, no es un error que avisar.
       publicar(storeId, {
-        items: [], sinRespuesta: [],
+        items: [], sinRespuesta: [], deudaError: true,
         status: code === '42703' || /does not exist|column/i.test(msg) ? 'not_ready' : 'error',
       });
       return;
@@ -276,10 +284,14 @@ async function cargarTienda(storeId: string | null): Promise<void> {
 
     // Ni una sola fila con dato de chat en toda la tienda = nadie lo está
     // midiendo. No se puede afirmar «todos atendidos» sobre eso.
+    if (sinEntrante.error) {
+      console.warn('[inbox] la canasta "sin respuesta" no se pudo leer:', sinEntrante.error.message);
+    }
     publicar(storeId, {
       items: esperandoOut,
       sinRespuesta: deudaOut,
       status: filas.length === 0 && filasSinEntrante.length === 0 ? 'sin_medir' : 'ok',
+      deudaError: Boolean(sinEntrante.error),
     });
 }
 
@@ -335,7 +347,7 @@ export function useInboxEsperando(storeId: string | null) {
   const recargar = useCallback(async () => { await cargarTienda(storeId); }, [storeId]);
 
   return useMemo(
-    () => ({ items: snap.items, sinRespuesta: snap.sinRespuesta, status: snap.status, recargar }),
+    () => ({ items: snap.items, sinRespuesta: snap.sinRespuesta, status: snap.status, deudaError: snap.deudaError, recargar }),
     [snap, recargar],
   );
 }

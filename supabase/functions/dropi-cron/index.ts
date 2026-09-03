@@ -1043,7 +1043,7 @@ Deno.serve(async (req: Request) => {
       const retryFrom = new Date();
       retryFrom.setUTCDate(retryFrom.getUTCDate() - 7);
       const retryFromStr = retryFrom.toISOString().split("T")[0];
-      const { data: failedRows } = await sb
+      const { data: failedRows, error: failedErr } = await sb
         .from("order_results")
         .select("id, order_id, result_date, result_notes")
         .eq("result", "conf")
@@ -1053,6 +1053,18 @@ Deno.serve(async (req: Request) => {
         // CAP anti-eterno: filas marcadas BOT-SIN-API no se reintentan más.
         .or(NOT_BOT_FILTER)
         .limit(50);
+      // ⛔ Si esta lectura falla (el `.or()` compuesto es frágil, o un timeout),
+      // `failedRows` es null y el bloque de reintento se saltaba en SILENCIO,
+      // corrida tras corrida (4-sep-2026). Con `protect_confirmed_orders` a 7
+      // días, una confirmación que nunca llega a Dropi quedaba invisible hasta
+      // que la protección vence y el pedido vuelve a la cola. Se deja rastro.
+      if (failedErr) {
+        console.error("[dropi-cron] no pude leer las confirmaciones pendientes de reintento:", failedErr.message);
+        await sb.from("sync_logs").insert({
+          source: "dropi-cron", status: "warn", synced_count: 0, duplicates_count: 0, total_count: 0,
+          error_message: `Reintento de confirmaciones SALTEADO: no se pudo leer order_results (${String(failedErr.message).slice(0, 200)})`,
+        }).then(() => {}, () => {});
+      }
       if (failedRows && failedRows.length > 0) {
         const orderIds = (failedRows as Array<{ order_id: string }>).map(r => r.order_id);
         const { data: ordersForRetry } = await sb

@@ -3,7 +3,13 @@ import { CheckCircle2, XCircle, PhoneOff } from 'lucide-react';
 import { CONF_TARGET_PCT, confRateOficial } from '@/lib/confirmationRate';
 
 export default function CounterBar() {
-  const { workQueue, counter } = useOrders();
+  const { workQueue, counter, counterCargado } = useOrders();
+  // ⛔ `counterCargado` existía desde agosto con CERO consumidores (4-sep-2026).
+  // Si la siembra del contador falla (RLS, red), `counter` queda en 0/0/0 y
+  // esta barra rotulaba "Equipo hoy 0 · 0 · 0" con cara de dato medido — y es
+  // el número que la operadora firma en el cierre del día. Sin lectura buena,
+  // se pinta "—".
+  const n = (v: number) => (counterCargado ? String(v) : '—');
   const total = counter.conf + counter.canc + counter.noresp;
   // Denominador = lo gestionado HOY + lo que queda SIN RESULTADO en la cola.
   // Los "no contestó" siguen en la cola para reintento pero YA están contados en
@@ -59,19 +65,19 @@ export default function CounterBar() {
           <div className="w-6 h-6 rounded-lg bg-success/12 border border-success/25 flex items-center justify-center">
             <CheckCircle2 size={13} className="text-success" aria-hidden="true" />
           </div>
-          <span className="font-mono text-sm font-bold text-foreground tabular-nums">{counter.conf}</span>
+          <span className="font-mono text-sm font-bold text-foreground tabular-nums">{n(counter.conf)}</span>
         </div>
         <div className="flex items-center gap-1.5 text-sm" aria-label={`Cancelados: ${counter.canc}`}>
           <div className="w-6 h-6 rounded-lg bg-danger/12 border border-danger/25 flex items-center justify-center">
             <XCircle size={13} className="text-danger" aria-hidden="true" />
           </div>
-          <span className="font-mono text-sm font-bold text-foreground tabular-nums">{counter.canc}</span>
+          <span className="font-mono text-sm font-bold text-foreground tabular-nums">{n(counter.canc)}</span>
         </div>
         <div className="flex items-center gap-1.5 text-sm" aria-label={`No respondió: ${counter.noresp}`}>
           <div className="w-6 h-6 rounded-lg bg-muted/60 border border-border flex items-center justify-center">
             <PhoneOff size={13} className="text-muted-foreground" aria-hidden="true" />
           </div>
-          <span className="font-mono text-sm font-bold text-foreground tabular-nums">{counter.noresp}</span>
+          <span className="font-mono text-sm font-bold text-foreground tabular-nums">{n(counter.noresp)}</span>
         </div>
       </div>
       <div
@@ -95,10 +101,11 @@ export default function CounterBar() {
         />
       </div>
       <div className="flex items-center gap-1.5 text-sm">
-        <span className="font-mono font-bold text-foreground tabular-nums">{total}</span>
-        <span className="text-muted-foreground text-xs tabular-nums">/{goal}</span>
-        <span className={`text-[11px] font-semibold ml-1 px-1.5 py-0.5 rounded-md border tabular-nums ${pctBadge}`}>
-          {pct}%
+        <span className="font-mono font-bold text-foreground tabular-nums">{n(total)}</span>
+        <span className="text-muted-foreground text-xs tabular-nums">/{counterCargado ? goal : '—'}</span>
+        <span className={`text-[11px] font-semibold ml-1 px-1.5 py-0.5 rounded-md border tabular-nums ${counterCargado ? pctBadge : 'bg-muted/60 text-muted-foreground border-border'}`}
+          title={counterCargado ? undefined : 'Todavía no se pudo leer el contador del día'}>
+          {counterCargado ? `${pct}%` : '—'}
         </span>
       </div>
     </div>

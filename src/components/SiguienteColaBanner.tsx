@@ -36,7 +36,7 @@ export default function SiguienteColaBanner({ supersededIds }: Props) {
   const navigate = useNavigate();
   const { isAdmin, user } = useAuth();
   const { isOwnerOfActive, activeStoreId } = useStore();
-  const { workQueue, novedadesQueue, segData, mySegTouchedToday, coverageSegError } = useOrders();
+  const { workQueue, novedadesQueue, segData, mySegTouchedToday, coverageSegError, novedadesError, novedadesLoading } = useOrders();
 
   // ⛔ LA BANDEJA FALTABA ACÁ (3-sep-2026). Pedido del dueño: *"si terminó
   // Seguimiento que le señale que falta Inbox"*. Este banner listaba solo
@@ -102,7 +102,10 @@ export default function SiguienteColaBanner({ supersededIds }: Props) {
   // ⛔ Con la bandeja sin medir NO se felicita: se cae al listado de abajo, que
   // dice lo que sí sabe. Un «Todo al día ✓» sobre un dato que no se pudo leer
   // es la buena noticia falsa que este proyecto ya pagó dos veces.
-  if (novedadesPend === 0 && segTerminado && bandejaMedida && bandejaPend === 0) {
+  // ⛔ Y con Novedades sin leer (error o todavía cargando) tampoco: una cola
+  // vacía porque la consulta falló no es una cola vacía (4-sep-2026).
+  const novedadesMedidas = !novedadesError && !novedadesLoading;
+  if (novedadesPend === 0 && novedadesMedidas && segTerminado && bandejaMedida && bandejaPend === 0) {
     return (
       <div className="rounded-2xl border border-success/40 bg-success/10 px-4 py-3 mb-4 flex items-center gap-3 shadow-card3d">
         <PartyPopper size={18} className="text-success shrink-0" aria-hidden="true" />

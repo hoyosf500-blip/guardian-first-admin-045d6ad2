@@ -79,6 +79,9 @@ export default function DropiSyncFailuresPanel() {
   const [expanded, setExpanded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // El join con `orders` falló: las filas no traen número de pedido y el
+  // filtro de obsoletas no puede aplicarse. Se dice arriba del listado.
+  const [joinFallo, setJoinFallo] = useState(false);
 
   const load = useCallback(async () => {
     if (!activeStoreId) return;
@@ -124,10 +127,15 @@ export default function DropiSyncFailuresPanel() {
       const meta = new Map<string, { externalId: string; nombre: string; estado: string; lastEditSyncAt: string | null }>();
       const orderIds = [...new Set([...byOrder.values()].map(r => r.order_id))];
       if (orderIds.length > 0) {
-        const { data: ords } = await supabase
+        const { data: ords, error: ordsErr } = await supabase
           .from('orders')
           .select('id, external_id, nombre, estado, last_edit_sync_at')
           .in('id', orderIds);
+        // ⛔ Si el join falla, las filas quedan sin número de pedido y el botón
+        // "Reintentar" no hacía NADA, sin toast (4-sep-2026). Se avisa y se
+        // deshabilita con motivo (ver `retry`).
+        setJoinFallo(Boolean(ordsErr));
+        if (ordsErr) console.warn('[DropiSyncFailuresPanel] no se pudieron leer los pedidos del join:', ordsErr.message);
         for (const o of ords ?? []) {
           meta.set(o.id, {
             externalId: String(o.external_id ?? ''),
@@ -192,7 +200,11 @@ export default function DropiSyncFailuresPanel() {
   }, [activeStoreId, load]);
 
   const retry = useCallback(async (row: FailedGestion) => {
-    if (busyId || !row.externalId) return;
+    if (busyId) return;
+    if (!row.externalId) {
+      toast.error('No pude resolver el número de pedido de esta gestión (falló la lectura de pedidos). Recargá e intentá de nuevo.');
+      return;
+    }
     // Solo conf/canc tienen retry (el else de abajo CANCELA en Dropi — una
     // fila de edición acá cancelaría el pedido). Las ediciones van por badge.
     if (row.result !== 'conf' && row.result !== 'canc') return;
@@ -319,6 +331,7 @@ export default function DropiSyncFailuresPanel() {
           <p className="text-xs text-muted-foreground mt-0.5">
             Quedaron en el CRM pero Dropi las rechazó (últimos {WINDOW_DAYS} días). Las gestiones se reintentan acá; las ediciones se reaplican desde el pedido.
             {botCount > 0 && <> {botCount} son del bot de Dropi — esas solo se gestionan en el panel de Dropi.</>}
+            {joinFallo && <> ⚠ No pude leer los pedidos de estas gestiones: sin número de pedido, «Reintentar» no puede correr y las obsoletas no se filtraron. Recargá.</>}
             {mootCount > 0 && <> Se ocultaron {mootCount} obsoletas (el pedido fue reemplazado o cancelado — nada que hacer).</>}
             {appliedCount > 0 && <> · {appliedCount} ediciones se verificaron aplicadas en Dropi y se ocultaron.</>}
           </p>

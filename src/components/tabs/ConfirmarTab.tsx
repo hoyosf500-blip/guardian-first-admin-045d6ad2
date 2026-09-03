@@ -74,7 +74,7 @@ const fadeUp = (delay = 0) => ({
 export default function ConfirmarTab({ profile }: Props) {
   const { user } = useAuth();
   const { activeStoreId, isOwnerOfActive } = useStore();
-  const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, resetOrders, excelLoaded, setExcelLoaded, myConfirmTouchedToday, gestionPorPedido, gestionCargada, resumenAsesorasHoy, sinRespuestaHoy, coverageConfirmError, markResult } = useOrders();
+  const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, counterCargado, resetOrders, excelLoaded, setExcelLoaded, myConfirmTouchedToday, gestionPorPedido, gestionCargada, resumenAsesorasHoy, sinRespuestaHoy, coverageConfirmError, markResult } = useOrders();
   // Persist nav state in sessionStorage so a tab discard (common on mobile
   // when operator leaves to the transportadora's tracking page) does not
   // make them lose their place and filters.
@@ -1117,10 +1117,12 @@ export default function ConfirmarTab({ profile }: Props) {
                     <span className="opacity-70"> · es el mismo número del Dashboard y Productividad (una sola matemática)</span>
                   </span>
                   <div className="grid grid-cols-1 min-[390px]:grid-cols-2 gap-3 flex-1">
-                    <StatTile icon={CheckCircle2} label="conf" value={counter.conf} tone="success" />
-                    <StatTile icon={XCircle} label="canc" value={counter.canc} tone="danger" />
-                    <StatTile icon={PhoneOff} label="noresp" value={counter.noresp} tone="neutral" />
-                    <StatTile icon={ClipboardCheck} label="gestionados" value={total} tone="accent" />
+                    {/* `null` = sin dato: StatTile lo pinta "—". Sin `counterCargado`
+                        (la siembra falló) estos cuatro decían 0 con cara de medido. */}
+                    <StatTile icon={CheckCircle2} label="conf" value={counterCargado ? counter.conf : null} tone="success" />
+                    <StatTile icon={XCircle} label="canc" value={counterCargado ? counter.canc : null} tone="danger" />
+                    <StatTile icon={PhoneOff} label="noresp" value={counterCargado ? counter.noresp : null} tone="neutral" />
+                    <StatTile icon={ClipboardCheck} label="gestionados" value={counterCargado ? total : null} tone="accent" />
                   </div>
                   {/* Cobertura del día del equipo — absorbe la vieja franja
                       "EQUIPO HOY" (misma matemática que tenía CounterBar):
