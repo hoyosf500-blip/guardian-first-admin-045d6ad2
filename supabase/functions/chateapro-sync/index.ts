@@ -49,7 +49,7 @@ import { cambiosDeChat, type ContactoCp, type PedidoCruce } from "../_shared/cha
 
 const SOURCE = "chateapro-sync";
 /** ⛔ Subirla en el mismo commit que cambie algo: si no, el ping miente. */
-const VERSION = "chateapro-sync 2026-09-02.4 sin-plantilla-no-hay-senal";
+const VERSION = "chateapro-sync 2026-09-03.1 last-interaction-y-rescate-por-telefono";
 
 /** Tope de la API (lo dice la spec; más devuelve 400). */
 const PAGINA = 100;
@@ -77,6 +77,19 @@ const RESERVA_HILOS_MS = 25_000;
  * la corrida siguiente, porque la selección se ordena por lo más viejo sin leer.
  */
 const HILOS_POR_CORRIDA = 30;
+/**
+ * Cuántos pedidos rescatar por teléfono en cada corrida (fase 5).
+ *
+ * Cada uno son entre 1 y 6 llamadas —`buscarSuscriptorPorTelefono` prueba
+ * varios formatos hasta encontrarlo—, así que 40 son unas 100 llamadas cada 10
+ * minutos. Es un tope de cortesía con la API, no un límite del problema: la
+ * cola solo pide los que tienen `chat_leido_at` en null, así que se vacía sola
+ * y después no vuelve a haber trabajo.
+ */
+const RESCATES_POR_CORRIDA = 40;
+/** Mismo criterio que `RESERVA_HILOS_MS`: no se empieza el rescate sin tiempo
+ *  suficiente para terminarlo y cerrar la fila de `sync_logs`. */
+const RESERVA_RESCATE_MS = 20_000;
 /** Solo se mira la señal en la ventana donde todavía sirve para algo: la
  *  mediana entre que sale la plantilla y que aprietan es 0,0 h, y a los 3 días
  *  el pedido ya se despachó o se cayó. */
@@ -351,6 +364,77 @@ Deno.serve(async (req) => {
         }
       }
 
+      // ── FASE 5: los que la lista de contactos NO PUEDE ALCANZAR ────────
+      //
+      // ⛔ `GET /subscribers` NO devuelve el padrón completo. Medido el
+      // 3-sep-2026 contra la cuenta de Colombia: `meta.total` = **900** con
+      // cualquier `limit` (9 páginas de 100, 18 de 50, 45 de 20), y el contacto
+      // más viejo de esas 900 es de hace **4 días**. Con ~250 conversaciones
+      // por día, la lista es una ventana móvil de menos de una semana, no el
+      // padrón.
+      //
+      // Consecuencia en la pantalla, que es lo que reportó el dueño ("en
+      // algunos sale la plantilla y en otros no"): un pedido cuya conversación
+      // pasó hace más de 4 días NO está en la lista, así que nunca recibe
+      // `chat_leido_at`, `actividad` queda en null, la ventana sale `sin_dato`
+      // y **el botón de mandar el mensaje no aparece**. La tarjeta de al lado,
+      // con una conversación de anteayer, sí lo tiene. Nada de eso es del
+      // pedido: es de qué tan vieja es su conversación.
+      //
+      // La salida es que la búsqueda POR TELÉFONO sí llega a cualquiera —es la
+      // misma que usa `chateapro-chat` cuando la asesora abre un pedido—, así
+      // que se rescatan de a poco los que nunca se pudieron mirar. Con el tope
+      // de abajo y el cron cada 10 min, una cola de 500 pedidos se llena en un
+      // par de horas y después no vuelve a haber trabajo: se piden solo los que
+      // tienen `chat_leido_at` en null.
+      //
+      // ⛔ `chat_leido_at` se escribe TAMBIÉN cuando no se encontró contacto.
+      // Es la diferencia entre "no lo pude medir" y "lo medí y este cliente
+      // nunca escribió" — la segunda es información real (la pantalla ofrece
+      // plantilla, que es el único camino que le llega) y además evita volver a
+      // preguntar por él cada diez minutos para siempre.
+      let rescatados = 0;
+      let sinContacto = 0;
+      /** De los rescatados, a cuántos se les encontró conversación de verdad. */
+      let conDato = 0;
+      if (Date.now() - t0 < BUDGET_MS - RESERVA_RESCATE_MS) {
+        try {
+          const { data: huerfanos } = await sb.from("orders")
+            .select("external_id, phone, chat_entrante_at, chat_saliente_at")
+            .eq("store_id", sid).gte("fecha", desde)
+            .is("chat_leido_at", null)
+            .not("phone", "is", null)
+            .order("fecha", { ascending: false })
+            .limit(RESCATES_POR_CORRIDA);
+          const ahora2 = new Date().toISOString();
+          for (const o of huerfanos ?? []) {
+            if (Date.now() - t0 > BUDGET_MS) break;
+            const sus = await buscarSuscriptorPorTelefono(cfg, String(o.phone), String(tienda?.country_code || "CO"));
+            // El mismo cruce puro que la fase 2, con un contacto de a uno: una
+            // sola definición de "qué se escribe", para las dos entradas.
+            const [c] = sus
+              ? cambiosDeChat([sus as ContactoCp], [{ ...o, phone: o.phone } as PedidoCruce], offset)
+              : [];
+            if (!sus) sinContacto++;
+            const { error } = await sb.from("orders").update({
+              ...(c?.chat_entrante_at ? { chat_entrante_at: c.chat_entrante_at } : {}),
+              ...(c?.chat_saliente_at ? { chat_saliente_at: c.chat_saliente_at } : {}),
+              ...(c?.chat_saliente_tipo ? { chat_saliente_tipo: c.chat_saliente_tipo } : {}),
+              chat_leido_at: ahora2,
+            }).eq("store_id", sid).eq("external_id", o.external_id);
+            if (error) console.error(`[${SOURCE}] rescate ${sid}/${o.external_id}: ${error.message}`);
+            else { rescatados++; if (c) conDato++; }
+          }
+        } catch (e) {
+          // Igual que la señal: es un extra. Lo de arriba ya quedó escrito.
+          huboError = true;
+          const msg = e instanceof Error ? e.message : String(e);
+          console.error(`[${SOURCE}] ${sid} rescate: ${msg}`);
+          detalle.push({ store_id: sid, error_rescate: msg });
+        }
+      }
+      escritosTotal += conDato;
+
       const esperando = contactos.filter((c) => String(c.last_message_type ?? "") === "in").length;
       // ⛔ Un botón que no sabemos leer se GRITA. Sin esto, cablear una
       // plantilla nueva apaga la señal sin dar ningún error — el modo de falla
@@ -362,6 +446,7 @@ Deno.serve(async (req) => {
       detalle.push({
         store_id: sid, contactos: contactos.length, esperando, escritos,
         con_senal: conSenal, recibieron_plantilla_confirmacion: conPlantilla,
+        rescatados, rescatados_con_chat: conDato, rescatados_sin_contacto: sinContacto,
         ...(ciegos.length ? { botones_desconocidos: [...new Set(ciegos)] } : {}),
       });
     }

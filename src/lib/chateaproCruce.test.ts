@@ -159,3 +159,121 @@ describe('cambiosDeChat', () => {
     expect(r.map((x) => x.external_id)).toEqual(['87992083']);
   });
 });
+
+/**
+ * ⛔ EL AGUJERO DE `last_interaction` (3-sep-2026).
+ *
+ * Reportado por el dueño mirando el tablero de Colombia: *"en algunos sale la
+ * plantilla y en otros no"*. Medido sobre la cuenta real: de los 900 contactos
+ * que devuelve `GET /subscribers`, **845 tienen `last_message_type = 'out'`** —
+ * el bot contesta en unos 25 segundos, así que casi nunca el cliente es el
+ * último que habló. Con la regla vieja (escribir un solo lado, según el tipo
+ * del último mensaje) Guardian escribía `chat_entrante_at` en **53 de 900**
+ * conversaciones: un 6%.
+ *
+ * Y `chat_entrante_at` es lo que decide la ventana de 24 h de WhatsApp. Sin él,
+ * `ventanaWhatsapp` contesta `nunca_escribio`, el riel verde de la tarjeta se
+ * apaga y la pantalla ofrece el camino de PLANTILLA —que se paga— sobre una
+ * conversación abierta que admitía un mensaje escrito gratis.
+ */
+describe('cambiosDeChat — el entrante sale de `last_interaction`', () => {
+  const ped2 = (o: Partial<PedidoCruce>): PedidoCruce => ({
+    external_id: 'X', phone: '3218877000', fecha: '2026-09-01', ...o,
+  });
+
+  it('⛔ el bot contestó 25 s después y IGUAL se sabe cuándo escribió el cliente', () => {
+    // Este es el caso del 94% de la cuenta. Antes salía SOLO el saliente y el
+    // pedido quedaba como si el cliente nunca hubiera escrito.
+    const c: ContactoCp[] = [{
+      phone: '3218877000',
+      last_message_at: '2026-09-02 21:55:10',
+      last_interaction: '2026-09-02 21:54:55',
+      last_message_type: 'out',
+    }];
+    const r = cambiosDeChat(c, [ped2({ external_id: '88110734' })]);
+    expect(r).toEqual([{
+      external_id: '88110734',
+      chat_entrante_at: '2026-09-03T02:54:55.000Z',
+      chat_saliente_at: '2026-09-03T02:55:10.000Z',
+      chat_saliente_tipo: 'plantilla',
+    }]);
+  });
+
+  it('el entrante queda ANTES que el saliente: no aparece esperando respuesta', () => {
+    // `estadoConversacion` pregunta `entrante > saliente`. Escribir los dos no
+    // puede meter en la bandeja «Escribieron» a alguien que ya fue atendido.
+    const c: ContactoCp[] = [{
+      phone: '3218877000',
+      last_message_at: '2026-09-02 21:55:10',
+      last_interaction: '2026-09-02 21:54:55',
+      last_message_type: 'out',
+    }];
+    const [x] = cambiosDeChat(c, [ped2({ external_id: '88110734' })]);
+    expect(new Date(x.chat_entrante_at!).getTime())
+      .toBeLessThan(new Date(x.chat_saliente_at!).getTime());
+  });
+
+  it('cuando el cliente habló último, el saliente NO se toca', () => {
+    // Escribir "ahora" ahí borraría el hecho de que nadie le contestó — que es
+    // justamente lo que la bandeja «Escribieron» tiene que ver.
+    const c: ContactoCp[] = [{
+      phone: '3218877000',
+      last_message_at: '2026-09-02 21:20:14',
+      last_interaction: '2026-09-02 21:20:14',
+      last_message_type: 'in',
+    }];
+    const r = cambiosDeChat(c, [ped2({ external_id: '88110734' })]);
+    expect(r).toEqual([{ external_id: '88110734', chat_entrante_at: '2026-09-03T02:20:14.000Z' }]);
+  });
+
+  it('una persona del equipo sigue quedando como `directo`', () => {
+    const c: ContactoCp[] = [{
+      phone: '3218877000',
+      last_message_at: '2026-09-02 21:55:10',
+      last_interaction: '2026-09-02 21:54:55',
+      last_message_type: 'agent',
+    }];
+    expect(cambiosDeChat(c, [ped2({ external_id: 'A' })])[0].chat_saliente_tipo).toBe('directo');
+  });
+
+  it('⛔ sin `last_interaction`, un mensaje del NEGOCIO no se lee como del cliente', () => {
+    // La regla de siempre: solo se toca el lado que el dato prueba. Un contacto
+    // viejo sin ese campo no puede producir un entrante inventado.
+    const c: ContactoCp[] = [{
+      phone: '3218877000', last_message_at: '2026-09-02 21:55:10', last_message_type: 'out',
+    }];
+    const r = cambiosDeChat(c, [ped2({ external_id: 'A' })]);
+    expect(r[0].chat_entrante_at).toBeUndefined();
+    expect(r[0].chat_saliente_at).toBe('2026-09-03T02:55:10.000Z');
+  });
+
+  it('tampoco se escribe hacia atrás: un entrante más viejo no pisa al que hay', () => {
+    const c: ContactoCp[] = [{
+      phone: '3218877000',
+      last_message_at: '2026-09-02 10:00:00',
+      last_interaction: '2026-09-02 09:00:00',
+      last_message_type: 'out',
+    }];
+    const r = cambiosDeChat(c, [ped2({
+      external_id: 'A',
+      chat_entrante_at: '2026-09-02T20:00:00.000Z',
+      chat_saliente_at: '2026-09-02T20:00:00.000Z',
+    })]);
+    expect(r).toEqual([]);
+  });
+
+  it('un contacto que no aporta nada nuevo no gasta un UPDATE', () => {
+    const c: ContactoCp[] = [{
+      phone: '3218877000',
+      last_message_at: '2026-09-02 10:00:00',
+      last_interaction: '2026-09-02 09:55:00',
+      last_message_type: 'out',
+    }];
+    const r = cambiosDeChat(c, [ped2({
+      external_id: 'A',
+      chat_entrante_at: '2026-09-02T14:55:00.000Z',
+      chat_saliente_at: '2026-09-02T15:00:00.000Z',
+    })]);
+    expect(r).toEqual([]);
+  });
+});

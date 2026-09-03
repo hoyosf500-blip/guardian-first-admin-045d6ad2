@@ -19,16 +19,43 @@
 // *"Nadie esperando respuesta — todos los que escribieron ya fueron atendidos
 // 🎉"*. Un cero afirmado sobre un dato que no existía.
 //
-// ── Lo que la lista de contactos SÍ da, y lo que no ────────────────────────
-// `GET /subscribers` trae por contacto `last_message_at` y `last_message_type`
-// ('in' = lo último lo escribió el cliente; 'out'/'agent' = lo último salió del
-// negocio). O sea da el ÚLTIMO mensaje, no las dos fechas por separado.
+// ── Lo que la lista de contactos SÍ da ─────────────────────────────────────
+// `GET /subscribers` trae por contacto TRES datos, y los tres hacen falta:
 //
-// Alcanza justo para la pregunta que importa —¿está esperando respuesta?— sin
-// abrir 800 conversaciones. Con `in` se escribe la fecha del entrante y NO se
-// toca el saliente; con `out`/`agent`, al revés. Así `entrante > saliente`
-// queda verdadero exactamente cuando el cliente es el último que habló, que es
-// lo que `estadoConversacion` pregunta.
+//   last_message_at    el último mensaje, del lado que sea
+//   last_message_type  'in' = lo escribió el cliente; 'out'/'agent' = el negocio
+//   last_interaction   ⭐ el último mensaje DEL CLIENTE, conteste quien conteste
+//
+// ⛔ `last_interaction` se estaba ignorando, y ese era el agujero (3-sep-2026).
+//
+// La primera versión de este archivo decía "la lista da el ÚLTIMO mensaje, no
+// las dos fechas por separado" y de ahí salía la regla de escribir un solo lado:
+// con `in` la fecha del entrante, con `out` la del saliente. Es falso, y se
+// midió: **845 de los 900 contactos de la cuenta tienen `last_message_type` =
+// 'out'** —el bot contesta en ~25 segundos, así que casi nunca el cliente es el
+// último que habló— y para todos ellos Guardian **nunca escribía
+// `chat_entrante_at`**. O sea que sabía cuándo el cliente escribió en 53 de 900
+// conversaciones: un 6%.
+//
+// Y eso no es solo un dato faltante. `chat_entrante_at` es lo que decide la
+// ventana de 24 h de WhatsApp (`ventanaWhatsapp`): sin él, `ventanaWhatsapp`
+// devuelve `nunca_escribio` y la pantalla ofrece el camino de PLANTILLA —que se
+// paga— sobre una conversación que estaba abierta y admitía un mensaje escrito
+// gratis. También apaga el riel verde de la tarjeta y deja al pedido fuera de la
+// bandeja «Escribieron».
+//
+// `last_interaction` es exactamente esa fecha. Comprobado el 3-sep-2026 contra
+// los hilos reales de 8 contactos cuyo último mensaje era del bot: en los 8
+// coincide con el último mensaje `in` del hilo dentro de 2 segundos, incluso
+// cuando el bot siguió escribiendo media hora después. Y en los contactos con
+// `last_message_type = 'in'` es idéntico a `last_message_at`, como tiene que ser.
+//
+// Regla nueva, entonces: **el entrante sale de `last_interaction` SIEMPRE**, y
+// `last_message_at` solo alimenta el saliente cuando el tipo prueba que ese
+// último mensaje salió del negocio. `entrante > saliente` sigue siendo
+// verdadero exactamente cuando el cliente es el último que habló, que es lo que
+// `estadoConversacion` pregunta — pero ahora las dos fechas son reales en vez
+// de que una esté ausente.
 
 /** Un contacto tal como lo devuelve `GET /subscribers` (campos medidos). */
 export interface ContactoCp {
@@ -38,6 +65,12 @@ export interface ContactoCp {
   last_message_at?: string | null;
   /** 'in' | 'out' | 'agent'. */
   last_message_type?: string | null;
+  /**
+   * ⭐ El último mensaje DEL CLIENTE, mismo formato. Es el único campo de la
+   * lista que dice cuándo escribió el cliente cuando el bot ya le contestó —o
+   * sea, en el 94% de los contactos. Ver el encabezado del archivo.
+   */
+  last_interaction?: string | null;
   status?: string | null;
 }
 
@@ -144,27 +177,38 @@ export function cambiosDeChat(
     const p = porTel.get(k);
     if (!p || yaHecho.has(p.external_id)) continue;
 
-    const cuando = aIso(c.last_message_at, offsetHoras);
-    if (!cuando) continue;
-
+    const ultimo = aIso(c.last_message_at, offsetHoras);
     const tipo = String(c.last_message_type ?? "").toLowerCase();
-    if (tipo === "in") {
-      if (!masNuevo(cuando, p.chat_entrante_at)) continue;
-      cambios.push({ external_id: p.external_id, chat_entrante_at: cuando });
-    } else if (tipo === "out" || tipo === "agent") {
-      if (!masNuevo(cuando, p.chat_saliente_at)) continue;
-      cambios.push({
-        external_id: p.external_id,
-        chat_saliente_at: cuando,
-        // 'agent' es una persona del equipo; 'out' es el bot o una plantilla.
-        // La distinción ya existe en Guardian y decide si la tarjeta dice
-        // "le escribió una asesora" o "salió un automático".
-        chat_saliente_tipo: tipo === "agent" ? "directo" : "plantilla",
-      });
-    } else {
-      continue;
+    const cambio: CambioChat = { external_id: p.external_id };
+
+    // ── El entrante, del campo que lo dice de verdad ────────────────────────
+    // `last_interaction` cuando viene; si no, `last_message_at` pero SOLO si el
+    // tipo prueba que ese último mensaje lo escribió el cliente. Nunca se
+    // deduce un entrante de un mensaje que salió del negocio.
+    const entrante = aIso(c.last_interaction, offsetHoras)
+      ?? (tipo === "in" ? ultimo : null);
+    if (entrante && masNuevo(entrante, p.chat_entrante_at)) {
+      cambio.chat_entrante_at = entrante;
     }
-    yaHecho.add(p.external_id);
+
+    // ── El saliente, solo si el último mensaje salió del negocio ────────────
+    // Con `in` no se toca: que el cliente haya hablado último no dice NADA de
+    // cuándo le contestamos, y escribir "ahora" ahí borraría el hecho de que
+    // nadie le respondió.
+    if ((tipo === "out" || tipo === "agent") && ultimo && masNuevo(ultimo, p.chat_saliente_at)) {
+      cambio.chat_saliente_at = ultimo;
+      // 'agent' es una persona del equipo; 'out' es el bot o una plantilla.
+      // La distinción ya existe en Guardian y decide si la tarjeta dice
+      // "le escribió una asesora" o "salió un automático".
+      cambio.chat_saliente_tipo = tipo === "agent" ? "directo" : "plantilla";
+    }
+
+    // Sin nada que escribir no se emite un UPDATE vacío: son cientos de pedidos
+    // por corrida y un UPDATE que no cambia nada igual cuesta una escritura.
+    if (cambio.chat_entrante_at || cambio.chat_saliente_at) {
+      cambios.push(cambio);
+      yaHecho.add(p.external_id);
+    }
   }
   return cambios;
 }
