@@ -224,12 +224,19 @@ describe('los campos que Chatea Pro devuelve de verdad', () => {
  * ahí no existe.
  */
 describe('ninguna pantalla nombra el canal del otro país', () => {
-  const dialogo = sinComentarios(leer('src/components/seguimiento/EscribirWhatsappDialog.tsx'));
+  // ⛔ El CUERPO del cuadro vive en `PanelConversacion` desde el 3-sep-2026;
+  // `EscribirWhatsappDialog` quedó como el marco (un modal con título). El texto
+  // que nombra el canal se mudó con el cuerpo, así que el guardián mira los DOS:
+  // el hecho tiene que cumplirse donde esté, y ninguno de los dos puede clavar
+  // "ImporChat" a mano.
+  const panel = sinComentarios(leer('src/components/seguimiento/PanelConversacion.tsx'));
+  const marco = sinComentarios(leer('src/components/seguimiento/EscribirWhatsappDialog.tsx'));
+  const dialogo = `${panel}\n${marco}`;
   const badge = sinComentarios(leer('src/components/chat/ImporchatSyncBadge.tsx'));
   const motivos = sinComentarios(leer('supabase/functions/_shared/plantillasMeta.ts'));
 
   it('el cuadro de escribir nombra el canal de la tienda, no uno fijo', () => {
-    expect(/nombreCanal\(/.test(dialogo), 'debe usar nombreCanal(canalChat)').toBe(true);
+    expect(/nombreCanal\(/.test(panel), 'debe usar nombreCanal(canalChat)').toBe(true);
     expect(
       /ImporChat/.test(dialogo),
       'el texto visible no puede clavar "ImporChat": en Colombia es Chatea Pro',
