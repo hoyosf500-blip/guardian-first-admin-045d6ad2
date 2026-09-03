@@ -68,6 +68,29 @@ describe('un canal de realtime que se puede montar dos veces necesita id propio'
       const sitios = callSites(h.nombre);
       if (sitios.length < 2) return; // un solo consumidor: nombre fijo está bien
       const src = fs.readFileSync(h.ruta, 'utf8');
+
+      // ── La OTRA forma de estar a salvo, y es mejor ────────────────────────
+      // Un id por instancia evita el choque abriendo N canales. Un canal
+      // COMPARTIDO con cuenta de suscriptores evita el choque abriendo UNO
+      // solo: el primero que llega lo abre, el último que se va lo cierra, y en
+      // el medio no puede existir un segundo `subscribe()` con el mismo nombre.
+      //
+      // Es preferible cuando el hook lo montan varias pantallas a la vez, que
+      // es justo el caso de `useInboxEsperando` (la barra del turno vive en
+      // TODAS las rutas, y en /confirmar se le suma el banner de fin de cola):
+      // con id por instancia eran dos canales y cuatro consultas de 500 filas
+      // por cada cambio del sync, que es el patrón que ya dejó el CRM lento.
+      //
+      // No alcanza con "parece compartido": se exige la cuenta Y el cierre en
+      // cero. Sin el decremento, el canal queda vivo para siempre; sin el
+      // cierre, montar y desmontar filtra un canal por vuelta.
+      const compartido = /const CANALES = new Map/.test(src)
+        && /\.n \+= 1/.test(src)
+        && /\.n -= 1/.test(src)
+        && /n <= 0/.test(src)
+        && /removeChannel/.test(src);
+      if (compartido) return;
+
       expect(src, `${h.nombre} lo montan ${sitios.length} componentes y no usa useId()`)
         .toMatch(/useId\(\)/);
       for (const canal of h.canales) {

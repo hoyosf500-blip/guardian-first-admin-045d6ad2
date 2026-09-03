@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { estadoConversacion } from '@/lib/actividadChat';
 
@@ -113,19 +113,51 @@ export interface InboxDosColas {
   sinRespuesta: InboxItem[];
 }
 
-export function useInboxEsperando(storeId: string | null) {
-  const [items, setItems] = useState<InboxItem[]>([]);
-  const [sinRespuesta, setSinRespuesta] = useState<InboxItem[]>([]);
-  // Arranca en 'cargando', NO en 'ok': con 'ok'+vacío la pantalla afirmaría
-  // "nadie esperando" sobre datos que todavía no llegaron (el bug de la casa).
-  const [status, setStatus] = useState<InboxStatus>('cargando');
-  const seqRef = useRef(0);
+/** Lo que la bandeja sabe de una tienda, en un solo objeto. */
+interface Snapshot {
+  items: InboxItem[];
+  sinRespuesta: InboxItem[];
+  status: InboxStatus;
+}
 
-  const load = useCallback(async () => {
-    if (!storeId) { setItems([]); setSinRespuesta([]); setStatus('cargando'); return; }
-    const seq = ++seqRef.current;
+// Arranca en 'cargando', NO en 'ok': con 'ok'+vacío la pantalla afirmaría
+// "nadie esperando" sobre datos que todavía no llegaron (el bug de la casa).
+const VACIO: Snapshot = { items: [], sinRespuesta: [], status: 'cargando' };
 
-    // ⛔ DOS CONSULTAS, UN SOLO HOOK Y UN SOLO CANAL DE REALTIME.
+/**
+ * ⛔ UNA SOLA CONSULTA Y UN SOLO CANAL PARA TODA LA APP (3-sep-2026).
+ *
+ * Este hook lo montan CUATRO lugares, y varios a la vez: la barra del turno
+ * (que vive en todas las rutas), el banner de fin de cola de Confirmar, la
+ * bandeja y el panel de Productividad. En `/confirmar` eran DOS instancias
+ * simultáneas; cada una abría su propio canal de realtime sobre `orders` y, con
+ * cada UPDATE del sync, refrescaba dos consultas de hasta 500 filas.
+ *
+ * Eso es exactamente el patrón que ya dejó el CRM lento una vez —112 peticiones
+ * por minuto con la pantalla quieta, por acumular bucles de realtime— y esta
+ * vez lo habría empeorado en la pantalla donde el equipo pasa el día.
+ *
+ * Con el estado en el módulo, montar el hook diez veces cuesta lo mismo que
+ * montarlo una. La cuenta de suscriptores decide cuándo abrir y cerrar el canal.
+ */
+const SNAPSHOT = new Map<string, Snapshot>();
+const SUSCRIPTORES = new Map<string, Set<(s: Snapshot) => void>>();
+const CANALES = new Map<string, { ch: ReturnType<typeof supabase.channel>; n: number }>();
+/** Corrida en curso por tienda: descarta respuestas viejas que llegan tarde. */
+const SECUENCIA = new Map<string, number>();
+
+function publicar(storeId: string, s: Snapshot): void {
+  SNAPSHOT.set(storeId, s);
+  const subs = SUSCRIPTORES.get(storeId);
+  if (subs) for (const f of subs) f(s);
+}
+
+async function cargarTienda(storeId: string | null): Promise<void> {
+    if (!storeId) return;
+    const seq = (SECUENCIA.get(storeId) ?? 0) + 1;
+    SECUENCIA.set(storeId, seq);
+
+    // ⛔ DOS CONSULTAS, Y UN SOLO CANAL DE REALTIME PARA TODA LA APP.
     //
     // Un `.or()` no sirve acá: las dos canastas se ordenan por columnas
     // distintas —quién espera hace más, por `chat_entrante_at`; a quién le
@@ -157,16 +189,17 @@ export function useInboxEsperando(storeId: string | null) {
         .order('chat_saliente_at', { ascending: false })
         .limit(TOPE),
     ]);
-    if (seq !== seqRef.current) return;
+    if (seq !== SECUENCIA.get(storeId)) return;
     const { data, error } = conEntrante;
     if (error) {
       const code = (error as { code?: string }).code;
       const msg = (error as { message?: string }).message || '';
       // 42703 = la migración de columnas de chat no corrió: la función no está
       // prendida todavía, no es un error que avisar.
-      setStatus(code === '42703' || /does not exist|column/i.test(msg) ? 'not_ready' : 'error');
-      setItems([]);
-      setSinRespuesta([]);
+      publicar(storeId, {
+        items: [], sinRespuesta: [],
+        status: code === '42703' || /does not exist|column/i.test(msg) ? 'not_ready' : 'error',
+      });
       return;
     }
 
@@ -241,33 +274,68 @@ export function useInboxEsperando(storeId: string | null) {
     // Y en la deuda, aquel a quien le escribimos hace más y sigue sin contestar.
     deudaOut.sort((a, b) => (a.salienteAt ?? 0) - (b.salienteAt ?? 0));
 
-    setItems(esperandoOut);
-    setSinRespuesta(deudaOut);
     // Ni una sola fila con dato de chat en toda la tienda = nadie lo está
     // midiendo. No se puede afirmar «todos atendidos» sobre eso.
-    setStatus(filas.length === 0 && filasSinEntrante.length === 0 ? 'sin_medir' : 'ok');
-  }, [storeId]);
+    publicar(storeId, {
+      items: esperandoOut,
+      sinRespuesta: deudaOut,
+      status: filas.length === 0 && filasSinEntrante.length === 0 ? 'sin_medir' : 'ok',
+    });
+}
 
-  useEffect(() => { void load(); }, [load]);
+/** Abre el canal de la tienda si es el primero que lo pide. */
+function suscribir(storeId: string, avisar: (s: Snapshot) => void): () => void {
+  let subs = SUSCRIPTORES.get(storeId);
+  if (!subs) { subs = new Set(); SUSCRIPTORES.set(storeId, subs); }
+  subs.add(avisar);
 
-  // Inbound EN VIVO: cuando un cliente escribe (o una asesora responde), la
-  // bandeja se re-arma sola. Canal con id POR INSTANCIA (guardián canalRealtimeUnico).
-  const loadRef = useRef(load);
-  useEffect(() => { loadRef.current = load; }, [load]);
-  const instanciaId = useId();
-  useEffect(() => {
-    if (!storeId) return;
+  const canal = CANALES.get(storeId);
+  if (canal) {
+    canal.n += 1;
+  } else {
+    // Inbound EN VIVO: cuando un cliente escribe (o una asesora responde), la
+    // bandeja se re-arma sola. UN canal por tienda, no uno por componente.
     let t: ReturnType<typeof setTimeout> | null = null;
     const ch = supabase
-      .channel(`inbox-espera-${instanciaId}-${storeId}`)
+      .channel(`inbox-espera-${storeId}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `store_id=eq.${storeId}` },
-        () => { if (t) clearTimeout(t); t = setTimeout(() => { void loadRef.current(); }, 1500); })
+        () => { if (t) clearTimeout(t); t = setTimeout(() => { void cargarTienda(storeId); }, 1500); })
       .subscribe();
-    return () => { if (t) clearTimeout(t); void supabase.removeChannel(ch); };
-  }, [storeId, instanciaId]);
+    CANALES.set(storeId, { ch, n: 1 });
+  }
+
+  // La primera carga la dispara el primero que llega; los demás reciben lo que
+  // ya hay y esperan el aviso. Así abrir una segunda pantalla no cuesta nada.
+  if (!SNAPSHOT.has(storeId)) void cargarTienda(storeId);
+
+  return () => {
+    subs!.delete(avisar);
+    const c = CANALES.get(storeId);
+    if (!c) return;
+    c.n -= 1;
+    // El último que se va apaga la luz. Se conserva el snapshot: volver a la
+    // pantalla muestra lo último que se supo en vez de un "cargando" en blanco.
+    if (c.n <= 0) { CANALES.delete(storeId); void supabase.removeChannel(c.ch); }
+  };
+}
+
+export function useInboxEsperando(storeId: string | null) {
+  const [snap, setSnap] = useState<Snapshot>(
+    () => (storeId ? SNAPSHOT.get(storeId) : null) ?? VACIO,
+  );
+
+  useEffect(() => {
+    if (!storeId) { setSnap(VACIO); return; }
+    // Lo que ya se sabía de esta tienda, en el acto: cambiar de pantalla no
+    // vuelve a poner la cola en blanco.
+    setSnap(SNAPSHOT.get(storeId) ?? VACIO);
+    return suscribir(storeId, setSnap);
+  }, [storeId]);
+
+  const recargar = useCallback(async () => { await cargarTienda(storeId); }, [storeId]);
 
   return useMemo(
-    () => ({ items, sinRespuesta, status, recargar: load }),
-    [items, sinRespuesta, status, load],
+    () => ({ items: snap.items, sinRespuesta: snap.sinRespuesta, status: snap.status, recargar }),
+    [snap, recargar],
   );
 }
