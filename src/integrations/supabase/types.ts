@@ -616,27 +616,54 @@ export type Database = {
       }
       importchat_envios: {
         Row: {
+          canal: string
+          chat_id: string | null
+          confirmado_at: string | null
           created_at: string
           dia: string
+          estado: string
           external_id: string
           id: string
+          intento_at: string
+          mensaje_id: string | null
+          operador_id: string | null
           plantilla: string
+          respuesta: Json | null
+          senal: string | null
           store_id: string
         }
         Insert: {
+          canal?: string
+          chat_id?: string | null
+          confirmado_at?: string | null
           created_at?: string
           dia: string
+          estado?: string
           external_id: string
           id?: string
+          intento_at?: string
+          mensaje_id?: string | null
+          operador_id?: string | null
           plantilla: string
+          respuesta?: Json | null
+          senal?: string | null
           store_id: string
         }
         Update: {
+          canal?: string
+          chat_id?: string | null
+          confirmado_at?: string | null
           created_at?: string
           dia?: string
+          estado?: string
           external_id?: string
           id?: string
+          intento_at?: string
+          mensaje_id?: string | null
+          operador_id?: string | null
           plantilla?: string
+          respuesta?: Json | null
+          senal?: string | null
           store_id?: string
         }
         Relationships: []
