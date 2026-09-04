@@ -131,13 +131,70 @@ describe('las funciones de Chatea Pro nacen con las reglas puestas', () => {
     ).toBe(true);
   });
 
-  it('la plantilla no se manda con huecos vacíos y suelta el candado si falla', () => {
+  it('la plantilla no se manda con huecos vacíos', () => {
     expect(/faltantes\(/.test(cpPlant)).toBe(true);
-    expect(
-      /importchat_envios"\)\s*\.delete\(\)/.test(cpPlant) || /\.delete\(\)/.test(cpPlant),
-      'si el envío falla y el candado queda puesto, el reintento choca con "ya se mandó hoy" sobre un mensaje que nunca salió',
-    ).toBe(true);
     expect(/ya_enviado: true/.test(cpPlant)).toBe(true);
+  });
+
+  /**
+   * ⛔ ESTA PRUEBA REEMPLAZA A UNA MÁS DÉBIL (4-sep-2026).
+   *
+   * Antes exigía que el candado se BORRARA cuando el envío fallaba. El
+   * problema que resolvía era real —si el candado quedaba puesto, el reintento
+   * de la asesora chocaba con "ya se mandó hoy" sobre un mensaje que nunca
+   * salió— pero la solución destruía la prueba del intento. En Ecuador, de 9
+   * plantillas que no le llegaron a nadie, NO QUEDÓ NI UN RASTRO salvo un
+   * touchpoint que mentía; sin esas filas no hay con qué reclamarle al canal.
+   *
+   * El invariante nuevo consigue las dos cosas y es más fuerte: la fila no se
+   * borra JAMÁS, cambia de `estado`, y SOLO `confirmado` bloquea un reenvío.
+   * Una fila no confirmada documenta, no traba.
+   */
+  it('⛔ el candado NO se borra nunca: cambia de estado y solo `confirmado` traba', () => {
+    expect(
+      /importchat_envios"\)\s*\.delete\(\)/.test(cpPlant),
+      'borrar el claim destruye la única prueba de que el envío ocurrió',
+    ).toBe(false);
+    expect(
+      /estado: "confirmado"/.test(cpPlant),
+      'sin un estado `confirmado` no hay forma de distinguir "salió" de "lo intenté"',
+    ).toBe(true);
+    expect(
+      /fila\?\.estado === "confirmado"/.test(cpPlant),
+      'lo único que puede bloquear un reenvío es haberlo VISTO en el chat',
+    ).toBe(true);
+  });
+
+  it('⛔ Colombia tampoco canta un envío sin verlo en el chat', () => {
+    expect(
+      /enviarPlantillaVerificadaCp\(/.test(cpPlant),
+      'el `success` del canal confirma que RECIBIERON el pedido, no que ENTREGARON el mensaje',
+    ).toBe(true);
+    // Ni gestión ni marca del pedido si no se confirmó: eso era lo que dejaba
+    // la tarjeta pintada mientras el cliente no tenía nada.
+    const iFalla = cpPlant.indexOf('verificado.estado !== "confirmado"');
+    const iTouch = cpPlant.indexOf('from("touchpoints")');
+    const iMarca = cpPlant.indexOf('chat_saliente_at');
+    expect(iFalla).toBeGreaterThan(-1);
+    expect(iTouch).toBeGreaterThan(iFalla);
+    expect(iMarca).toBeGreaterThan(iFalla);
+  });
+
+  it('⛔ falla CERRADO si falta la migración, en vez de degradar en silencio', () => {
+    expect(
+      /20260904220000/.test(cpPlant),
+      'seguir "sin idempotencia" con un console.warn es la familia exacta de la que salió este bug',
+    ).toBe(true);
+    expect(/console\.warn\("\[chateapro-plantillas\] sin tabla importchat_envios/.test(cpPlant)).toBe(false);
+  });
+
+  it('el contacto nuevo se manda pero NO se da por confirmado', () => {
+    const verif = leer('supabase/functions/_shared/chateaproPlantillaVerificada.ts');
+    // Sin conversación previa no hay baseline, y con baseline vacío un mensaje
+    // de ayer se confirmaría como propio. Se dice que no se pudo comprobar.
+    expect(/if \(!opts\.userNs\)/.test(verif)).toBe(true);
+    const i = verif.indexOf('if (!opts.userNs)');
+    expect(verif.slice(i, i + 900)).toContain('estado: "no_confirmado"');
   });
 
   it('se reusa el parser de plantillas, no se escribe un segundo', () => {

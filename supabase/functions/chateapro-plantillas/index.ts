@@ -19,6 +19,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { respuestaPing } from "../_shared/versionEdge.ts";
+import { enviarPlantillaVerificadaCp } from "../_shared/chateaproPlantillaVerificada.ts";
 import { fechaHoraLocal } from "../_shared/horaLocal.ts";
 import { parsearPlantillas, faltantes, type PlantillaMeta } from "../_shared/plantillasMeta.ts";
 import {
@@ -31,7 +32,7 @@ import {
   ChateaproError,
 } from "../_shared/chateaproApi.ts";
 
-const VERSION = "chateapro-plantillas 2026-09-03.1 mensajes-que-mandan-a-donde-es";
+const VERSION = "chateapro-plantillas 2026-09-04.1 no-se-canta-sin-verla";
 
 /** Lo que `/whatsapp-template/list` devuelve de verdad (medido 2-sep-2026). */
 interface PlantillaCruda {
@@ -165,20 +166,78 @@ Deno.serve(async (req) => {
     // familia de funciones, el candado de "un envio por dia" y la bitacora
     // podrian caer en dias distintos.
     const { fecha } = fechaHoraLocal(cc);
-    const { error: claimErr } = await sb.from("importchat_envios").insert({
-      store_id: storeId, external_id: externalId, plantilla: nombre, dia: fecha,
-    });
-    if (claimErr) {
-      if (/duplicate key|unique/i.test(claimErr.message)) {
-        // `ok: true` + `ya_enviado` — la operación terminó bien pero NO salió
-        // ningún mensaje nuevo. La pantalla usa esta bandera para no cantar un
-        // envío que no ocurrió.
-        return json({ ok: true, ya_enviado: true, plantilla: nombre });
-      }
-      if (/relation .* does not exist/i.test(claimErr.message)) {
-        console.warn("[chateapro-plantillas] sin tabla importchat_envios — envío SIN idempotencia");
+    const ahoraIso = new Date().toISOString();
+    /** Un `enviando` mas viejo que esto tiene dueno muerto: la plataforma mata
+     *  una edge function a los ~150 s. No hay que adivinar. */
+    const RECLAMO_MS = 180_000;
+    let filaId: string | null = null;
+
+    {
+      const ins = await sb.from("importchat_envios").insert({
+        store_id: storeId, external_id: externalId, plantilla: nombre, dia: fecha,
+        estado: "enviando", intento_at: ahoraIso, operador_id: u.user.id,
+        canal: "chateapro", chat_id: sus?.user_ns ?? null,
+      }).select("id").maybeSingle();
+
+      if (!ins.error) {
+        filaId = (ins.data as { id?: string } | null)?.id ?? null;
       } else {
-        throw new Error(claimErr.message);
+        const code = (ins.error as { code?: string }).code;
+        const falta = code === "42703" || /column .* does not exist/i.test(ins.error.message || "");
+        if (falta) {
+          // ⛔ FALLA CERRADO, igual que Ecuador. El `console.warn` + "envio SIN
+          // idempotencia" que habia aca era una degradacion SILENCIOSA: la
+          // familia exacta de la que salio este bug.
+          return json({ ok: false, error: "Falta aplicar la migración 20260904220000 (importchat_envios sin las columnas de confirmación). No se mandó nada." }, 503);
+        }
+        if (code !== "23505" && !/duplicate key|unique/i.test(ins.error.message || "")) {
+          throw new Error(ins.error.message);
+        }
+        const { data: previa, error: leerErr } = await sb.from("importchat_envios")
+          .select("id, estado, intento_at, confirmado_at")
+          .eq("store_id", storeId).eq("external_id", externalId)
+          .eq("plantilla", nombre).eq("dia", fecha)
+          .maybeSingle();
+        if (leerErr) throw new Error(leerErr.message);
+
+        const fila = previa as { id: string; estado: string; intento_at: string; confirmado_at: string | null } | null;
+        if (fila?.estado === "confirmado") {
+          // Ahora si es verdad: se vio en el chat.
+          return json({
+            ok: true, ya_enviado: true, confirmado: true,
+            enviado_at: fila.confirmado_at, plantilla: nombre,
+          });
+        }
+        const enCurso = fila?.estado === "enviando"
+          && Date.now() - Date.parse(fila.intento_at) < RECLAMO_MS;
+        if (enCurso) {
+          return json({
+            ok: false, en_curso: true,
+            error: "Se está mandando ahora mismo. Esperá unos segundos y mirá el chat.",
+          }, 409);
+        }
+        // Colgada, fallida o no confirmada: se toma posesion ATOMICAMENTE. El
+        // predicado se re-evalua contra la version nueva, asi que si dos toman
+        // a la vez, una sola se lleva la fila.
+        const limite = new Date(Date.now() - RECLAMO_MS).toISOString();
+        const { data: tomada, error: tomaErr } = await sb.from("importchat_envios")
+          .update({
+            estado: "enviando", intento_at: ahoraIso, operador_id: u.user.id,
+            confirmado_at: null, mensaje_id: null, senal: null, respuesta: null,
+            chat_id: sus?.user_ns ?? null,
+          })
+          .eq("id", fila?.id ?? "")
+          .neq("estado", "confirmado")
+          .or(`estado.neq.enviando,intento_at.lt.${limite}`)
+          .select("id");
+        if (tomaErr) throw new Error(tomaErr.message);
+        if (!tomada?.length) {
+          return json({
+            ok: false, en_curso: true,
+            error: "Otra pestaña o una compañera la está mandando en este momento.",
+          }, 409);
+        }
+        filaId = fila?.id ?? null;
       }
     }
 
@@ -190,25 +249,69 @@ Deno.serve(async (req) => {
       lang: cruda?.default_values?.lang ?? elegida.idioma ?? "es",
       params: paramsChateapro(elegida, cruda, valores),
     };
-    try {
-      if (sus) {
-        // Contacto existente: va por `user_ns` para que quede en el hilo de siempre.
-        await enviarPlantilla(cfg, sus.user_ns, contenido);
-      } else {
-        await enviarPlantillaPorTelefono(
-          cfg,
-          idWhatsapp(String(pedido.phone), cc),
-          contenido,
-          String(pedido.nombre || "").trim() || undefined,
-        );
-      }
-    } catch (e) {
-      // Si el envío falla hay que SOLTAR el candado: si no, el reintento de la
-      // asesora choca con "ya se mandó hoy" sobre un mensaje que nunca salió.
-      await sb.from("importchat_envios").delete()
-        .eq("store_id", storeId).eq("external_id", externalId).eq("plantilla", nombre).eq("dia", fecha);
-      throw e;
+    // ⛔ ACA VIVIA EL `delete()` DEL CANDADO. Se fue a proposito (4-sep-2026):
+    // borrarlo destruia la unica prueba de que el envio ocurrio. En Ecuador, de
+    // 9 plantillas que nunca llegaron al cliente no quedo NI UN rastro salvo un
+    // touchpoint que mentia. Ahora la fila no se borra jamas: cambia de
+    // `estado`, y solo `confirmado` bloquea un reenvio. Una fila no confirmada
+    // documenta, no traba — asi que el reintento de la asesora sigue pasando,
+    // que era lo que el delete venia a resolver.
+    const verificado = await enviarPlantillaVerificadaCp({
+      cfg,
+      userNs: sus?.user_ns ?? null,
+      cuerpoPlantilla: elegida.cuerpo,
+      nombrePlantilla: nombre,
+      enviar: async () => {
+        try {
+          if (sus) {
+            // Contacto existente: va por `user_ns` para que quede en el hilo de siempre.
+            const r = await enviarPlantilla(cfg, sus.user_ns, contenido);
+            return { ok: true, datos: (r ?? null) as Record<string, unknown> | null, detalle: "" };
+          }
+          const r = await enviarPlantillaPorTelefono(
+            cfg,
+            idWhatsapp(String(pedido.phone), cc),
+            contenido,
+            String(pedido.nombre || "").trim() || undefined,
+          );
+          return { ok: true, datos: (r ?? null) as Record<string, unknown> | null, detalle: "" };
+        } catch (e) {
+          return { ok: false, datos: null, detalle: e instanceof Error ? e.message : String(e) };
+        }
+      },
+    });
+
+    /** Deja escrito que paso. La fila no se borra nunca: es la prueba. */
+    const cerrarFila = async (campos: Record<string, unknown>) => {
+      if (!filaId) return;
+      const { error } = await sb.from("importchat_envios").update(campos).eq("id", filaId);
+      // Si esto falla la fila queda `enviando` y se auto-cura a los 3 minutos,
+      // en vez de bloquear el reenvio todo el dia.
+      if (error) console.warn(`[chateapro-plantillas] no pude cerrar la fila ${filaId}: ${error.message}`);
+    };
+
+    if (verificado.estado !== "confirmado") {
+      await cerrarFila({
+        estado: verificado.estado === "sin_lectura" ? "fallido" : verificado.estado,
+        respuesta: "respuesta" in verificado ? verificado.respuesta : null,
+      });
+      // ⛔ NI touchpoint NI `chat_saliente_at`: no se anota una gestion que no
+      // ocurrio. Eso es lo que dejaba la tarjeta pintada y la productividad
+      // contando el trabajo mientras el cliente no tenia nada.
+      return json({
+        ok: false,
+        confirmado: false,
+        sin_confirmar: verificado.estado === "no_confirmado",
+        sin_lectura: verificado.estado === "sin_lectura",
+        contacto_nuevo: !sus,
+        error: verificado.motivo,
+      }, 502);
     }
+
+    await cerrarFila({
+      estado: "confirmado", confirmado_at: new Date().toISOString(),
+      mensaje_id: verificado.mensajeId, senal: verificado.senal, respuesta: verificado.respuesta,
+    });
 
     // ⛔ `supabase-js` NO lanza cuando la base rechaza: sin mirar `error`, un
     // update fallido devuelve `ok: true` y nadie se entera nunca. Es el mismo
@@ -235,7 +338,11 @@ Deno.serve(async (req) => {
     if (tpErr) console.error(`[chateapro-plantillas] no se pudo registrar la gestion: ${tpErr.message}`);
 
     return json({
-      ok: true, enviado_a: pedido.phone, plantilla: nombre,
+      ok: true,
+      confirmado: true,
+      enviado_a: pedido.phone, plantilla: nombre,
+      senal: verificado.senal,
+      mensaje_id: verificado.mensajeId,
       // Para que la pantalla pueda decir "se le creó el contacto" en vez de
       // dejar al operador con la duda de si salió por el hilo de siempre.
       contacto_nuevo: !sus,

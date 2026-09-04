@@ -49,9 +49,14 @@ export interface MensajeCrudo {
   rol_mensaje?: number;
   texto_mensaje?: unknown;
   tipo_mensaje?: unknown;
+  /** El NOMBRE de la plantilla que el canal dice haber mandado en ese mensaje.
+   *  Chatea Pro (Colombia) lo devuelve en el hilo; ImporChat no. Es la senal
+   *  mas fuerte que existe —no depende del texto ni de como Meta lo reescriba—
+   *  asi que cuando esta, manda. Opcional a proposito: Ecuador sigue igual. */
+  plantilla_mensaje?: unknown;
 }
 
-export type SenalPlantilla = "ancla" | "nombre" | "tipo" | "tardia";
+export type SenalPlantilla = "plantilla" | "ancla" | "nombre" | "tipo" | "tardia";
 
 export interface Aparicion {
   visto: boolean;
@@ -134,6 +139,12 @@ export function plantillaAparecio(
     const texto = normalizarParaBuscar(String(m.texto_mensaje ?? ""));
     const tipo = String(m.tipo_mensaje ?? "").toLowerCase();
 
+    // El canal nos dice literalmente que plantilla mando. Es exacto: ni ancla
+    // ni subcadena. Si esta, no hay nada que adivinar.
+    const plantillaDelMensaje = m.plantilla_mensaje == null ? "" : String(m.plantilla_mensaje).trim();
+    if (plantillaDelMensaje && plantillaDelMensaje === String(opts.nombre).trim()) {
+      return { visto: true, mensajeId: id, senal: "plantilla", motivo: "ok" };
+    }
     if (opts.ancla && texto.includes(opts.ancla)) {
       return { visto: true, mensajeId: id, senal: "ancla", motivo: "ok" };
     }
