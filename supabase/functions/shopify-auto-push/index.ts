@@ -6,7 +6,7 @@
 //   1. Trae los pedidos recientes de Shopify (sin cancelados/prueba, con teléfono).
 //   2. Los cruza por teléfono contra `orders` (lo que YA está en Dropi).
 //   3. Selecciona los pendientes LIMPIOS (ver _shared/autoPushSelect.ts):
-//      con teléfono, pasada la gracia de 30 min (deja que Dropify los suba solo
+//      con teléfono, pasada la gracia de 3 h (deja que Dropify los suba solo
 //      primero + cierra la carrera con el sync), no más viejos de 3 días, no ya
 //      en Dropi, no ya intentados.
 //   4. Sube cada uno llamando a shopify-push-dropi (mode:"confirm"), que aplica
@@ -32,8 +32,18 @@ import { respuestaPing } from "../_shared/versionEdge.ts";
 const SHOPIFY_API_VERSION = "2024-10";
 /** Se despliega A MANO. `POST .../shopify-auto-push?ping=1` contesta esta marca:
  *  sin ella no hay forma de saber si el robot que corre cada 15 min es el nuevo. */
-const VERSION = "shopify-auto-push 2026-09-03.1 ping-para-poder-comprobarlo";
-const MIN_AGE_MS = 30 * 60 * 1000;     // gracia: dejar que Dropify lo suba solo primero
+const VERSION = "shopify-auto-push 2026-09-04.1 tres-horas-de-gracia-para-dropify";
+/** Gracia: dejar que Dropify (la app de Shopify de Dropi) lo suba solo primero.
+ *
+ *  Era 30 min. Medido el 4-sep-2026 en Ecuador (25-ago → 4-sep): Dropify tarda
+ *  a veces MÁS que eso, y cuando el robot pasa antes nacen DOS órdenes de la
+ *  misma venta — 33 pares en 11 días (~3 por día), 18 resueltos cancelando la
+ *  nuestra, 13 cancelando las dos, y el equipo lo vive como "se duplican". El
+ *  candado anti-duplicado no puede frenar a un tercero que crea DESPUÉS de
+ *  nosotros; lo único que evita la carrera es no correrla: 3 h le dan a Dropify
+ *  todo el margen que necesita, y lo que Dropify NO crea (sin stock, ciudad
+ *  rara, caída) lo sigue subiendo el robot dentro del mismo turno. */
+const MIN_AGE_MS = 3 * 60 * 60 * 1000;
 const MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000; // techo: no perseguir pedidos viejos
 const ERROR_COOLDOWN_MS = 2 * 60 * 60 * 1000; // reintento de 'error' no antes de 2 h
 const PER_STORE_CAP = 20;              // tope por corrida por tienda
