@@ -137,8 +137,9 @@ Deno.serve(async (req: Request) => {
       // consulta que falló es una acusación inventada.
       const caida = [miembrosRes, resultadosRes, toquesRes, pausasRes, avisadasRes].find((r) => r.error);
       if (caida) {
-        console.error(`[alertas-inactividad] lectura falló (${store.name}):`, caida.error.message);
-        salida.push({ store: store.name, error: caida.error.message });
+        const msg = caida.error?.message || "error desconocido";
+        console.error(`[alertas-inactividad] lectura falló (${store.name}):`, msg);
+        salida.push({ store: store.name, error: msg });
         continue;
       }
 
