@@ -463,6 +463,10 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
     const { data, error } = await supabase.functions.invoke('dropi-update-order-full', {
       body: {
         externalId: order.externalId,
+        // El número de pedido ya no identifica una empresa (20260820140000):
+        // sin la tienda, dos pedidos homónimos hacen que la edge no encuentre
+        // "el" pedido y rechace la edición. Los otros dos modos ya la mandan.
+        storeId: activeStoreId,
         // Settle server-authoritative: la edge marca synced/failed esta fila
         // aunque el cliente muera antes de settlear (null → la edge lo ignora).
         auditId,
@@ -516,10 +520,16 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
     // enterarse: si sigue y asigna transportadora, Dropi la va a rechazar
     // cotizando la ciudad vieja, y el mensaje de ese rechazo no explica por qué.
     if (d?.destStale && d?.warning) {
-      await settleAudit(auditId, 'synced', `Edición OK, pero Dropi conservó el destino viejo: ${d.warning}`);
-      toast.warning(d.warning, { duration: 15000 });
-      setInitial({ ...form });
-      return true;
+      // Desde el 4-sep-2026 la edge NO escribe la ciudad nueva en la ficha
+      // cuando Dropi la conservó vieja (la guía sale con la de Dropi y el sync
+      // la revertía igual). Acá tampoco se da por guardada: la ciudad queda
+      // "sucia" para que el próximo guardar la vuelva a mandar, y NO se sigue
+      // con transportadora/valor — el editor recrearía el pedido con la
+      // ciudad vieja (apply_edit relee el destino de Dropi).
+      await settleAudit(auditId, 'synced', `Nombre/dirección OK, pero Dropi conservó el destino viejo: ${d.warning}`);
+      toast.error(d.warning, { duration: 20000 });
+      setInitial({ ...form, ciudad: initial.ciudad, departamento: initial.departamento });
+      return false;
     }
     await settleAudit(auditId, 'synced', d?.noChange ? 'Sin cambios que empujar a Dropi' : undefined);
     // Baseline reset: si un paso posterior falla, el retry no re-manda los datos.

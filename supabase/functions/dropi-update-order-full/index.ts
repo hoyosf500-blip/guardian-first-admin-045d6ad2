@@ -101,6 +101,41 @@ async function dropiPutCustomer(
   return { ok, httpStatus: res.status, body, rawText };
 }
 
+/**
+ * Lo que Dropi tiene HOY como destino del pedido, comparado con lo que la
+ * asesora mandó. `leido:false` = no se pudo leer (sesión vencida, timeout):
+ * ahí NO se afirma nada — no saber no es lo mismo que saber que está mal.
+ */
+interface DestinoEnDropi {
+  leido: boolean;
+  stale: boolean;
+  /** "ciudad" | "provincia" — qué campo quedó viejo. */
+  que: "ciudad" | "provincia" | "";
+  /** El valor viejo que Dropi conservó. */
+  valor: string;
+}
+async function leerDestinoEnDropi(
+  cfg: Parameters<typeof dropiGetOrderV2Detail>[0],
+  externalId: string,
+  ciudad: string,
+  departamento: string,
+): Promise<DestinoEnDropi> {
+  try {
+    const v2 = await dropiGetOrderV2Detail(cfg, externalId);
+    if (!v2.ok) return { leido: false, stale: false, que: "", valor: "" };
+    const data = (v2.body.data ?? v2.body.objects ?? v2.body) as Record<string, unknown>;
+    const client = (data?.client ?? {}) as Record<string, unknown>;
+    const v2city = String(client?.city ?? data?.city ?? "").trim();
+    const v2state = String(client?.state ?? data?.state ?? "").trim();
+    if (v2city && !mismoDestino(v2city, ciudad)) return { leido: true, stale: true, que: "ciudad", valor: v2city };
+    if (v2state && !mismoDestino(v2state, departamento)) return { leido: true, stale: true, que: "provincia", valor: v2state };
+    return { leido: true, stale: false, que: "", valor: "" };
+  } catch (e) {
+    console.error("[dropi-update-order-full] no se pudo leer el destino en Dropi:", e);
+    return { leido: false, stale: false, que: "", valor: "" };
+  }
+}
+
 // Señal de STUB del canal WEB (distinta de notFoundSignal, que es de la
 // integración — importada, NO duplicada): el PUT web a un stub forwardeado
 // responde "Error SQL desconocido" o un no-encontrado (probado en vivo
@@ -111,7 +146,7 @@ const STUB_SIGNAL_RE = /error sql desconocido|no (se )?encontr/i;
  *  Esta funcion es parte de la cadena que puede DUPLICAR un pedido en Dropi,
  *  y hasta hoy no habia forma de saber que version corria: el arreglo
  *  "exactamente UNO vivo" de julio-2026 se desplego sin poder comprobarlo. */
-const VERSION = "dropi-update-order-full 2026-09-03.1 el-put-que-conserva-el-id";
+const VERSION = "dropi-update-order-full 2026-09-04.1 la-ciudad-no-se-escribe-si-dropi-no-la-acepto";
 
 Deno.serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);
@@ -563,6 +598,45 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ¿DROPI SE QUEDÓ CON LA CIUDAD VIEJA? — y va ANTES del UPDATE local.
+    //
+    // El PUT de integración devuelve 200 y conserva la ciudad (lo hace en
+    // silencio; verificado 1-ago-2026 con SANTO DOMINGO/BOMBOLÍ). Hasta el
+    // 4-sep-2026 acá se escribía la ciudad nueva en la ficha local IGUAL y se
+    // devolvía un aviso: la operadora veía la ciudad nueva, la guía salía con
+    // la vieja, y el cron la revertía en ≤20 min ("en el CRM aunque le cambie
+    // no se logra actualizar, y lo hago mediante Dropi" — Estefano, EC). Y el
+    // segundo intento ni tocaba Dropi: `nothingChanged` comparaba contra la
+    // fila local, que ya tenía la ciudad nueva.
+    //
+    // Ahora: (1) se lee lo que Dropi tiene; (2) si la ciudad no entró, se
+    // manda el MISMO cambio por el canal WEB del panel — el que usa la asesora
+    // a mano — y se vuelve a leer; (3) si aun así no entró, la ficha local
+    // conserva la ciudad vieja (la verdad de la guía) y la respuesta lo dice.
+    // Sesión fresca ANTES de leer: el v2 con token vencido daba "no leído" y
+    // el aviso se perdía en silencio.
+    let destino: DestinoEnDropi = { leido: false, stale: false, que: "", valor: "" };
+    let ciudadViaWeb: number | null = null;
+    if (!fallbackVia) {
+      try { await ensureSessionUsable(sbAdmin, cfg); } catch (e) {
+        console.warn("[dropi-update-order-full] sin sesión web para verificar el destino:", e instanceof Error ? e.message : e);
+      }
+      destino = await leerDestinoEnDropi(cfg, externalId, ciudad, departamento);
+      if (destino.stale) {
+        try {
+          const put = await dropiWebFetch(
+            cfg,
+            `/api/orders/myorders/${encodeURIComponent(externalId)}`,
+            { method: "PUT", body: webPayload },
+          );
+          ciudadViaWeb = put.status;
+          destino = await leerDestinoEnDropi(cfg, externalId, ciudad, departamento);
+        } catch (e) {
+          console.warn("[dropi-update-order-full] el PUT web de la ciudad lanzó:", e instanceof Error ? e.message : e);
+        }
+      }
+    }
+
     // Usar sbAdmin: la membresía ya se validó arriba (línea ~115) y Dropi YA
     // aceptó el cambio. Si RLS con sbUser bloquea, queda Dropi actualizado y
     // DB local desincronizado — bug peor que el riesgo de bypass.
@@ -577,7 +651,12 @@ Deno.serve(async (req: Request) => {
         // wa.me, match de touchpoints SEG, resolveLiveSibling — y la divergencia no
         // se auto-repara porque la RPC de sync protege los campos locales.
         ...(phone ? { phone } : {}),
-        ciudad, departamento, direccion,
+        // Si Dropi conservó el destino viejo, la ficha local NO dice el nuevo:
+        // la guía sale con lo que Dropi tiene, y el próximo sync la iba a
+        // revertir de todos modos (upsert: ciudad = EXCLUDED.ciudad). Así la
+        // pantalla dice la verdad y el reintento sí vuelve a tocar Dropi.
+        ...(destino.stale ? {} : { ciudad, departamento }),
+        direccion,
         email: email || null,
         last_edit_sync_at: new Date().toISOString(),
         last_edited_by: user.id,
@@ -626,41 +705,18 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // ¿DROPI SE QUEDÓ CON LA CIUDAD VIEJA? (verificación agregada 1-ago-2026)
-    //
-    // El PUT de integración devolvía 200 y acá se daba por hecho que había
-    // aplicado TODO. Pero Dropi puede aceptar el cambio de calle y NO mover la
-    // ciudad — y entonces el paso siguiente (transportadora) falla con
-    // "LAARCOURIER no cotiza envíos a BOMBOLÍ" mientras la pantalla muestra
-    // SANTO DOMINGO. La operadora no tenía forma de entender qué pasó.
-    //
-    // No se bloquea la edición: los datos locales quedan como la operadora los
-    // dejó y se DEVUELVE UN AVISO para que sepa que ese campo hay que tocarlo
-    // en el panel de Dropi. Si la lectura falla, se calla — no saber no es lo
-    // mismo que saber que está mal.
-    let destWarning: string | undefined;
-    try {
-      const v2 = await dropiGetOrderV2Detail(cfg, externalId);
-      if (v2.ok) {
-        const data = (v2.body.data ?? v2.body.objects ?? v2.body) as Record<string, unknown>;
-        const client = (data?.client ?? {}) as Record<string, unknown>;
-        const v2city = String(client?.city ?? data?.city ?? "").trim();
-        const v2state = String(client?.state ?? data?.state ?? "").trim();
-        if (v2city && !mismoDestino(v2city, ciudad)) {
-          destWarning = `Dropi NO aceptó el cambio de ciudad: sigue en "${v2city}". Cambiala en el panel de Dropi antes de asignar transportadora.`;
-        } else if (v2state && !mismoDestino(v2state, departamento)) {
-          destWarning = `Dropi NO aceptó el cambio de provincia: sigue en "${v2state}". Cambiala en el panel de Dropi antes de asignar transportadora.`;
-        }
-      }
-    } catch (e) {
-      console.error("[dropi-update-order-full] verificación de ciudad lanzó:", e);
-    }
+    const destWarning = destino.stale
+      ? `Dropi NO aceptó el cambio de ${destino.que}: sigue en "${destino.valor}"` +
+        (ciudadViaWeb ? ` (también se intentó por el canal web, HTTP ${ciudadViaWeb})` : "") +
+        `. Nombre, dirección y teléfono sí entraron. Cambiá la ${destino.que} en el panel de Dropi y refrescá el pedido.`
+      : undefined;
 
     return jsonOk({
       ok: true,
       externalId,
       dropiHttpStatus: dropi.httpStatus,
-      ...(destWarning ? { warning: destWarning, destStale: true } : {}),
+      ...(destWarning ? { warning: destWarning, destStale: true, ciudadViaWeb } : {}),
+      ...(!destino.leido ? { destinoSinVerificar: true } : {}),
     });
   } catch (err) {
     console.error("dropi-update-order-full error:", err);

@@ -101,7 +101,7 @@ Each store has a `stores.country_code`. **Son TRES países en el código, no dos
 All functions are Deno (TypeScript). They live in `supabase/functions/`:
 - `dropi-sync` — bulk-fetches orders from Dropi API, chunked in ≤89-day ranges, upserts to DB. Maps `o.shipping_amount` → **`orders.flete`** (lo que paga el dropshipper, NO lo cobrado al cliente; una versión anterior de esta línea decía `costo_logistico_dropi`, columna que NUNCA existió y mandó a una auditoría a cazarla). Uses Bearer API key.
 - `dropi-update-order` — updates a single order's Dropi status (bearer token from DB settings)
-- `dropi-update-order-full` — variant that also pushes back enriched address/notes payload to Dropi
+- `dropi-update-order-full` — variant that also pushes back enriched address/notes payload to Dropi. **La ciudad no se escribe en la ficha si Dropi no la aceptó (2026-09-04.1):** el `PUT /integrations` devuelve 200 y conserva la ciudad vieja (documentado desde el 1-ago); hasta el 4-sep la edge escribía la ciudad nueva en `orders` igual, el cron la revertía en ≤20 min (`ciudad = EXCLUDED.ciudad`) y el reintento ni tocaba Dropi (`nothingChanged` miraba la fila local). Eso era lo que el operador de EC describía como *"aunque le cambie no se logra actualizar, lo hago mediante Dropi"*. Ahora: sesión fresca → `leerDestinoEnDropi` **antes** del UPDATE local → si la ciudad no entró, el mismo cambio por el canal web (`PUT /api/orders/myorders/{id}`) y se vuelve a leer → si sigue vieja, la ficha conserva la ciudad vieja y responde `destStale:true` (+`ciudadViaWeb`); `destinoSinVerificar:true` cuando no se pudo leer. El editor manda `storeId` y con `destStale` corta el plan (no recrea el pedido con la ciudad vieja) y deja la ciudad "sucia" para el reintento. Guardián: `src/test/ciudadNoSeEscribeSiDropiNoLaAcepto.test.ts`.
 - `dropi-refresh-order` — refresca UN pedido en vivo desde la API Dropi (`GET /integrations/orders/{external_id}`) y lo upsertea en `orders` por `external_id`. Disparado por el botón "Refrescar desde Dropi" en `CrmCallView`/`OrderCard` de Seguimiento (hook `useRefreshOrder`) para dar parity inmediata sin esperar al cron de 5 min (que en EC puede ir throttleado). Auth = JWT del miembro (valida `isStoreMember`). El UPDATE viaja a todos los clientes vía el realtime existente sobre `orders`. Devuelve `{ok, estado, guia, transportadora, rateLimited?}`. Comparte el mapper `mapDropiOrderToRow` (`_shared/dropiOrderMapper.ts`) con `dropi-sync` y `dropi-nightly-reconcile`.
 - `dropi-change-carrier` — cambia la transportadora de un pedido pendiente desde Confirmar. `mode:"quote"` lee los productos del pedido (GET integrations por id) y cotiza en vivo vía `quoteCarriers` (`_shared/dropiWebQuote.ts`, session token web) → lista transportadoras + precio; `mode:"apply"` reasigna en Dropi vía `PUT /integrations/orders/myorders/{id}` con `{distribution_company_id}` (integration-key) + actualiza `orders.transportadora` + audita en `order_results` (`result:'cambio_transportadora'`). Solo sin guía generada. **OJO FASE 0:** el campo `distribution_company_id` del PUT es el candidato a confirmar — si Dropi lo rechaza, ver `dropiHttpStatus`/`dropiBody` y capturar el request real del panel. La cotización depende del `dropi_session_token` (legacy, vence ~1h).
 - `dropi-relay` — generic proxy/relay to Dropi endpoints from the client (avoids CORS + hides session token)
@@ -306,6 +306,19 @@ cancelación (es una edición, con su propio `result='cambio_transportadora'`), 
 - **Lo que NO se hizo y sería el siguiente paso**: cruzar los cancelados contra recompras del mismo
   teléfono ("recuperados"). En julio EC, 49 de 345 eran re-emisiones y **32 terminaron entregadas**
   — o sea, cancelado ≠ perdido. Necesita un LATERAL más en la RPC.
+
+**«¿Seguro que lo cancelás?» (4-sep-2026).** Pedido del dueño después de medir septiembre en EC
+(mediana pedido→cancelación 5 h, 24 de 36 sin ninguna gestión, mientras el equipo decía "5 días"):
+*"que le meta psicología a la operadora y no cancele por cancelar"*. `avisoAntesDeCancelar`
+(`src/lib/avisoAntesDeCancelar.ts`, puro) decide si `CallView.handleMark('canc')` frena con un
+`AlertDialog` que pone los datos delante: edad del pedido ("llegó hoy, hace 5 h"), cuántas veces se lo
+llamó (filas `conf|canc|noresp` de `useOrderAttempts`; las ediciones no cuentan; "no se pudo leer" no
+se convierte en "cero"), y que la cancelación queda a su nombre con ese motivo. Dos salidas: "Volver a
+intentarlo / Intentar rescatarlo" y "Cancelar igual". ⛔ NO bloquea nada — el dueño fue explícito: los
+"no contesta" son intentos de confirmación y no se traban — y no se repregunta por el mismo pedido en la
+sesión. No pregunta si el pedido ya lleva ≥3 días (fue trabajado) ni con motivos objetivos (Duplicado,
+Teléfono malo, No llega a su zona). El modal de motivos vive en z-2000, así que se cierra antes de abrir
+la pregunta.
 
 ### Protocolo del turno — las piezas y sus reglas duras
 

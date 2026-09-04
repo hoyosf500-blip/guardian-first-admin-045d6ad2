@@ -32,6 +32,7 @@ import { useOrderAttempts } from '@/hooks/useOrderAttempts';
 import { useRefreshOrderRow } from '@/hooks/useRefreshOrderRow';
 import { dupAlertsFor, overchargeFor, type ConfirmarOrderAlerts, type ActiveDupAlert } from '@/lib/orderAlerts';
 import { avisoAntesDeConfirmar } from '@/lib/confirmarSinDuplicar';
+import { avisoAntesDeCancelar } from '@/lib/avisoAntesDeCancelar';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -856,6 +857,17 @@ export default function CallView({ items, alerts, hayFiltroActivo = false, pendi
   >(null);
   const decididoDuplicado = useRef<Set<string>>(new Set());
 
+  // ¿Seguro que lo cancelás? — pedido del dueño (4-sep-2026): "que le salga
+  // tipo alerta 'este cliente llegó hoy y lo vas a cancelar', y queda en el
+  // registro, ¿estás seguro?". Septiembre EC: la mediana pedido→cancelación
+  // fue de 5 h y 24 de 36 no tenían ni una gestión. NO bloquea ("no contesta"
+  // son intentos, no se traban): pone los datos delante y pide una decisión.
+  // Ver `avisoAntesDeCancelar`. `paraId` por la misma razón que arriba.
+  const [preguntaCancelar, setPreguntaCancelar] = useState<
+    { titulo: string; lineas: string[]; alternativa: string; motivo: string; paraId: string } | null
+  >(null);
+  const decididoCancelar = useRef<Set<string>>(new Set());
+
   // La bitácora de lo que está a la vista: `abrio` / `cerro` / `salto`. Hasta
   // el 4-sep-2026 solo Novedades la tenía: la confirmadora que pasó 8 h
   // llamando aparecía en /actividad con la lista vacía. Las gestiones (`marco`
@@ -1004,6 +1016,34 @@ export default function CallView({ items, alerts, hayFiltroActivo = false, pendi
       );
       if (aviso.frena) {
         setPreguntaDuplicado({ titulo: aviso.titulo, detalle: aviso.detalle, gemelos: aviso.gemelos, paraId: String(o.dbId ?? o.externalId ?? '') });
+        return;
+      }
+    }
+    // Cancelar un pedido que llegó hoy, sin haberlo llamado, no se hace de
+    // un clic: se pregunta con los datos delante. Una vez respondido por ese
+    // pedido, no se repregunta. Los motivos objetivos (duplicado, teléfono
+    // malo, zona) pasan de largo — insistir no los cambia.
+    if (result === 'canc' && !markingRef.current) {
+      const id = String(o.dbId ?? o.externalId ?? '');
+      const aviso = avisoAntesDeCancelar({
+        createdAt: o.createdAt,
+        fecha: o.fecha,
+        motivo: reason ?? '',
+        intentos: attempts,
+        intentosNoLeidos: attemptsError,
+        yaDecidio: decididoCancelar.current.has(id),
+        ahora: new Date(),
+      });
+      if (aviso.frena) {
+        // El modal de motivos vive en z-2000; el diálogo iría debajo. Se
+        // cierra el modal y la pregunta queda sola en pantalla.
+        setShowCancelModal(false);
+        setCancelOtroMode(false);
+        setCancelOtroText('');
+        setReagendaMode(null);
+        setReagendaFecha(null);
+        setReagendaTexto('');
+        setPreguntaCancelar({ ...aviso, motivo: reason ?? '', paraId: id });
         return;
       }
     }
@@ -2166,6 +2206,52 @@ export default function CallView({ items, alerts, hayFiltroActivo = false, pendi
             >
               Son pedidos distintos — confirmar
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ¿Seguro que lo cancelás? Datos delante (edad del pedido, cuántas
+          veces se lo llamó, que queda a su nombre) y DOS salidas: volver a
+          intentarlo, o cancelar igual. Ninguna esconde ni decide por ella. */}
+      <AlertDialog open={!!preguntaCancelar} onOpenChange={(op) => { if (!op) setPreguntaCancelar(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <XCircle size={18} className="text-danger" aria-hidden="true" />
+              {preguntaCancelar?.titulo}
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="grid gap-1.5 text-sm text-muted-foreground">
+                {preguntaCancelar?.lineas.map((l, i) => (
+                  <p key={i} className={i === 0 ? 'font-semibold text-foreground' : undefined}>{l}</p>
+                ))}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction
+              onClick={() => setPreguntaCancelar(null)}
+              className="bg-accent/15 text-accent border border-accent/40 hover:bg-accent/25"
+            >
+              {preguntaCancelar?.alternativa}
+            </AlertDialogAction>
+            <AlertDialogCancel
+              className="text-danger border-danger/40 hover:bg-danger/10 hover:text-danger"
+              onClick={() => {
+                const actual = String(o.dbId ?? o.externalId ?? '');
+                const p = preguntaCancelar;
+                setPreguntaCancelar(null);
+                if (!p) return;
+                if (p.paraId !== actual) {
+                  toast.error('El pedido en pantalla cambió mientras leías. Volvé a mirarlo antes de cancelar.');
+                  return;
+                }
+                decididoCancelar.current.add(actual);
+                void handleMark('canc', p.motivo);
+              }}
+            >
+              Cancelar igual
+            </AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
