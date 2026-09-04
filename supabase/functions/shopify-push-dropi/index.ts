@@ -18,7 +18,7 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, isStoreMember } from "../_shared/dropiStoreConfig.ts";
 import { ensureFreshSessionToken } from "../_shared/dropiSessionLogin.ts";
 import { loadShopifyConfig, getShopifyAccessToken } from "../_shared/shopifyStoreConfig.ts";
-import { WebFallbackError, normUp, decodeJwtSub, dropiWebFetch, quoteCarriers } from "../_shared/dropiWebQuote.ts";
+import { WebFallbackError, normUp, decodeJwtSub, dropiWebFetch, quoteCarriers, productEntry } from "../_shared/dropiWebQuote.ts";
 
 import { resolveDestCity, noCoverageMessage } from "../_shared/dropiCityCatalog.ts";
 import { dropiCountryNameFor, paisUsaCentavos } from "../_shared/dropiCountry.ts";
@@ -30,7 +30,7 @@ const SHOPIFY_API_VERSION = "2024-10";
 /** Se despliega A MANO: Lovable no redespliega edge functions al publicar.
  *  `POST .../shopify-push-dropi?ping=1` contesta esta marca — es la unica forma de saber si
  *  el arreglo del gemelo invisible llego de verdad al runtime. */
-const VERSION = "shopify-push-dropi 2026-09-04.2 la-bodega-de-un-variable-se-pide-por-la-variante";
+const VERSION = "shopify-push-dropi 2026-09-04.3 el-cuerpo-que-crea-tambien-lleva-la-variante";
 
 interface ShopifyLineItem {
   product_id: number;
@@ -580,9 +580,23 @@ async function createOrderViaWeb(
     supplier_id: supplierId,
     type: "FINAL_ORDER",
     rate_type: "CON RECAUDO",
-    products: products.map((p) => ({
-      id: p.dropiId, uid: p.dropiId, quantity: p.quantity, price: p.price, type: p.productType,
-    })),
+    // ⛔ `productEntry`, NO un objeto a mano (4-sep-2026). Este array se armaba
+    // acá con los mismos cinco campos MENOS `variation_id`, y por eso Dropi
+    // rechazaba: "El producto Shampoo Cubre Canas Dexe Argan es variable, por lo
+    // tanto debe indicar una variación". Ocho ventas de Ecuador ese día, y
+    // seguían cayendo con el arreglo de la bodega YA desplegado
+    // (`2026-09-04.2`): aquel tocó la COTIZACIÓN y el PASO C, no la creación, así
+    // que el pedido pasaba un paso más y moría acá.
+    //
+    // Medido en `shopify_pushed_orders.payload` de los 8 fallos: la variante se
+    // resuelve BIEN (56321/56322/56323 según el pedido) y el cuerpo de
+    // integraciones la lleva (línea ~1323). La perdía solo este cuerpo web.
+    //
+    // `productEntry` es la forma ÚNICA del products[] y su docstring lo dice:
+    // cotizar y crear tienen que mandar exactamente lo mismo. Para un producto
+    // SIMPLE emite el mismo objeto de siempre — cero cambio para lo que hoy
+    // funciona. Los tres caminos de creación de `dropi-change-carrier` ya la usan.
+    products: products.map(productEntry),
     distributionCompany: quote.distributionCompany,
     type_service: quote.typeService,
     zip_code: null,
