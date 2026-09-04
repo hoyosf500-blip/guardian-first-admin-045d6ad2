@@ -582,34 +582,33 @@ export default function InboxPage() {
     // recorta en vez de empujar el ancho de TODA la app y obligar a scrollear de
     // lado para encontrar la barra lateral.
     <div className={`w-full min-w-0 overflow-x-hidden ${ancha ? 'max-w-[1500px] mx-auto' : 'max-w-3xl mx-auto'}`}>
-      <header className="mb-4">
-        <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold mb-1">CRM · WhatsApp</div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3 flex-wrap">
-          <span className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
-            <Inbox size={20} strokeWidth={2.25} />
+      {/* BARRA DE TURNO (rediseño Fase 3, 4-sep-2026): título, conteos,
+          pestañas y buscador en UNA fila que se envuelve; la explicación baja a
+          una línea de 12 px. Antes eran cinco renglones (cejilla, título de
+          24 px, párrafo, pestañas, buscador) y la primera persona esperando
+          aparecía a 300 px del borde. Mismo molde que Seguimiento y Confirmar. */}
+      <header className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <h1 className="text-lg font-bold tracking-tight text-foreground flex items-center gap-2.5 flex-wrap leading-none">
+          <span className="w-8 h-8 rounded-lg bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+            <Inbox size={16} strokeWidth={2.25} />
           </span>
           Escribieron
           {esperan.length > 0 && (
-            <span className="text-sm font-mono tabular-nums px-2.5 py-1 rounded-full bg-danger/14 border border-danger/30 text-danger">
+            <span className="text-[13px] font-mono tabular-nums px-2 py-0.5 rounded-full bg-danger/14 border border-danger/30 text-danger">
               {esperan.length}
             </span>
           )}
           {vista === 'esperan' && masDeUnDia > 0 && (
-            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-danger/10 border border-danger/30 text-danger">
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-danger/10 border border-danger/30 text-danger">
               {masDeUnDia} {masDeUnDia === 1 ? 'lleva' : 'llevan'} más de un día
             </span>
           )}
         </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {vista === 'esperan'
-            ? 'Clientes que escribieron y nadie contestó todavía. El de arriba es el que lleva más esperando — a ninguno se lo deja enfriar.'
-            : `Les escribimos y no contestaron hace más de ${HORAS_SIN_RESPUESTA} horas. Acá va el 2º intento: mandar una plantilla y no volver a mirar no es haber gestionado.`}
-        </p>
 
         {/* Las dos canastas. La segunda solo aparece cuando hay alguien: una
             pestaña vacía permanente enseña a no mirar ninguna de las dos. */}
         {(sinRespuesta.length > 0 || vista === 'deuda' || deudaError) && (
-          <div className="mt-3 inline-flex rounded-xl border border-border bg-card/40 p-0.5">
+          <div className="inline-flex rounded-xl border border-border bg-surface p-0.5">
             <button
               type="button"
               onClick={() => { setVista('esperan'); setSelId(null); }}
@@ -646,7 +645,7 @@ export default function InboxPage() {
             COMPLETA, para que buscar nunca haga parecer que hay menos trabajo
             del que hay — que es exactamente lo prohibido. */}
         {(cola.length > 0 || busca) && (
-          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="flex flex-1 min-w-[16rem] flex-wrap items-center gap-x-3 gap-y-2">
             <div className="relative min-w-0 flex-1 max-w-md">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
               <input
@@ -655,7 +654,7 @@ export default function InboxPage() {
                 value={busca}
                 onChange={(e) => setBusca(e.target.value)}
                 placeholder="Buscar por nombre, teléfono o número de pedido…"
-                className="w-full rounded-xl border border-border bg-card/40 py-2 pl-9 pr-3 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="w-full h-9 rounded-xl border border-border bg-surface pl-9 pr-3 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               />
             </div>
             <span className="text-[11px] text-muted-foreground">
@@ -675,6 +674,16 @@ export default function InboxPage() {
             </span>
           </div>
         )}
+        {/* La explicación de la canasta, en UNA línea de 12 px debajo de la
+            barra (antes era un párrafo de 14 px). El texto es el mismo. */}
+        <p className="basis-full text-xs text-muted-foreground truncate" title={vista === 'esperan'
+          ? 'Clientes que escribieron y nadie contestó todavía. El de arriba es el que lleva más esperando — a ninguno se lo deja enfriar.'
+          : `Les escribimos y no contestaron hace más de ${HORAS_SIN_RESPUESTA} horas. Acá va el 2º intento: mandar una plantilla y no volver a mirar no es haber gestionado.`}
+        >
+          {vista === 'esperan'
+            ? 'Clientes que escribieron y nadie contestó todavía. El de arriba es el que lleva más esperando — a ninguno se lo deja enfriar.'
+            : `Les escribimos y no contestaron hace más de ${HORAS_SIN_RESPUESTA} horas. Acá va el 2º intento: mandar una plantilla y no volver a mirar no es haber gestionado.`}
+        </p>
       </header>
 
       {feedDudoso && (

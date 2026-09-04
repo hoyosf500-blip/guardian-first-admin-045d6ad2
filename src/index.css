@@ -485,10 +485,13 @@
      OJO: aplica text-transform: uppercase — NO usarla sobre datos que vienen
      del usuario o de Dropi (estados, nombres de transportadora, direcciones):
      cambia el texto que se ve. Sobre rótulos y encabezados fijos sí va. */
+  /* 11 px y tracking 0.12em (rediseño, 4-sep-2026): a 10 px con 0.2em los
+     rótulos se leían como código y no como trabajo, y son el texto de las
+     cabeceras de columna que la asesora barre cientos de veces al día. */
   .hud-label {
     font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.2em;
+    font-size: 11px;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
   }
   /* Gemela de .hud-label que NO mayusculiza. Para cuando el rótulo tiene que
@@ -497,8 +500,8 @@
      (Meta, TikTok), cualquier cosa donde el casing ES el dato. */
   .hud-label-cased {
     font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.2em;
+    font-size: 11px;
+    letter-spacing: 0.12em;
   }
   /* El color va en :where() a propósito: especificidad CERO. Así el gris es
      solo un valor por defecto y cualquier `text-danger` / `text-success`
@@ -820,7 +823,7 @@
    igual que siempre. */
 .seg-col-cv {
   content-visibility: auto;
-  contain-intrinsic-size: auto 300px auto 60vh;
+  contain-intrinsic-size: auto 292px auto 60vh;
 }
 /* Las tarjetas del tablero (hijas directas del cuerpo de columna): de 30
    montadas por columna, solo ~5 caben en el alto visible. */

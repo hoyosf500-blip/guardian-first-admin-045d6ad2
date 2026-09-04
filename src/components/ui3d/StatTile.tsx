@@ -53,9 +53,12 @@ export default function StatTile({
     <TiltCard
       perspective={1200}
       wrapperClassName={wrapperClassName}
+      // Superficie quieta (rediseño, 4-sep-2026): sólida, sin sombra, radio 12
+      // y cifra de 28 px en vez de 34. Un KPI se lee por color y posición; el
+      // tamaño extra solo empujaba el trabajo debajo del pliegue.
       className={[
-        'rounded-2xl p-4 h-full flex flex-col justify-between shadow-card3d',
-        'bg-card/40 border',
+        'rounded-xl p-3.5 h-full flex flex-col justify-between',
+        'bg-card border',
         isZero || sinDato ? 'border-border/50 opacity-75' : 'border-border',
       ].join(' ')}
     >
@@ -65,13 +68,13 @@ export default function StatTile({
           delta perdía el lugar de lectura que le da el mockup. */}
       <div title={title}>
         <div className="flex items-start justify-between gap-2 tilt-layer-2">
-          <span className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 ${t.chip} ${t.glow}`}>
-            <Icon size={17} aria-hidden="true" />
+          <span className={`w-8 h-8 rounded-lg border flex items-center justify-center flex-shrink-0 ${t.chip}`}>
+            <Icon size={15} aria-hidden="true" />
           </span>
           {extra && <div className="text-right min-w-0">{extra}</div>}
         </div>
 
-        <div className={`text-[34px] font-bold leading-none mt-3 tilt-layer-3 ${isZero || sinDato ? 'text-muted-foreground' : t.text}`}>
+        <div className={`text-[28px] font-bold leading-none mt-2.5 tilt-layer-3 ${isZero || sinDato ? 'text-muted-foreground' : t.text}`}>
           {sinDato ? <span aria-label="sin dato">—</span> : <CountUp value={value} duration={duration} />}
         </div>
 

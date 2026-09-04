@@ -258,6 +258,11 @@ const TONE: Record<Tone, { dot: string; headBar: string; count: string; num: str
  */
 const COLUMN_PAGE = 30;
 
+/** Botón FANTASMA de la fila de acciones secundarias de la tarjeta: borde fino,
+ *  sin fondo, texto apagado que se enciende al pasar. Una sola definición para
+ *  que «No contestó», «Volver a llamar» y la plantilla relegada pesen igual. */
+const CLASE_SECUNDARIA = 'bg-transparent border border-border/70 text-muted-foreground hover:border-border-strong hover:text-foreground';
+
 /** Horas desde el último movimiento real en Dropi. Vive en `segPulso` desde el
  *  1-ago-2026: lo comparte con el contador DETENIDOS de la tarjeta de arriba.
  *
@@ -458,6 +463,10 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   // llamada, no otro mensaje. Sin actividad de chat leída devuelve false: no
   // saber si contestó nunca se lee como "no contestó" (`escalarLlamada.ts`).
   const debeLlamar = tocaLlamar(actividad, o.estado);
+  // La acción de la fase (mandar la plantilla) es la primaria SOLO si no manda
+  // otra cosa antes: si toca llamar, manda la llamada; si el cliente escribió,
+  // manda leerlo. Ver el bloque de botones — una primaria por tarjeta.
+  const accionEsSecundaria = debeLlamar || (tiempo.ciclo.estado === 'respondio' && !!actividad && !!o.externalId);
   // Días EN ESTE ESTADO (no desde que nació el pedido) + el corte de "detenido"
   // que ya existe (72 h). Ver el badge D más abajo.
   const { diasEstado, detenido } = tiempo;
@@ -539,16 +548,19 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
         // la regla de compatibilidad de index.css ya opaca .bg-card/40 con
         // :root:not(.dark) — por eso NO hace falta pasarlo a bg-card, y hacerlo
         // solo rompería el vidrio en oscuro, que es el look aprobado.
-        'group relative bg-card/40 rounded-xl border p-3.5 shadow-card3d cursor-pointer transition-colors duration-150 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
+        // Tercer nivel de superficie, SÓLIDO y sin sombra (rediseño, 4-sep-2026):
+        // el relieve lo da el borde sobre la columna, no una sombra de 18 px en
+        // cada una de las ~600 tarjetas.
+        'group relative bg-card rounded-lg border p-3 cursor-pointer transition-colors duration-150 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
         // Estados terminales (entregado/devolución/cancelado/indemnizada) van
         // atenuados: la asesora no tiene nada que hacer con ellos y competían
         // visualmente con las columnas donde sí hay trabajo.
         tone === 'success' || tone === 'danger' || tone === 'muted' ? 'opacity-75' : '',
-        selected ? 'border-accent ring-2 ring-accent/60 shadow-card3d' : 'border-border',
-        // Riel de 2px con el color de la fase (el mismo mapa TONE del encabezado
-        // de columna). Va DESPUÉS del ternario a propósito: si fuera antes,
-        // border-accent/border-border pisaría el borde superior vía twMerge.
-        tone && !selected ? cn('border-t-2', TONE[tone].headBar) : '',
+        selected ? 'border-accent ring-2 ring-accent/60' : 'border-border',
+        // ⛔ El riel superior con el color de la fase se quitó (4-sep-2026): la
+        // columna ya dice la fase, y con 600 tarjetas era un color más peleando
+        // con las dos señales que sí deciden (el rojo de «te espera» y el verde
+        // de «se le puede escribir»).
       )}
     >
       {/* ⛔ RIEL VERDE = SE LE PUEDE ESCRIBIR AHORA (28-ago-2026).
@@ -571,7 +583,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           y son la misma pregunta solo por casualidad. Está en el glosario. */}
       {ventanaChat.estado === 'abierta' && (
         <span
-          className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl bg-success"
+          className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg bg-success"
           aria-hidden="true"
         />
       )}
@@ -585,7 +597,21 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           D{n} NO se tiñe por umbral: no existe un corte de SLA definido para
           este contador, e inventarle uno sería pintar un veredicto que nadie
           calculó. La frescura sí es semántica y ahí sí va el color. */}
-      <div className="flex items-center gap-2">
+      {/* ══ ANATOMÍA DE LA TARJETA (rediseño, 4-sep-2026) ══════════════════════
+          Una tarjeta = tres señales, siempre en el mismo lugar:
+            1. EL PEDIDO — nombre del cliente + días en este estado (D), a la derecha.
+            2. EL CLIENTE — estatus exacto si difiere de la columna + la ÚNICA
+               etiqueta de contacto (qué pasó con el último contacto, qué toca).
+            3. NOSOTROS — número · producto · ciudad · valor, y UNA acción.
+          El nombre sube a la primera fila: es lo único que la asesora necesita
+          para saber a quién llama, y hasta hoy venía después de los chips. */}
+      <div className="flex items-start gap-2 min-w-0">
+        <span
+          className="min-w-0 flex-1 text-sm font-semibold text-foreground truncate leading-snug"
+          title={o.nombre || 'Sin nombre'}
+        >
+          {o.nombre || 'Sin nombre'}
+        </span>
         {/* ⛔ El punto de frescura se quitó (28-ago-2026). Decía exactamente lo
             mismo que el número de al lado —hace cuánto se movió en Dropi— pero
             en color, sin cifra y con el detalle escondido en un `title` que en
@@ -613,7 +639,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
             del tope de la pantalla. */}
         <span
           className={cn(
-            'inline-flex items-baseline gap-0.5 text-[13px] font-mono tabular-nums font-bold',
+            'shrink-0 inline-flex items-baseline gap-0.5 text-[13px] font-mono tabular-nums font-bold',
             detenido ? 'text-danger' : 'text-foreground',
           )}
           title={diasEstado == null
@@ -623,6 +649,11 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           <span className={cn('text-[10px] font-semibold', detenido ? 'text-danger/70' : 'text-muted-foreground')}>D</span>
           {diasEstado ?? '—'}
         </span>
+      </div>
+
+      {/* Fila 2 — EL CLIENTE: estatus exacto de Dropi (solo si difiere de la
+          columna) + la única etiqueta de contacto. Todo en pastillas de 12 px. */}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         {/* ESTATUS CRUDO cuando difiere del título de la columna. Las columnas
             son FASES que agrupan varios estados ("Guía Generada" también junta
             POR RECOLECTAR); sin este chip el dueño leía el rótulo de la columna
@@ -631,7 +662,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
             en paridad). Se muestra tal cual lo manda Dropi, sin traducir. */}
         {columnLabel && o.estado && estadoDifiereDeFase(o.estado, columnLabel) && (
           <span
-            className="min-w-0 truncate text-[11px] font-semibold px-2 py-0.5 rounded-full border border-info/30 bg-info/10 text-info"
+            className="min-w-0 max-w-full truncate text-xs font-semibold px-2 py-0.5 rounded-full border border-info/30 bg-info/10 text-info"
             title={`Estatus exacto en Dropi: ${o.estado}`}
           >
             {o.estado}
@@ -646,7 +677,6 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
             medido con el reloj equivocado.
             La urgencia por tiempo la lleva ahora el número D, con el reloj
             correcto. `calcPriority` sigue viva y sin tocar para CrmTable. */}
-      </div>
 
       {/* ══ UNA sola etiqueta de contacto (28-ago-2026) ══════════════════════
           Acá había CUATRO familias de etiquetas apiladas, y las cuatro hablaban
@@ -674,7 +704,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           siempre tenía algo que decir y ganaba siempre.) */}
       {novedadCerrada && ciclo.estado !== 'respondio' ? (
         <div
-          className="mt-2 inline-flex max-w-full items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-border bg-card/40 text-muted-foreground"
+          className="inline-flex max-w-full items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-border text-muted-foreground"
           title="La transportadora cerró o dejó vencer esta novedad. Dropi no deja resolverla: queda esperar el reintento o la devolución. No es trabajo pendiente."
         >
           <Clock size={10} aria-hidden="true" className="shrink-0" />
@@ -685,7 +715,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           className={cn(
             // 12 px y pastilla redonda (Fase 1 del rediseño): es LA señal de la
             // tarjeta, se lee cientos de veces al día.
-            'mt-2 inline-flex max-w-full items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full border',
+            'inline-flex max-w-full items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full border',
             TONO_CICLO[ciclo.estado === 'reintento' && ciclo.accion === 'llamar' ? 'llamar' : ciclo.estado],
           )}
           title={detalleCiclo}
@@ -698,6 +728,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           <span className="truncate">{ciclo.etiqueta}</span>
         </div>
       ) : null}
+      </div>
 
       {/* Identidad: el nombre es lo ÚNICO que la asesora necesita para saber a
           quién llama, así que sube de tamaño y peso. El externalId baja a
@@ -707,20 +738,15 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           tarjeta: esto sigue siendo pantalla de trabajo y la densidad manda.
           `title` con el nombre completo — el truncate CSS lo cortaba sin
           ninguna forma de leerlo entero (SegCard no usa TruncatedText). */}
-      <div className="mt-2 min-w-0">
-        <span
-          className="block text-[15px] font-bold text-foreground truncate leading-tight"
-          title={o.nombre || 'Sin nombre'}
-        >
-          {o.nombre || 'Sin nombre'}
-        </span>
+      {/* (El nombre vive ahora en la primera fila — ver ANATOMÍA arriba.) */}
+      <div className="mt-1.5 min-w-0">
         {/* ⛔ "EN ATENCIÓN POR X" (3-sep-2026). El badge existía desde hacía
             meses pero solo se dibujaba en la vista LISTA — y la vista por
             defecto de Seguimiento es el TABLERO, así que en la práctica no lo
             veía nadie. Es el mismo error ya cometido con un chip nuevo puesto
             en Lista y reportado como hecho: verificar la pieza no es verificar
             la pantalla. */}
-        <LockBadge lockedBy={o.lockedBy} lockedAt={o.lockedAt} className="mt-1" />
+        <LockBadge lockedBy={o.lockedBy} lockedAt={o.lockedAt} className="mb-1" />
         {/* El número, COPIABLE de un clic (pedido del equipo, 28-ago-2026: lo
             necesitan para pegarlo en Dropi). Antes era texto suelto dentro de
             una tarjeta clicable: seleccionarlo con el mouse abría el pedido, así
@@ -747,13 +773,13 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
                 });
               }}
               title={`Copiar el número ${o.externalId}`}
-              className="group/copy mt-1 flex max-w-full items-center gap-1 text-xs text-muted-foreground font-mono tabular-nums hover:text-foreground transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded"
+              className="group/copy flex max-w-full items-center gap-1 text-xs text-muted-foreground font-mono tabular-nums hover:text-foreground transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded"
             >
               <span className="truncate">{o.externalId}</span>
               <Copy size={10} aria-hidden="true" className="shrink-0 opacity-0 group-hover/copy:opacity-70 transition-opacity" />
             </button>
           )
-          : <span className="text-xs text-muted-foreground font-mono mt-1 block">Sin ID</span>}
+          : <span className="text-xs text-muted-foreground font-mono block">Sin ID</span>}
       </div>
 
       {/* Producto · ciudad como subtítulo (en el mockup van juntos) + VALOR a
@@ -764,7 +790,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           pintar "$0" como monto a cobrar sería un cero falso. */}
       {(o.producto || o.ciudad || o.valor > 0) && (
         <div
-          className="mt-1.5 flex items-center gap-1 text-xs text-muted-foreground min-w-0"
+          className="mt-1 flex items-center gap-1 text-xs text-muted-foreground min-w-0"
           title={[o.producto, o.ciudad].filter(Boolean).join(' · ')}
         >
           {o.ciudad && <MapPin size={10} className="shrink-0" aria-hidden="true" />}
@@ -828,7 +854,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
               onClick={(e) => e.stopPropagation()}
               title={trackUrl ? 'Rastrear envío' : 'Página de la transportadora'}
               aria-label={trackUrl ? 'Rastrear envío' : 'Página de la transportadora'}
-              className="p-2 min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg text-muted-foreground/70 hover:text-accent hover:bg-accent/10 transition-colors"
+              className="p-2 min-h-10 min-w-10 inline-flex items-center justify-center rounded-lg text-muted-foreground/70 hover:text-accent hover:bg-accent/10 transition-colors"
             >
               <ExternalLink size={14} aria-hidden="true" />
             </a>
@@ -840,7 +866,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
             disabled={isRefreshing || !o.externalId}
             title="Refrescar estado desde Dropi"
             aria-label="Refrescar estado desde Dropi"
-            className="p-2 min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg text-muted-foreground/70 hover:text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
+            className="p-2 min-h-10 min-w-10 inline-flex items-center justify-center rounded-lg text-muted-foreground/70 hover:text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
           >
             <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} aria-hidden="true" />
           </button>
@@ -864,7 +890,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
               }}
               title="Llamar al cliente"
               aria-label="Llamar al cliente"
-              className="p-2 min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg text-muted-foreground/70 hover:text-accent hover:bg-accent/10 transition-colors"
+              className="p-2 min-h-10 min-w-10 inline-flex items-center justify-center rounded-lg text-muted-foreground/70 hover:text-accent hover:bg-accent/10 transition-colors"
             >
               <Phone size={14} aria-hidden="true" />
             </a>
@@ -900,7 +926,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
                 ? 'Ver la conversación y escribirle por WhatsApp'
                 : 'Ver la conversación y mandarle una plantilla de WhatsApp'}
               className={cn(
-                'p-2 min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg border transition-colors',
+                'p-2 min-h-10 min-w-10 inline-flex items-center justify-center rounded-lg border transition-colors',
                 ventanaChat.estado === 'abierta'
                   ? 'bg-success/12 border-success/30 text-success hover:bg-success/20 hover:border-success/60'
                   : 'border-border text-muted-foreground hover:text-foreground hover:border-border-strong',
@@ -927,7 +953,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
       {faseConGestion(o.estado) && o.phone && (
         yaGestionada ? (
           <div
-            className="mt-2.5 w-full min-h-11 flex items-center gap-2 rounded-xl bg-success/15 text-success border border-success/40 font-bold text-[13px] px-2.5 py-1.5"
+            className="mt-2 w-full min-h-10 flex items-center gap-2 rounded-lg bg-success/15 text-success border border-success/40 font-bold text-xs px-2.5 py-1.5"
             title={gEquipo ? `${nombreDe ? nombreDe(gEquipo.ultimoPor) : "Una asesora"} lo gestionó ${haceCuanto(gEquipo.ultimoAt) || "hoy"}: ${gEquipo.ultimoResult}` : "Ya registraste una gestión de este pedido hoy"}
           >
             <CheckCircle2 size={15} aria-hidden="true" className="flex-shrink-0" />
@@ -962,7 +988,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
               const deHoy = !!gEquipo;
               return (
                 <div
-                  className="mt-2.5 flex items-center gap-1.5 rounded-lg border border-border bg-card/40 px-2 py-1 text-[11px] text-muted-foreground"
+                  className="mt-2 flex items-center gap-1.5 rounded-md border border-border/70 px-2 py-1 text-[11px] text-muted-foreground"
                   title={deHoy
                     ? `${nombreDe ? nombreDe(g.ultimoPor) : 'Una asesora'} ya lo trabajó hoy: ${g.ultimoResult}. Sigue en la cola porque no se pudo hablar con el cliente.`
                     : `${nombreDe ? nombreDe(g.ultimoPor) : 'Una asesora'} lo trabajó en los últimos días: ${g.ultimoResult}. No bloquea nada — podés seguir vos.`}
@@ -977,7 +1003,13 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
                 </div>
               );
             })()}
-          <div className="mt-2.5 flex flex-wrap gap-1.5">
+          {/* UNA acción principal por tarjeta (rediseño, 4-sep-2026). Antes eran
+              hasta cuatro botones llenos apilados —Llamar, Leer y contestar, la
+              plantilla de la fase, y los desenlaces del teléfono— todos del mismo
+              peso: la asesora tenía que leerlos para saber cuál tocar. Ahora la
+              primaria va llena y a lo ancho; las demás quedan como botones
+              fantasma de 32 px en una fila. NO se quitó ninguna: cambió el peso. */}
+          <div className="mt-2 flex flex-wrap gap-1.5">
             {/* La PRIMERA acción MANDA el mensaje; solo si no se puede (fase sin
                 acción, tienda sin ImporChat, ninguna plantilla que sirva) cae al
                 botón declarativo de siempre — la decisión vive dentro de
@@ -996,7 +1028,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
                 countryCode={countryCode}
                 actividad={actividad}
                 estado={o.estado}
-                className="w-full min-h-11 justify-center text-[12px]"
+                className="w-full min-h-10 justify-center text-xs"
               />
             )}
             {/* ⛔ SI EL CLIENTE ESCRIBIÓ, PRIMERO SE LEE (28-ago-2026).
@@ -1013,7 +1045,15 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setEscribiendo(true); }}
                 title="Abre la conversación para leer qué dijo el cliente y contestarle"
-                className="w-full min-h-11 inline-flex items-center justify-center gap-1.5 rounded-lg border border-danger/40 bg-danger/12 px-2.5 py-1.5 text-[12px] font-bold text-danger hover:bg-danger/20 transition-colors"
+                className={cn(
+                  'inline-flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-bold transition-colors',
+                  // Primaria si NO toca llamar; si toca llamar, la llamada manda
+                  // y esta baja a fantasma (el cliente escribió, pero ya se le
+                  // escribió y no contestó hace horas: primero el teléfono).
+                  debeLlamar
+                    ? 'flex-1 min-w-[calc(50%-0.375rem)] min-h-8 border-border/70 bg-transparent text-xs text-danger/90 hover:bg-danger/10 hover:border-danger/40'
+                    : 'w-full min-h-10 border-danger/40 bg-danger/12 text-xs text-danger hover:bg-danger/20',
+                )}
               >
                 <MessagesSquare size={13} aria-hidden="true" />
                 Leer y contestar
@@ -1040,8 +1080,13 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
                 // cliente diciéndole "seguí tu envío aquí".
               }}
               className={cn(
-                'w-full min-h-11 justify-center text-[12px]',
-                (debeLlamar || ciclo.estado === 'respondio') && 'opacity-80',
+                'justify-center text-xs',
+                // Primaria solo cuando ni la llamada ni la lectura mandan; si
+                // no, baja a fantasma en la fila de secundarias (twMerge pisa
+                // el borde y el fondo del acento que trae el componente).
+                accionEsSecundaria
+                  ? 'flex-1 min-w-[calc(50%-0.375rem)] min-h-8 border-border/70 bg-transparent text-muted-foreground hover:text-accent hover:bg-accent/10 hover:border-accent/40'
+                  : 'w-full min-h-10',
               )}
               onEnviado={(g) => setGestionada(g)}
               fallback={metodosRapidos[0] ? (
@@ -1050,7 +1095,12 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
                   onClick={(e) => { void gestionar(e, metodosRapidos[0]); }}
                   disabled={gestionando}
                   title={`Registrar: ${metodosRapidos[0]}`}
-                  className="w-full min-h-11 inline-flex items-center justify-center gap-1.5 rounded-xl font-bold text-[12px] px-2 bg-accent text-accent-foreground hover:bg-accent/90 active:scale-[0.99] transition-colors disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+                  className={cn(
+                    'inline-flex items-center justify-center gap-1.5 rounded-lg font-bold text-xs px-2 transition-colors disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
+                    accionEsSecundaria
+                      ? cn('flex-1 min-w-[calc(50%-0.375rem)] min-h-8', CLASE_SECUNDARIA)
+                      : 'w-full min-h-10 bg-accent text-accent-foreground hover:bg-accent/90 active:scale-[0.99]',
+                  )}
                 >
                   <CheckCircle2 size={14} aria-hidden="true" />
                   <span className="truncate">{gestionando ? '…' : metodosRapidos[0]}</span>
@@ -1064,7 +1114,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
                 onClick={(e) => { void gestionar(e, m); }}
                 disabled={gestionando}
                 title={`Registrar: ${m}`}
-                className="min-h-11 inline-flex items-center justify-center gap-1.5 rounded-xl font-bold text-[12px] px-2 transition-colors disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none flex-1 min-w-[calc(50%-0.375rem)] bg-card/60 border border-border text-foreground hover:border-accent/50 hover:text-accent"
+                className={cn('min-h-8 inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold text-xs px-2 transition-colors disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none flex-1 min-w-[calc(50%-0.375rem)]', CLASE_SECUNDARIA)}
               >
                 <span className="truncate">{gestionando ? '…' : m}</span>
               </button>
@@ -1203,7 +1253,7 @@ function FocusedColumn({ col, countryCode, gestionEquipo, historialEquipo, nombr
       {/* Barra de enfoque con peso de HudTopbar contextual: es el mejor flujo de
           trabajo de la pantalla y estaba dibujado como una fila más. Identidad
           de la carpeta a la izquierda, posición y navegación a la derecha. */}
-      <div className="rounded-2xl border border-border bg-card/40 shadow-card3d-lg hairline-top px-4 py-3.5">
+      <div className="rounded-xl border border-border bg-surface px-4 py-3">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -1561,33 +1611,59 @@ export default function SegBoard({ data, countryCode, statusFilter, gestionEquip
   // se activa pasados 6px: un click normal jamás se convierte en arrastre.
   // Con setPointerCapture el click fantasma del soltar cae en el contenedor,
   // no en la tarjeta que quedó debajo del cursor.
+  //
+  // ⛔ EL TABLERO SE IBA SOLO CON EL MOUSE (reportado por el dueño, 4-sep-2026:
+  // *"cuando paso el mouse eso se va conmigo, la barra queda descoordinada"*).
+  // Tres huecos, todos del mismo origen — el arrastre arrancaba y nunca se
+  // enteraba de que el botón ya se había soltado:
+  //   1. Si el mouse salía del tablero ANTES de los 6 px (todavía sin captura)
+  //      y se soltaba afuera, el `pointerup` caía en otro elemento. `panRef`
+  //      quedaba armado y el SIGUIENTE movimiento sobre el tablero, sin ningún
+  //      botón apretado, lo arrastraba: "se va conmigo".
+  //   2. Apretar sobre el espacio muerto iniciaba una SELECCIÓN de texto que
+  //      cruzaba las tarjetas (medido en producción: `selectstart` en el
+  //      pointerdown) y competía con el arrastre por los mismos eventos.
+  //   3. Si el navegador le quitaba la captura (`lostpointercapture`) nadie
+  //      limpiaba el estado.
+  // Ahora: `preventDefault` en el pointerdown (no hay selección), cada
+  // movimiento verifica que el botón siga apretado (`e.buttons`), y perder la
+  // captura suelta el arrastre. Sin botón apretado no hay arrastre, punto.
   const panRef = useRef<{ x: number; left: number; activo: boolean } | null>(null);
+  const soltarPan = () => {
+    const el = boardRef.current;
+    if (el) { el.style.cursor = ''; el.style.userSelect = ''; }
+    panRef.current = null;
+  };
   const onPanDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.pointerType !== 'mouse' || e.button !== 0) return;
     const target = e.target as HTMLElement;
     if (target.closest('button, a, input, textarea, select, [role="button"]')) return;
+    // Sin esto el navegador arranca una selección de texto por todo el tablero.
+    e.preventDefault();
     panRef.current = { x: e.clientX, left: boardRef.current?.scrollLeft ?? 0, activo: false };
   };
   const onPanMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const p = panRef.current;
     const el = boardRef.current;
     if (!p || !el) return;
+    // El botón ya no está apretado: el `pointerup` se perdió en otro elemento.
+    if ((e.buttons & 1) === 0) { soltarPan(); return; }
     const dx = e.clientX - p.x;
     if (!p.activo) {
       if (Math.abs(dx) < 6) return;
       p.activo = true;
       el.setPointerCapture(e.pointerId);
       el.style.cursor = 'grabbing';
+      el.style.userSelect = 'none';
     }
     el.scrollLeft = p.left - dx;
   };
   const onPanUp = (e: React.PointerEvent<HTMLDivElement>) => {
     const el = boardRef.current;
-    if (panRef.current?.activo && el) {
-      if (el.hasPointerCapture?.(e.pointerId)) el.releasePointerCapture(e.pointerId);
-      el.style.cursor = '';
+    if (panRef.current?.activo && el && el.hasPointerCapture?.(e.pointerId)) {
+      el.releasePointerCapture(e.pointerId);
     }
-    panRef.current = null;
+    soltarPan();
   };
 
   useLayoutEffect(() => {
@@ -1862,6 +1938,7 @@ export default function SegBoard({ data, countryCode, statusFilter, gestionEquip
       onPointerMove={onPanMove}
       onPointerUp={onPanUp}
       onPointerCancel={onPanUp}
+      onLostPointerCapture={onPanUp}
       // rail-scroll también ABAJO: la barra de 6px del global era la mitad del
       // "me cuesta deslizar". cursor-grab solo se ve en el espacio muerto (los
       // controles y tarjetas ponen su propio cursor encima).
@@ -1900,20 +1977,22 @@ export default function SegBoard({ data, countryCode, statusFilter, gestionEquip
               // seg-col-cv = render diferido (content-visibility): las columnas
               // fuera de pantalla no se pintan hasta acercarse. Es lo que quitó
               // el "pesado / como que va cargando" al deslizar (ver index.css).
-              'seg-col-cv shrink-0 flex flex-col gap-2.5 rounded-2xl border bg-card/40 transition-colors',
+              // Superficie SÓLIDA de segundo nivel (rediseño, 4-sep-2026): fondo
+              // → columna (surface) → tarjeta (card). Sin translúcidos ni sombras
+              // que el navegador tenga que componer en cada pasada de scroll.
+              'seg-col-cv shrink-0 flex flex-col gap-2 rounded-xl border bg-surface transition-colors',
               // La jerarquía sale del ANCHO y la ELEVACIÓN, no de atenuar.
               // "Devolución", "Dev. en Tránsito" y "Entregado" son terminales
               // pero se LEEN (análisis de devoluciones): bajarles la opacidad
               // era pagar legibilidad de dato real por jerarquía visual.
               isLive
-                ? 'w-[300px] border-border shadow-card3d-lg'
+                ? 'w-[292px] border-border'
                 : isCatchall
-                  ? 'w-[248px] border-border shadow-card3d'
-                  : 'w-[248px] border-border/60 shadow-card3d',
-              // Riel superior con el color de la FASE (mismo mapa TONE de las
-              // tarjetas): con columnas por estatus crudo, el color es lo que
-              // dice de un vistazo a qué familia pertenece cada columna.
-              cn('border-t-2', t.headBar),
+                  ? 'w-[236px] border-border'
+                  : 'w-[236px] border-border/60',
+              // El color de la FASE va en el punto y en la cifra del encabezado
+              // (mapa TONE), no en un riel de 2 px por columna: un color, un
+              // significado — y la columna ya dice la fase con su nombre.
             )}
           >
             {/* Header clickeable → enfoca esta carpeta (solo estos pedidos + ↑/↓).
@@ -1937,18 +2016,20 @@ export default function SegBoard({ data, countryCode, statusFilter, gestionEquip
               // panel y su fondo de hover se dibuja hasta el borde. Con un radio
               // menor que el de la carpeta, ese fondo asomaba por fuera de la
               // esquina redondeada al pasar el mouse.
-              className="group/h flex items-start gap-2.5 rounded-t-2xl px-3.5 py-3.5 text-left hover:bg-card/60 transition-colors"
+              className="group/h flex items-start gap-2 rounded-t-xl px-3 py-2.5 text-left hover:bg-card/60 transition-colors"
             >
-              <span className={cn('w-9 h-9 rounded-xl border flex items-center justify-center shrink-0', t.count)} aria-hidden="true">
+              {/* El ícono de la fase, del color del tono, sin la caja de 36 px:
+                  la cabecera pasa de 80 a ~56 px y el tablero gana una tarjeta
+                  más por columna a la vista. */}
+              <span className={cn('mt-0.5 inline-flex shrink-0 [&>svg]:h-4 [&>svg]:w-4', t.num)} aria-hidden="true">
                 {col.icon}
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-1.5">
-                  <span className={cn('h-2 w-2 rounded-full shrink-0 self-center', t.dot)} aria-hidden="true" />
                   {/* Lo que FALTA en grande; el total al lado. Ver
                       `pendientesPorColumna`: este número tiene que bajar cuando
                       la asesora marca, o "dejar la columna en cero" no existe. */}
-                  <span className={cn('text-[22px] font-mono tabular-nums font-bold leading-none', t.num, t.numGlow)}>
+                  <span className={cn('text-lg font-mono tabular-nums font-bold leading-none', t.num)}>
                     {pendientesPorColumna.get(col.key) ?? col.orders.length}
                   </span>
                   {(pendientesPorColumna.get(col.key) ?? col.orders.length) < col.orders.length && (
@@ -1963,7 +2044,11 @@ export default function SegBoard({ data, countryCode, statusFilter, gestionEquip
                 {/* `title`: los estados crudos de EC son largos ("PARA RETIRO EN
                     AGENCIA SERVIENTREGA") y el truncate los cortaba sin forma
                     de leerlos enteros. */}
-                <h3 className="hud-label truncate mt-1.5" title={col.label}>{col.label}</h3>
+                {/* 12 px sans y no mono de 10 px con tracking de 0.2em: es el
+                    rótulo que la asesora barre cientos de veces al día. Sigue en
+                    mayúscula porque los estados de Dropi ya vienen así y una
+                    columna en Título al lado de otra en MAYÚSCULA se lee peor. */}
+                <h3 className="mt-1 truncate text-xs font-semibold uppercase tracking-wide text-foreground/90" title={col.label}>{col.label}</h3>
                 {/* Cejilla con la FASE cuando el estatus crudo no coincide con
                     ella (POR RECOLECTAR → "Guía Generada"). Es el contexto que
                     daba la columna agrupada, ahora en letra chica: el estatus

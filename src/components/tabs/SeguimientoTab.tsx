@@ -19,7 +19,7 @@ import { estadoConversacion } from '@/lib/actividadChat';
 import { tocaLlamar, HORAS_PARA_LLAMAR } from '@/lib/escalarLlamada';
 import { cicloContacto, enEspera, ESPERA_REINTENTO_MIN, textoEspera } from '@/lib/cicloContacto';
 import { useRefreshVisibleOrders } from '@/hooks/useRefreshVisibleOrders';
-import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List, Search, User as UserIcon, Users, Moon, Eye, EyeOff, Phone } from 'lucide-react';
+import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List, Search, User as UserIcon, Users, Moon, Eye, EyeOff, Phone, HandHelping } from 'lucide-react';
 import { toast } from 'sonner';
 import { trabajaLaCola } from '@/lib/rolesTrabajo';
 import { motion } from 'framer-motion';
@@ -464,6 +464,12 @@ export default function SeguimientoTab() {
   }, [dedupedByDate, asig, cargaPendientePorAsesora]);
   /** El botón del panel: lo apretó una persona, así que MANDA ella. */
   const repartirAMano = useCallback(() => { void repartirColaDeHoy({ forzar: true }); }, [repartirColaDeHoy]);
+  // «Pedir más» en la barra de turno: las DOS condiciones del panel, o no se
+  // ofrece (terminé lo mío Y hay trabajo de nadie). `sinTocar === 0` y no
+  // `!sinTocar`: `null` es "no se pudo medir", y a quien no se pudo medir no
+  // se le dice "terminaste".
+  const miFilaTurno = user?.id ? resumenTurno.filas.find((f) => f.operatorId === user.id) : undefined;
+  const puedoPedirMas = trabajaLaCola({ isAdmin, isOwnerOfActive }) && miFilaTurno?.sinTocar === 0 && resumenTurno.sinDueno > 0;
 
   /**
    * "Pedir más" — la asesora que terminó se carga pedidos huérfanos, sin
@@ -1049,14 +1055,19 @@ export default function SeguimientoTab() {
   return (
     <div className="max-w-7xl mx-auto">
       <SegCounterBar />
-      <div className="mb-6 space-y-3">
-        {/* Título y controles en FILAS SEPARADAS, no lado a lado.
-            El cluster de controles son 6 (toggle, buscador, rango de fechas,
-            total, WhatsApp, sincronizar) y su ancho mínimo ronda los 1100px:
-            al ponerlo en la misma fila que el título, no podía encogerse por
-            debajo de ese mínimo y le dejaba al título ~100px, partiéndolo en
-            una palabra por línea. Apilarlos lo hace imposible por construcción. */}
-        <motion.header {...fadeUp(0)} className="flex flex-col gap-4">
+      <div className="mb-3 space-y-2">
+        {/* ══ BARRA DE TURNO (rediseño Fase 3, 4-sep-2026) ═══════════════════════
+            Medido en producción a 1366×768: el tablero empezaba en y=700 —
+            debajo del pliegue— detrás de NUEVE bloques apilados (sync, la cola,
+            título, controles, aviso, resumen, turno, listas, chips). La asesora
+            bajaba media pantalla antes de ver un pedido. Ahora son tres filas:
+              1. título + modo + buscador + filtros + sincronizar;
+              2. cómo va el día + el turno del equipo + sus acciones;
+              3. las listas de trabajo, con «te escribieron» y «toca llamar» adentro.
+            El título y los controles van en la MISMA fila: los controles bajaron
+            de seis grupos (~1100 px) a cuatro (~720 px) el 21-ago, así que ya
+            caben; y `flex-wrap` los baja de renglón si no. */}
+        <motion.header {...fadeUp(0)} className="flex flex-wrap items-center gap-x-4 gap-y-2">
           {/* Patrón HudTopbar del Dashboard: identidad a la izquierda, salud
               del dato a la derecha. El reloj de última sincronización vivía
               perdido al final de la fila de botones y oculto en <md — que es
@@ -1069,24 +1080,24 @@ export default function SeguimientoTab() {
               estados de Dropi sincronizados") no le decía nada accionable a
               nadie, y el reloj de última sincronización bajó a la barra de
               mando, junto a los botones que lo mueven. */}
-          <div className="flex items-center gap-3 min-w-0">
-            <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center shrink-0" aria-hidden="true">
-              <Truck size={17} strokeWidth={2.25} />
+          <div className="flex shrink-0 items-center gap-2.5 min-w-0">
+            <span className="w-8 h-8 rounded-lg bg-accent/14 border border-accent/30 text-accent flex items-center justify-center shrink-0" aria-hidden="true">
+              <Truck size={16} strokeWidth={2.25} />
             </span>
-            <h1 className="text-xl font-bold tracking-tight text-foreground leading-none truncate">
+            <h1 className="text-lg font-bold tracking-tight text-foreground leading-none truncate">
               Seguimiento
             </h1>
           </div>
           {/* Fila de controles en TRES niveles de peso, en vez de seis grupos
               indistinguibles: (1) el modo de trabajo con superficie propia,
               (2) los filtros, (3) las acciones de datos empujadas al extremo. */}
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex flex-1 min-w-0 items-center gap-2 flex-wrap">
             {/* NIVEL 1 — Segmented control de vista: Tablero (Kommo, en vivo) ↔
                 Lista (CrmTable). Es el switch que cambia TODA la pantalla, así
                 que sale del pelotón de pills y toma superficie propia con la
                 pastilla activa sólida (receta de toggles del Dashboard). */}
             <div
-              className="inline-flex gap-[2px] p-[3px] rounded-xl bg-card/40 border border-border shadow-card3d"
+              className="inline-flex gap-[2px] p-[3px] rounded-xl bg-surface border border-border"
               role="group"
               aria-label="Modo de trabajo"
             >
@@ -1095,9 +1106,9 @@ export default function SeguimientoTab() {
                 onClick={() => setViewMode('board')}
                 aria-pressed={viewMode === 'board'}
                 className={cn(
-                  'inline-flex items-center gap-1.5 px-4 py-2 rounded-[9px] text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
+                  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[9px] text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
                   viewMode === 'board'
-                    ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
+                    ? 'font-semibold bg-accent/16 border border-accent/40 text-accent'
                     : 'font-medium border border-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
                 )}
               >
@@ -1108,9 +1119,9 @@ export default function SeguimientoTab() {
                 onClick={() => setViewMode('list')}
                 aria-pressed={viewMode === 'list'}
                 className={cn(
-                  'inline-flex items-center gap-1.5 px-4 py-2 rounded-[9px] text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
+                  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[9px] text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
                   viewMode === 'list'
-                    ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
+                    ? 'font-semibold bg-accent/16 border border-accent/40 text-accent'
                     : 'font-medium border border-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
                 )}
               >
@@ -1129,7 +1140,7 @@ export default function SeguimientoTab() {
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Buscar…"
                 aria-label="Buscar en seguimiento"
-                className="h-11 w-44 sm:w-72 rounded-xl border border-border bg-card/40 pl-9 pr-9 text-sm text-foreground placeholder:text-muted-foreground hover:border-border-strong transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
+                className="h-10 w-40 sm:w-60 rounded-xl border border-border bg-surface pl-9 pr-9 text-sm text-foreground placeholder:text-muted-foreground hover:border-border-strong transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
               />
               {search && (
                 <button type="button" onClick={() => setSearch('')} aria-label="Limpiar búsqueda"
@@ -1151,10 +1162,10 @@ export default function SeguimientoTab() {
                 <button
                   type="button"
                   className={cn(
-                    "inline-flex items-center gap-2 h-11 rounded-xl border px-3.5 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                    "inline-flex items-center gap-2 h-10 rounded-xl border px-3.5 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                     filtrosActivos > 0
-                      ? "font-semibold bg-accent/16 border-accent/40 text-accent shadow-glow3d"
-                      : "font-medium bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong",
+                      ? "font-semibold bg-accent/16 border-accent/40 text-accent"
+                      : "font-medium bg-surface border-border text-muted-foreground hover:text-foreground hover:border-border-strong",
                   )}
                 >
                   <Filter size={14} aria-hidden="true" />
@@ -1401,12 +1412,12 @@ export default function SeguimientoTab() {
                 el hero, sin los aros ni las tarjetas. */}
             <motion.div
               {...fadeUp(0.05)}
-              className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-2xl border border-border bg-card/40 px-4 py-2.5 shadow-card3d"
+              className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-xl border border-border bg-surface px-3.5 py-2"
             >
               {heroVisible && !coverageSegError && (
                 <span className="flex items-baseline gap-1.5">
                   <span className={cn('text-lg font-mono tabular-nums font-bold leading-none', faltanTone)}>{faltan}</span>
-                  <span className="text-[11px] text-muted-foreground">te esperan ahora</span>
+                  <span className="text-[11px] text-muted-foreground">te esperan</span>
                 </span>
               )}
               {heroVisible && !coverageSegError && (
@@ -1429,25 +1440,99 @@ export default function SeguimientoTab() {
               <span className="text-[11px] text-muted-foreground">
                 <span className="font-mono tabular-nums">{enRuta}</span> en ruta
               </span>
-              {/* El final del día. Va acá, pegado a los números que va a
-                  firmar, y no en la barra de mando: es una acción de una vez
-                  al día y no compite con lo que se usa todo el tiempo.
-                  NO bloquea nada — ver CierreSeguimientoDialog. */}
-              <button
-                type="button"
-                onClick={() => setCierreAbierto(true)}
-                className="ml-auto shrink-0 inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors"
-                title="Deja registrado cómo terminó la cola de hoy: o quedó en cero, o queda escrito por qué no."
-              >
-                <Moon size={11} aria-hidden="true" /> Cerrar el día
-              </button>
-              <button
-                type="button"
-                onClick={() => setHeroAbierto((v) => !v)}
-                className="shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors"
-              >
-                {heroAbierto ? 'Ocultar detalle' : 'Ver detalle'}
-              </button>
+
+              {/* EL TURNO, en la misma línea (Fase 3, 4-sep-2026). El panel
+                  «El turno de hoy» ocupaba 130 px con una tabla de dos filas;
+                  acá cada asesora es una pastilla: nombre · tocados/asignados ·
+                  cuánto le falta. Es la MISMA fuente (`resumenTurno`), con la
+                  misma regla: `null` se pinta «—», nunca 0. La tabla completa
+                  sigue viva detrás de «Detalle». La asignación es etiqueta, no
+                  candado — ver `protocolo_turno_escalera`. */}
+              {asig.soportado && resumenTurno.totalAccionable > 0 && (
+                <span
+                  className="flex flex-wrap items-center gap-1.5 sm:border-l sm:border-border sm:pl-3"
+                  title="El turno de hoy: cuánto tocó y cuánto le falta a cada asesora. La asignación no bloquea nada."
+                >
+                  <Users size={12} className="text-muted-foreground shrink-0" aria-hidden="true" />
+                  {resumenTurno.filas.slice(0, 4).map((f) => {
+                    const esMia = !!user?.id && f.operatorId === user.id;
+                    return (
+                      <span key={f.operatorId} className={cn('pill text-[11px]', esMia ? 'pill-accent' : 'pill-neutral')}>
+                        <span className="max-w-[6.5rem] truncate font-medium">{nombreDeAsesora(f.operatorId)}</span>
+                        <span className="font-mono">{f.tocados === null ? '—' : f.tocados}/{f.asignados}</span>
+                        {f.sinTocar != null && f.sinTocar > 0 && (
+                          <span className="text-warning">· {f.sinTocar} sin tocar</span>
+                        )}
+                        {f.sinTocar === 0 && <span className="text-success">· al día</span>}
+                      </span>
+                    );
+                  })}
+                  {resumenTurno.filas.length > 4 && (
+                    <span className="text-[11px] text-muted-foreground">+{resumenTurno.filas.length - 4}</span>
+                  )}
+                  {resumenTurno.sinDueno > 0 && (
+                    <span
+                      className="pill pill-warning text-[11px]"
+                      title="Pedidos accionables que no le tocaron a nadie hoy. Nadie los va a reclamar porque no son de nadie."
+                    >
+                      <AlertTriangle size={11} aria-hidden="true" />
+                      {resumenTurno.sinDueno} sin dueño
+                    </span>
+                  )}
+                </span>
+              )}
+
+              <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                {/* Pedir más / Repartir: las respuestas directas a leer «N sin
+                    dueño», al lado del dato (antes vivían en el panel). Mismos
+                    gates que el panel: repartir es de jefes; pedir más, de quien
+                    trabaja la cola y YA terminó lo suyo. */}
+                {asig.soportado && puedoPedirMas && (
+                  <button
+                    type="button"
+                    disabled={pidiendoMas}
+                    onClick={() => { void pedirMasPedidos(); }}
+                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-success/45 bg-success/12 text-success hover:bg-success/20 transition-colors disabled:opacity-50"
+                    title="Terminaste los tuyos y quedan pedidos que no son de nadie. Esto te asigna algunos a vos; no le quita el trabajo a ninguna compañera."
+                  >
+                    <HandHelping size={11} aria-hidden="true" />
+                    {pidiendoMas ? 'Cargando…' : `Pedir más (${resumenTurno.sinDueno})`}
+                  </button>
+                )}
+                {asig.soportado && isManagerOfActive && resumenTurno.totalAccionable > 0 && (
+                  <button
+                    type="button"
+                    disabled={asig.repartiendo}
+                    onClick={repartirAMano}
+                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-accent/40 bg-accent/12 text-accent hover:bg-accent/20 transition-colors disabled:opacity-50"
+                    title="Reparte la cola accionable de hoy entre las asesoras, equilibrando la carga. Volver a correrlo NO le quita el trabajo a quien ya lo tiene."
+                  >
+                    <Users size={11} aria-hidden="true" />
+                    {asig.repartiendo ? 'Repartiendo…' : 'Repartir'}
+                  </button>
+                )}
+                {/* El final del día. Va acá, pegado a los números que va a
+                    firmar, y no en la barra de mando: es una acción de una vez
+                    al día y no compite con lo que se usa todo el tiempo.
+                    NO bloquea nada — ver CierreSeguimientoDialog. */}
+                <button
+                  type="button"
+                  onClick={() => setCierreAbierto(true)}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors"
+                  title="Deja registrado cómo terminó la cola de hoy: o quedó en cero, o queda escrito por qué no."
+                >
+                  <Moon size={11} aria-hidden="true" /> Cerrar el día
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHeroAbierto((v) => !v)}
+                  aria-expanded={heroAbierto}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors"
+                >
+                  {heroAbierto ? 'Ocultar detalle' : 'Detalle'}
+                  <ChevronDown size={11} aria-hidden="true" className={cn('transition-transform', heroAbierto && 'rotate-180')} />
+                </button>
+              </span>
             </motion.div>
 
             {heroAbierto && (
@@ -1709,14 +1794,18 @@ export default function SeguimientoTab() {
             arrancado. Se le pedía trabajo en equipo a gente sin la vista del
             equipo. El gate se movió al BOTÓN: repartir sigue siendo de jefes
             (`onRepartir` solo llega si es manager), mirar es de todas. */}
-        {asig.soportado && (
+        {/* La tabla completa del turno vive detrás de «Detalle» (Fase 3): la
+            línea-resumen de arriba ya dice lo mismo por asesora, y los botones
+            de repartir / pedir más están ahí — por eso acá van `undefined`,
+            para no dibujarlos dos veces a 40 px de distancia. */}
+        {heroAbierto && asig.soportado && (
           <motion.div {...fadeUp(0.09)}>
             <TurnoDelEquipoPanel
               resumen={resumenTurno}
               nombreDe={nombreDeAsesora}
-              onRepartir={isManagerOfActive ? repartirAMano : undefined}
+              onRepartir={undefined}
               repartiendo={asig.repartiendo}
-              onPedirMas={trabajaLaCola({ isAdmin, isOwnerOfActive }) ? () => { void pedirMasPedidos(); } : undefined}
+              onPedirMas={undefined}
               pidiendo={pidiendoMas}
               yoId={user?.id ?? null}
             />
@@ -1742,9 +1831,11 @@ export default function SeguimientoTab() {
             ordenados por urgencia, con conteo y un "Sugerido" hacia dónde
             empezar. Solo se muestran las listas con pedidos (+ las que linkean
             a otra ruta, ej. confirmación). */}
-        <motion.div {...fadeUp(0.12)} className="space-y-2">
-          <div className="flex items-center gap-1.5 hud-label">
-            <Filter size={12} aria-hidden="true" /> Listas de trabajo
+        <motion.div {...fadeUp(0.12)} className="flex items-center gap-3">
+          {/* Rótulo INLINE, a la izquierda de la fila (Fase 3): antes era un
+              renglón propio de 20 px encima de los chips. */}
+          <div className="hidden md:flex shrink-0 items-center gap-1.5 hud-label">
+            <Filter size={12} aria-hidden="true" /> Listas
             {/* Quien no sabe qué es "En agencia" lo lee sin salir de la
                 operación. Con una lista activa el link cae en SU párrafo: la
                 explicación llega donde nació la duda, no en un menú aparte. */}
@@ -1763,16 +1854,16 @@ export default function SeguimientoTab() {
               el dueño pidió menos ruido, así que ahora también en desktop es un
               solo renglón que se corre de lado. Ninguna lista se esconde: se
               llega a todas scrolleando, y las más urgentes quedan a la izquierda. */}
-          <div className="flex gap-2 overflow-x-auto snap-x snap-mandatory pb-1 -mx-1 px-1 [scrollbar-width:thin]">
+          <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 [scrollbar-width:thin]">
             <button
               type="button"
               onClick={() => setListaSlug(null)}
               aria-pressed={!listaSlug}
               className={cn(
-                "snap-start shrink-0 inline-flex items-center gap-2.5 rounded-xl border px-4 min-h-[44px] text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                "shrink-0 inline-flex items-center gap-2 rounded-lg border px-3 h-9 text-[13px] transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                 !listaSlug
-                  ? "font-semibold bg-accent/16 border-accent/40 text-accent shadow-glow3d"
-                  : "font-medium bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong"
+                  ? "font-semibold bg-accent/16 border-accent/40 text-accent"
+                  : "font-medium bg-surface border-border text-muted-foreground hover:text-foreground hover:border-border-strong"
               )}
             >
               Todas
@@ -1798,10 +1889,10 @@ export default function SeguimientoTab() {
                   ? `El tablero esconde lo que se acaba de tocar. Cada pedido vuelve solo ${textoEspera(ESPERA_REINTENTO_MIN)} con la etiqueta de qué sigue — y antes si el cliente responde. Tocá para ver todo.`
                   : 'El tablero muestra TODO, tocado o no. Tocá para ver solo lo que te espera ahora.'}
                 className={cn(
-                  "snap-start shrink-0 inline-flex items-center gap-2 rounded-xl border px-4 min-h-[44px] text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                  "shrink-0 inline-flex items-center gap-2 rounded-lg border px-3 h-9 text-[13px] transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                   onlyUntouchedSeg
-                    ? "font-semibold bg-accent/16 border-accent/40 text-accent shadow-glow3d"
-                    : "font-medium bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong",
+                    ? "font-semibold bg-accent/16 border-accent/40 text-accent"
+                    : "font-medium bg-surface border-border text-muted-foreground hover:text-foreground hover:border-border-strong",
                 )}
               >
                 {onlyUntouchedSeg ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}
@@ -1826,10 +1917,10 @@ export default function SeguimientoTab() {
                 aria-pressed={soloMias}
                 title="Los pedidos que te tocaron hoy. No bloquea nada: podés seguir gestionando cualquier otro."
                 className={cn(
-                  "snap-start shrink-0 inline-flex items-center gap-2.5 rounded-xl border px-4 min-h-[44px] text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                  "shrink-0 inline-flex items-center gap-2 rounded-lg border px-3 h-9 text-[13px] transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                   soloMias
-                    ? "font-semibold bg-accent/16 border-accent/40 text-accent shadow-glow3d"
-                    : "font-medium bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong",
+                    ? "font-semibold bg-accent/16 border-accent/40 text-accent"
+                    : "font-medium bg-surface border-border text-muted-foreground hover:text-foreground hover:border-border-strong",
                 )}
               >
                 <UserIcon size={13} aria-hidden="true" />
@@ -1838,6 +1929,76 @@ export default function SeguimientoTab() {
                   "font-mono tabular-nums text-[13px] font-bold",
                   soloMias ? "text-accent num-glow-accent" : "text-foreground",
                 )}>{misAsignadosHoy}</span>
+              </button>
+            )}
+
+            {/* «Te escribieron» y «toca llamar» viven EN la fila de listas
+                (Fase 3, 4-sep-2026): eran un renglón propio de 40 px debajo de
+                las listas, y son exactamente eso — dos listas de trabajo, las
+                más urgentes. Van primero, después de los interruptores. Los
+                handlers y las trampas documentadas (el escape «Ver todo» cuando
+                la cuenta cae a 0 con el filtro prendido) son los mismos. */}
+            {(esperandoRespuesta.size > 0 || (viewMode === 'board' && verSoloEsperando)) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSoloTocaLlamar(false);
+                  if (viewMode !== 'board') { setViewMode('board'); setSoloEsperando(true); return; }
+                  setSoloEsperando((v) => !v);
+                }}
+                aria-pressed={viewMode === 'board' && verSoloEsperando}
+                title="Un cliente escribió por WhatsApp y su mensaje es el último del chat: nadie le respondió. Tocá para verlos."
+                className={cn(
+                  'shrink-0 inline-flex items-center gap-2 rounded-lg border px-3 h-9 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                  viewMode === 'board' && verSoloEsperando
+                    ? 'bg-danger/20 border-danger/60 text-danger'
+                    : 'bg-danger/10 border-danger/40 text-foreground hover:bg-danger/15 hover:border-danger/60',
+                )}
+              >
+                <span className="w-2 h-2 rounded-full bg-danger shrink-0" aria-hidden="true" />
+                <span className="font-mono tabular-nums text-[13px] font-bold text-danger">{esperandoRespuesta.size}</span>
+                <span className="text-xs min-w-0 truncate font-medium">
+                  {esperandoRespuesta.size === 0
+                    ? 'Ya les respondiste a todos — quitá el filtro para ver el tablero'
+                    : `${esperandoRespuesta.size === 1 ? 'te escribió' : 'te escribieron'} y nadie contestó`}
+                </span>
+                <span className="text-[11px] font-bold shrink-0 rounded-md bg-danger/20 text-danger px-1.5 py-0.5">
+                  {viewMode !== 'board' ? 'Ir a verlos' : verSoloEsperando ? 'Ver todo' : 'Ver solo estos'}
+                </span>
+              </button>
+            )}
+            {(tocaLlamarSet.size > 0 || (viewMode === 'board' && soloTocaLlamar)) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSoloEsperando(false);
+                  if (viewMode !== 'board') { setViewMode('board'); setSoloTocaLlamar(true); return; }
+                  setSoloTocaLlamar((v) => !v);
+                }}
+                aria-pressed={viewMode === 'board' && soloTocaLlamar}
+                title={`Le escribimos por WhatsApp y el cliente no contestó en ${HORAS_PARA_LLAMAR} h. El siguiente intento es una llamada, no otro mensaje.`}
+                className={cn(
+                  'shrink-0 inline-flex items-center gap-2 rounded-lg border px-3 h-9 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                  viewMode === 'board' && soloTocaLlamar
+                    ? 'bg-warning/20 border-warning/60 text-warning'
+                    : 'bg-warning/10 border-warning/40 text-foreground hover:bg-warning/15 hover:border-warning/60',
+                )}
+              >
+                <Phone size={13} className="text-warning shrink-0" aria-hidden="true" />
+                <span className="font-mono tabular-nums text-[13px] font-bold text-warning">{tocaLlamarPendientes}</span>
+                {tocaLlamarSet.size > tocaLlamarPendientes && (
+                  <span className="font-mono tabular-nums text-[11px] text-muted-foreground">de {tocaLlamarSet.size}</span>
+                )}
+                <span className="text-xs min-w-0 truncate font-medium">
+                  {tocaLlamarSet.size === 0
+                    ? 'Ya los llamaste a todos — quitá el filtro para ver el tablero'
+                    : tocaLlamarPendientes === 0
+                      ? 'ya los trabajaste a todos hoy'
+                      : `${tocaLlamarPendientes === 1 ? 'no contestó' : 'no contestaron'} · toca llamar`}
+                </span>
+                <span className="text-[11px] font-bold shrink-0 rounded-md bg-warning/20 text-warning px-1.5 py-0.5">
+                  {viewMode !== 'board' ? 'Ir a verlos' : soloTocaLlamar ? 'Ver todo' : 'Ver solo estos'}
+                </span>
               </button>
             )}
             {SEG_LISTS
@@ -1870,9 +2031,9 @@ export default function SeguimientoTab() {
                     aria-pressed={active}
                     title={l.label}
                     className={cn(
-                      "snap-start shrink-0 inline-flex items-center gap-2.5 rounded-xl border px-4 min-h-[44px] text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                      "shrink-0 inline-flex items-center gap-2 rounded-lg border px-3 h-9 text-[13px] transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                       active
-                        ? "font-semibold bg-accent/16 border-accent/40 text-accent shadow-glow3d"
+                        ? "font-semibold bg-accent/16 border-accent/40 text-accent"
                         // Lista terminada: se apaga en vez de gritar. Sigue a la
                         // vista (el trabajo hecho también es información) pero
                         // deja de competir con lo que falta.
@@ -1913,7 +2074,7 @@ export default function SeguimientoTab() {
                       </span>
                     )}
                     {suggested && !active && (
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-accent/14 border border-accent/30 text-accent glow-accent shrink-0">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-accent/14 border border-accent/30 text-accent shrink-0">
                         Sugerido
                       </span>
                     )}
@@ -1989,81 +2150,8 @@ export default function SeguimientoTab() {
           el botón desaparecía y `soloEsperando` seguía activo → tablero vacío
           "Sin pedidos" SIN forma de salir (persistía al recargar/cambiar tienda).
           Ahora siempre queda el escape "Ver todo". */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-      {(esperandoRespuesta.size > 0 || (viewMode === 'board' && verSoloEsperando)) && (
-        <button
-          type="button"
-          onClick={() => {
-            setSoloTocaLlamar(false);
-            if (viewMode !== 'board') { setViewMode('board'); setSoloEsperando(true); return; }
-            setSoloEsperando((v) => !v);
-          }}
-          aria-pressed={viewMode === 'board' && verSoloEsperando}
-          title="Un cliente escribió por WhatsApp y su mensaje es el último del chat: nadie le respondió. Tocá para verlos."
-          className={cn(
-            // Chip compacto (26-ago-2026): era un banner de ancho completo con
-            // border-2 y padding grande — el mayor foco de ruido rojo del tope.
-            // Mismos tokens rojos, ahora inline y fino. Handlers/condición intactos.
-            'inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-left transition-colors',
-            viewMode === 'board' && verSoloEsperando
-              ? 'bg-danger/20 border-danger/60 text-danger'
-              : 'bg-danger/10 border-danger/40 text-foreground hover:bg-danger/15 hover:border-danger/60',
-          )}
-        >
-          <span className="w-2 h-2 rounded-full bg-danger glow-danger shrink-0" aria-hidden="true" />
-          <span className="font-mono tabular-nums text-sm font-bold text-danger">{esperandoRespuesta.size}</span>
-          <span className="text-xs min-w-0 truncate font-medium">
-            {esperandoRespuesta.size === 0
-              ? 'Ya les respondiste a todos — quitá el filtro para ver el tablero'
-              : `${esperandoRespuesta.size === 1 ? 'cliente te escribió' : 'clientes te escribieron'} y nadie les contestó`}
-          </span>
-          <span className="text-[11px] font-bold shrink-0 rounded-lg bg-danger/20 text-danger px-2 py-1">
-            {viewMode !== 'board' ? 'Ir a verlos' : verSoloEsperando ? 'Ver todo' : 'Ver solo estos'}
-          </span>
-        </button>
-      )}
-
-      {/* ── "Le escribimos y no contestó · toca llamar" (28-ago-2026) ──────────
-          El otro lado del chip de arriba: allá el cliente habló último, acá
-          hablamos nosotros y quedó en visto hace +6 h. Mismo molde a propósito,
-          incluido el escape "Ver todo" cuando el filtro está prendido y la
-          cuenta cae a 0 — sin él, vaciar la cola dejaba el tablero en blanco
-          sin forma de salir (trampa hallada el 26-ago). */}
-      {(tocaLlamarSet.size > 0 || (viewMode === 'board' && soloTocaLlamar)) && (
-        <button
-          type="button"
-          onClick={() => {
-            setSoloEsperando(false);
-            if (viewMode !== 'board') { setViewMode('board'); setSoloTocaLlamar(true); return; }
-            setSoloTocaLlamar((v) => !v);
-          }}
-          aria-pressed={viewMode === 'board' && soloTocaLlamar}
-          title={`Le escribimos por WhatsApp y el cliente no contestó en ${HORAS_PARA_LLAMAR} h. El siguiente intento es una llamada, no otro mensaje.`}
-          className={cn(
-            'inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-left transition-colors',
-            viewMode === 'board' && soloTocaLlamar
-              ? 'bg-warning/20 border-warning/60 text-warning'
-              : 'bg-warning/10 border-warning/40 text-foreground hover:bg-warning/15 hover:border-warning/60',
-          )}
-        >
-          <Phone size={13} className="text-warning shrink-0" aria-hidden="true" />
-          <span className="font-mono tabular-nums text-sm font-bold text-warning">{tocaLlamarPendientes}</span>
-          {tocaLlamarSet.size > tocaLlamarPendientes && (
-            <span className="font-mono tabular-nums text-[11px] text-muted-foreground">de {tocaLlamarSet.size}</span>
-          )}
-          <span className="text-xs min-w-0 truncate font-medium">
-            {tocaLlamarSet.size === 0
-              ? 'Ya los llamaste a todos — quitá el filtro para ver el tablero'
-              : tocaLlamarPendientes === 0
-                ? 'ya los trabajaste a todos hoy'
-                : `${tocaLlamarPendientes === 1 ? 'no contestó' : 'no contestaron'} el mensaje · toca llamar`}
-          </span>
-          <span className="text-[11px] font-bold shrink-0 rounded-lg bg-warning/20 text-warning px-2 py-1">
-            {viewMode !== 'board' ? 'Ir a verlos' : soloTocaLlamar ? 'Ver todo' : 'Ver solo estos'}
-          </span>
-        </button>
-      )}
-      </div>
+      {/* Los chips «te escribieron» y «toca llamar» se mudaron a la fila de
+          Listas de trabajo (Fase 3, 4-sep-2026) — ver arriba. */}
 
       {viewMode === 'board' ? (
         <SegBoard

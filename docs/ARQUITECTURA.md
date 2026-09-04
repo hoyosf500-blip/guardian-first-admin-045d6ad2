@@ -509,6 +509,51 @@ sombras de 50 px sobre cientos de tarjetas (bajadas a 18 px en la Fase 1 del red
 pendiente: ~10 canales de realtime por pantalla (uno por hook) y los tres `COUNT` con `ilike` de
 `useChangeAlerts` cada 10 min (1,1-1,7 s cada uno).
 
+### Rediseño «mesa de trabajo» — Fase 3, la barra de turno (4-sep-2026)
+
+Las Fases 1 y 2 (pastillas de 12 px, sombras cortas, bundle) se publicaron y el dueño dijo *"veo todo
+igual"*. Tenía razón: eran cambios de detalle. Lo que sí cambia la percepción es dónde empieza el
+trabajo. Medido en producción a 1366×768 (la laptop de una asesora), el tablero de `/seguimiento`
+arrancaba en **y=716 — debajo del pliegue —** detrás de nueve bloques apilados: sync, la cola,
+título, controles, aviso, resumen, turno, listas y los chips rojo/amarillo.
+
+Lo que hace la Fase 3, en las tres pantallas del día:
+
+- **Una cabecera, un molde** (`SeguimientoTab`, `ConfirmarTab`, `InboxPage`): título de 18 px +
+  controles en UNA fila que se envuelve. Nada de cejillas («Cola · Operadora») que la barra
+  superior ya dice, ni de párrafos de bienvenida.
+- **La barra de turno** en Seguimiento: `N te esperan · trabajados hoy · en ruta` + una pastilla
+  por asesora (`nombre tocados/asignados · faltan`) + `sin dueño` + Pedir más / Repartir / Cerrar
+  el día / Detalle, todo en una línea. La tabla completa (`TurnoDelEquipoPanel`) y el hero con
+  aros viven detrás de «Detalle». Misma fuente (`resumenTurno`), misma regla: `null` se pinta «—».
+- **Las listas de trabajo** son una sola fila de chips de 36 px, y «te escribieron» / «toca
+  llamar» van ADENTRO de esa fila (son listas de trabajo, las más urgentes), no en un renglón
+  propio debajo.
+- **Superficie quieta de verdad**: `main` ya no lleva `AuroraBackdrop` ni `bg-aurora`. El relieve
+  lo dan tres superficies SÓLIDAS: fondo → columna (`bg-surface`) → tarjeta (`bg-card`), sin
+  sombras. Antes las tarjetas eran translúcidas sobre la aurora y el navegador componía ese
+  fondo a través de cientos de ellas en cada pasada de scroll.
+- **La tarjeta del tablero** (`SegCard`): nombre + D en la primera fila; pastillas (estatus si
+  difiere de la columna + el ciclo de contacto) en la segunda; número · producto · ciudad ·
+  valor; y **una sola acción principal llena** — llamar, leer, o la plantilla de la fase — con
+  las demás como botones fantasma de 32 px (`CLASE_SECUNDARIA`). Ninguna acción se quitó; cambió
+  el peso. La tarjeta pasó de ~330 a ~223 px: una más por columna a la vista.
+- Cabecera de columna 80 → 56 px (ícono inline, cifra 18 px, rótulo 12 px sans en vez de mono de
+  10 px con tracking 0.2em). `.hud-label` global: 11 px / 0.12em. `StatTile`: 28 px, sin glow.
+
+Resultado medido en `npm run dev` con la sesión del dueño: el tablero empieza en **y≈390**, con
+las cuatro primeras columnas y dos tarjetas por columna visibles sin scrollear.
+
+**Bug que vino en el mismo reporte** (*"cuando paso el mouse eso se va conmigo, la barra queda
+descoordinada"*): el arrastre del tablero con el mouse (`onPanDown/Move/Up` en `SegBoard`)
+quedaba ARMADO si el botón se soltaba fuera del tablero antes de recorrer los 6 px que activan la
+captura — el `pointerup` caía en otro elemento— y el siguiente movimiento, sin ningún botón
+apretado, arrastraba el tablero. Además el `pointerdown` en espacio muerto iniciaba una selección
+de texto que cruzaba las tarjetas (medido: `selectstart`). Ahora: `preventDefault` en el down,
+`e.buttons & 1` verificado en cada move, `onLostPointerCapture` suelta el arrastre y
+`user-select: none` mientras dura. El riel gemelo de arriba SÍ estaba sincronizado (trazas
+idénticas medidas en producción); no era él.
+
 ### Flujo de creación de pedidos en Dropi y sus candados (4-sep-2026)
 
 **Duplicar un pedido está PROHIBIDO en esta operación**: son dos guías, dos fletes y doble

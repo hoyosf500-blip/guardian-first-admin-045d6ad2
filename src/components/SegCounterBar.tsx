@@ -177,53 +177,38 @@ export default function SegCounterBar() {
     : 'bg-muted/60 text-muted-foreground border-border';
 
   return (
-    <div className="bg-card/40 border border-border rounded-2xl p-3.5 mb-4 shadow-card3d">
-    <div className="flex items-center gap-4 flex-wrap">
-      {/* Rótulo de la barra (espeja "Equipo hoy" de CounterBar). Se oculta en
-          celular para no apretar la fila: las asesoras trabajan desde el móvil. */}
-      <span className="text-[10px] uppercase tracking-[0.08em] font-semibold text-muted-foreground shrink-0 hidden sm:inline">
-        Productividad hoy
+    // UNA sola fila (rediseño, 4-sep-2026). Eran dos renglones con cajitas de
+    // ícono de 24 px y 90 px de alto encima del tablero: la asesora bajaba
+    // media pantalla antes de ver un pedido. Mismos números, misma honestidad,
+    // en una línea que se envuelve solo si no cabe.
+    <div className="bg-surface border border-border rounded-xl px-3 py-2 mb-3 flex items-center gap-x-4 gap-y-1 flex-wrap text-xs text-muted-foreground">
+      <span className="hud-label shrink-0 hidden sm:inline">Hoy</span>
+      <span className="inline-flex items-center gap-1.5" title="Gestiones que registraste hoy en Seguimiento.">
+        <ListChecks size={13} className="text-info" aria-hidden="true" />
+        <span className="font-mono text-sm font-bold text-foreground tabular-nums">{stats.myActions}</span> acciones
       </span>
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1.5 text-sm">
-          <div className="w-6 h-6 rounded-lg bg-info/14 border border-info/30 flex items-center justify-center">
-            <ListChecks size={13} className="text-info" aria-hidden="true" />
-          </div>
-          <span className="font-mono text-sm font-bold text-foreground tabular-nums">{stats.myActions}</span>
-          <span className="text-xs text-muted-foreground">acciones</span>
-        </div>
-        <div className="flex items-center gap-1.5 text-sm">
-          <div className="w-6 h-6 rounded-lg bg-success/14 border border-success/30 flex items-center justify-center">
-            <CheckCircle2 size={13} className="text-success" aria-hidden="true" />
-          </div>
-          <span className="font-mono text-sm font-bold text-foreground tabular-nums">{stats.myResolved}</span>
-          <span className="text-xs text-muted-foreground">resueltos</span>
-        </div>
-        <div className="flex items-center gap-1.5 text-sm">
-          <div className="w-6 h-6 rounded-lg bg-warning/14 border border-warning/30 flex items-center justify-center">
-            <Hourglass size={13} className="text-warning" aria-hidden="true" />
-          </div>
-          <span className="font-mono text-sm font-bold text-foreground tabular-nums">{pendientes}</span>
-          <span className="text-xs text-muted-foreground">pendientes</span>
-        </div>
-      </div>
-      <div className="flex items-center gap-2 ml-auto">
-        <span
-          className={`text-[11px] font-semibold px-2 py-1 rounded-md border tabular-nums ${tasaTone}`}
-          title={tasa === null ? 'Todavía no registraste acciones hoy: no hay tasa que calcular.' : undefined}
-        >
-          Resolución {tasa === null ? '—' : `${tasa}%`}
-        </span>
-        <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground border-l border-border pl-3">
-          <Users size={12} aria-hidden="true" />
-          <span>Equipo</span>
-          <span className="font-mono font-bold text-foreground tabular-nums">{stats.teamActions}</span>
-          <span>/</span>
-          <span className="font-mono text-success tabular-nums">{stats.teamResolved}</span>
-          <span>resueltos</span>
-        </div>
-      </div>
-    </div>
+      <span className="inline-flex items-center gap-1.5">
+        <CheckCircle2 size={13} className="text-success" aria-hidden="true" />
+        <span className="font-mono text-sm font-bold text-foreground tabular-nums">{stats.myResolved}</span> resueltos
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <Hourglass size={13} className="text-warning" aria-hidden="true" />
+        <span className="font-mono text-sm font-bold text-foreground tabular-nums">{pendientes}</span> pendientes
+      </span>
+      <span
+        className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border tabular-nums ${tasaTone}`}
+        title={tasa === null ? 'Todavía no registraste acciones hoy: no hay tasa que calcular.' : undefined}
+      >
+        Resolución {tasa === null ? '—' : `${tasa}%`}
+      </span>
+      <span className="hidden sm:inline-flex items-center gap-1.5 border-l border-border pl-3">
+        <Users size={12} aria-hidden="true" />
+        Equipo
+        <span className="font-mono font-bold text-foreground tabular-nums">{stats.teamActions}</span>
+        /
+        <span className="font-mono text-success tabular-nums">{stats.teamResolved}</span>
+        resueltos
+      </span>
 
     {/* ── Su propio registro, donde trabaja ─────────────────────────────────
         Pedido del dueño: que la asesora sepa que cada acción queda anotada.
@@ -235,7 +220,7 @@ export default function SegCounterBar() {
         · 0 pasaste sin gestionar", que sería un veredicto sobre datos que no
         existen. Es la misma regla que ya rige los contadores de arriba. */}
     {(estadoBitacora === 'ok' && mio) || meta != null ? (
-      <div className="mt-2.5 pt-2.5 border-t border-border/60 flex items-center gap-x-4 gap-y-1 flex-wrap text-[11px] text-muted-foreground">
+      <div className="ml-auto flex items-center gap-x-4 gap-y-1 flex-wrap text-[11px] text-muted-foreground sm:border-l sm:border-border sm:pl-3">
         {estadoBitacora === 'ok' && mio && (
           <>
             <span className="inline-flex items-center gap-1.5" title="Pedidos que abriste hoy, contados por el sistema.">

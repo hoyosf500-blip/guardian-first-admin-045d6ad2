@@ -37,7 +37,7 @@ import { MetricsUpdateBanner } from '@/components/MetricsUpdateBanner';
 import ClosingReportDialog from '@/components/ClosingReportDialog';
 import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, CalendarIcon, X, RotateCcw, Moon, CheckCircle2, XCircle, PhoneOff, ClipboardCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { TiltCard, CountUp, StatTile, AuroraBackdrop } from '@/components/ui3d';
+import { TiltCard, CountUp, StatTile } from '@/components/ui3d';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn, bogotaToday, formatCOP } from '@/lib/utils';
@@ -657,34 +657,28 @@ export default function ConfirmarTab({ profile }: Props) {
   const pendientesTotales = pending + enAtencionPorOtras + reagendados;
 
   return (
-    <div className="relative max-w-5xl mx-auto space-y-5">
-      {/* Header-hero (MOLDE 1): los dos orbes hechos a mano que vivían sueltos
-          detrás de toda la página los reemplaza <AuroraBackdrop/>, el componente
-          del DS, contenido DENTRO del header — el mismo tratamiento que el hero
-          de Logística. Exige `relative overflow-hidden` acá y `relative` en cada
-          hijo hermano para que el contenido quede por encima. */}
+    <div className="relative max-w-5xl mx-auto space-y-3">
+      {/* BARRA DE TURNO (rediseño Fase 3, 4-sep-2026). Era un header-hero de
+          130 px con aurora propia, cejilla «Cola · Operadora» (que la barra
+          superior ya dice), título de 24 px y un subtítulo. Ahora es UNA fila:
+          título + fecha a la izquierda, acciones a la derecha — el mismo molde
+          que Seguimiento y la Bandeja, para que el equipo aprenda una sola vez. */}
       <motion.header
         {...fadeUp(0)}
-        className="relative overflow-hidden rounded-3xl border border-border bg-card/40 p-5 shadow-card3d-lg hairline-top flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"
+        className="flex flex-wrap items-center gap-x-4 gap-y-2"
       >
-        <AuroraBackdrop />
-        <div className="relative min-w-0 space-y-1.5">
-          <div className="hud-label truncate text-accent">
-            Cola · Operadora
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
-            <span className="inline-flex w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent items-center justify-center shrink-0" aria-hidden="true">
-              <Phone size={20} strokeWidth={2.25} />
-            </span>
-            Confirmar
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {formatDateES(today)} · Cola de pedidos pendientes de confirmación.
-          </p>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="inline-flex w-8 h-8 rounded-lg bg-accent/14 border border-accent/30 text-accent items-center justify-center shrink-0" aria-hidden="true">
+            <Phone size={16} strokeWidth={2.25} />
+          </span>
+          <h1 className="text-lg font-bold tracking-tight text-foreground leading-none">Confirmar</h1>
+          <span className="hidden sm:inline text-xs text-muted-foreground truncate">
+            {formatDateES(today)} · pedidos pendientes de confirmación
+          </span>
         </div>
 
-        <div className="relative flex items-center gap-2 shrink-0">
-          <Button variant="outline" size="sm" onClick={() => setClosing(true)} className="gap-1.5 h-9 rounded-xl bg-card/40 border-border hover:border-border-strong">
+        <div className="ml-auto flex items-center gap-2 shrink-0">
+          <Button variant="outline" size="sm" onClick={() => setClosing(true)} className="gap-1.5 h-9 rounded-xl bg-surface border-border hover:border-border-strong">
             <Moon size={14} /> Cerrar turno
           </Button>
           {excelLoaded && (
@@ -702,7 +696,7 @@ export default function ConfirmarTab({ profile }: Props) {
                   sessionStorage.removeItem('confirmar:callOrderId');
                 } catch { /* storage disabled */ }
               }}
-              className="inline-flex h-9 items-center gap-1.5 px-3 rounded-xl bg-card/40 border border-border text-xs font-semibold text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              className="inline-flex h-9 items-center gap-1.5 px-3 rounded-xl bg-surface border border-border text-xs font-semibold text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             >
               Recargar cola
             </button>
@@ -827,9 +821,8 @@ export default function ConfirmarTab({ profile }: Props) {
       <SiguienteColaBanner supersededIds={supersededIds} />
 
       {excelLoaded && workQueue.length === 0 && (
-        <div className="relative overflow-hidden flex flex-col items-center justify-center py-16 text-center rounded-3xl border border-border bg-card/40 shadow-card3d hairline-top" role="status" aria-live="polite">
-          <AuroraBackdrop />
-          <div className="relative w-14 h-14 rounded-2xl bg-success/14 border border-success/30 text-success glow-success shadow-card3d flex items-center justify-center mb-4">
+        <div className="relative overflow-hidden flex flex-col items-center justify-center py-16 text-center rounded-xl border border-border bg-surface" role="status" aria-live="polite">
+          <div className="relative w-14 h-14 rounded-2xl bg-success/14 border border-success/30 text-success flex items-center justify-center mb-4">
             <Phone size={24} aria-hidden="true" />
           </div>
           <h3 className="relative text-base font-semibold text-foreground mb-1">No hay pedidos disponibles para confirmar</h3>
@@ -853,7 +846,7 @@ export default function ConfirmarTab({ profile }: Props) {
               cambia, así que no se mueve ningún bloque de lógica. */}
           <motion.section
             {...fadeUp(0.1)}
-            className="relative overflow-hidden rounded-3xl border border-border bg-card/40 shadow-card3d-lg hairline-top mb-4 flex flex-col"
+            className="relative overflow-hidden rounded-xl border border-border bg-surface mb-3 flex flex-col"
           >
           {/* Chip "Tu cola hoy" — cobertura por operadora. La queja del usuario
               fue: "no sé si Mayra YA llamó a las 20 o si le faltan 5". Este
@@ -1033,15 +1026,17 @@ export default function ConfirmarTab({ profile }: Props) {
                  propio). Los conteos y sus rótulos son EXACTAMENTE los mismos;
                  lo que cambia es que ahora se leen de un vistazo por color y
                  tamaño en vez de escanear una fila de texto. */
-              <div className="order-1 grid grid-cols-1 md:grid-cols-12 gap-4 p-5 sm:p-6">
+              <div className="order-1 grid grid-cols-1 md:grid-cols-12 gap-3 p-3 sm:p-4">
+                {/* Sin brackets, sin sheen, sin sombra larga ni cifra de 52 px
+                    (rediseño, 4-sep-2026): la cifra que manda sigue siendo la
+                    más grande de la pantalla, pero la pantalla es para llamar,
+                    no para mirar el número. */}
                 <TiltCard
-                  sheen
-                  brackets
                   wrapperClassName="md:col-span-5"
-                  className="bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg h-full flex flex-col justify-between gap-4"
+                  className="bg-card border border-border rounded-xl p-4 h-full flex flex-col justify-between gap-3"
                 >
                   <div className="tilt-layer-2 flex items-start justify-between gap-3">
-                    <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                    <span className="w-8 h-8 rounded-lg bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
                       <Phone size={17} />
                     </span>
                     {(d7 > 0 || d46 > 0) && (
@@ -1061,8 +1056,8 @@ export default function ConfirmarTab({ profile }: Props) {
                   </div>
 
                   <div className="tilt-layer-3">
-                    <CountUp value={pending} className="text-[52px] font-extrabold text-accent leading-none num-glow-accent" />
-                    <div className="hud-label mt-2">por confirmar</div>
+                    <CountUp value={pending} className="text-4xl font-extrabold text-accent leading-none" />
+                    <div className="hud-label mt-1.5">por confirmar</div>
                     {/* El numero grande es lo que ELLA puede llamar ahora. Lo que
                         queda afuera se nombra acá, para que la cola no parezca
                         encogerse sola. Solo aparece cuando hay algo: una linea
@@ -1116,7 +1111,10 @@ export default function ConfirmarTab({ profile }: Props) {
                     confirmados <strong className="text-foreground/80">hoy</strong> · incluye pedidos de días anteriores que estaban pendientes
                     <span className="opacity-70"> · es el mismo número del Dashboard y Productividad (una sola matemática)</span>
                   </span>
-                  <div className="grid grid-cols-1 min-[390px]:grid-cols-2 gap-3 flex-1">
+                  {/* Cuatro en UNA fila (rediseño, 4-sep-2026): en 2×2 la
+                      tarjeta medía 380 px y la lista de llamadas empezaba a
+                      670 px del borde, debajo del pliegue de una laptop. */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 flex-1">
                     {/* `null` = sin dato: StatTile lo pinta "—". Sin `counterCargado`
                         (la siembra falló) estos cuatro decían 0 con cara de medido. */}
                     <StatTile icon={CheckCircle2} label="conf" value={counterCargado ? counter.conf : null} tone="success" />
@@ -1249,7 +1247,7 @@ export default function ConfirmarTab({ profile }: Props) {
               indistinguibles del fondo) a h-9/text-xs con el ícono más visible
               — el popover trigger ya cubría todo el botón (asChild forwardea
               onClick), pero el target era demasiado chiquito. */}
-          <motion.div {...fadeUp(0.18)} className="bg-card/40 border border-border rounded-2xl shadow-card3d hairline-top p-3 sm:p-4 mb-4 space-y-3">
+          <motion.div {...fadeUp(0.18)} className="bg-surface border border-border rounded-xl p-3 mb-3 space-y-3">
             <div className="flex items-center flex-wrap gap-2">
               <Popover>
                 <PopoverTrigger asChild>

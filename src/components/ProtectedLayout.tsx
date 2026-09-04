@@ -26,7 +26,7 @@ import StoreSelector from '@/components/StoreSelector';
 import SyncFreshness from '@/components/SyncFreshness';
 import ImporchatSyncBadge from '@/components/chat/ImporchatSyncBadge';
 import type { LucideIcon } from 'lucide-react';
-import { IconRail, HudTopbar, AuroraBackdrop } from '@/components/ui3d';
+import { IconRail, HudTopbar } from '@/components/ui3d';
 
 const CFO_ENABLED = import.meta.env.VITE_ENABLE_CFO === 'true';
 
@@ -521,8 +521,15 @@ function ProtectedLayoutInner() {
             }
           />
 
-          <main className="relative flex-1 overflow-y-auto p-4 md:p-6 bg-aurora">
-            <AuroraBackdrop />
+          {/* SUPERFICIE QUIETA (rediseño, 4-sep-2026). Acá vivían la aurora
+              (tres manchas de luz de 400-500 px) y un degradado radial de fondo.
+              Las tarjetas son translúcidas (`bg-card/40`), así que ese fondo se
+              veía A TRAVÉS de cientos de tarjetas y el navegador lo componía en
+              cada pasada de scroll. El rediseño aprobado pide una mesa de
+              trabajo, no un tablero de mando: fondo plano, y el relieve lo dan
+              tres niveles de superficie (fondo → columna → tarjeta). El archivo
+              `AuroraBackdrop.tsx` se conserva (lo referencia un guardián). */}
+          <main className="relative flex-1 overflow-y-auto p-4 md:px-6 md:py-4 bg-background">
             <div className="relative">
               {/* Era `OpeningReportGate`: un formulario de 4 pasos que BLOQUEABA
                   la app hasta enviarlo. Ahora es una bienvenida que se va sola
