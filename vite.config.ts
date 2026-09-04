@@ -33,7 +33,14 @@ export default defineConfig(({ mode }) => ({
           // profiler de bundle pueda aislarlo y para que rutas que no lo
           // usan no paguen el costo eager via vendor-ui.
           'vendor-motion': ['framer-motion'],
-          'vendor-ui': ['sonner', 'date-fns'],
+          // ⛔ `clsx` va ACÁ a propósito (4-sep-2026, medido en producción).
+          // Lo usan `cn()` (todas las pantallas) y recharts. Sin nombrarlo,
+          // Rollup lo dejaba DENTRO de `vendor-charts`, y el chunk de entrada
+          // importaba los 418 KB de gráficos (109 KB gzip) para sacar UN símbolo
+          // de 500 bytes: `import{c as Sc}from"./vendor-charts-…"`. Hasta el
+          // login bajaba recharts. `tailwind-merge` y `class-variance-authority`
+          // son los otros dos que `cn()`/shadcn comparten con medio bundle.
+          'vendor-ui': ['sonner', 'date-fns', 'clsx', 'tailwind-merge', 'class-variance-authority'],
         },
       },
     },

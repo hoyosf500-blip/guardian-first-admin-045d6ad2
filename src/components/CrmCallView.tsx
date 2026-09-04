@@ -12,7 +12,7 @@ import { formatCOP } from '@/lib/utils';
 import { getAlertLevel } from '@/lib/alertSystem';
 import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
-import SectorSinCoberturaChip from '@/components/SectorSinCoberturaChip';
+import SectorSinCoberturaChip from '@/components/SectorSinCoberturaChipLazy';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
 import SegActionButtons from '@/components/SegActionButtons';
 import { useRecordGestion } from '@/hooks/useRecordGestion';

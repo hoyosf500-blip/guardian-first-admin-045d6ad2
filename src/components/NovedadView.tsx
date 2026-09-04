@@ -36,7 +36,7 @@ import {
 import FingerprintBadge from '@/components/FingerprintBadge';
 import { diasSinMovimiento } from '@/lib/segPulso';
 import ChatClienteCard from '@/components/chat/ChatClienteCard';
-import SectorSinCoberturaChip from '@/components/SectorSinCoberturaChip';
+import SectorSinCoberturaChip from '@/components/SectorSinCoberturaChipLazy';
 import { guiaNovedadPorPais, plantillaSolucionPorPais, paisTieneGuia, notasTransportadoraPorPais, reglasTransversalesPorPais, respuestaPublicada, fuenteDeFicha, esEstadoDeFlujo, confianzaDeFicha } from '@/lib/novedades/porPais';
 
 interface Props {

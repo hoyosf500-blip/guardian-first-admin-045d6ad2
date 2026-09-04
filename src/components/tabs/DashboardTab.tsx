@@ -25,7 +25,10 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 import { motion } from 'framer-motion';
-import { TiltCard, StatTile, CountUp, GaugeRing, StackedDayBars } from '@/components/ui3d';
+import { TiltCard, StatTile, CountUp, GaugeRing } from '@/components/ui3d';
+// Directo y no por el barril: es el único componente de ui3d con recharts (ver
+// la nota en ui3d/index.ts).
+import StackedDayBars from '@/components/ui3d/StackedDayBars';
 
 interface DailyResult { result_date: string; result: string; order_id: string | null; }
 interface SyncLog { status: string; created_at: string; synced_count: number; error_message: string | null; source: string; }

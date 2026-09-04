@@ -19,7 +19,7 @@ import { hotkeysHabilitados } from '@/lib/hotkeys';
 import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Lock, UserCog, MessageSquare, Loader2, CalendarClock } from 'lucide-react';
 import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
-import SectorSinCoberturaChip from '@/components/SectorSinCoberturaChip';
+import SectorSinCoberturaChip from '@/components/SectorSinCoberturaChipLazy';
 import { ProductoTile } from '@/components/ProductoTile';
 import { useRecordGestion } from '@/hooks/useRecordGestion';
 import { useReagendarPedido } from '@/hooks/useReagendarPedido';

@@ -477,6 +477,38 @@ marca la **tanda 4 (`CallView`/`CrmCallView`) como la peligrosa** — toca los o
 module-level de validación de direcciones, `visualDecision` y `DespachoGateButton`; si aparece un
 `visualDecision` o un efecto de auto-validación en el diff, revertir.
 
+### Bundle: lo que viaja a TODAS las pantallas (4-sep-2026)
+
+Medido en producción con la sesión del dueño: `/seguimiento` bajaba 55 archivos JS, entre ellos
+`vendor-charts` (recharts, 418 KB / 109 KB gzip) sin dibujar un solo gráfico, y el dataset de
+cobertura de Ecuador (`dropiEcuador/logisticaOficial` + 3 JSON, ~246 KB) aunque la asesora no
+abriera ningún pedido. Tres causas, las tres ya cerradas y con guardián
+(`src/test/rechartsNoViajaATodasLasPantallas.test.ts`):
+
+1. **`clsx` no estaba nombrado en `manualChunks`** (`vite.config.ts`). Lo usan `cn()` y recharts;
+   Rollup lo dejó DENTRO de `vendor-charts`, y el chunk de entrada importaba los 418 KB para sacar
+   un símbolo de 500 bytes (`import{c as Sc}from"./vendor-charts-…"`). Hasta `/auth` bajaba los
+   gráficos. Ahora `clsx`, `tailwind-merge` y `class-variance-authority` van en `vendor-ui`.
+   **Regla:** toda dependencia que comparten `cn()`/shadcn con una librería pesada se nombra en un
+   chunk propio; si no, el entry hereda la pesada.
+2. **`ui3d/index.ts` reexportaba `StackedDayBars`** (el único de la carpeta con recharts) y ese
+   barril lo importan ~40 archivos, ProtectedLayout incluido. Un `export { default as X }` no se
+   tree-shakea cuando X arrastra efectos secundarios. `StackedDayBars` se importa directo.
+3. **`SectorSinCoberturaChip`** entraba estático en CallView, CrmCallView y NovedadView. Va por
+   `React.lazy` (`SectorSinCoberturaChipLazy`, que además devuelve `null` fuera de Ecuador sin
+   pedir el chunk).
+
+Cómo comprobar un import ESTÁTICO en el build: `grep -c 'from"./vendor-charts-' dist/assets/<chunk>.js`.
+Un `grep -l` a secas da falsos positivos: Vite lista TODOS los chunks en el array de preload de
+cada página. Resultado en `vite preview` tras el arreglo: `/seguimiento` sin `vendor-charts` ni el
+chip, −663 KB sin comprimir (≈ −163 KB gzip, cerca de la mitad del JS de la primera pantalla).
+
+Lo que NO ayuda a la velocidad de `/seguimiento`: una RPC para el tablero. Los pedidos llegan en
+2-4 páginas de `orders` en paralelo (la peor 1,2 s); el peso estaba en el JS y en el repintado de
+sombras de 50 px sobre cientos de tarjetas (bajadas a 18 px en la Fase 1 del rediseño). Sigue
+pendiente: ~10 canales de realtime por pantalla (uno por hook) y los tres `COUNT` con `ilike` de
+`useChangeAlerts` cada 10 min (1,1-1,7 s cada uno).
+
 ### Flujo de creación de pedidos en Dropi y sus candados (4-sep-2026)
 
 **Duplicar un pedido está PROHIBIDO en esta operación**: son dos guías, dos fletes y doble
