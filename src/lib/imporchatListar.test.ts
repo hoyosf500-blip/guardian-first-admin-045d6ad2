@@ -68,3 +68,35 @@ describe('listado liviano de ImporChat', () => {
     expect(r2?.muestraKeys).toEqual(['foo', 'bar']);
   });
 });
+
+describe('la fila REAL de producción (probe_listar, 4-sep-2026)', () => {
+  // Copiada tal cual de la respuesta de `clientes_chat_center/listar` (sin datos
+  // personales). Antes `ultimo_texto` no estaba en la lista de claves y el texto
+  // salía vacío: el responder automático no encontraba ninguna consulta.
+  const fila = {
+    id: 753860, id_configuracion: 277, id_etiqueta: null, estado_cliente: 1,
+    created_at: '2026-08-27T04:25:38.000Z', updated_at: '2026-08-27T04:25:38.000Z', chat_cerrado: 0,
+    ultimo_mensaje_at: '2026-09-04 00:09:58',
+    ultimo_texto: 'Perfecto 😊 Ya paso su caso al equipo para que le confirmen la guía en el transcurso del día.',
+    ultimo_tipo_mensaje: 'text', ultimo_rol_mensaje: '1', ultimo_msg_id: 5529077,
+    ultimo_producto_ad: null, productos_imporsuit: null,
+  };
+  it('lee id, fecha (local EC → UTC), rol, tipo y TEXTO', () => {
+    const u = interpretarFila(fila, 'EC')!;
+    expect(u.chatId).toBe('753860');
+    expect(u.at.toISOString()).toBe('2026-09-04T05:09:58.000Z');
+    expect(u.rol).toBe('Propietario');
+    expect(u.tipo).toBe('text');
+    expect(u.texto).toContain('le confirmen la guía');
+  });
+  it('un mensaje del cliente ("0") se distingue del negocio', () => {
+    const u = interpretarFila({ ...fila, ultimo_rol_mensaje: '0', ultimo_texto: '0960915765' }, 'EC')!;
+    expect(u.rol).toBe('Cliente');
+    expect(u.texto).toBe('0960915765');
+  });
+  it('extraerFilas entiende {status, data:[…], totalPages}', () => {
+    const r = extraerFilas({ status: 'success', data: [fila], total: 6520, page: 1, limit: 200, totalPages: 33 }, 1, 200);
+    expect(r.filas).toHaveLength(1);
+    expect(r.totalPaginas).toBe(33);
+  });
+});

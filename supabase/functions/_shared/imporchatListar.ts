@@ -10,15 +10,15 @@
  * botón de confirmar, si escribió. El XLSX queda para reconciliar una vez por
  * noche y como respaldo si esto falla.
  *
- * ⛔ La forma exacta del JSON NO está verificada en vivo al escribir esto: se
- * conocen los nombres de los campos por la documentación del proyecto
- * (`ultimo_mensaje_at`, `ultimo_rol_mensaje`, `celular_cliente`, `chat_cerrado`)
- * y por el esquema de mensajes del socket (`rol_mensaje` 0=cliente 1=negocio,
- * `texto_mensaje`, `tipo_mensaje`, `created_at`). `interpretarFila` acepta las
- * variantes razonables y, si NINGUNA fila trae id + fecha, `traerUltimosMensajes`
- * devuelve la muestra de claves para que quien lo lea en sync_logs sepa qué
- * mandó ImporChat — y el sync cae al XLSX en vez de inventar. El modo
- * `probe_listar` del sync devuelve las filas crudas para mirarlas.
+ * Forma REAL de la fila, verificada en producción el 4-sep-2026 con el modo
+ * `probe_listar` del sync (respuesta `{status:"success", data:[…], total,
+ * page, limit, totalPages}`): `id`, `id_configuracion`, `celular_cliente`,
+ * `chat_cerrado`, `ultimo_mensaje_at` ("2026-09-04 00:09:58", hora local sin
+ * zona), `ultimo_texto`, `ultimo_tipo_mensaje` ("text"), `ultimo_rol_mensaje`
+ * ("0" cliente / "1" negocio), `ultimo_msg_id`. `interpretarFila` acepta además
+ * las variantes razonables y, si NINGUNA fila trae id + fecha,
+ * `traerUltimosMensajes` devuelve la muestra de claves para que quien lo lea en
+ * sync_logs sepa qué mandó ImporChat — y el sync cae al XLSX en vez de inventar.
  *
  * Puro salvo `traerUltimosMensajes` (fetch). Probado desde
  * `src/lib/imporchatListar.test.ts`.
@@ -83,7 +83,13 @@ export function interpretarFila(rowRaw: unknown, cc: string): UltimoMensajeChat 
   const at = fechaListar(primero(row, ["ultimo_mensaje_at", "fecha_ultimo_mensaje", "ultimo_mensaje_fecha", "last_message_at", "updated_at"]), cc);
   if (id == null || !at) return null;
   const tipo = String(primero(row, ["ultimo_tipo_mensaje", "tipo_ultimo_mensaje", "ultimo_mensaje_tipo", "tipo_mensaje", "tipo"]) ?? "text").toLowerCase();
-  const texto = String(primero(row, ["ultimo_mensaje", "texto_ultimo_mensaje", "ultimo_texto_mensaje", "ultimo_mensaje_texto", "texto_mensaje", "texto"]) ?? "");
+  // ⛔ `ultimo_texto` es el nombre REAL (verificado en producción el 4-sep-2026
+  // con `probe_listar`: la fila trae `ultimo_mensaje_at`, `ultimo_texto`,
+  // `ultimo_tipo_mensaje`, `ultimo_rol_mensaje` "0"/"1", `ultimo_msg_id`). No
+  // estaba en esta lista y el texto salía SIEMPRE vacío: el responder automático
+  // corrió tres veces sobre 858 chats y no encontró ni una consulta. Las demás
+  // variantes se quedan por si ImporChat renombra.
+  const texto = String(primero(row, ["ultimo_texto", "ultimo_mensaje", "texto_ultimo_mensaje", "ultimo_texto_mensaje", "ultimo_mensaje_texto", "texto_mensaje", "texto"]) ?? "");
   return {
     chatId: String(id),
     at,

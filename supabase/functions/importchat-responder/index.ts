@@ -63,7 +63,7 @@ import { linkRastreoConGuia } from "../_shared/rastreo.ts";
 import type { MensajeConversacion } from "../_shared/conversacion.ts";
 
 /** ⛔ Subirla en el MISMO commit que cambie algo, o el ping miente. */
-const VERSION = "importchat-responder 2026-09-04.1 cumple-la-promesa-del-bot";
+const VERSION = "importchat-responder 2026-09-04.2 lee-ultimo_texto-del-listado";
 const SOURCE = "importchat-responder";
 const AUTOR = "Guardian · respuesta automática";
 

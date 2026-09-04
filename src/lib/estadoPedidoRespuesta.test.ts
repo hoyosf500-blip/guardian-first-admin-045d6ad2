@@ -177,6 +177,9 @@ describe("esPromesaPendiente — el negocio dijo que verificaba y no volvió", (
       "Déjeme revisar el detalle de su envío y ya mismo le confirmo por aquí 🙏",
       "Permítame verificar el estado de su pedido, deme un momento por favor",
       "dejame verificar y le aviso por aquí",
+      // Textos REALES del bot de Ecuador vistos en el listado el 4-sep-2026:
+      "No puedo prometer una hora exacta, pero el equipo lo confirma por aquí en el transcurso del día. ¿Le sirve full así?",
+      "Ya paso su caso al equipo para que lo coordinen con la transportadora y le confirmen la hora exacta y la guía en el transcurso del día.",
     ];
     for (const t of si) expect(esPromesaPendiente(t), t).toBe(true);
   });

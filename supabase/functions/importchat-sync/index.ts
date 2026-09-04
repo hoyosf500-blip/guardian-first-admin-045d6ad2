@@ -104,7 +104,11 @@ const SOURCE = "importchat-sync";
  * `{"ping":true}` la devuelve SIN tocar ImporChat, sin leer la base y sin
  * escribir en sync_logs. Un `curl` y se sabe.
  */
-const VERSION = "importchat-sync 2026-09-04.1 listado-liviano-en-vez-del-xlsx";
+// 2026-09-04.2: `_shared/imporchatListar` aprendió el nombre REAL del texto
+// del último mensaje (`ultimo_texto`). Hasta acá el camino liviano leía el texto
+// vacío, así que un "Confirmo recepción" apretado por botón no se detectaba por
+// esta vía (solo lo agarraba la reconciliación nocturna con el XLSX).
+const VERSION = "importchat-sync 2026-09-04.2 el-listado-trae-ultimo_texto";
 /** Hora LOCAL a la que se hace la reconciliación completa con el XLSX (una vez
  *  por noche; el cron corre cada 30 min, así que son dos corridas y la segunda
  *  encuentra todo fresco). El resto del día va por el listado liviano. */

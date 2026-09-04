@@ -306,8 +306,11 @@ const PATRONES_PROMESA: RegExp[] = [
   /\bverific/,                        // "lo verifico", "permítame verificar"
   /\bd[eé]j[ea]me (revisar|verificar|consultar|ver)\b/,
   /\bun momentito\b|\bun momento\b/,
-  /\ble confirmo por (aqu[ií]|este medio)\b/,
-  /\ble (aviso|escribo) (por aqu[ií]|en un momento|enseguida)\b/,
+  // "le confirmo por aquí", "el equipo lo confirma por aquí", "se lo confirmamos por este medio"
+  /\b(le|lo|la|se lo|se la) confirm(o|a|an|amos|en) por (aqu[ií]|este medio)\b/,
+  // "para que le confirmen la hora exacta y la guía en el transcurso del día"
+  /\bconfirm(en|e|amos|an) .{0,40}\b(gu[ií]a|hora|env[ií]o)\b/,
+  /\ble (aviso|escribo|confirmo) (por aqu[ií]|en un momento|enseguida|en el transcurso)\b/,
   /\bya (lo|la) busco\b/,
 ];
 
