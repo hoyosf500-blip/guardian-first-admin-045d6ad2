@@ -373,7 +373,7 @@ export interface ActividadChat {
 
 /** Tipos de fila que NO son un mensaje real hacia el cliente. `notificacion`
  *  es tráfico interno ("Te has asignado este chat"); `revoke` es un borrado. */
-const TIPOS_NO_MENSAJE = new Set(["notificacion", "revoke"]);
+export const TIPOS_NO_MENSAJE = new Set(["notificacion", "revoke"]);
 
 /**
  * Deriva la actividad del chat sobre el historial COMPLETO.

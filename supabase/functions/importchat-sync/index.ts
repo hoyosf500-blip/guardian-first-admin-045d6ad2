@@ -71,10 +71,16 @@ import { Unzip, UnzipInflate } from "https://esm.sh/fflate@0.8.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { respuestaPing } from "../_shared/versionEdge.ts";
 import {
+  clasificar,
   derivarActividadChat,
   derivarSenal,
+  esBotonConfirmar,
+  esBotonConocido,
+  esPalabraDelCliente,
+  TIPOS_NO_MENSAJE,
   type MensajeChat,
 } from "../_shared/senalConfirmacion.ts";
+import { traerUltimosMensajes, type UltimoMensajeChat } from "../_shared/imporchatListar.ts";
 import {
   ensureFreshImporchatToken,
   IMPORCHAT_BASE_DEFAULT,
@@ -98,7 +104,11 @@ const SOURCE = "importchat-sync";
  * `{"ping":true}` la devuelve SIN tocar ImporChat, sin leer la base y sin
  * escribir en sync_logs. Un `curl` y se sabe.
  */
-const VERSION = "importchat-sync 2026-08-30.2 botones-novedad-registrados";
+const VERSION = "importchat-sync 2026-09-04.1 listado-liviano-en-vez-del-xlsx";
+/** Hora LOCAL a la que se hace la reconciliación completa con el XLSX (una vez
+ *  por noche; el cron corre cada 30 min, así que son dos corridas y la segunda
+ *  encuentra todo fresco). El resto del día va por el listado liviano. */
+const HORA_RECONCILIAR = 3;
 const PAGE_SIZE = 200;
 const MAX_PAGES = 15;
 const DIAS_DEFAULT = 10;
@@ -501,6 +511,20 @@ Deno.serve(async (req) => {
       return json({ ok: true, tiendas: 0, mensaje: "sin tiendas configuradas" });
     }
 
+    // ── Sondeo de la forma del listado liviano (3-sep-2026) ────────────────
+    // Devuelve las primeras filas CRUDAS de `clientes_chat_center/listar` para
+    // mirar con qué nombres vienen los campos antes de confiar en ellos. No
+    // escribe nada, no deja fila en sync_logs (el `log` del cierre no corre).
+    if (body?.mode === "probe_listar") {
+      const c0 = configs[0];
+      const base0 = String(c0.api_base || IMPORCHAT_BASE_DEFAULT);
+      const baseSlash = base0.endsWith("/") ? base0 : `${base0}/`;
+      const url = `${baseSlash}clientes_chat_center/listar?id_configuracion=${encodeURIComponent(String(c0.id_configuracion))}&page=1&limit=3`;
+      const r = await fetch(url, { headers: { Authorization: `Bearer ${String(c0.session_token || "")}` } });
+      const texto = await r.text();
+      return json({ ok: r.ok, status: r.status, url: url.replace(/id_configuracion=\d+/, "id_configuracion=…"), cuerpo: texto.slice(0, 4000) });
+    }
+
     const resumen: unknown[] = [];
     let totalTocados = 0;
     // Tiendas que quedaron a medias por presupuesto: el log final sale en
@@ -594,30 +618,89 @@ Deno.serve(async (req) => {
         await traerPedidos(base, token, Number(cfg.id_configuracion), fmt(desde), fmt(hasta), cc, vencimiento);
       console.log(`[${SOURCE}] ${storeId}: ${pedidos.length} pedidos a los ${Date.now() - t0} ms`);
       if (pedidosParciales) parciales.push(`pedidos incompletos (se cortó la paginación)`);
-      await traza(`fase 2: bajando y leyendo el XLSX (${pedidos.length} pedidos)`);
-      // ⛔ Se exige tiempo SUFICIENTE, no "algo de tiempo". Ver RESERVA_XLSX_MS:
-      // entrar acá con el reloj casi agotado es lo que dejaba 4 de cada 10
-      // corridas muertas en `running`. Y no se `return`: se anota y se sigue con
-      // las demás tiendas, para que el resumen final sea honesto.
-      const libre = vencimiento - Date.now();
-      if (libre < RESERVA_XLSX_MS) {
-        parciales.push(
-          `quedaban ${Math.round(libre / 1000)} s y leer el chat necesita ~${RESERVA_XLSX_MS / 1000}: ` +
-          `no se leyeron los mensajes de ${pedidos.length} pedidos (la próxima corrida los agarra)`,
-        );
-        continue;
-      }
-
       // Solo se guardan las conversaciones de ESTOS pedidos: abajo el único
       // acceso al mapa es `chats.get(p.chatId)`, así que el resto del archivo
       // (~4.600 chats de 5.918 medidos en EC) era memoria cargada para nada.
       const chatsDelTurno = new Set(pedidos.map((p) => p.chatId).filter(Boolean));
-      const chats = await traerMensajes(base, token, Number(cfg.id_configuracion), vencimiento, chatsDelTurno);
-      console.log(`[${SOURCE}] ${storeId}: ${chats.size} chats a los ${Date.now() - t0} ms`);
-      await traza(`fase 3: derivando señales (${chats.size} chats)`);
-      if (Date.now() > vencimiento) {
-        parciales.push(`se acabó el tiempo leyendo el XLSX (${chats.size} chats); no se alcanzó a escribir`);
-        continue;
+
+      // ── Camino LIVIANO primero (3-sep-2026) ──────────────────────────────
+      // El XLSX de 9 MB mataba ~1 de cada 6 corridas. `clientes_chat_center/
+      // listar` trae por chat solo el ÚLTIMO mensaje, que alcanza para todo lo
+      // que se mira minuto a minuto. El XLSX queda para la reconciliación de
+      // las 03:00 locales, para `{"full":true}`, o de respaldo si el liviano
+      // falla o viene con una forma que no se entiende (entonces se DICE en
+      // sync_logs, con las claves que mandó, y no se inventa nada).
+      const localAhora = new Date(Date.now() + (OFFSET_HORAS[cc] ?? -5) * 3600_000);
+      const reconciliar = body?.full === true || localAhora.getUTCHours() === HORA_RECONCILIAR;
+      let liviano: Map<string, UltimoMensajeChat> | null = null;
+      // Lo que ya sabemos de cada pedido: con el último mensaje solo se puede
+      // avanzar desde ahí, nunca retroceder ni pisar con null.
+      const previos = new Map<string, {
+        chat_leido_at: string | null; chat_entrante_at: string | null; chat_saliente_at: string | null;
+        confirmo_boton_at: string | null; chat_cliente_escribio_at: string | null; chat_mudo: boolean | null;
+        importchat_chat_id: string | null;
+      }>();
+      if (!reconciliar) {
+        await traza(`fase 2L: listado liviano (${chatsDelTurno.size} chats del turno)`);
+        let previosOk = true;
+        const idsPrev = pedidos.map((p) => p.externalId);
+        for (let i = 0; i < idsPrev.length && previosOk; i += 200) {
+          const res = await sb.from("orders")
+            .select("external_id, chat_leido_at, chat_entrante_at, chat_saliente_at, confirmo_boton_at, chat_cliente_escribio_at, chat_mudo, importchat_chat_id")
+            .eq("store_id", storeId).in("external_id", idsPrev.slice(i, i + 200));
+          if (res.error) { previosOk = false; break; }
+          for (const row of (res.data ?? []) as Record<string, unknown>[]) {
+            previos.set(String(row.external_id), {
+              chat_leido_at: (row.chat_leido_at as string) ?? null,
+              chat_entrante_at: (row.chat_entrante_at as string) ?? null,
+              chat_saliente_at: (row.chat_saliente_at as string) ?? null,
+              confirmo_boton_at: (row.confirmo_boton_at as string) ?? null,
+              chat_cliente_escribio_at: (row.chat_cliente_escribio_at as string) ?? null,
+              chat_mudo: (row.chat_mudo as boolean) ?? null,
+              importchat_chat_id: (row.importchat_chat_id as string) ?? null,
+            });
+          }
+        }
+        if (!previosOk) {
+          parciales.push(`tienda ${storeId}: no pude leer lo previo de los pedidos (¿migración 20260824230000 sin aplicar?), se usó el XLSX`);
+        } else {
+          const r = await traerUltimosMensajes(base, token, Number(cfg.id_configuracion), cc, vencimiento, chatsDelTurno);
+          if (!r) {
+            parciales.push(`tienda ${storeId}: el listado liviano de ImporChat falló, se usó el XLSX`);
+          } else if (r.filas > 0 && r.porChat.size === 0) {
+            parciales.push(`tienda ${storeId}: el listado liviano vino con una forma que no entiendo (claves: ${r.muestraKeys.join(",") || "ninguna"}), se usó el XLSX`);
+          } else {
+            liviano = r.porChat;
+            console.log(`[${SOURCE}] ${storeId}: listado liviano ${r.paginas} páginas · ${r.filas} filas · ${r.porChat.size} chats (${r.ignoradas} ignoradas) a los ${Date.now() - t0} ms`);
+            if (r.parcial) parciales.push(`tienda ${storeId}: el listado liviano se cortó por tiempo en la página ${r.paginas}`);
+          }
+        }
+      }
+
+      let chats: Map<string, MensajeChat[]> | null = null;
+      if (!liviano) {
+        await traza(`fase 2: bajando y leyendo el XLSX (${pedidos.length} pedidos)`);
+        // ⛔ Se exige tiempo SUFICIENTE, no "algo de tiempo". Ver RESERVA_XLSX_MS:
+        // entrar acá con el reloj casi agotado es lo que dejaba 4 de cada 10
+        // corridas muertas en `running`. Y no se `return`: se anota y se sigue con
+        // las demás tiendas, para que el resumen final sea honesto.
+        const libre = vencimiento - Date.now();
+        if (libre < RESERVA_XLSX_MS) {
+          parciales.push(
+            `quedaban ${Math.round(libre / 1000)} s y leer el chat necesita ~${RESERVA_XLSX_MS / 1000}: ` +
+            `no se leyeron los mensajes de ${pedidos.length} pedidos (la próxima corrida los agarra)`,
+          );
+          continue;
+        }
+        chats = await traerMensajes(base, token, Number(cfg.id_configuracion), vencimiento, chatsDelTurno);
+        console.log(`[${SOURCE}] ${storeId}: ${chats.size} chats a los ${Date.now() - t0} ms`);
+        await traza(`fase 3: derivando señales (${chats.size} chats)`);
+        if (Date.now() > vencimiento) {
+          parciales.push(`se acabó el tiempo leyendo el XLSX (${chats.size} chats); no se alcanzó a escribir`);
+          continue;
+        }
+      } else {
+        await traza(`fase 3L: derivando señales del último mensaje (${liviano.size} chats)`);
       }
 
       let tocados = 0, conBoton = 0, mudos = 0, sinSaliente = 0, saltados = 0, frescos = 0;
@@ -669,8 +752,78 @@ Deno.serve(async (req) => {
       }
       const tareas: Tarea[] = [];
       const ahoraMs = Date.now();
+      if (liviano) {
+        // ── FASE 1L: avanzar desde el ÚLTIMO mensaje ────────────────────────
+        // Solo se escribe lo que el último mensaje AFIRMA; lo que no se puede
+        // saber desde ahí (si recibió la plantilla, si fue mudo toda la vida)
+        // se deja como estaba. Nunca se pisa un valor con null.
+        for (const p of pedidos) {
+          const u = liviano.get(p.chatId);
+          const prev = previos.get(p.externalId);
+          const faltaChatId = !!p.chatId && !prev?.importchat_chat_id;
+          if (!u) {
+            // ImporChat no listó este chat: no se sabe nada nuevo. Solo se
+            // completa el id del chat si faltaba (dato estable).
+            if (faltaChatId && !dryRun) {
+              tareas.push({ externalId: p.externalId, payloadBase: { pedido_creado_at: p.creadoUTC.toISOString() }, columnasNuevas: { importchat_chat_id: p.chatId } });
+            }
+            continue;
+          }
+          const uMs = u.at.getTime();
+          const prevMax = Math.max(
+            prev?.chat_entrante_at ? Date.parse(prev.chat_entrante_at) : 0,
+            prev?.chat_saliente_at ? Date.parse(prev.chat_saliente_at) : 0,
+          );
+          const hayNuevo = uMs > prevMax + 1000;
+          if (!hayNuevo && !faltaChatId && prev?.chat_leido_at) { frescos++; continue; }
+          if (dryRun) { if (hayNuevo) tocados++; continue; }
+
+          const desdeMs = p.creadoUTC.getTime() - VENTANA_ANTES_MS;
+          const hastaMs = p.creadoUTC.getTime() + VENTANA_DESPUES_MS;
+          const enVentana = uMs >= desdeMs && uMs <= hastaMs;
+          const iso = u.at.toISOString();
+          const columnasNuevas: Record<string, unknown> = { ...(p.chatId ? { importchat_chat_id: p.chatId } : {}) };
+          const payloadBase: Record<string, unknown> = { pedido_creado_at: p.creadoUTC.toISOString() };
+          if (hayNuevo) {
+            payloadBase.chat_leido_at = new Date().toISOString();
+            if (u.rol === "Cliente") {
+              columnasNuevas.chat_entrante_at = iso;
+              const m: MensajeChat = { rol: "Cliente", tipo: u.tipo, texto: u.texto, plantilla: null, fecha: u.at };
+              let apreto = !!prev?.confirmo_boton_at;
+              let escribio = !!prev?.chat_cliente_escribio_at;
+              if (u.tipo === "button") {
+                if (esBotonConfirmar(m)) {
+                  if (enVentana && !prev?.confirmo_boton_at) { payloadBase.confirmo_boton_at = iso; conBoton++; }
+                  apreto = apreto || enVentana;
+                } else if (!esBotonConocido(m)) {
+                  const txt = (u.texto || "").trim();
+                  if (txt) botonesRaros.set(txt, (botonesRaros.get(txt) ?? 0) + 1);
+                }
+              } else if (esPalabraDelCliente(m)) {
+                payloadBase.chat_mudo = false;
+                if (enVentana && !prev?.chat_cliente_escribio_at) payloadBase.chat_cliente_escribio_at = iso;
+                escribio = escribio || enVentana;
+              }
+              // El riesgo solo se recalcula si alguna vez se leyó el chat
+              // entero (si no, `mudo` es una afirmación que nadie hizo) — salvo
+              // el botón de confirmar, que por sí solo ya decide "confirmado".
+              if (apreto) payloadBase.chat_riesgo = "confirmado";
+              else if (prev?.chat_leido_at) {
+                payloadBase.chat_riesgo = clasificar({
+                  apreto: false, escribio, recibioPlantilla: true,
+                  mudo: payloadBase.chat_mudo === false ? false : !!prev?.chat_mudo,
+                });
+              }
+            } else if (u.rol === "Propietario" && !TIPOS_NO_MENSAJE.has(u.tipo)) {
+              columnasNuevas.chat_saliente_at = iso;
+              columnasNuevas.chat_saliente_tipo = u.tipo === "template" ? "plantilla" : "directo";
+            }
+          }
+          tareas.push({ externalId: p.externalId, payloadBase, columnasNuevas });
+        }
+      } else
       for (const p of pedidos) {
-        const historial = chats.get(p.chatId) ?? null;
+        const historial = chats ? (chats.get(p.chatId) ?? null) : null;
         const desdeMs = p.creadoUTC.getTime() - VENTANA_ANTES_MS;
         const hastaMs = p.creadoUTC.getTime() + VENTANA_DESPUES_MS;
         const ventana = historial
@@ -806,7 +959,8 @@ Deno.serve(async (req) => {
       resumen.push({
         store_id: storeId, ok: true, pedidos: pedidos.length,
         actualizados: tocados, con_boton: conBoton, mudos,
-        sin_saliente: sinSaliente, saltados, frescos, chats: chats.size, dry_run: dryRun,
+        sin_saliente: sinSaliente, saltados, frescos, chats: chats ? chats.size : (liviano?.size ?? 0),
+        modo: liviano ? "liviano" : "xlsx", dry_run: dryRun,
         botones_desconocidos: Object.fromEntries(botonesRaros),
       });
       } catch (eStore) {
