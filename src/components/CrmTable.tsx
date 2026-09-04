@@ -1357,12 +1357,12 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
                   e.preventDefault();
                   onOpenDetail(String(o.externalId), colKey);
                 }}
-                className="text-[11px] text-muted-foreground hover:text-accent hover:underline font-mono tabular-nums mt-1 block truncate"
+                className="text-xs text-muted-foreground hover:text-accent hover:underline font-mono tabular-nums mt-1 block truncate"
               >
                 {o.externalId}
               </a>
             )}
-            {!o.externalId && <div className="text-[11px] text-muted-foreground font-mono mt-1">Sin ID</div>}
+            {!o.externalId && <div className="text-xs text-muted-foreground font-mono mt-1">Sin ID</div>}
           </div>
           <div className="flex flex-col items-end gap-1 flex-shrink-0">
             {/* Sin `uppercase`: `o.estado` es texto de DROPI y el lenguaje
@@ -1372,10 +1372,10 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
             <TruncatedText
               text={o.estado}
               cssTruncate
-              className="text-[10px] font-semibold px-2 py-1 rounded-lg bg-muted/50 border border-border text-muted-foreground tracking-wide leading-tight max-w-[120px] truncate"
+              className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-muted/50 border border-border text-muted-foreground leading-snug max-w-[130px] truncate"
             />
             {pLevel !== 'low' && (
-              <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-lg border ${pConfig.bgClass} ${pConfig.color}`}>
+              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${pConfig.bgClass} ${pConfig.color}`}>
                 {pConfig.label}
               </span>
             )}
@@ -1390,7 +1390,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
                   title={due ? 'Recordatorio para ahora' : `${n.count} nota${n.count > 1 ? 's' : ''}`}
                   aria-label={due ? `Recordatorio vencido (${n.count} nota${n.count > 1 ? 's' : ''})` : `${n.count} nota${n.count > 1 ? 's' : ''}`}
                   className={[
-                    'text-[9px] font-bold px-1.5 py-0.5 rounded-md inline-flex items-center gap-0.5 border',
+                    'text-[11px] font-bold px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5 border',
                     due
                       ? 'bg-warning/15 text-warning border-warning/40 motion-safe:animate-pulse'
                       : 'bg-accent/10 text-accent border-accent/25',
@@ -1403,7 +1403,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
             })()}
             {isMine && (
               <span
-                className="inline-flex items-center gap-1 text-[9px] font-semibold px-2 py-0.5 rounded-lg border bg-success/14 text-success border-success/30"
+                className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-success/14 text-success border-success/30"
                 title="Lo has gestionado tú"
               >
                 <User size={9} aria-hidden="true" /> Mío
@@ -1411,7 +1411,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
             )}
             {isOtherOwner && (
               <span
-                className="inline-flex items-center gap-1 text-[9px] font-semibold px-2 py-0.5 rounded-lg border bg-warning/14 text-warning border-warning/30"
+                className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-warning/14 text-warning border-warning/30"
                 title={`Gestionado por ${ownerName} — puedes gestionarlo igual`}
               >
                 <User size={9} aria-hidden="true" /> {ownerName}
@@ -1422,7 +1422,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
 
         {/* Phone row */}
         <div className="flex items-center gap-1.5 mt-2.5">
-          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted/40 border border-border rounded-xl px-2.5 py-1.5 flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/40 border border-border rounded-xl px-2.5 py-1.5 flex-1 min-w-0">
             <PhoneIcon size={11} className="flex-shrink-0 text-muted-foreground/70" />
             <span className="truncate font-mono tabular-nums">{o.phone}</span>
           </div>
@@ -1447,13 +1447,13 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
         {/* Location & carrier */}
         <div className="flex items-center gap-1.5 mt-2 flex-wrap">
           {o.ciudad && (
-            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/40 border border-border rounded-lg px-2 py-1">
-              <MapPin size={9} className="text-muted-foreground/60" />{o.ciudad}
+            <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground bg-muted/40 border border-border rounded-full px-2 py-0.5">
+              <MapPin size={10} className="text-muted-foreground/60" aria-hidden="true" />{o.ciudad}
             </span>
           )}
           {o.transportadora && (
-            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/40 border border-border rounded-lg px-2 py-1">
-              <Truck size={9} className="text-muted-foreground/60" />{o.transportadora}
+            <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground bg-muted/40 border border-border rounded-full px-2 py-0.5">
+              <Truck size={10} className="text-muted-foreground/60" aria-hidden="true" />{o.transportadora}
             </span>
           )}
         </div>
@@ -1466,8 +1466,8 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
         {(() => {
           if (allTps.length === 0) {
             return (
-              <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-danger/14 text-danger border border-danger/30">
-                <PhoneIcon size={9} /> Sin contactar
+              <div className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-danger/14 text-danger border border-danger/30">
+                <PhoneIcon size={10} aria-hidden="true" /> Sin contactar
               </div>
             );
           }
@@ -1492,8 +1492,8 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
             timeLabel = `hace ${Math.round(hoursAgo / 24)}d`;
           }
           return (
-            <div className={`mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border ${cls}`}>
-              <PhoneIcon size={9} />
+            <div className={`mt-2 inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full border ${cls}`}>
+              <PhoneIcon size={10} aria-hidden="true" />
               <span>{allTps.length} {allTps.length === 1 ? 'contacto' : 'contactos'}</span>
               <span className="opacity-60">·</span>
               <span>{opName}</span>

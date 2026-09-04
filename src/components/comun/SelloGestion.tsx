@@ -47,7 +47,7 @@ export default function SelloGestion({ sello, estado, miId, className, compacto 
   if (estado === 'error') {
     return (
       <span
-        className={cn('inline-flex items-center gap-1 text-[10px] font-semibold text-muted-foreground', className)}
+        className={cn('inline-flex items-center gap-1 text-[11px] font-semibold text-muted-foreground', className)}
         title="Falló la lectura de las gestiones. NO quiere decir que nadie lo haya tocado."
       >
         <Clock size={10} aria-hidden="true" /> no pude ver si lo tocaron
@@ -66,7 +66,7 @@ export default function SelloGestion({ sello, estado, miId, className, compacto 
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[10px] font-bold min-w-0',
+        'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[11px] font-semibold min-w-0',
         propio
           ? 'border-success/40 bg-success/10 text-success'
           : 'border-accent/40 bg-accent/10 text-accent',

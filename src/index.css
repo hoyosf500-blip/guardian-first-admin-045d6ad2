@@ -235,8 +235,12 @@
     --shadow-glow: 0 0 24px -4px hsl(var(--accent) / 0.35);
     /* Valores IDÉNTICOS a los que estaban hardcodeados: el look oscuro
        aprobado no cambia ni un pixel. Solo dejó de ser literal. */
-    --shadow-card3d: 0 20px 50px -30px rgb(0 0 0 / 0.8), inset 0 1px 0 rgb(255 255 255 / 0.05);
-    --shadow-card3d-lg: 0 30px 70px -30px rgb(0 0 0 / 0.8), inset 0 1px 0 rgb(255 255 255 / 0.08);
+    /* SUPERFICIE QUIETA (Fase 1 del rediseño, 4-sep-2026): la sombra de 50 px
+       de radio en 139 tarjetas era la mitad del "se siente pesada" — cada pasada
+       de scroll la repintaba — y no ayudaba a decidir nada. Baja a una sombra
+       corta; el relieve lo da el borde. `-lg` queda para menús y diálogos. */
+    --shadow-card3d: 0 6px 18px -12px rgb(0 0 0 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.04);
+    --shadow-card3d-lg: 0 24px 56px -28px rgb(0 0 0 / 0.75), inset 0 1px 0 rgb(255 255 255 / 0.06);
   }
 }
 
@@ -317,7 +321,9 @@
 
   /* Semantic pills (compose: .pill + .pill-success) */
   .pill {
-    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold leading-none tabular-nums transition-colors;
+    /* 12 px, no 11 (Fase 1 del rediseño, 4-sep-2026): el piso para un dato que
+       la asesora LEE es 12 px; 10-11 quedan solo para rótulos de sección. */
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-semibold leading-snug tabular-nums transition-colors;
   }
   .pill-neutral { background: hsl(var(--muted) / 0.6); border-color: hsl(var(--border)); color: hsl(var(--muted-foreground)); }
   .pill-accent  { background: hsl(var(--accent) / 0.12); border-color: hsl(var(--accent) / 0.35); color: hsl(var(--accent)); }
@@ -404,11 +410,14 @@
   .glow-info    { box-shadow: 0 0 18px -6px hsl(var(--info) / 0.4); }
   .glow-warning { box-shadow: 0 0 18px -6px hsl(var(--warning) / 0.4); }
   .glow-danger  { box-shadow: 0 0 18px -6px hsl(var(--danger) / 0.4); }
-  .dark .glow-accent  { box-shadow: 0 0 18px -6px hsl(var(--accent) / 0.9); }
-  .dark .glow-success { box-shadow: 0 0 18px -6px hsl(var(--success) / 0.9); }
-  .dark .glow-info    { box-shadow: 0 0 18px -6px hsl(var(--info) / 0.9); }
-  .dark .glow-warning { box-shadow: 0 0 18px -6px hsl(var(--warning) / 0.9); }
-  .dark .glow-danger  { box-shadow: 0 0 18px -6px hsl(var(--danger) / 0.9); }
+  /* Halos al 0.35 y no al 0.9 (Fase 1, 4-sep-2026): 73 archivos los usan en
+     puntos e íconos que están en pantalla todo el día. Un halo dice "esto
+     brilla", no "esto importa"; a esa intensidad competía con el dato. */
+  .dark .glow-accent  { box-shadow: 0 0 14px -6px hsl(var(--accent) / 0.35); }
+  .dark .glow-success { box-shadow: 0 0 14px -6px hsl(var(--success) / 0.35); }
+  .dark .glow-info    { box-shadow: 0 0 14px -6px hsl(var(--info) / 0.35); }
+  .dark .glow-warning { box-shadow: 0 0 14px -6px hsl(var(--warning) / 0.35); }
+  .dark .glow-danger  { box-shadow: 0 0 14px -6px hsl(var(--danger) / 0.35); }
 
   /* Glass panel v2 — translúcido sobre la aurora (patrón Dirección 3D).
      Más sutil que .glass; ideal para cards, rail y toolbars. */
@@ -438,9 +447,9 @@
   .num-glow-accent  { text-shadow: 0 0 18px hsl(var(--accent) / 0.20); }
   .num-glow-success { text-shadow: 0 0 18px hsl(var(--success) / 0.18); }
   .num-glow-danger  { text-shadow: 0 0 18px hsl(var(--danger) / 0.18); }
-  .dark .num-glow-accent  { text-shadow: 0 0 22px hsl(var(--accent) / 0.55); }
-  .dark .num-glow-success { text-shadow: 0 0 22px hsl(var(--success) / 0.5); }
-  .dark .num-glow-danger  { text-shadow: 0 0 22px hsl(var(--danger) / 0.5); }
+  .dark .num-glow-accent  { text-shadow: 0 0 18px hsl(var(--accent) / 0.25); }
+  .dark .num-glow-success { text-shadow: 0 0 18px hsl(var(--success) / 0.22); }
+  .dark .num-glow-danger  { text-shadow: 0 0 18px hsl(var(--danger) / 0.22); }
 
   /* Icono en "chip" con tinte de acento — usado en tarjetas/rail */
   .icon-chip {

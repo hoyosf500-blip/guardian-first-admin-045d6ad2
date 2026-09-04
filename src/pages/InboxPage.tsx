@@ -140,7 +140,7 @@ function Acciones({ o, cc, onLlamar, onResolver, resuelto, plano, className }: {
           actividad={actividadDe(o)}
           datos={datosDe(o)}
           modulo="SEG"
-          className="flex-1 min-w-[130px] justify-center py-2.5 text-[11px] opacity-80"
+          className="flex-1 min-w-[130px] justify-center py-2.5 text-xs opacity-80"
           fallback={null}
         />
       )}
@@ -148,14 +148,14 @@ function Acciones({ o, cc, onLlamar, onResolver, resuelto, plano, className }: {
       <a
         href={'tel:+' + getWhatsAppPhone(o.phone, cc)}
         onClick={() => onLlamar(o.phone)}
-        className="flex-1 min-w-[110px] text-[11px] py-2.5 rounded-xl bg-card/40 text-muted-foreground font-semibold hover:text-foreground hover:border-border-strong no-underline inline-flex items-center justify-center gap-1.5 border border-border transition-colors"
+        className="flex-1 min-w-[110px] text-xs py-2.5 rounded-xl bg-card/40 text-muted-foreground font-semibold hover:text-foreground hover:border-border-strong no-underline inline-flex items-center justify-center gap-1.5 border border-border transition-colors"
       >
-        <Phone size={13} /> Llamar
+        <Phone size={13} aria-hidden="true" /> Llamar
       </a>
       {o.externalId && (
         <Link
           to={`/pedido/${o.externalId}`}
-          className="text-[11px] py-2.5 px-3 rounded-xl text-muted-foreground hover:text-accent inline-flex items-center justify-center transition-colors"
+          className="text-xs py-2.5 px-3 rounded-xl text-muted-foreground hover:text-accent inline-flex items-center justify-center transition-colors"
         >
           Ver pedido
         </Link>
@@ -198,13 +198,13 @@ function BotonResuelto({ resuelto, onClick }: { resuelto: boolean; onClick: () =
       title={resuelto
         ? 'Ya lo marcaste resuelto. Sigue en la lista, al final, hasta que el cliente vuelva a escribir.'
         : 'Este cliente ya no espera nada: lo llamaste, se resolvió, o no hacía falta contestar.'}
-      className={`flex-1 min-w-[110px] text-[11px] py-2.5 rounded-xl font-semibold inline-flex items-center justify-center gap-1.5 border transition-colors ${
+      className={`flex-1 min-w-[110px] text-xs py-2.5 rounded-xl font-semibold inline-flex items-center justify-center gap-1.5 border transition-colors ${
         resuelto
           ? 'bg-success/14 border-success/40 text-success cursor-default'
           : 'bg-card/40 border-border text-muted-foreground hover:text-success hover:border-success/40'
       }`}
     >
-      <CheckCircle2 size={13} /> {resuelto ? 'Resuelto' : 'Marcar resuelto'}
+      <CheckCircle2 size={13} aria-hidden="true" /> {resuelto ? 'Resuelto' : 'Marcar resuelto'}
     </button>
   );
 }
@@ -217,9 +217,9 @@ function BotonResponder({ onClick, disabled }: { onClick: () => void; disabled?:
       onClick={onClick}
       disabled={disabled}
       title="Abre la conversación para leer qué dijo el cliente y contestarle"
-      className="flex-1 min-w-[130px] text-[11px] py-2.5 rounded-xl bg-danger/14 border border-danger/40 text-danger font-bold hover:border-danger/70 inline-flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40"
+      className="flex-1 min-w-[130px] text-xs py-2.5 rounded-xl bg-danger/14 border border-danger/40 text-danger font-bold hover:border-danger/70 inline-flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40"
     >
-      <MessageSquare size={13} /> Leer y contestar
+      <MessageSquare size={13} aria-hidden="true" /> Leer y contestar
     </button>
   );
 }
@@ -279,8 +279,8 @@ function FilaCola({ o, seleccionada, onSelect, sello, estadoSello, miId, resuelt
 
       <span className="min-w-0 flex-1 block">
         <span className="flex items-baseline gap-2 min-w-0">
-          <span className="text-sm font-bold text-foreground truncate min-w-0">{o.nombre}</span>
-          <span className={`ml-auto shrink-0 inline-flex items-center gap-1 text-[10px] font-mono tabular-nums font-bold ${t.texto}`}>
+          <span className="text-[15px] font-semibold text-foreground truncate min-w-0 leading-tight">{o.nombre}</span>
+          <span className={`ml-auto shrink-0 inline-flex items-center gap-1 text-[11px] font-mono tabular-nums font-semibold ${t.texto}`}>
             {resuelto && <CheckCircle2 size={11} aria-label="Resuelto" />}
             {haceCuantoMs(o.esperaDesde)}
           </span>
@@ -288,19 +288,22 @@ function FilaCola({ o, seleccionada, onSelect, sello, estadoSello, miId, resuelt
         {contexto && (
           <span className="block text-xs text-muted-foreground truncate mt-0.5">{contexto}</span>
         )}
-        <span className="flex items-center gap-1.5 mt-1 flex-wrap">
-          <span className="pill pill-neutral text-[9px] px-1.5 py-0.5 rounded-full font-semibold">{o.estado || '—'}</span>
+        {/* Fase 1 del rediseño (4-sep-2026): el estado y los días en él son UNA
+            pastilla (el «D2» suelto a 9 px no se leía); «solo plantilla» pasa a
+            11 px. Texto de Dropi tal cual, sin traducir. */}
+        <span className="flex items-center gap-1.5 mt-1.5 flex-wrap">
           <span
-            className="text-[9px] font-mono tabular-nums font-bold text-muted-foreground"
+            className="pill pill-neutral text-[11px] max-w-full"
             title={o.diasEnEstado == null
               ? 'Dropi no reporta cuándo se movió por última vez'
               : `Lleva ${o.diasEnEstado} ${o.diasEnEstado === 1 ? 'día' : 'días'} en «${o.estado || 'este estado'}»`}
           >
-            D{o.diasEnEstado ?? '—'}
+            <span className="truncate">{o.estado || '—'}</span>
+            {o.diasEnEstado != null && <span className="font-mono opacity-80">· {o.diasEnEstado === 0 ? 'hoy' : `${o.diasEnEstado} d`}</span>}
           </span>
           {soloPlantilla(o) && (
             <span
-              className="text-[9px] px-1.5 py-0.5 rounded-full font-bold border border-warning/40 bg-warning/10 text-warning"
+              className="pill pill-warning text-[11px]"
               title="Pasaron más de 24 h desde su último mensaje: WhatsApp ya no entrega texto escrito a mano, hay que mandarle una plantilla aprobada."
             >
               solo plantilla
@@ -349,25 +352,25 @@ function TarjetaLista({ o, sello, estadoSello, miId, children }: {
     <div className="relative bg-card/40 border border-border rounded-2xl p-4 flex flex-col gap-3 hover:border-border-strong transition-colors min-w-0">
       <div className="min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-base font-bold text-foreground truncate">{o.nombre}</span>
-          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[11px] font-bold ${t.chip}`}>
+          <span className="text-base font-semibold text-foreground truncate">{o.nombre}</span>
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-xs font-semibold ${t.chip}`}>
             <span className={`w-1.5 h-1.5 rounded-full ${t.dot}`} aria-hidden="true" />
-            <Clock size={10} aria-hidden="true" /> {haceCuantoMs(o.esperaDesde)}
+            Escribió · {haceCuantoMs(o.esperaDesde)}
           </span>
-          <span className="pill pill-neutral text-[10px] px-2 py-0.5 rounded-full font-semibold">{o.estado || '—'}</span>
           {/* Días EN ESE ESTADO, no desde que nació el pedido: es el reloj que
-              dice qué tan cerca está de devolverse. `null` se dibuja "—". */}
+              dice qué tan cerca está de devolverse. `null` no se dibuja. */}
           <span
-            className="text-[10px] font-mono tabular-nums font-bold text-muted-foreground"
+            className="pill pill-neutral"
             title={o.diasEnEstado == null
               ? 'Dropi no reporta cuándo se movió por última vez'
               : `Lleva ${o.diasEnEstado} ${o.diasEnEstado === 1 ? 'día' : 'días'} en «${o.estado || 'este estado'}»`}
           >
-            D{o.diasEnEstado ?? '—'}
+            {o.estado || '—'}
+            {o.diasEnEstado != null && <span className="font-mono opacity-80">· {o.diasEnEstado === 0 ? 'hoy' : `${o.diasEnEstado} d`}</span>}
           </span>
           {soloPlantilla(o) && (
             <span
-              className="text-[10px] px-2 py-0.5 rounded-full font-bold border border-warning/40 bg-warning/10 text-warning"
+              className="pill pill-warning"
               title="Pasaron más de 24 h desde su último mensaje: hay que mandarle una plantilla aprobada."
             >
               solo plantilla

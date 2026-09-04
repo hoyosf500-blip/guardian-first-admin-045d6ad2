@@ -594,7 +594,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
             Lo único que el número NO puede decir —que no hay dato— sí se queda. */}
         {diasEstado == null && (
           <span
-            className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-md border border-muted-foreground/25 text-muted-foreground"
+            className="shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full border border-muted-foreground/25 text-muted-foreground"
             title="Dropi no reporta cuándo se movió este pedido por última vez. No es que esté quieto: es que no sabemos."
           >
             sin dato
@@ -631,7 +631,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
             en paridad). Se muestra tal cual lo manda Dropi, sin traducir. */}
         {columnLabel && o.estado && estadoDifiereDeFase(o.estado, columnLabel) && (
           <span
-            className="min-w-0 truncate text-[10px] font-semibold px-1.5 py-0.5 rounded-md border border-info/30 bg-info/10 text-info"
+            className="min-w-0 truncate text-[11px] font-semibold px-2 py-0.5 rounded-full border border-info/30 bg-info/10 text-info"
             title={`Estatus exacto en Dropi: ${o.estado}`}
           >
             {o.estado}
@@ -674,7 +674,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           siempre tenía algo que decir y ganaba siempre.) */}
       {novedadCerrada && ciclo.estado !== 'respondio' ? (
         <div
-          className="mt-2 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border border-border bg-card/40 text-muted-foreground"
+          className="mt-2 inline-flex max-w-full items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-border bg-card/40 text-muted-foreground"
           title="La transportadora cerró o dejó vencer esta novedad. Dropi no deja resolverla: queda esperar el reintento o la devolución. No es trabajo pendiente."
         >
           <Clock size={10} aria-hidden="true" className="shrink-0" />
@@ -683,7 +683,9 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
       ) : ciclo.etiqueta ? (
         <div
           className={cn(
-            'mt-2 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border',
+            // 12 px y pastilla redonda (Fase 1 del rediseño): es LA señal de la
+            // tarjeta, se lee cientos de veces al día.
+            'mt-2 inline-flex max-w-full items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full border',
             TONO_CICLO[ciclo.estado === 'reintento' && ciclo.accion === 'llamar' ? 'llamar' : ciclo.estado],
           )}
           title={detalleCiclo}
@@ -745,13 +747,13 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
                 });
               }}
               title={`Copiar el número ${o.externalId}`}
-              className="group/copy mt-1 flex max-w-full items-center gap-1 text-[11px] text-muted-foreground font-mono tabular-nums hover:text-foreground transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded"
+              className="group/copy mt-1 flex max-w-full items-center gap-1 text-xs text-muted-foreground font-mono tabular-nums hover:text-foreground transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded"
             >
               <span className="truncate">{o.externalId}</span>
               <Copy size={10} aria-hidden="true" className="shrink-0 opacity-0 group-hover/copy:opacity-70 transition-opacity" />
             </button>
           )
-          : <span className="text-[11px] text-muted-foreground font-mono mt-1 block">Sin ID</span>}
+          : <span className="text-xs text-muted-foreground font-mono mt-1 block">Sin ID</span>}
       </div>
 
       {/* Producto · ciudad como subtítulo (en el mockup van juntos) + VALOR a

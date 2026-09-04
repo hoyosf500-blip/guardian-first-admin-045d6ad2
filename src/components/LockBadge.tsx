@@ -73,7 +73,7 @@ export default function LockBadge({ lockedBy, lockedAt, className = '' }: Props)
 
   return (
     <span
-      className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-md border bg-warning/10 text-warning border-warning/30 flex-shrink-0 ${className}`}
+      className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-warning/10 text-warning border-warning/30 flex-shrink-0 ${className}`}
       title={`En atención por ${name || 'otra operadora'}`}
       aria-label={`Pedido en atención por ${name || 'otra operadora'}`}
     >
