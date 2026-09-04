@@ -91,6 +91,13 @@ export default function ConfirmarTab({ profile }: Props) {
   const [onlyUntouched, setOnlyUntouched] = useSessionState<boolean>('confirmar:onlyUntouched', false);
   const [syncing, setSyncing] = useState(false);
   const [autoLoading, setAutoLoading] = useState(false);
+  /** ⛔ La carga inicial FALLÓ (mensaje). `onErrorCarga` marca `excelLoaded`
+   *  para cortar el bucle de reintentos, y con la cola vacía eso pintaba el
+   *  vacío VERDE «No hay pedidos disponibles para confirmar» sobre una base que
+   *  no respondió (4-sep-2026): un cero afirmado sobre datos que no llegaron.
+   *  Mientras esto tenga valor se muestra el aviso rojo con «Reintentar», nunca
+   *  el vacío. */
+  const [cargaFallo, setCargaFallo] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
   // Avisos de Shopify PLEGADOS por defecto (pedido del dueño 27-ago: "juntar en
   // chips que se abren al tocarlos"). El panel NO se toca por dentro (1053 líneas
@@ -203,6 +210,7 @@ export default function ConfirmarTab({ profile }: Props) {
     // en el acto) y programa UN reintento tras 30s por si fue un blip de red.
     const onErrorCarga = (mensaje: string) => {
       toast.error(mensaje);
+      setCargaFallo(mensaje);
       setAutoLoading(false);
       setExcelLoaded(true);
       if (!autoLoadRetriedRef.current) {
@@ -230,6 +238,7 @@ export default function ConfirmarTab({ profile }: Props) {
         // error, incluso si vino vacía. Antes solo se marcaba con
         // dbOrders.length > 0, así que en días con cero pedidos disponibles
         // la pantalla quedaba en spinner eterno + AperturaWizard genérico.
+        setCargaFallo(null);
         setExcelLoaded(true);
         setAutoLoading(false);
       }, (err: unknown) => {
@@ -655,6 +664,10 @@ export default function ConfirmarTab({ profile }: Props) {
   ).length;
   /** El total VIVO de pendientes de la tienda: sin restarle nada a nadie. */
   const pendientesTotales = pending + enAtencionPorOtras + reagendados;
+  /** ¿La lista está recortada por algo que puso la asesora? La ficha (CallView)
+   *  lo necesita para no decir «¡Todos gestionados!» sobre una búsqueda sin
+   *  resultados. 'pending' es el chip por defecto, no un filtro. */
+  const hayFiltroActivo = filter !== 'pending' || search.trim() !== '' || !!dateFrom || !!dateTo || onlyUntouched;
 
   return (
     <div className="relative max-w-5xl mx-auto space-y-3">
@@ -771,12 +784,19 @@ export default function ConfirmarTab({ profile }: Props) {
                   body: { store_id: activeStoreId },
                 });
                 if (error) throw error;
+                // Error de DOMINIO: la edge responde HTTP 200 con ok:false (la base
+                // rechazó el upsert). Sin esto caía al `toast.info` de abajo como
+                // "No hay pedidos nuevos" — un fallo disfrazado de buena noticia.
+                if (data?.ok === false) throw new Error(data?.error || data?.message || 'Dropi respondió con error');
                 if (data?.synced > 0 || data?.total > 0) {
                   // Esta recarga filtraba con `eq` mientras la carga inicial y
                   // `loadWorkQueue` filtraban con `ilike`: un estado guardado con
                   // otra caja aparecía o desaparecía según por dónde se llegara.
                   // Ahora las tres son la MISMA función, y pagina.
-                  const { filas: dbOrders, truncado } = await fetchPendientesDeConfirmar(activeStoreId);
+                  const { filas: dbOrders, error: errorLectura, truncado } = await fetchPendientesDeConfirmar(activeStoreId);
+                  // `error` leído (4-sep-2026): se ignoraba, y con la lectura caída el
+                  // botón "terminaba" sin decir nada — la asesora lo apretaba de nuevo.
+                  if (errorLectura) throw new Error('Dropi sincronizó pero no se pudieron leer los pendientes: ' + errorLectura);
                   if (truncado) toast.warning('Hay tantos pendientes que no caben todos en pantalla. Avisá para subir el tope.');
                   if (dbOrders.length > 0) {
                     const orders = dbOrders.map((o, idx) => dbToOrderData(o as never, idx));
@@ -784,6 +804,12 @@ export default function ConfirmarTab({ profile }: Props) {
                     buildWorkQueue(orders);
                     setExcelLoaded(true);
                     toast.success(`${dbOrders.length} pedidos cargados desde Dropi`);
+                  } else {
+                    // Dropi trajo pedidos pero ninguno está PENDIENTE CONFIRMACION:
+                    // se dice y se pasa a la pantalla cargada (vacío legítimo) en
+                    // vez de dejar el mismo botón sin ninguna reacción.
+                    setExcelLoaded(true);
+                    toast.info(`Dropi sincronizó ${data?.synced ?? data?.total ?? 0} pedidos, pero ninguno está pendiente de confirmar.`);
                   }
                 } else {
                   toast.info(data?.message || 'No hay pedidos nuevos en Dropi');
@@ -820,7 +846,34 @@ export default function ConfirmarTab({ profile }: Props) {
           no debe bloquear el banner para siempre. */}
       <SiguienteColaBanner supersededIds={supersededIds} />
 
-      {excelLoaded && workQueue.length === 0 && (
+      {/* ⛔ La carga FALLÓ: aviso rojo con reintento, nunca el vacío verde de
+          abajo (ver `cargaFallo`). El reintento rearma el único reintento
+          automático y vuelve a disparar el efecto de carga. */}
+      {cargaFallo && !autoLoading && (
+        <div role="alert" className="relative overflow-hidden flex flex-col items-center justify-center py-12 text-center rounded-xl border border-danger/40 bg-danger/10">
+          <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
+          <div className="relative w-14 h-14 rounded-2xl bg-danger/14 border border-danger/30 text-danger flex items-center justify-center mb-4">
+            <AlertTriangle size={24} aria-hidden="true" />
+          </div>
+          <h3 className="relative text-base font-semibold text-foreground mb-1">No se pudieron cargar los pedidos</h3>
+          <p className="relative text-sm text-muted-foreground max-w-md">
+            {cargaFallo}. No es que no haya pedidos: la base no respondió.
+          </p>
+          <button
+            onClick={() => {
+              setCargaFallo(null);
+              autoLoadRetriedRef.current = false;
+              resetOrders();
+              setExcelLoaded(false);
+            }}
+            className="relative mt-4 inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-xl bg-card/40 border border-danger/40 text-danger font-medium hover:bg-danger/10 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            <RefreshCw size={14} aria-hidden="true" /> Reintentar
+          </button>
+        </div>
+      )}
+
+      {excelLoaded && !cargaFallo && workQueue.length === 0 && (
         <div className="relative overflow-hidden flex flex-col items-center justify-center py-16 text-center rounded-xl border border-border bg-surface" role="status" aria-live="polite">
           <div className="relative w-14 h-14 rounded-2xl bg-success/14 border border-success/30 text-success flex items-center justify-center mb-4">
             <Phone size={24} aria-hidden="true" />
@@ -1129,8 +1182,14 @@ export default function ConfirmarTab({ profile }: Props) {
                       meta 85%); el ANCHO es cobertura. tasa null = sin gestiones
                       aún → barra NEUTRA, nunca roja (no se juzga sobre cero dato). */}
                   {(() => {
-                    const pendSinResultado = workQueue.filter(o => !o.result).length;
-                    const goal = total + pendSinResultado;
+                    // MISMA POBLACIÓN que el titular (4-sep-2026): antes contaba
+                    // `workQueue.filter(!result)` crudo, que incluye los duplicados
+                    // ya superados que la cola esconde — la barra decía 40/63
+                    // mientras el titular decía 20 pendientes, y la cobertura del
+                    // equipo nunca cerraba. `pendientesTotales` = lo pendiente
+                    // vivo de la tienda, con reagendados y en atención de otras
+                    // (que también son trabajo por cubrir), sin los superados.
+                    const goal = total + pendientesTotales;
                     const pct = goal > 0 ? Math.min(100, Math.round((total / goal) * 100)) : 0;
                     const { tasa } = confRateOficial(counter.conf, counter.canc, counter.noresp);
                     const barTone =
@@ -1542,7 +1601,7 @@ export default function ConfirmarTab({ profile }: Props) {
               setView('call');
             }} />
           ) : (
-            <CallView items={filteredItems} alerts={orderAlerts} />
+            <CallView items={filteredItems} alerts={orderAlerts} hayFiltroActivo={hayFiltroActivo} pendientesSinFiltro={pending} />
           )}
         </>
       )}

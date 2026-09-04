@@ -1,10 +1,32 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { repartirCola, desbalance, type AsignacionExistente } from '@/lib/repartoEquitativo';
 import { presentesActivos, type FilaPresencia } from '@/lib/presenciaReparto';
 import { bogotaToday } from '@/lib/utils';
+import { pollWhenVisible } from '@/lib/pollWhenVisible';
+
+/** Cada cuánto se relee el reparto del día con la pestaña visible. */
+export const ASIGNACIONES_POLL_MS = 60_000;
+
+/**
+ * ¿Mismo reparto? Para conservar la IDENTIDAD del Map cuando el servidor
+ * devuelve lo mismo: de este Map cuelgan `esMio`, `repartir` y `tomarMas`
+ * (useCallback), y de esos, los memos del tablero entero. Un Map nuevo con el
+ * mismo contenido cada minuto recalcularía ~600 ciclos por nada.
+ */
+export function mismoReparto(a: Map<string, string>, b: Map<string, string>): boolean {
+  if (a === b) return true;
+  if (a.size !== b.size) return false;
+  for (const [k, v] of a) if (b.get(k) !== v) return false;
+  return true;
+}
+
+/** Misma lista ordenada de asesoras. */
+export function mismaLista(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((x, i) => x === b[i]);
+}
 
 /**
  * Asignación de la cola de Seguimiento del día — pieza C del protocolo del turno.
@@ -36,6 +58,12 @@ export interface EstadoReparto {
    * volver a intentar más tarde. Ver `HAY_QUORUM` abajo.
    */
   sinQuorum?: boolean;
+  /**
+   * `sinOperadores` porque la lista de asesoras NO SE PUDO LEER, no porque esté
+   * vacía. El llamador tiene que decir "no se pudo leer el equipo" y no mandar
+   * al jefe a Admin a agregar operadoras que ya existen.
+   */
+  equipoNoLeido?: boolean;
 }
 
 /**
@@ -127,6 +155,13 @@ export function useSegAsignaciones() {
   /** order_id → operator_id, solo del día de hoy. */
   const [asignaciones, setAsignaciones] = useState<Map<string, string>>(new Map());
   const [operadores, setOperadores] = useState<string[]>([]);
+  /**
+   * ⛔ `store_members` no se pudo leer. Antes un fallo de red dejaba
+   * `operadores = []` y `cargado = true`, y la pantalla decía "No hay asesoras
+   * en esta tienda. Agregá operadoras en Admin" — un cero con cara de dato
+   * sobre una consulta caída (4-sep-2026).
+   */
+  const [operadoresError, setOperadoresError] = useState(false);
   const [soportado, setSoportado] = useState(true);
   const [cargando, setCargando] = useState(false);
   /**
@@ -146,10 +181,12 @@ export function useSegAsignaciones() {
   const [repartiendo, setRepartiendo] = useState(false);
   const seqRef = useRef(0);
 
-  const cargar = useCallback(async () => {
+  const cargar = useCallback(async (opts?: { enSegundoPlano?: boolean }) => {
     if (!activeStoreId) return;
     const seq = ++seqRef.current;
-    setCargando(true);
+    // El poll de fondo no prende `cargando`: no hay spinner que mostrar y
+    // alternarlo serían dos renders por minuto de la pantalla entera.
+    if (!opts?.enSegundoPlano) setCargando(true);
 
     // El día se calcula en Bogotá, igual que en la RPC. Sin esto, después de
     // las 19:00 hora local el cliente pediría el día siguiente en UTC y la
@@ -194,9 +231,15 @@ export function useSegAsignaciones() {
       for (const r of (asigRes.data || []) as unknown as Array<{ order_id: string; operator_id: string }>) {
         if (r.order_id && r.operator_id) m.set(r.order_id, r.operator_id);
       }
-      setAsignaciones(m);
+      // Misma identidad si no cambió nada: ver `mismoReparto`.
+      setAsignaciones((prev) => (mismoReparto(prev, m) ? prev : m));
     }
 
+    // ⛔ Se anota si se pudo leer o no, ANTES de tocar la lista: "no hay
+    // asesoras" y "no pude leer las asesoras" son dos frases distintas río
+    // abajo. Con error se conserva la lista anterior (si la hubo) — es mejor
+    // dato que un vacío inventado.
+    setOperadoresError(Boolean(miembrosRes.error));
     if (!miembrosRes.error) {
       // Se reparte entre quienes TRABAJAN la cola: operadoras y supervisores.
       // El dueño y el admin global no entran — no atienden pedidos, y meterlos
@@ -207,7 +250,8 @@ export function useSegAsignaciones() {
         .map((m) => m.user_id)
         .filter(Boolean);
       // Orden estable: el reparto tiene que ser determinista corrida a corrida.
-      setOperadores([...new Set(ops)].sort());
+      const lista = [...new Set(ops)].sort();
+      setOperadores((prev) => (mismaLista(prev, lista) ? prev : lista));
     }
 
     setCargando(false);
@@ -219,6 +263,17 @@ export function useSegAsignaciones() {
   }, [activeStoreId]);
 
   useEffect(() => { void cargar(); }, [cargar]);
+
+  // ⛔ El reparto del jefe tiene que LLEGARLE a la asesora sin salir de la
+  // pantalla (4-sep-2026). `seg_asignaciones` no está en la publicación de
+  // realtime y esto se leía UNA vez por tienda: la asesora que tenía Seguimiento
+  // abierto desde las 8 no veía el reparto de las 8:30 —ni el "pedir más" de
+  // una compañera— hasta cambiar de ruta. Un minuto con la pestaña visible, y
+  // al volver a ella; en segundo plano no gasta nada.
+  useEffect(
+    () => pollWhenVisible(() => { void cargar({ enSegundoPlano: true }); }, ASIGNACIONES_POLL_MS, { runOnVisible: true }),
+    [cargar],
+  );
 
   /**
    * Reparte los pedidos que llegan (YA ORDENADOS POR URGENCIA) entre las
@@ -322,7 +377,8 @@ export function useSegAsignaciones() {
         });
 
         if (plan.motivoSinAsignar === 'sin_operadores') {
-          return { asignados: 0, ignorados: 0, sinOperadores: true, desbalance: 0, entre, ausentes };
+          // Con la lista sin leer, "sin operadores" es "no sé quiénes son".
+          return { asignados: 0, ignorados: 0, sinOperadores: true, desbalance: 0, entre, ausentes, equipoNoLeido: operadoresError };
         }
         if (plan.nuevas.length === 0) {
           return { asignados: 0, ignorados: 0, sinOperadores: false, desbalance: desbalance(plan.cargaFinal), entre, ausentes };
@@ -357,7 +413,7 @@ export function useSegAsignaciones() {
         setRepartiendo(false);
       }
     },
-    [activeStoreId, isManagerOfActive, soportado, asignaciones, operadores, cargar],
+    [activeStoreId, isManagerOfActive, soportado, asignaciones, operadores, operadoresError, cargar],
   );
 
   /** Mueve un pedido a otra asesora, o lo suelta al pool (`operatorId = null`). */
@@ -437,9 +493,16 @@ export function useSegAsignaciones() {
     [user, asignaciones],
   );
 
-  return {
+  // ⛔ Memoizado (4-sep-2026): este objeto nacía nuevo en cada render y
+  // SeguimientoTab lo tenía entero en las deps de cuatro memos/callbacks — que
+  // se rehacían siempre, arrastrando `boardData` y el `byColumn` del tablero
+  // (~600 ciclos recalculados por render). Con la identidad estable, y las
+  // funciones de adentro en useCallback, el llamador puede depender de
+  // `asig.esMio` / `asig.repartir` / `asig.tomarMas` sin pagar ese costo.
+  return useMemo(() => ({
     asignaciones,
     operadores,
+    operadoresError,
     soportado,
     cargando,
     cargado,
@@ -449,5 +512,5 @@ export function useSegAsignaciones() {
     tomarMas,
     esMio,
     recargar: cargar,
-  };
+  }), [asignaciones, operadores, operadoresError, soportado, cargando, cargado, repartiendo, repartir, reasignar, tomarMas, esMio, cargar]);
 }

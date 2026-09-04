@@ -663,6 +663,16 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
     }
   }, [module, recordGestion]);
 
+  // Marcar la fila como gestionada SIN insertar touchpoint: para cuando la
+  // gestión ya la registró el SERVIDOR (mandar un WhatsApp desde el diálogo, la
+  // edge function inserta el `SEG:` ella misma). Antes el diálogo de la lista no
+  // avisaba y la fila seguía "pendiente" hasta recargar — el tablero sí lo hacía
+  // (`setGestionada`), la lista no (4-sep-2026). Estable para no romper el memo.
+  const marcarGestionada = useCallback((order: OrderData, label: string) => {
+    if (!order.dbId) return;
+    setResults(prev => ({ ...prev, [order.dbId!]: label }));
+  }, []);
+
 
   // Edad en días hábiles PRECOMPUTADA una vez por pedido (decorate-sort-
   // undecorate). getOrderStatusAgeDays llama a calcBusinessDays, que recorre el
@@ -1134,6 +1144,7 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
                         expanded={expandedPhone === o.phone}
                         onToggle={handleToggleExpanded}
                         onAction={markAction}
+                        onMarcarGestionada={marcarGestionada}
                         currentUserId={user?.id}
                         adminIds={adminIds}
                         touchpoints={phoneTouchpoints[o.phone] ?? EMPTY_TPS}
@@ -1189,6 +1200,9 @@ interface OrderCardProps {
   // que cambiaban de identidad cada render y rompían el memo.
   onToggle: (phone: string) => void;
   onAction: (order: OrderData, action: string) => void;
+  /** Pinta la fila como gestionada sin insertar nada: la gestión ya la escribió
+   *  el servidor (envío de WhatsApp). Estable (useCallback). */
+  onMarcarGestionada: (order: OrderData, label: string) => void;
   currentUserId: string | undefined;
   adminIds: string[];
   touchpoints: Touchpoint[];
@@ -1226,7 +1240,7 @@ const VENTANA_SELLO_MS = 7 * 24 * 60 * 60 * 1000;
 // las columnas — con 500 pedidos eso es 500 renders sincrónicos por click,
 // con cálculos pesados (calcPriority, getAlertLevel) en cada uno. Memo evita
 // el render si las props del card no cambiaron.
-const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUserId, adminIds, touchpoints: tps, allTouchpoints: allTps, getOperatorName, index, statusColor, notesEntry, countryCode, onOpenDetail, colKey }: OrderCardProps) {
+const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggle, onAction, onMarcarGestionada, currentUserId, adminIds, touchpoints: tps, allTouchpoints: allTps, getOperatorName, index, statusColor, notesEntry, countryCode, onOpenDetail, colKey }: OrderCardProps) {
   // Propiedad por GESTIÓN REAL (touchpoints del módulo), no por assigned_to.
   // 'mine' = yo la gestioné · 'other' = solo otra operadora · 'available' = nadie.
   // NO bloquea acciones — cualquiera puede gestionar cualquier pedido; el bucket
@@ -1736,7 +1750,10 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
                   </button>
                 )}
                 <a href={'tel:+' + getWhatsAppPhone(o.phone, countryCode)}
-                  onClick={() => void recordContacto(o.phone, 'LLAMADA', 'llamó')}
+                  // CON el número de pedido: sin él la llamada entra a la
+                  // bitácora sin pedido, no sale en la ficha y no cuenta como
+                  // gestión al cerrar la tarjeta (4-sep-2026).
+                  onClick={() => void recordContacto(o.phone, 'LLAMADA', 'llamó', o.externalId)}
                   className="flex-1 text-[11px] py-2.5 rounded-xl bg-card/40 text-muted-foreground font-semibold hover:text-foreground hover:border-border-strong no-underline inline-flex items-center justify-center gap-1.5 border border-border transition-colors">
                   <PhoneIcon size={12} /> Llamar
                 </a>
@@ -1765,6 +1782,10 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
                     valor: o.valor ? formatCOP(o.valor) : null,
                   }}
                   modulo="SEG"
+                  // Enviar ES gestionar (la edge function ya insertó el `SEG:`):
+                  // la fila se marca como en el tablero. Sin esto quedaba
+                  // "pendiente" hasta recargar y la asesora la volvía a tocar.
+                  onEnviado={() => onMarcarGestionada(o, 'Gestionado hoy')}
                 />
               )}
 

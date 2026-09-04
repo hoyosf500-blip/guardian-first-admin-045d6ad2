@@ -4,6 +4,7 @@ import { fnCanal } from '@/lib/canalChat';
 import { useStore } from '@/contexts/StoreContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { emitirGestion } from '@/lib/eventosGestion';
+import { useBitacoraPedido } from '@/hooks/useBitacoraPedido';
 import type { MensajeConversacion } from '@/lib/conversacion';
 import { motivoEdge, cuerpoDelError } from '@/lib/errorEdge';
 
@@ -66,6 +67,13 @@ export interface GestionDelEnvio {
 export function useEnviarWhatsapp() {
   const { activeStoreId, activeStore } = useStore();
   const { user } = useAuth();
+  // ⛔ La bitácora (`order_events`) NO la escribe nadie más en este camino
+  // (4-sep-2026). El touchpoint lo inserta la edge function y `useRecordGestion`
+  // —el único que anotaba `escribio`— no corre acá. Resultado: una asesora que
+  // mandaba 40 WhatsApps desde el tablero salía en /actividad con cero
+  // "escribió" y cada pedido cerrado como `salto`. Al dueño / admin el hook ya
+  // no le anota nada por su cuenta.
+  const bitacora = useBitacoraPedido();
   const [enviando, setEnviando] = useState(false);
 
   const enviar = useCallback(async (externalId: string, mensaje: string, modulo?: ModuloEnvio, gestion?: GestionDelEnvio): Promise<ResultadoEnvio> => {
@@ -108,13 +116,22 @@ export function useEnviarWhatsapp() {
           optimista: true,
         });
       }
+      // Recién con el envío CONFIRMADO, y con el número de pedido: es lo que le
+      // falta al touchpoint (que va por teléfono) para saber SOBRE CUÁL pedido
+      // se escribió cuando el cliente tiene dos. Va aunque no haya `gestion`:
+      // el rastro es del pedido, no del contador.
+      bitacora('escribio', {
+        externalId,
+        phone: gestion?.phone ?? null,
+        detalle: { modulo: modulo === 'WHATSAPP' ? 'WHATSAPP' : 'SEG', accion: gestion?.accion || 'Escribí por WhatsApp' },
+      });
       return { ok: true, mensajes: r.mensajes };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : 'No se pudo enviar' };
     } finally {
       setEnviando(false);
     }
-  }, [activeStoreId, user]);
+  }, [activeStoreId, activeStore?.country_code, user, bitacora]);
 
   return { enviar, enviando };
 }

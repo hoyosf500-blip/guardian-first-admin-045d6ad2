@@ -24,7 +24,13 @@ interface NovedadesState {
 
 export function useNovedades(user: User | null, storeId: string | null): NovedadesState {
   const [novedadesQueue, setNovedadesQueue] = useState<OrderData[]>([]);
-  const [novedadesLoading, setNovedadesLoading] = useState(false);
+  // ⛔ Arranca en `true`: hasta que la primera carga vuelva NO se sabe si hay
+  // novedades, y `false` con la cola vacía hacía que la pestaña pintara el
+  // verde «Todas las incidencias resueltas» antes de haber preguntado a la
+  // base (y `SiguienteColaBanner` lo leía como medido). `novedadesLoaded` no
+  // sale del OrderContext, así que la pantalla solo tiene este flag para saber
+  // si el cero es real — el mismo patrón de «estado vacío mientras carga».
+  const [novedadesLoading, setNovedadesLoading] = useState(true);
   const [novedadesError, setNovedadesError] = useState<string | null>(null);
   const [novedadesLoaded, setNovedadesLoaded] = useState(false);
 
@@ -38,6 +44,8 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
     setNovedadesQueue([]);
     setNovedadesLoaded(false);
     setNovedadesError(null);
+    // La tienda nueva todavía no cargó: cola vacía + loading=false = verde falso.
+    setNovedadesLoading(true);
   }, [storeId]);
 
   // Referencia siempre-fresca para poder relanzar desde dentro del propio load
@@ -48,6 +56,10 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
     if (!user || !storeId) return;
     if (novedadesLoaded && !force) return;
     setNovedadesLoading(true);
+    // Si el guard multi-tienda de abajo relanza la carga, `loading` tiene que
+    // seguir en true: bajarlo en el finally dejaba un render con cola vacía y
+    // sin error — el verde de «todo resuelto» durante un frame.
+    let relanzada = false;
     try {
       // BUG 5 fix: lock solo aplica en Confirmar.
       // Match any estado que contenga NOVEDAD o INTENTO DE ENTREGA — Dropi usa
@@ -81,6 +93,7 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
       // prohibido. Peor: gestionar una de esas cards escribe el touchpoint con
       // el store_id de la tienda NUEVA sobre un pedido de la vieja.
       if (prevStoreRef.current !== storeId) {
+        relanzada = true;
         window.setTimeout(() => void loadNovedadesRef.current(true), 0);
         return;
       }
@@ -106,7 +119,7 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
       setNovedadesQueue(orders);
       setNovedadesLoaded(true);
     } finally {
-      setNovedadesLoading(false);
+      if (!relanzada) setNovedadesLoading(false);
     }
   }, [user, novedadesLoaded, storeId]);
   loadNovedadesRef.current = loadNovedades;

@@ -35,6 +35,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import { horaDelDiaBogota } from '@/lib/diaBitacora';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
@@ -195,6 +196,12 @@ export default function SeguimientoTab() {
   // Asignación del día (pieza C). Es una ETIQUETA de responsabilidad, no un
   // candado: filtra la vista, nunca bloquea a nadie.
   const asig = useSegAsignaciones();
+  // Las funciones estables del hook, SUELTAS, para ponerlas en deps sin
+  // arrastrar el objeto entero (4-sep-2026). `asig` completo en las deps de los
+  // memos de abajo los rehacía en cada render — y con ellos `boardData` y el
+  // `byColumn` del tablero (~600 ciclos por render). Era parte del "se siente
+  // lento".
+  const { esMio, repartir: repartirAsig, tomarMas: tomarMasAsig } = asig;
   const [soloMias, setSoloMias] = useSessionState<boolean>('seg:soloMias', false);
 
   // Cuántos filtros están puestos. Va en el botón "Filtros" porque ahora están
@@ -350,15 +357,16 @@ export default function SeguimientoTab() {
   // N" baja. El toggle "Ocultar gestionados" del contador lo controla.
   // "Solo las mías": filtra por la asignación del día. Se aplica ANTES del
   // ocultado de gestionados para que "Te faltan N" hable de MI cola.
+  // ⛔ En deps va `esMio` (useCallback), NO `asig` — ver donde se destructura.
   const displayDataMias = useMemo(
-    () => (soloMias ? displayData.filter((o) => asig.esMio(o.dbId)) : displayData),
-    [displayData, soloMias, asig],
+    () => (soloMias ? displayData.filter((o) => esMio(o.dbId)) : displayData),
+    [displayData, soloMias, esMio],
   );
 
   // Cuántos me tocaron hoy — el chip solo aparece si hay alguno mío.
   const misAsignadosHoy = useMemo(
-    () => dedupedByDate.reduce((n, o) => (asig.esMio(o.dbId) ? n + 1 : n), 0),
-    [dedupedByDate, asig],
+    () => dedupedByDate.reduce((n, o) => (esMio(o.dbId) ? n + 1 : n), 0),
+    [dedupedByDate, esMio],
   );
 
   // Vista de dueño (pieza D). Se calcula sobre la COLA ACCIONABLE, la misma
@@ -420,7 +428,7 @@ export default function SeguimientoTab() {
       .filter((o) => esAccionable(o) && o.dbId)
       .sort((a, b) => (horasSinMovimiento(b) ?? 0) - (horasSinMovimiento(a) ?? 0))
       .map((o) => String(o.dbId));
-    const r = await asig.repartir(ids, { forzar: opts?.forzar, cargaBase: cargaPendientePorAsesora });
+    const r = await repartirAsig(ids, { forzar: opts?.forzar, cargaBase: cargaPendientePorAsesora });
     if (!r) { if (!opts?.silencioso) toast.error('No se pudo repartir la cola'); return r; }
     // ⛔ Todavía no llegó el equipo: NO es un error y NO se avisa en el camino
     // automático — a las 8 de la mañana un cartel diciendo "no se repartió" cada
@@ -436,9 +444,18 @@ export default function SeguimientoTab() {
     }
     if (r.sinOperadores) {
       if (!opts?.silencioso) {
-        toast.error('No hay asesoras en esta tienda', {
-          description: 'Agregá operadoras en Admin → Equipo para poder repartir.',
-        });
+        // ⛔ "No pude leer el equipo" NO es "no hay equipo" (4-sep-2026). Con un
+        // fallo de red en `store_members` el hook devolvía cero asesoras y este
+        // cartel mandaba al jefe a Admin a agregar operadoras que ya existen.
+        if (r.equipoNoLeido) {
+          toast.error('No se pudo leer el equipo', {
+            description: 'La lista de asesoras no cargó (red o permisos). No significa que no haya nadie: reintentá en un momento.',
+          });
+        } else {
+          toast.error('No hay asesoras en esta tienda', {
+            description: 'Agregá operadoras en Admin → Equipo para poder repartir.',
+          });
+        }
       }
       return r;
     }
@@ -461,7 +478,7 @@ export default function SeguimientoTab() {
         + (r.ignorados > 0 ? ` ${r.ignorados} ya tenían dueño.` : ''),
     });
     return r;
-  }, [dedupedByDate, asig, cargaPendientePorAsesora]);
+  }, [dedupedByDate, repartirAsig, cargaPendientePorAsesora]);
   /** El botón del panel: lo apretó una persona, así que MANDA ella. */
   const repartirAMano = useCallback(() => { void repartirColaDeHoy({ forzar: true }); }, [repartirColaDeHoy]);
   // «Pedir más» en la barra de turno: las DOS condiciones del panel, o no se
@@ -486,7 +503,7 @@ export default function SeguimientoTab() {
         .filter((o) => esAccionable(o) && o.dbId)
         .sort((a, b) => (horasSinMovimiento(b) ?? 0) - (horasSinMovimiento(a) ?? 0))
         .map((o) => String(o.dbId));
-      const n = await asig.tomarMas(candidatos);
+      const n = await tomarMasAsig(candidatos);
       if (n == null) {
         // En automatico NO se avisa de un fallo: ella no pidio nada, y un cartel
         // rojo por algo que no hizo solo la asusta. Se reintenta en un minuto.
@@ -516,7 +533,7 @@ export default function SeguimientoTab() {
     } finally {
       setPidiendoMas(false);
     }
-  }, [dedupedByDate, asig]);
+  }, [dedupedByDate, tomarMasAsig]);
 
   /**
    * LA RECARGA NO PUEDE DEPENDER DE UN BOTON (3-sep-2026).
@@ -636,14 +653,23 @@ export default function SeguimientoTab() {
   // Actividad de chat VERIFICADA contra ImporChat (la escribe importchat-sync
   // en orders.chat_saliente_at). Es la fuente del CICLO de cada pedido.
   //
-  // ⛔ Los ids salen de `displayDataMias` (la lista COMPLETA), no del tablero ya
-  // filtrado: si salieran de `boardData` y `boardData` filtrara por el ciclo, el
-  // filtro se estaría alimentando de su propio resultado — un pedido escondido
-  // dejaría de tener actividad leída y volvería a aparecer, en bucle.
+  // ⛔ Los ids salen de `dedupedByDate` (la población que CUENTAN los chips y el
+  // hero), no de la lista ya filtrada por buscador / lista / "Mías" y menos del
+  // tablero. Dos razones, cada una un bug real:
+  //  · Si salieran de `boardData` y `boardData` filtrara por el ciclo, el filtro
+  //    se alimentaría de su propio resultado — un pedido escondido dejaría de
+  //    tener actividad leída y volvería a aparecer, en bucle.
+  //  · Salían de `displayDataMias` (4-sep-2026): al TIPEAR en el buscador la
+  //    consulta se rehacía solo con los pedidos que matcheaban y `load`
+  //    REEMPLAZA el mapa entero → para todos los demás `cicloDe` volvía a "sin
+  //    actividad" → nada "en espera" → los chips de las listas y "N te esperan"
+  //    SUBÍAN mientras la asesora buscaba un nombre. Los chips cuentan sobre
+  //    `chipsBase`/`dedupedByDate`; la fuente de su dato tiene que ser la misma.
+  // El filtro se aplica solo al DIBUJO (`displayData` → `boardData`).
   const { activeStoreId: storeIdChat } = useStore();
   const boardIds = useMemo(
-    () => displayDataMias.map((o) => o.dbId).filter(Boolean) as string[],
-    [displayDataMias],
+    () => dedupedByDate.map((o) => o.dbId).filter(Boolean) as string[],
+    [dedupedByDate],
   );
   const { actividad: chatActividad } = useRiesgoChat(storeIdChat, boardIds);
 
@@ -698,6 +724,10 @@ export default function SeguimientoTab() {
   // pedidos en el feed pero todos recién tocados). Para mostrar un vacío
   // celebratorio en vez de "Sin pedidos".
   const allManagedToday = onlyUntouchedSeg && boardData.length === 0 && displayDataMias.length > 0;
+  // El tablero dibuja `boardDataMostrado` (después de «toca llamar» / «te
+  // escribieron»), pero el vacío se explicaba con `boardData`: con 300 pedidos
+  // en cola y el filtro prendido decía "Sin pedidos en seguimiento" (4-sep-2026).
+  // Se calcula abajo, con `boardDataMostrado` ya derivado.
 
   // Clientes con la MANO LEVANTADA: escribieron por WhatsApp y el último
   // mensaje del chat sigue siendo suyo — nadie les respondió. Es la señal más
@@ -766,6 +796,12 @@ export default function SeguimientoTab() {
     if (verSoloEsperando) return boardData.filter((o) => o.dbId && esperandoRespuesta.has(String(o.dbId)));
     return boardData;
   }, [boardData, verSoloEsperando, esperandoRespuesta, soloTocaLlamar, tocaLlamarSet]);
+
+  // "El filtro no dejó nada" ≠ "no hay pedidos": hay cola, pero ninguno cumple
+  // el filtro de ciclo prendido. Se le dice cuál está puesto y cuántos esconde,
+  // para que lo apague en vez de concluir que no hay trabajo.
+  const filtroCicloVacio = boardDataMostrado.length === 0 && boardData.length > 0;
+  const nombreFiltroCiclo = soloTocaLlamar ? '«toca llamar»' : verSoloEsperando ? '«te escribieron»' : null;
 
   const stats = useMemo(() => {
     const s = {
@@ -1716,9 +1752,12 @@ export default function SeguimientoTab() {
                     // a las 00:47 "Nadie ha tocado Seguimiento hoy" es ruido que
                     // grita en rojo un día que todavía no empezó (captura del
                     // dueño, 14-ago-2026). Fuera de 9–21 baja a tono neutro.
+                    // Hora de BOGOTÁ, no del navegador: un PC con la zona mal
+                    // (o el dueño viajando) gritaba en amarillo a medianoche
+                    // local de la operación. Misma aritmética que la bitácora.
                     (() => {
-                      const h = new Date().getHours();
-                      return h >= 9 && h < 21;
+                      const h = horaDelDiaBogota(new Date().toISOString());
+                      return h !== null && h >= 9 && h < 21;
                     })() ? (
                       <p className="mt-1.5 text-[11px] text-warning leading-relaxed">
                         Nadie ha tocado Seguimiento hoy.
@@ -1808,6 +1847,7 @@ export default function SeguimientoTab() {
               onPedirMas={undefined}
               pidiendo={pidiendoMas}
               yoId={user?.id ?? null}
+              equipoNoLeido={asig.operadoresError}
             />
           </motion.div>
         )}
@@ -2166,11 +2206,25 @@ export default function SeguimientoTab() {
           // el botón renacía como pendiente y permitía duplicar touchpoints.
           gestionEquipo={gestionSegPorTelefono}
           historialEquipo={ultimaGestionSeg}
-          celebratory={allManagedToday}
-          emptyTitle={allManagedToday ? '¡Todo gestionado hoy! ✓' : undefined}
-          emptyDesc={allManagedToday
-            ? 'Ya gestionaste todos los pedidos de hoy. Destildá "Ocultar gestionados" en el contador para verlos de nuevo, o vuelve mañana para el próximo ciclo.'
-            : undefined}
+          // ⛔ El vacío se explica sobre lo que se DIBUJA (`boardDataMostrado`),
+          // no sobre `boardData`: con el filtro «toca llamar» prendido y 300
+          // pedidos en cola decía "Sin pedidos en seguimiento" (4-sep-2026). Y
+          // el texto del festejo nombra el control como se llama HOY ("Solo lo
+          // que falta / Viendo todo") y el modelo real (vuelven solos a la
+          // hora), no "vuelve mañana".
+          celebratory={allManagedToday && !filtroCicloVacio}
+          emptyTitle={
+            filtroCicloVacio
+              ? `Nada cumple el filtro ${nombreFiltroCiclo ?? ''}`.trim()
+              : allManagedToday ? '¡Todo lo que falta está en espera! ✓' : undefined
+          }
+          emptyDesc={
+            filtroCicloVacio
+              ? `Hay ${boardData.length} pedido${boardData.length === 1 ? '' : 's'} en la cola, pero ninguno está en ${nombreFiltroCiclo ?? 'ese caso'} ahora. Apagá el filtro arriba para verlos.`
+              : allManagedToday
+                ? 'A todos los de hoy ya se les escribió o llamó y están esperando respuesta. Los que no contesten vuelven solos a la cola a la hora. Tocá "Solo lo que falta" para pasar a "Viendo todo" y verlos ahora.'
+                : undefined
+          }
         />
       ) : (
         <CrmTable

@@ -139,6 +139,36 @@ type PendOrder = Pick<OrderLite, 'id' | 'phone' | 'novedad' | 'last_movement_at'
   fecha: string | null;
 };
 
+/**
+ * 'YYYY-MM-DD' en Bogotá de un ISO (`last_movement_at` viene en UTC). Antes se
+ * comparaba `iso.slice(0, 10)` —el día UTC— contra el día Bogotá: un movimiento
+ * de las 20:00 en Bogotá ya es «mañana» en UTC y se caía de «Nuevas hoy». null
+ * si no hay fecha o no parsea: no saber ≠ hoy.
+ */
+export function diaBogotaDe(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  if (!isFinite(ms)) return null;
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date(ms));
+}
+
+/**
+ * Quiénes del roster TRABAJAN la cola y por lo tanto se les mide. El dueño de
+ * la tienda (`store_members.role = 'owner'`) y el admin global (`user_roles`)
+ * miran, no gestionan — es la regla de `rolesTrabajo.ts`. Antes entraban al
+ * roster y el panel les colgaba el badge rojo «0 hoy» por no hacer un trabajo
+ * que por regla no hacen. El supervisor SÍ trabaja y se queda.
+ */
+export function rosterQueTrabaja(
+  miembros: { user_id: string; role?: string | null }[],
+  adminIds: Iterable<string>,
+): string[] {
+  const admins = new Set(adminIds);
+  return miembros
+    .filter((m) => m.role !== 'owner' && !admins.has(m.user_id))
+    .map((m) => m.user_id);
+}
+
 const EMPTY: Omit<NovedadesSeguimientoData, 'range' | 'setRange' | 'refresh' | 'loading'> = {
   pendientes: 0,
   nuevasHoy: 0,
@@ -179,7 +209,11 @@ const EMPTY: Omit<NovedadesSeguimientoData, 'range' | 'setRange' | 'refresh' | '
 export function useNovedadesSeguimiento(): NovedadesSeguimientoData {
   const { activeStoreId } = useStore();
   const [range, setRange] = useState<SeguimientoRange>('today');
-  const [loading, setLoading] = useState(false);
+  // ⛔ Arranca en `true`. Con `false` y `data = EMPTY`, el primer render decía
+  // «En cola ahora 0» y «Sin operadoras en esta tienda» como si fueran
+  // mediciones, antes de haber preguntado nada. Los tiles pintan «—» mientras
+  // esto sea true (ver NovedadesSeguimiento / NovedadesPuntosMejora).
+  const [loading, setLoading] = useState(true);
   const [data, setData] = useState(EMPTY);
   const seqRef = useRef(0);
 
@@ -194,8 +228,9 @@ export function useNovedadesSeguimiento(): NovedadesSeguimientoData {
     const rangeStart = bogotaDateNDaysAgo(today, RANGE_DAYS[range]);
 
     try {
-      // 1) Marcas (touchpoints NOVEDAD:%), 2) pendientes en cola, 3) roster.
-      const [tpRes, pendRes, memberRes] = await Promise.all([
+      // 1) Marcas (touchpoints NOVEDAD:%), 2) pendientes en cola, 3) roster con
+      // su rol, 4) admins globales (para sacarlos del roster, ver rosterQueTrabaja).
+      const [tpRes, pendRes, memberRes, adminRes] = await Promise.all([
         supabase
           .from('touchpoints')
           .select('phone, action, operator_id, action_date, created_at')
@@ -211,8 +246,10 @@ export function useNovedadesSeguimiento(): NovedadesSeguimientoData {
           .eq('novedad_sol', false),
         supabase
           .from('store_members')
-          .select('user_id')
+          .select('user_id, role')
           .eq('store_id', activeStoreId),
+        // Mismo patrón que DevolucionesPorSeguidor / CrmTable.
+        supabase.from('user_roles').select('user_id').eq('role', 'admin'),
       ]);
 
       if (seq !== seqRef.current) return; // una carga más nueva ganó
@@ -244,7 +281,14 @@ export function useNovedadesSeguimiento(): NovedadesSeguimientoData {
       const pend = ((pendRes.data ?? []) as PendOrder[]).filter((p) =>
         !esNovedadResuelta(p.estado) && isWithinLastDays(p.fecha, NOVEDAD_WINDOW_DAYS),
       );
-      const memberIds = (memberRes.data ?? []).map((m) => m.user_id as string);
+      // Si la lectura de admins falla no se tumba el panel entero (es un filtro
+      // de cortesía sobre el roster, no una medición): el dueño ya sale por su
+      // rol `owner` en store_members, que es la reja principal.
+      const adminIds = adminRes.error ? [] : (adminRes.data ?? []).map((r) => r.user_id as string);
+      const memberIds = rosterQueTrabaja(
+        (memberRes.data ?? []) as { user_id: string; role?: string | null }[],
+        adminIds,
+      );
 
       // Teléfonos a enriquecer (de las marcas). Se traen TODOS, en lotes: estas
       // órdenes son el universo del desglose por culpa y de las tablas de
@@ -377,9 +421,8 @@ export function useNovedadesSeguimiento(): NovedadesSeguimientoData {
       const tiempoRespuestaPromMs = respN > 0 ? Math.round(respSum / respN) : null;
 
       // Inflow aprox de hoy: pendientes movidos hoy + cerradas hoy.
-      const pendientesHoy = pend.filter(
-        (p) => p.last_movement_at && p.last_movement_at.slice(0, 10) === today,
-      ).length;
+      // Día BOGOTÁ del movimiento, no el UTC del ISO — `today` ya es Bogotá.
+      const pendientesHoy = pend.filter((p) => diaBogotaDe(p.last_movement_at) === today).length;
       const cerradasHoy = gestiones.filter(
         (g) => g.actionDate === today && g.tipo !== 'sin_respuesta',
       ).length;

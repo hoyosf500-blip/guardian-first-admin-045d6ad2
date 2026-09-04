@@ -5,7 +5,7 @@ import { X, RotateCcw, AlertTriangle, CheckCircle2, Loader2, History } from 'luc
 import { toast } from 'sonner';
 import { useShopifyManualMarks } from '@/hooks/useShopifyManualMarks';
 import {
-  defaultMarkRange, filterMarksByRange, groupMarksByDay, markReconStatus,
+  bogotaDay, defaultMarkRange, filterMarksByRange, groupMarksByDay, markReconStatus,
   type DateRange, type ManualMark,
 } from '@/lib/shopifyMarks';
 
@@ -40,7 +40,10 @@ export default function ShopifyMarksHistoryModal({ storeId, pendingIds, onClose,
   const [range, setRange] = useState<DateRange>(() => defaultMarkRange(Date.now(), 3));
   const [reverting, setReverting] = useState<string | null>(null);
 
-  const today = useMemo(() => range.to, [range.to]);
+  // «Hoy» es HOY en Bogotá, no el fin del rango (4-sep-2026): con el rango
+  // movido a la semana pasada, el último día del filtro salía rotulado «Hoy» y
+  // el anterior «Ayer» — fechas viejas leídas como frescas.
+  const today = bogotaDay(Date.now());
   const visible = useMemo(() => filterMarksByRange(marks, range), [marks, range]);
   const groups = useMemo(() => groupMarksByDay(visible), [visible]);
   const missingCount = useMemo(

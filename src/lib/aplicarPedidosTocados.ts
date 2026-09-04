@@ -56,7 +56,10 @@ function cambioVisible(a: OrderData, b: OrderData): boolean {
     a.nombre !== b.nombre ||
     a.ciudad !== b.ciudad ||
     a.direccion !== b.direccion ||
-    a.valor !== b.valor
+    a.valor !== b.valor ||
+    // Misma lista que smartMerge (useDataLoader): un cambio que una pantalla ve
+    // y la otra no es un bug que nadie entiende. producto entró el 4-sep-2026.
+    a.producto !== b.producto
   );
 }
 

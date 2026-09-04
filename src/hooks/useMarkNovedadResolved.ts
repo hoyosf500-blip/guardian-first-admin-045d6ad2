@@ -5,6 +5,8 @@ import { useStore } from '@/contexts/StoreContext';
 import { OrderData } from '@/lib/orderUtils';
 import { bogotaToday, horaAhoraEn } from '@/lib/utils';
 import { buildNovedadAction, NovedadResultTipo } from '@/lib/novedadGestion';
+import { emitirGestion } from '@/lib/eventosGestion';
+import { useBitacoraPedido } from '@/hooks/useBitacoraPedido';
 import { toast } from 'sonner';
 
 /**
@@ -57,6 +59,7 @@ async function mensajeDeInvoke(err: unknown): Promise<string> {
 export function useMarkNovedadResolved() {
   const { user } = useAuth();
   const { activeStoreId, activeStore } = useStore();
+  const bitacora = useBitacoraPedido();
   const [marking, setMarking] = useState<string | null>(null);
 
   const markNovedad = useCallback(
@@ -123,39 +126,77 @@ export function useMarkNovedadResolved() {
         const action = tipo === 'devolucion'
           ? (dropi === 'ok' ? 'NOVEDAD: Devolución [Dropi ✓]' : 'NOVEDAD: Devolución')
           : buildNovedadAction(tipo, dropi === 'ok' ? `${solution} [Dropi ✓]` : nota);
-        const { error: tpError } = await supabase.from('touchpoints').insert({
+        // Un solo sitio de inserción, con la tienda explícita en el payload
+        // (es lo que audita `aislamientoTiendasEstatico`).
+        const insertarMarca = () => supabase.from('touchpoints').insert({
           phone: order.phone,
           action,
           operator_id: user.id,
           action_date: today,
           action_time: now,
           store_id: activeStoreId,
-        });
-        if (tpError) {
-          toast.error('No se pudo guardar la marca: ' + tpError.message);
-          // Si Dropi ya la aceptó, la gestión existe aunque acá no quede escrita.
-          return { ok: dropi === 'ok', dropi };
-        }
+        }).select('created_at');
+        let tpRes = await insertarMarca();
+        // Un solo reintento, y solo cuando Dropi YA aceptó: en ese caso la
+        // gestión existe en la transportadora y perder la marca por un blip de
+        // red deja a la asesora sin prueba de lo que hizo.
+        if (tpRes.error && dropi === 'ok') tpRes = await insertarMarca();
+        const marcaGuardada = !tpRes.error;
+        if (!marcaGuardada) toast.error('No se pudo guardar la marca: ' + (tpRes.error?.message ?? 'error'));
+
+        // ⛔ Si la marca falló y Dropi NO intervino, no quedó nada escrito: se
+        // corta acá y la pantalla NO descarta la card. Pero si Dropi ya aceptó,
+        // se sigue igual al paso 2 — antes se devolvía `ok:true` SIN llegar al
+        // UPDATE de `orders` (4-sep-2026): la novedad ya estaba resuelta en la
+        // transportadora y la fila seguía con `novedad_sol=false`, así que volvía
+        // a la cola y OTRA asesora llamaba al mismo cliente por lo mismo.
+        if (!marcaGuardada && dropi !== 'ok') return { ok: false, dropi };
 
         // 2. Resuelta/Devolución salen de la cola. Sin respuesta queda pendiente.
         //    Con Dropi aceptado se sella también el estado (activa el trigger
-        //    que protege la gestión de HOY contra el próximo sync).
+        //    que protege la gestión contra el próximo sync).
+        let filaActualizada = false;
         if (tipo !== 'sin_respuesta' && order.dbId) {
           const patch = dropi === 'ok'
             ? { novedad_sol: true, estado: 'NOVEDAD SOLUCIONADA' }
             : { novedad_sol: true };
           const { error: upError } = await supabase.from('orders').update(patch).eq('id', order.dbId);
-          if (upError) {
-            toast.error('Marca guardada, pero no salió de la cola: ' + upError.message);
-            return { ok: true, dropi };
-          }
+          if (upError) toast.error('No salió de la cola: ' + upError.message);
+          filaActualizada = !upError;
         }
-        return { ok: true, dropi };
+
+        if (marcaGuardada) {
+          // Recién ACÁ, con la fila confirmada por la base, se avisa a la
+          // pantalla: es lo que refresca el sello «ya lo tocó» (`useSelloGestion`
+          // escucha este evento) sin esperar un realtime que sobre `touchpoints`
+          // no existe. Mismo molde que `useRecordGestion` — este hook era el
+          // único que insertaba touchpoints directo y en silencio.
+          emitirGestion({
+            phone: order.phone,
+            modulo: 'NOVEDAD',
+            accion: action.replace(/^NOVEDAD:\s*/, ''),
+            operatorId: user.id,
+            at: (tpRes.data?.[0] as { created_at?: string } | undefined)?.created_at || new Date().toISOString(),
+          });
+          // Y la bitácora, aparte: sin el `gestiono` la ficha de la asesora decía
+          // que abrió veinte novedades y las «saltó» todas, aunque hubiera
+          // resuelto tres. Es un espejo; si falla no arrastra la gestión.
+          bitacora('gestiono', {
+            externalId: order.externalId,
+            phone: order.phone,
+            detalle: { modulo: 'NOVEDAD', accion: action, dropi },
+          });
+        }
+
+        // `ok:false` SOLO cuando no quedó NADA escrito. Con Dropi aceptado, la
+        // gestión existe aunque acá haya fallado algo: descartar la card es lo
+        // correcto, y el toast de arriba ya dijo qué faltó.
+        return { ok: marcaGuardada || filaActualizada || dropi === 'ok', dropi };
       } finally {
         setMarking(null);
       }
     },
-    [user, activeStoreId],
+    [user, activeStoreId, bitacora],
   );
 
   return { markNovedad, marking };

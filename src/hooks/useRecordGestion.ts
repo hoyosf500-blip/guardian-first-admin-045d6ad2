@@ -77,6 +77,28 @@ const FALLO: ResultadoGestion = { ok: false, fila: null };
 const ULTIMA_GESTION = new Map<string, { at: number; resultado: ResultadoGestion }>();
 const VENTANA_ANTIDUP_MS = 60_000;
 
+/**
+ * La llave del candado anti-duplicado.
+ *
+ * ⛔ CON el pedido (4-sep-2026). Sin él, un cliente con DOS pedidos vivos
+ * —caso común: el reemplazo que crea Dropi al editar— perdía la segunda
+ * gestión: la asesora marcaba "Envié la guía" en los dos dentro del mismo
+ * minuto, el segundo clic caía en la llave del primero y se DESCARTABA
+ * devolviendo `ok`. La pantalla decía "registrado" y en la base había una sola
+ * fila. Cuando el llamador no manda pedido, la llave queda como antes.
+ *
+ * Pura y exportada para poder probarla sin montar el hook.
+ */
+export function llaveAntiDuplicado(
+  storeId: string,
+  phone: string,
+  module: GestionModule,
+  action: string,
+  externalId?: string | null,
+): string {
+  return `${storeId}|${phone}|${externalId ?? ''}|${module}: ${action}`;
+}
+
 export function useRecordGestion() {
   const { user } = useAuth();
   const { activeStoreId } = useStore();
@@ -102,7 +124,7 @@ export function useRecordGestion() {
       // Para la pantalla el clic funcionó — la gestión ya está registrada.
       // Devolver un fallo mostraría "No se pudo registrar, reintentá" sobre algo
       // que sí se guardó, y la asesora insistiría: el error opuesto y peor.
-      const llave = `${activeStoreId}|${phone}|${module}: ${action}`;
+      const llave = llaveAntiDuplicado(activeStoreId, phone, module, action, externalId);
       const previa = ULTIMA_GESTION.get(llave);
       if (previa && Date.now() - previa.at < VENTANA_ANTIDUP_MS) return previa.resultado;
 

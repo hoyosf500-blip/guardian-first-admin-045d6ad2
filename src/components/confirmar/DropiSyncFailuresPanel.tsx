@@ -82,6 +82,13 @@ export default function DropiSyncFailuresPanel() {
   // El join con `orders` falló: las filas no traen número de pedido y el
   // filtro de obsoletas no puede aplicarse. Se dice arriba del listado.
   const [joinFallo, setJoinFallo] = useState(false);
+  /** ⛔ La LECTURA de `order_results` falló (mensaje). Antes el `catch` era mudo
+   *  y el guard `rows.length === 0 → null` hacía que "no pude leer" se viera
+   *  IGUAL que "no hay fallos" (4-sep-2026): el panel que existe para que las
+   *  gestiones que no llegaron a Dropi dejen de ser invisibles… las volvía
+   *  invisibles. Con valor se muestra un aviso NEUTRO — no sabemos si hay
+   *  fallos, no sabemos que los haya. */
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!activeStoreId) return;
@@ -181,8 +188,11 @@ export default function DropiSyncFailuresPanel() {
         externalId: meta.get(r.order_id)?.externalId ?? '',
         nombre: meta.get(r.order_id)?.nombre ?? '',
       })));
-    } catch {
-      // Red/RLS caída: no estorbamos la cola — el panel mantiene lo último que vio.
+      setLoadError(null);
+    } catch (e) {
+      // Red/RLS caída: el panel mantiene lo último que vio, pero LO DICE (ver
+      // `loadError`) — callarse era afirmar "no hay fallos" sin haber mirado.
+      setLoadError(e instanceof Error ? e.message : String(e));
     } finally {
       setRefreshing(false);
       setLoaded(true);
@@ -192,6 +202,7 @@ export default function DropiSyncFailuresPanel() {
   useEffect(() => {
     setRows([]);
     setLoaded(false);
+    setLoadError(null);
     setExpanded(false);
     if (!activeStoreId) return;
     void load();
@@ -306,12 +317,37 @@ export default function DropiSyncFailuresPanel() {
     }
   }, [busyId, load]);
 
-  // Guards: sin tienda, sin primera carga o sin fallos → no estorbar la cola.
-  if (!activeStoreId || !loaded || rows.length === 0) return null;
+  // Guards: sin tienda o sin primera carga → no estorbar la cola.
+  if (!activeStoreId || !loaded) return null;
+
+  // Lectura caída: aviso neutro con reintento. Si quedaron filas de una lectura
+  // anterior se muestran igual abajo (siguen siendo accionables), pero con este
+  // cartel encima para que nadie las lea como "la lista de hoy".
+  const avisoLectura = loadError ? (
+    <div role="status" className="relative mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-warning/30 bg-warning/10 px-4 pl-5 py-3">
+      <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
+      <CloudOff size={16} className="text-warning flex-shrink-0" aria-hidden="true" />
+      <p className="text-[11px] leading-relaxed flex-1 min-w-[14rem]">
+        <span className="font-semibold text-warning">No se pudo revisar si hay gestiones sin llegar a Dropi.</span>{' '}
+        <span className="text-muted-foreground">
+          No quiere decir que no haya: la lectura falló ({loadError.slice(0, 120)}). Volvé a intentar.
+        </span>
+      </p>
+      <button onClick={() => void load()} disabled={refreshing}
+        className="h-8 px-3 rounded-lg border border-warning/40 bg-card text-xs font-medium text-warning hover:bg-warning/10 inline-flex items-center gap-1.5 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+        <RefreshCw size={12} className={refreshing ? 'motion-safe:animate-spin' : ''} aria-hidden="true" /> Reintentar
+      </button>
+    </div>
+  ) : null;
+
+  // Sin fallos (y con la lectura sana) → no estorbar la cola.
+  if (rows.length === 0) return avisoLectura;
 
   const botCount = rows.filter(r => r.notes.startsWith(BOT_PREFIX)).length;
 
   return (
+    <>
+    {avisoLectura}
     /* Barra lateral de color + chip con halo: la fórmula de banner del DS.
        Antes el bloque se distinguía solo por el fondo rojo claro, que en tema
        claro casi no se separa de la card de al lado. */
@@ -447,5 +483,6 @@ export default function DropiSyncFailuresPanel() {
         </div>
       )}
     </div>
+    </>
   );
 }

@@ -531,59 +531,33 @@ export default function OrderDetailPage() {
 
     setResolving(true);
     const today = bogotaToday();
-    const time = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+    // Con zona: la fecha ya iba en Bogotá y la hora salía del navegador — una
+    // asesora fuera de la zona dejaba el día bien y la hora corrida.
+    const time = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' });
 
-    const touchAction = action === 'reoffer'
-      ? `NOVEDAD: Volver a ofrecer — ${cleanSolution.slice(0, 180)}`
-      : 'NOVEDAD: Devolver al remitente';
-
-    // 1. Insert touchpoint
-    const { data: tpData, error: tpError } = await supabase.from('touchpoints').insert({
-      phone: order.phone,
-      action: sanitizeAction(touchAction),
-      operator_id: user.id,
-      action_date: today,
-      action_time: time,
-      store_id: activeStoreId,
-    }).select();
-    // Las dos hermanas de arriba avisan cuando la bitácora falla; esta no lo hacía
-    // (4-sep-2026): la novedad se resolvía y la gestión podía no quedar anotada.
-    if (tpError) toast.error('No se pudo registrar la gestión en la bitácora', { description: tpError.message });
-    if (tpData) setTouchpoints(prev => [...(tpData as Touchpoint[]), ...prev]);
-
-    // Para el rollback: preservar el estado previo real (p.ej. 'INTENTO DE
-    // ENTREGA') en vez de pisar con 'NOVEDAD' hard-coded — mismo fix que ya
-    // tiene useNovedades.rollbackNovedad; sin esto el matiz se perdía hasta el
-    // próximo sync y las listas SLA clasificaban mal el pedido.
-    const prevEstado = order.estado;
     // Anti-carrera: `dropi-resolve-incidence` tarda segundos y con las flechas
     // ←/→ la asesora ya puede estar en OTRO pedido cuando vuelve la respuesta.
     // Los setOrder de abajo solo aplican si en pantalla sigue el mismo pedido —
-    // mismo guard que el auto-refresh; sin esto el rollback pintaba el estado
-    // del pedido A sobre el pedido B.
+    // mismo guard que el auto-refresh; sin esto se pintaba el estado del
+    // pedido A sobre el pedido B.
     const extIdEnCurso = order.external_id;
     const aplicarSiSigueElMismo = (patch: Partial<OrderRow>) =>
       setOrder(prev => (prev && prev.external_id === extIdEnCurso ? { ...prev, ...patch } : prev));
 
-    // 2. Update local DB
-    const { error: updateError } = await supabase
-      .from('orders')
-      .update({ novedad_sol: true, estado: 'NOVEDAD SOLUCIONADA' })
-      .eq('id', order.id);
-
-    if (updateError) {
-      toast.error('Error guardando: ' + updateError.message);
-      setResolving(false);
-      return;
-    }
-
-    aplicarSiSigueElMismo({ novedad_sol: true, estado: 'NOVEDAD SOLUCIONADA' });
-
-    // 3. Call Dropi Edge Function if there's an external ID
+    // ⛔ DROPI PRIMERO (4-sep-2026). Antes se insertaba el touchpoint `NOVEDAD:`
+    // y se ponía `orders.novedad_sol=true` ANTES de llamar a Dropi; si Dropi
+    // rechazaba, se «revertía» con un UPDATE a false. Pero el trigger
+    // `protect_resolved_novedades_bogota` (BEFORE UPDATE) veía el touchpoint
+    // recién insertado y REPONÍA novedad_sol=true: el toast decía «Novedad
+    // revertida» y la fila quedaba resuelta sin que Dropi supiera nada — la
+    // incidencia vencía allá y el paquete se devolvía solo.
+    // Mismo orden que `useMarkNovedadResolved`: se escribe local SOLO si Dropi
+    // aceptó. Si rechaza no se toca nada y el cuadro de solución se queda para
+    // corregirla. Sin external_id no hay Dropi: registro local, como antes.
+    let dropiOk = false;
     if (order.external_id) {
       const toastId = `novedad-detail-${order.external_id}`;
-      toast.loading('Dropi: reportando solución…', { id: toastId });
-
+      toast.loading('Enviando la solución a Dropi…', { id: toastId });
       try {
         const res = await supabase.functions.invoke('dropi-resolve-incidence', {
           // storeId: el numero de pedido ya no identifica una empresa
@@ -597,22 +571,55 @@ export default function OrderDetailPage() {
         const data = res?.data as { ok?: boolean; error?: string } | null | undefined;
         if (res?.error || data?.ok === false) {
           const msg = res?.error?.message || data?.error || 'Error desconocido';
-          toast.error(`Dropi falló: ${msg}. Novedad revertida.`, { id: toastId, duration: 8000 });
-          // Rollback
-          await supabase.from('orders').update({ novedad_sol: false, estado: prevEstado || 'NOVEDAD' }).eq('id', order.id);
-          aplicarSiSigueElMismo({ novedad_sol: false, estado: prevEstado || 'NOVEDAD' });
-        } else {
-          toast.success('Novedad resuelta en Dropi', { id: toastId, duration: 2500 });
+          toast.error(`Dropi NO aceptó la solución: ${msg}. La novedad sigue como estaba.`, { id: toastId, duration: 8000 });
+          setResolving(false);
+          return;
         }
+        toast.success(action === 'reoffer' ? 'Dropi recibió la solución ✓' : 'Dropi recibió la devolución ✓', { id: toastId, duration: 2500 });
+        dropiOk = true;
       } catch (err: unknown) {
         const msg = getErrorMessage(err);
-        toast.error(`Dropi red: ${msg}. Novedad revertida.`, { duration: 8000 });
-        await supabase.from('orders').update({ novedad_sol: false, estado: prevEstado || 'NOVEDAD' }).eq('id', order.id);
-        aplicarSiSigueElMismo({ novedad_sol: false, estado: prevEstado || 'NOVEDAD' });
+        toast.error(`No se pudo hablar con Dropi (${msg}). La novedad sigue como estaba.`, { id: toastId, duration: 8000 });
+        setResolving(false);
+        return;
       }
-    } else {
-      toast.success('Novedad marcada como resuelta');
     }
+
+    // 1. Touchpoint — el registro de accountability. El sufijo dice si fue a
+    //    Dropi, igual que en /novedades (es lo que lee el seguimiento).
+    const touchAction = (action === 'reoffer'
+      ? `NOVEDAD: Volver a ofrecer — ${cleanSolution.slice(0, 180)}`
+      : 'NOVEDAD: Devolver al remitente') + (dropiOk ? ' [Dropi ✓]' : '');
+    const { data: tpData, error: tpError } = await supabase.from('touchpoints').insert({
+      phone: order.phone,
+      action: sanitizeAction(touchAction),
+      operator_id: user.id,
+      action_date: today,
+      action_time: time,
+      store_id: activeStoreId,
+    }).select();
+    // Las dos hermanas de arriba avisan cuando la bitácora falla; esta no lo hacía
+    // (4-sep-2026): la novedad se resolvía y la gestión podía no quedar anotada.
+    if (tpError) toast.error('No se pudo registrar la gestión en la bitácora', { description: tpError.message });
+    if (tpData) setTouchpoints(prev => [...(tpData as Touchpoint[]), ...prev]);
+    // Sin Dropi y sin marca no quedó NADA escrito: no se cierra una novedad
+    // sobre una gestión que no existe en ningún lado.
+    if (tpError && !dropiOk) { setResolving(false); return; }
+
+    // 2. La fila sale de la cola. Con Dropi aceptado se hace igual aunque la
+    //    marca haya fallado: la novedad YA está resuelta en la transportadora y
+    //    dejarla en la cola manda a otra asesora a llamar por lo mismo.
+    const { error: updateError } = await supabase
+      .from('orders')
+      .update({ novedad_sol: true, estado: 'NOVEDAD SOLUCIONADA' })
+      .eq('id', order.id);
+    if (updateError) {
+      toast.error((dropiOk ? 'Dropi la aceptó, pero acá no salió de la cola: ' : 'Error guardando: ') + updateError.message);
+      setResolving(false);
+      return;
+    }
+    aplicarSiSigueElMismo({ novedad_sol: true, estado: 'NOVEDAD SOLUCIONADA' });
+    if (!order.external_id) toast.success('Novedad marcada como resuelta');
 
     setShowReofferInput(false);
     setSolutionText('');

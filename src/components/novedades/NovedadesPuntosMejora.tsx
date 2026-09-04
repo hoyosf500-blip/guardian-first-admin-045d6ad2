@@ -142,7 +142,9 @@ export default function NovedadesPuntosMejora() {
 
       {/* KPIs hero: el lever accionable */}
       <motion.div {...fadeUp(0.05)} className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <Stat icon={<AlertTriangle size={17} />} label="Novedades analizadas" value={totalNov} hint="gestionadas + en cola" />
+        {/* «—» mientras carga: un «0 analizadas» antes de leer la base es una
+            medición inventada, no un dato. */}
+        <Stat icon={<AlertTriangle size={17} />} label="Novedades analizadas" value={s.loading ? '—' : totalNov} hint="gestionadas + en cola" />
         <Stat
           icon={<Target size={17} />} label="Culpa: datos nuestros" value={pct(pctDatos)}
           tone={pctDatos != null && pctDatos > 0.2 ? 'danger' : 'default'} hint="lo corregible por nosotros"

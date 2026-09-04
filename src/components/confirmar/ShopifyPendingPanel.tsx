@@ -163,7 +163,7 @@ function dayLabel(date: string, today?: string): string {
  */
 export default function ShopifyPendingPanel() {
   const { activeStoreId } = useStore();
-  const { data, isLoading, isFetching, refetch } = useShopifyPending(activeStoreId);
+  const { data, isLoading, isFetching, isError, error: pendingError, refetch } = useShopifyPending(activeStoreId);
   // Salud del robot que sube solo. Sin esto, un robot trabado se ve igual que
   // uno sano: la cola llena y cero explicación.
   const { data: robot } = useAutoPushHealth(activeStoreId);
@@ -248,7 +248,14 @@ export default function ShopifyPendingPanel() {
   // Anti-duplicados: teléfonos de los pendientes → pedidos Dropi NO cancelados
   // que YA existen con ese mismo teléfono (regla "teléfono repetido siempre").
   const pendingPhones = useMemo(() => uniquePhones(pending), [pending]);
-  const { dupMap } = useDuplicatePhones(activeStoreId, pendingPhones);
+  const { dupMap, isLoading: dupLoading, isError: dupError } = useDuplicatePhones(activeStoreId, pendingPhones);
+  // ⛔ ¿Se pudo REVISAR duplicados? Con la RPC caída `dupMap` queda vacío y eso se
+  // ve IGUAL que "ningún teléfono repetido": cada fila decía «listo para subir»
+  // y «Subir todos» no excluía nada (4-sep-2026) — el candado anti-duplicado
+  // apagado sin que nadie lo supiera. Mientras no haya veredicto no se sube en
+  // lote; subir uno por uno sigue pudiéndose (el servidor revalida el teléfono).
+  const dupsSinRevisar: 'cargando' | 'error' | null =
+    pendingPhones.length === 0 ? null : dupError ? 'error' : dupLoading ? 'cargando' : null;
 
   // Intentos previos de push por pedido (shopify_pushed_orders): cada fila
   // muestra SU razón de no-pasar (falló con motivo / quedó a medias / ya se
@@ -283,6 +290,20 @@ export default function ShopifyPendingPanel() {
     });
   }, [activeStoreId]);
 
+  // Deshace `markDone` cuando la marca compartida NO se pudo guardar. Antes el
+  // `done` local (localStorage) se persistía ANTES de `markEntered` y con `!r.ok`
+  // no se revertía: el pedido desaparecía SOLO en el navegador de esa asesora,
+  // seguía en rojo en el de todas las demás, y nadie sabía por qué (4-sep-2026).
+  const undoDone = useCallback((id: string) => {
+    if (!activeStoreId) return;
+    setDone(prev => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev); next.delete(id);
+      saveDone(activeStoreId, next);
+      return next;
+    });
+  }, [activeStoreId]);
+
   // "Ya lo metí": esconde local (snappy) + PERSISTE la marca (auditable + revertible).
   // Guard anti-doble-click: ignora si ya está marcado o si hay un bloqueo activo.
   const handleYaLoMeti = useCallback(async (p: ShopifyPendingItem) => {
@@ -291,9 +312,12 @@ export default function ShopifyPendingPanel() {
     setLockMarks(true);
     markDone(p.id);
     const r = await markEntered({ id: p.id, name: p.name, customer: p.customer, phone: p.phone, total: p.total, city: p.city });
-    if (!r.ok) toast.error('No se pudo guardar la marca: ' + (r.error || ''));
+    if (!r.ok) {
+      undoDone(p.id); // vuelve a la lista: la marca no quedó para el equipo
+      toast.error('No se pudo guardar la marca: ' + (r.error || ''), { description: 'El pedido sigue en la lista. Volvé a intentar.' });
+    }
     setTimeout(() => setLockMarks(false), 600);
-  }, [activeStoreId, lockMarks, done, markedIds, dupMap, dupOverrides, markDone, markEntered]);
+  }, [activeStoreId, lockMarks, done, markedIds, dupMap, dupOverrides, markDone, undoDone, markEntered]);
 
   // Revertir desde el historial: saca el pedido del `done` local y refetchea →
   // vuelve a aparecer en la cola de pendientes para meterlo bien.
@@ -354,9 +378,12 @@ export default function ShopifyPendingPanel() {
     setLockMarks(true);
     markDone(p.id);
     const r = await markEntered({ id: p.id, name: p.name, customer: p.customer, phone: p.phone, total: p.total, city: p.city });
-    if (!r.ok) toast.error('No se pudo compartir con el equipo: ' + (r.error || ''));
+    if (!r.ok) {
+      undoDone(p.id); // ver `undoDone`: sin esto se ocultaba solo para esta asesora
+      toast.error('No se pudo compartir con el equipo: ' + (r.error || ''), { description: 'El pedido sigue en la lista. Volvé a intentar.' });
+    }
     setTimeout(() => setLockMarks(false), 600);
-  }, [activeStoreId, lockMarks, done, markedIds, markDone, markEntered]);
+  }, [activeStoreId, lockMarks, done, markedIds, markDone, undoDone, markEntered]);
 
   // "Ya lo corregí" (valor distinto): la operadora ya ajustó el precio en Dropi →
   // lo sacamos de la lista (dismiss local por tienda). Al re-sincar con el valor
@@ -406,6 +433,15 @@ export default function ShopifyPendingPanel() {
   // eso pide una confirmación previa (bulkConfirm).
   const runBulk = useCallback(async () => {
     if (!activeStoreId || bulkRunning) return;
+    // Sin veredicto de duplicados NO se sube en lote (ver `dupsSinRevisar`): el
+    // botón ya está deshabilitado, esto cubre el atajo «Reintentar faltantes».
+    if (dupsSinRevisar) {
+      setBulkConfirm(false);
+      toast.error(dupsSinRevisar === 'error'
+        ? 'No se pudo revisar si hay duplicados: no se sube en lote hasta poder revisarlo.'
+        : 'Todavía se están revisando duplicados. Esperá un momento.');
+      return;
+    }
     setBulkRunning(true); setBulkConfirm(false);
     // Omite duplicados: nunca subir en lote algo que ya está en Dropi.
     // ⛔ Y TAMPOCO EL LOTE CONTRA SÍ MISMO (3-sep-2026). `isBlockedByDuplicate`
@@ -499,7 +535,7 @@ export default function ShopifyPendingPanel() {
     if (fails.length > 0 || skipped.length > 0) setExpanded(true);
     void refetch();
     void refetchAttempts();
-  }, [activeStoreId, bulkRunning, visible, dupMap, dupOverrides, confirmPush, markDone, refetch, refetchAttempts]);
+  }, [activeStoreId, bulkRunning, dupsSinRevisar, visible, dupMap, dupOverrides, confirmPush, markDone, refetch, refetchAttempts]);
 
   // Vincula un producto Shopify→Dropi (una vez por tienda) y lo saca de la lista de
   // sin-vínculo. Después basta "Reintentar faltantes" para subir los que dependían de él.
@@ -539,9 +575,27 @@ export default function ShopifyPendingPanel() {
 
   // Guards: no estorbar la cola si no hay tienda / no cargó / no configurado.
   if (!activeStoreId) return null;
+  // ⛔ La PRIMERA llamada falló y no hay nada que mostrar: se DICE, en rojo, con
+  // reintento. Antes `!data → return null` escondía el panel entero y la cola
+  // de Shopify se veía igual que "no hay nada" — cuando el dueño pidió que "lo
+  // de Shopify siempre se vea" (4-sep-2026). Una fuga de ventas no puede
+  // depender de que la primera petición del día haya salido bien.
+  if (isError && !data) {
+    return (
+      <div role="alert" className="mb-4 rounded-2xl border border-destructive/40 bg-destructive/10 shadow-card3d px-4 py-2.5 text-sm text-destructive flex items-center gap-2">
+        <AlertTriangle size={15} aria-hidden="true" />
+        <span className="flex-1 min-w-0">
+          No se pudo revisar Shopify: {pendingError instanceof Error ? pendingError.message : 'la revisión no respondió'}.
+          {' '}No quiere decir que no haya pedidos sin pasar a Dropi.
+        </span>
+        <button onClick={() => refetch()} className="h-8 px-3 rounded-lg border border-destructive/40 bg-card text-xs font-medium text-destructive hover:bg-destructive/10 inline-flex items-center gap-1.5 flex-shrink-0" title="Reintentar">
+          <RefreshCw size={13} className={isFetching ? 'motion-safe:animate-spin' : ''} aria-hidden="true" /> Reintentar
+        </button>
+      </div>
+    );
+  }
   if (isLoading && !data) return null;
-  // Si la función no respondió (no deployada / error de red) NO mostramos nada
-  // engañoso — el dueño ve el error real en /admin → Shopify → "Probar".
+  // Tienda sin Shopify configurado → no hay nada que mostrar (no es un fallo).
   if (!data || data.configured === false) return null;
   if (!data.ok) {
     return (
@@ -721,7 +775,7 @@ export default function ShopifyPendingPanel() {
           </p>
           <p className="text-[11px] text-muted-foreground mt-1">
             {robot.cuando
-              ? `Última señal: ${robot.cuando.toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}`
+              ? `Última señal: ${robot.cuando.toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short', timeZone: BOGOTA })}`
               : 'Sin ninguna señal registrada.'}
           </p>
         </div>
@@ -754,7 +808,9 @@ export default function ShopifyPendingPanel() {
           )}
           {robot.cuando && (
             <p className="text-[11px] text-muted-foreground mt-1">
-              Último intento: {robot.cuando.toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}
+              {/* `timeZone: BOGOTA` (4-sep-2026): el resto del panel ya lo hace; sin
+                  él la hora salía en la zona del navegador de quien mirara. */}
+              Último intento: {robot.cuando.toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short', timeZone: BOGOTA })}
             </p>
           )}
         </div>
@@ -803,6 +859,18 @@ export default function ShopifyPendingPanel() {
               {cancelled > 0 && <span className="opacity-70"> · {cancelled} cancelados</span>}
               {yaResueltos > 0 && <span className="opacity-70"> · {yaResueltos} ya los marcó el equipo</span>}
             </span>
+            {/* Hay datos de antes pero el ÚLTIMO refresco falló: se dice, para que
+                nadie lea la lista vieja como la de ahora. */}
+            {isError && (
+              <span className="text-warning font-medium">
+                ⚠ La última actualización falló ({pendingError instanceof Error ? pendingError.message.slice(0, 80) : 'sin respuesta'}): estás viendo datos de hace un rato.
+              </span>
+            )}
+            {dupsSinRevisar === 'error' && (
+              <span className="text-warning font-medium">
+                ⚠ No se pudo revisar si hay duplicados: «Subir todos» queda apagado hasta poder revisarlo.
+              </span>
+            )}
           </div>
         </div>
         <button onClick={() => setShowCuadre(v => { const n = !v; if (activeStoreId) saveCuadre(activeStoreId, n); return n; })} aria-label="Ver el cuadre del día pedido por pedido"
@@ -822,7 +890,10 @@ export default function ShopifyPendingPanel() {
         </button>
         {count > 0 && (
           <div className="flex items-center gap-2 basis-full sm:basis-auto sm:ml-auto">
-            <button onClick={() => { setExpanded(true); setBulkConfirm(true); }} disabled={bulkRunning}
+            <button onClick={() => { setExpanded(true); setBulkConfirm(true); }} disabled={bulkRunning || dupsSinRevisar !== null}
+              title={dupsSinRevisar === 'error'
+                ? 'No se pudo revisar si hay duplicados — no se sube en lote sin ese chequeo'
+                : dupsSinRevisar === 'cargando' ? 'Revisando duplicados…' : undefined}
               aria-label="Subir todos los pendientes a Dropi"
               className="h-9 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-semibold inline-flex items-center justify-center gap-1.5 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none flex-1 sm:flex-none">
               {bulkRunning ? <Loader2 size={13} className="motion-safe:animate-spin" aria-hidden="true" /> : <Truck size={13} aria-hidden="true" />} Subir todos
@@ -1017,8 +1088,17 @@ export default function ShopifyPendingPanel() {
                                 intento a medias — verificá
                               </span>
                             )}
-                            {!blocked && !prevErr && !att && (
+                            {/* «listo para subir» SOLO con veredicto de duplicados: sin
+                                él la RPC caída pintaba verde a un posible duplicado. */}
+                            {!blocked && !prevErr && !att && dupsSinRevisar === null && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded bg-success/15 text-success">listo para subir</span>
+                            )}
+                            {!blocked && !prevErr && !att && dupsSinRevisar !== null && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning/15 text-warning inline-flex items-center gap-1"
+                                title={dupsSinRevisar === 'error' ? 'La revisión de teléfonos repetidos falló: verificá en Dropi antes de subirlo' : 'Revisando teléfonos repetidos…'}>
+                                <AlertTriangle size={9} aria-hidden="true" />
+                                {dupsSinRevisar === 'error' ? 'no se pudo revisar duplicados' : 'revisando duplicados…'}
+                              </span>
                             )}
                           </div>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">

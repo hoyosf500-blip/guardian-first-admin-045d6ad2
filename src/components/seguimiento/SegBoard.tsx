@@ -366,7 +366,12 @@ function useTiempoPorPedido(
   }, [mapa, ahoraTick, actividadChat, gestionEquipo, historialEquipo]);
 }
 
-const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, gestionEquipo, historialEquipo, nombreDe, avisoMs, columnLabel, actividad, tiempo, novedadCerrada, ampliada }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void; gestionEquipo?: Map<string, GestionDelPedido>; historialEquipo?: Map<string, GestionDelPedido>; ampliada?: boolean; nombreDe?: (id?: string | null) => string; avisoMs?: number | null; columnLabel?: string; actividad?: ActividadChatOrden | null;
+const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, gestionEquipo, historialEquipo, nombreDe, avisoMs, columnLabel, actividad, tiempo, novedadCerrada, ampliada }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>;
+  /** Recibe el PEDIDO para poder ser una sola función estable para todas las
+   *  tarjetas (4-sep-2026). Antes era `() => void` armada inline por tarjeta:
+   *  identidad nueva en cada render del tablero → el `memo` de las ~600
+   *  tarjetas no acertaba NUNCA y todas se redibujaban con cada latido. */
+  onOpen?: (o: OrderData) => void; gestionEquipo?: Map<string, GestionDelPedido>; historialEquipo?: Map<string, GestionDelPedido>; ampliada?: boolean; nombreDe?: (id?: string | null) => string; avisoMs?: number | null; columnLabel?: string; actividad?: ActividadChatOrden | null;
   /** La novedad de este pedido ya la cerró (o dejó vencer) la transportadora:
    *  Dropi rechaza resolverla. `undefined` = no se sabe → no se afirma nada. */
   novedadCerrada?: boolean;
@@ -397,7 +402,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   // así que dos clicks en el mismo frame verían gestionando=false los dos e
   // insertarían dos touchpoints (touchpoints no tiene constraint anti-dup).
   const enVueloRef = useRef(false);
-  const open = () => { if (onOpen) onOpen(); else if (o.externalId) navigate(`/pedido/${o.externalId}`); };
+  const open = () => { if (onOpen) onOpen(o); else if (o.externalId) navigate(`/pedido/${o.externalId}`); };
 
   // Gestionado HOY según la FUENTE DE VERDAD (touchpoints del día, vía
   // mySegTouchedToday del OrderContext) — no solo el useState de ESTA montada.
@@ -883,8 +888,10 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
               onClick={(e) => {
                 e.stopPropagation();
                 // El tablero es donde se hace el grueso de las llamadas; un fallo mudo
-                // acá es trabajo invisible (4-sep-2026).
-                void recordGestion(o.phone, 'LLAMADA', 'llamó').then((r) => {
+                // acá es trabajo invisible (4-sep-2026). CON el número de pedido:
+                // sin él la llamada no aparece en la ficha y el cierre de la
+                // tarjeta se anota como `salto` aunque haya llamado.
+                void recordGestion(o.phone, 'LLAMADA', 'llamó', o.externalId).then((r) => {
                   if (!r.ok) toast.error('La llamada no quedó registrada en la bitácora');
                 });
               }}
@@ -1025,6 +1032,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
             {debeLlamar && (
               <BotonLlamar
                 phone={o.phone}
+                externalId={o.externalId}
                 countryCode={countryCode}
                 actividad={actividad}
                 estado={o.estado}
@@ -1241,6 +1249,18 @@ function FocusedColumn({ col, countryCode, gestionEquipo, historialEquipo, nombr
   };
   const move = (delta: number) => focusByIndex(Math.min(orders.length - 1, Math.max(0, selIdx + delta)));
 
+  // Abrir la ficha desde la tarjeta: UNA función estable para toda la carpeta
+  // (ver `onOpen` en SegCard). Los hermanos se leen de un ref para que la
+  // identidad no cambie con cada reordenamiento de la columna — al clic ya
+  // están frescos, que es lo único que importa.
+  const siblingsRef = useRef(siblingIds);
+  siblingsRef.current = siblingIds;
+  const abrir = useCallback((p: OrderData) => {
+    // Mismo efecto que `focusByIndex(i)`: el foco se ancla al pedido que se abre.
+    setFocusedExtId(String(p.externalId ?? ''));
+    if (p.externalId) navigate(`/pedido/${p.externalId}`, { state: { siblingIds: siblingsRef.current, storeId: activeStoreId } });
+  }, [setFocusedExtId, navigate, activeStoreId]);
+
   // Scroll del seleccionado a la vista: instantáneo al montar/restaurar (no un
   // barrido animado desde arriba), suave al navegar con ↑/↓.
   useEffect(() => {
@@ -1347,7 +1367,7 @@ function FocusedColumn({ col, countryCode, gestionEquipo, historialEquipo, nombr
                 actividad={o.dbId ? actividadChat?.get(String(o.dbId)) ?? null : null}
                 tiempo={tiempoDe(o)}
                 novedadCerrada={incidenciasAbiertas && col.baseKey === 'novedad' ? !(o.externalId && incidenciasAbiertas.has(String(o.externalId))) : undefined}
-                onOpen={() => { focusByIndex(i); if (o.externalId) navigate(`/pedido/${o.externalId}`, { state: { siblingIds, storeId: activeStoreId } }); }}
+                onOpen={abrir}
               />
             ))}
             {orders.length > shown && (
@@ -1829,6 +1849,26 @@ export default function SegBoard({ data, countryCode, statusFilter, gestionEquip
     [todasLasColumnas, mostrarHistoria],
   );
 
+  // Abrir la ficha desde una tarjeta: UNA función estable para las ~600 (ver
+  // `onOpen` en SegCard). Los hermanos —la columna de la tarjeta, para que las
+  // flechas ←/→ de la ficha sigan el orden que la asesora ve— se buscan en un
+  // mapa por pedido guardado en un ref: se rearma con cada cambio de columnas
+  // sin cambiarle la identidad al callback, y al clic está fresco.
+  const hermanosPorPedido = useMemo(() => {
+    const m = new Map<OrderData, string[]>();
+    for (const col of columns) {
+      const ids = col.orders.map((x) => String(x.externalId ?? '')).filter(Boolean);
+      for (const o of col.orders) m.set(o, ids);
+    }
+    return m;
+  }, [columns]);
+  const hermanosRef = useRef(hermanosPorPedido);
+  hermanosRef.current = hermanosPorPedido;
+  const abrirPedido = useCallback((o: OrderData) => {
+    if (!o.externalId) return;
+    navigate(`/pedido/${o.externalId}`, { state: { siblingIds: hermanosRef.current.get(o) ?? [], storeId: activeStoreId } });
+  }, [navigate, activeStoreId]);
+
   // Si al MONTAR la carpeta enfocada persistida quedó vacía (los pedidos cambiaron
   // de fase, o cambió la tienda/rango), no dejamos a la operadora atascada en la
   // pantalla "sin pedidos": caemos al tablero. Solo en el mount — si se vacía en
@@ -1953,7 +1993,6 @@ export default function SegBoard({ data, countryCode, statusFilter, gestionEquip
         const isLive = LIVE_KEYS.has(col.baseKey);
         // El catch-all va angosto (como las terminales) pero SIN atenuar.
         const isCatchall = CATCHALL_KEYS.has(col.baseKey);
-        const siblingIds = col.orders.map((x) => String(x.externalId ?? '')).filter(Boolean);
         return (
           <Fragment key={col.key}>
             {/* Divisor "en juego | cerrado": el scroll de 15 columnas idénticas
@@ -2107,7 +2146,7 @@ export default function SegBoard({ data, countryCode, statusFilter, gestionEquip
                       ? !(o.externalId && incidenciasAbiertas.has(String(o.externalId)))
                       : undefined
                   }
-                  onOpen={() => o.externalId && navigate(`/pedido/${o.externalId}`, { state: { siblingIds, storeId: activeStoreId } })}
+                  onOpen={abrirPedido}
                 />
               ))}
               {col.orders.length > (colLimits[col.key] ?? COLUMN_PAGE) && (

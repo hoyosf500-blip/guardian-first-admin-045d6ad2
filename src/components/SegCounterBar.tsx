@@ -7,6 +7,7 @@ import { bogotaToday } from '@/lib/utils';
 import { isSegCloser } from '@/lib/segDailyReview';
 import { useBitacoraDia } from '@/hooks/useBitacoraDia';
 import { pollWhenVisible } from '@/lib/pollWhenVisible';
+import { onGestion } from '@/lib/eventosGestion';
 import { useStoreSchedule } from '@/hooks/useStoreSchedule';
 import { scheduleFromMinutes, bogotaSecondsOfDay } from '@/lib/inactivityWindow';
 import { horarioNetoSeconds, horarioNetoTranscurridoSec } from '@/lib/jornadaMath';
@@ -71,7 +72,21 @@ export default function SegCounterBar() {
     setStatus('ok');
   }, [user, activeStoreId]);
 
+  // Al cambiar de tienda los números de la anterior NO describen a la nueva:
+  // se vuelve a 'loading' hasta que llegue la lectura. Sin esto, la barra
+  // seguía mostrando las gestiones de Colombia bajo el tablero de Ecuador
+  // durante el viaje de la consulta (4-sep-2026). En el primer render ya está
+  // en 'loading', así que acá no cambia nada.
+  useEffect(() => { setStatus('loading'); }, [activeStoreId]);
   useEffect(() => { void refetch(); }, [refetch]);
+
+  // ⛔ Lo propio se aplica en el acto, sin esperar a la red (`eventosGestion.ts`).
+  // Esta barra dependía SOLO del realtime de `touchpoints`, y esa tabla no está
+  // en la publicación: la asesora marcaba y "acciones" no subía hasta recargar
+  // —el mismo bug del contador que ya costó un regaño injusto—. `onGestion` es
+  // el aviso local que emite `useRecordGestion` (y los envíos de WhatsApp) con
+  // la fila ya confirmada por la base.
+  useEffect(() => onGestion(() => { void refetch(); }), [refetch]);
 
   useEffect(() => {
     if (!user || !activeStoreId) return;

@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ordenarParaFase, type PlantillaMeta } from '@/lib/plantillasMeta';
 import { motivoEdge, cuerpoDelError } from '@/lib/errorEdge';
 import { emitirGestion } from '@/lib/eventosGestion';
+import { useBitacoraPedido } from '@/hooks/useBitacoraPedido';
 import type { ModuloEnvio, GestionDelEnvio } from '@/hooks/useEnviarWhatsapp';
 
 /**
@@ -182,6 +183,11 @@ export interface ResultadoPlantilla {
 export function useEnviarPlantilla() {
   const { activeStoreId, activeStore } = useStore();
   const { user } = useAuth();
+  // Mismo hueco que `useEnviarWhatsapp` (4-sep-2026): el touchpoint lo inserta
+  // el servidor y nadie anotaba `escribio` en la bitácora. La plantilla es el
+  // grueso de lo que manda Seguimiento — sin esto, casi todo el trabajo escrito
+  // de la asesora era invisible en /actividad.
+  const bitacora = useBitacoraPedido();
   const [enviando, setEnviando] = useState(false);
 
   const enviarPlantilla = useCallback(async (
@@ -227,13 +233,23 @@ export function useEnviarPlantilla() {
           optimista: true,
         });
       }
+      // La bitácora, CON el número de pedido. Solo si de verdad salió: con
+      // `ya_enviado` el servidor no mandó nada, y anotar "escribió" sobre un
+      // mensaje que no existió es inflar el registro de una persona.
+      if (!r.ya_enviado) {
+        bitacora('escribio', {
+          externalId,
+          phone: gestion?.phone ?? null,
+          detalle: { modulo: modulo === 'WHATSAPP' ? 'WHATSAPP' : 'SEG', accion: gestion?.accion || `Mandé la plantilla ${nombre}`, plantilla: nombre },
+        });
+      }
       return { ok: true, yaEnviado: r.ya_enviado === true };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : 'No se pudo enviar la plantilla' };
     } finally {
       setEnviando(false);
     }
-  }, [activeStoreId, user]);
+  }, [activeStoreId, activeStore?.country_code, user, bitacora]);
 
   return { enviarPlantilla, enviando };
 }

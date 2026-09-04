@@ -77,7 +77,13 @@ export function useOrderLabels(orderId?: string | null, phone?: string | null) {
   const removeLabel = useCallback(async (label: LabelKey) => {
     if (!orderId) return;
     setLabels((prev) => prev.filter((l) => l !== label)); // optimista
-    await sb.from("order_labels").delete().eq('order_id', orderId).eq('label', label);
+    const { error } = await sb.from("order_labels").delete().eq('order_id', orderId).eq('label', label);
+    // `error` leído (4-sep-2026): era fire-and-forget. Si RLS/red rechazaban el
+    // DELETE, la etiqueta desaparecía en ESTA pantalla y seguía en la base (y en
+    // la de las demás) — el espejo de lo que ya hacía `addLabel` al revertir.
+    if (error) {
+      setLabels((prev) => (prev.includes(label) ? prev : [...prev, label])); // restaurar
+    }
   }, [orderId]);
 
   const toggleLabel = useCallback((label: LabelKey) => {

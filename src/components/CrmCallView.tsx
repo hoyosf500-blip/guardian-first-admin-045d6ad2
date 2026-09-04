@@ -646,7 +646,9 @@ export default function CrmCallView({
       e.preventDefault();
       // Mismo registro de gestión que el link "Llamar" — la tecla también
       // cuenta como contacto.
-      void recordContacto(o.phone, 'LLAMADA', 'llamó');
+      // Con el pedido: sin él la bitácora no sabe sobre cuál fue la llamada y
+      // la vista se cierra como `salto` (4-sep-2026).
+      void recordContacto(o.phone, 'LLAMADA', 'llamó', o.externalId);
       window.location.href = 'tel:+' + getWhatsAppPhone(o.phone, countryCode);
     } else if (k === 'w' || k === 'W') {
       // Abre el chat de Guardian (mismo hilo de ImporChat) para ver la
@@ -814,7 +816,7 @@ export default function CrmCallView({
               </button>
               <a
                 href={'tel:+' + getWhatsAppPhone(o.phone, countryCode)}
-                onClick={() => void recordContacto(o.phone, 'LLAMADA', 'llamó')}
+                onClick={() => void recordContacto(o.phone, 'LLAMADA', 'llamó', o.externalId)}
                 className="ml-1 inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-xl bg-gradient-to-br from-accent/25 to-accent/10 text-accent border border-accent/30 glow-accent hover:brightness-110 no-underline transition-all duration-200"
               >
                 <PhoneIcon size={12} aria-hidden="true" /> Llamar

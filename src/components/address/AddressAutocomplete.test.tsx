@@ -57,4 +57,70 @@ describe('AddressAutocomplete', () => {
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Calle 8' } });
     await waitFor(() => expect(screen.getByText(/escribir libre/i)).toBeInTheDocument(), { timeout: 1000 });
   });
+
+  it('sin commitDelayMs avisa EN CADA TECLA (lo que necesita el formulario controlado del editor)', () => {
+    const onChange = vi.fn();
+    render(<AddressAutocomplete value="" onChange={onChange} />);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Ca' } });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Cal' } });
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ direccion: 'Cal', source: 'free_write' }));
+  });
+});
+
+/**
+ * Modo diferido (`commitDelayMs`): lo usa la ficha de Confirmar porque cada
+ * aviso es un UPDATE en `orders` + un viaje a Dropi. Estas pruebas fijan el
+ * contrato: nada por tecla, UNA vez al quedarse quieto, en el acto al salir del
+ * campo, y el eco del propio guardado no pisa lo que se sigue escribiendo.
+ */
+describe('AddressAutocomplete · commitDelayMs (guardado diferido)', () => {
+  it('no avisa por tecla; avisa UNA vez con el texto final al quedarse quieto', async () => {
+    const onChange = vi.fn();
+    render(<AddressAutocomplete value="" onChange={onChange} commitDelayMs={80} />);
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Calle 8' } });
+    fireEvent.change(input, { target: { value: 'Calle 8 #5' } });
+    fireEvent.change(input, { target: { value: 'Calle 8 #5-67' } });
+    expect(onChange).not.toHaveBeenCalled();
+    await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1), { timeout: 1000 });
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ direccion: 'Calle 8 #5-67', source: 'free_write' }));
+  });
+
+  it('al salir del campo (blur) avisa en el acto, y no repite al vencer el timer', async () => {
+    const onChange = vi.fn();
+    render(<AddressAutocomplete value="" onChange={onChange} commitDelayMs={80} />);
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Av. Amazonas N24' } });
+    fireEvent.blur(input);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ direccion: 'Av. Amazonas N24' }));
+    await new Promise((r) => setTimeout(r, 200));
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('el ECO del valor ya avisado no pisa lo que la asesora sigue escribiendo', async () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<AddressAutocomplete value="" onChange={onChange} commitDelayMs={80} />);
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'Calle 8' } });
+    fireEvent.blur(input); // avisa "Calle 8"
+    fireEvent.change(input, { target: { value: 'Calle 8 #5' } }); // sigue escribiendo (pendiente)
+    // El UPDATE de "Calle 8" volvió por realtime: el padre re-renderiza con ese valor.
+    rerender(<AddressAutocomplete value="Calle 8" onChange={onChange} commitDelayMs={80} />);
+    expect(input.value).toBe('Calle 8 #5');
+    // Un valor DISTINTO del que se avisó (otro pedido, corrección externa) sí se refleja.
+    rerender(<AddressAutocomplete value="Otra dirección" onChange={onChange} commitDelayMs={80} />);
+    expect(input.value).toBe('Otra dirección');
+  });
+
+  it('al desmontarse con texto sin avisar, lo avisa (la asesora pasó al siguiente pedido)', () => {
+    const onChange = vi.fn();
+    const { unmount } = render(<AddressAutocomplete value="" onChange={onChange} commitDelayMs={80} />);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Cra 15 #100-20' } });
+    expect(onChange).not.toHaveBeenCalled();
+    unmount();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ direccion: 'Cra 15 #100-20' }));
+  });
 });

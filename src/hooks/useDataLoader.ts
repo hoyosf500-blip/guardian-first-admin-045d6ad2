@@ -48,7 +48,18 @@ export function smartMerge(prev: OrderData[], next: OrderData[]): OrderData[] {
       // el array y re-renderizaba toda la cola (parpadeo).
       old.result !== n.result ||
       old.reason !== n.reason ||
-      old.retryCount !== n.retryCount
+      old.retryCount !== n.retryCount ||
+      // Lo que la asesora EDITA en el pedido (4-sep-2026). Sin estos campos, tras
+      // una recarga completa un pedido cuya única corrección fue la dirección
+      // conservaba el objeto viejo → la plantilla de Seguimiento salía con la
+      // dirección VIEJA. `aplicarPedidosTocados.ts` ya los comparaba; las dos
+      // listas tienen que ser la misma o un cambio se ve en una pantalla y no
+      // en la otra.
+      old.nombre !== n.nombre ||
+      old.ciudad !== n.ciudad ||
+      old.direccion !== n.direccion ||
+      old.valor !== n.valor ||
+      old.producto !== n.producto
     );
     if (fieldsChanged) {
       anyChanged = true;

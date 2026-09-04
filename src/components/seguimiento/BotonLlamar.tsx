@@ -26,8 +26,13 @@ import { cn } from '@/lib/utils';
  * en la tarjeta ("Llamé" o "No contestó"). Ese segundo toque es el que lleva la
  * información, y es el que baja el contador.
  */
-export default function BotonLlamar({ phone, countryCode, actividad, estado, className, onLlamado }: {
+export default function BotonLlamar({ phone, externalId, countryCode, actividad, estado, className, onLlamado }: {
   phone?: string | null;
+  /** El número de pedido. Sin él la llamada entra a la bitácora con
+   *  `external_id = null`: no aparece en la ficha del pedido y `usePedidoALaVista`
+   *  no la ve, así que "llamó y pasó al siguiente" quedaba anotado como `salto`
+   *  (4-sep-2026). */
+  externalId?: string | null;
   countryCode?: string | null;
   /** Para decir hace cuánto salió el mensaje que no contestaron. */
   actividad?: ActividadChatOrden | null;
@@ -49,7 +54,7 @@ export default function BotonLlamar({ phone, countryCode, actividad, estado, cla
       href={'tel:+' + getWhatsAppPhone(phone, countryCode)}
       onClick={(e) => {
         e.stopPropagation();
-        void recordContacto(phone, 'LLAMADA', 'llamó');
+        void recordContacto(phone, 'LLAMADA', 'llamó', externalId);
         onLlamado?.();
       }}
       title={`Le escribimos${hace ? ` ${hace}` : ''} y no contestó. Después de llamar, marcá si contestó o no.`}

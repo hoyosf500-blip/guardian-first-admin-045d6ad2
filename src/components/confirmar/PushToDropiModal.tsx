@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { X, Loader2, Truck, AlertTriangle, CheckCircle2, Link2 } from 'lucide-react';
@@ -35,6 +35,11 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
   const [shopifyTotal, setShopifyTotal] = useState<number | null>(null);
   const [codMismatch, setCodMismatch] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Guard por ref y no solo por estado: el `disabled` del botón depende de un
+  // render que todavía no pasó cuando llega el segundo click del doble-click.
+  // Mismo candado que OrderEditorDialog (`submittingRef`). Acá cada click que
+  // pasa es una orden COD real en Dropi: dos clicks, dos guías.
+  const submittingRef = useRef(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   // Bloqueo server-side por teléfono duplicado (guard de la edge). Guarda los
   // pedidos Dropi que ya existen con ese teléfono → el operador decide "subir igual".
@@ -113,6 +118,8 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
     : null;
 
   async function doConfirm(allowDuplicate = false, force = false) {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true); setSubmitError(null);
     if (allowDuplicate) setDupBlock(null);
     if (force) setVerifyBlock(null);
@@ -120,8 +127,13 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
       client,
       lines: Object.fromEntries(lines.map((l, i) => [String(i), { price: Number(l.price), quantity: Number(l.quantity) }])),
     };
-    const r = await confirm(shopifyOrderId, overrides, allowDuplicate, force);
-    setSubmitting(false);
+    let r: Awaited<ReturnType<typeof confirm>>;
+    try {
+      r = await confirm(shopifyOrderId, overrides, allowDuplicate, force);
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
     // Guard server-side: el teléfono ya está en Dropi. Mostramos los pedidos que
     // existen y dejamos "subir igual" (recompra real) sin cerrar el modal.
     if (!r.ok && r.blocked === 'duplicate_phone') {

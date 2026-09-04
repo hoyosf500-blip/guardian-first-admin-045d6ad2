@@ -50,6 +50,10 @@ interface Props {
    *  solución a Dropi; false → Dropi ya la cerró y solo se registra acá;
    *  null → no se pudo saber (se intenta Dropi igual). */
   incidenciaAbierta?: boolean | null;
+  /** La lista llegó vacía porque la BÚSQUEDA no coincidió con nada, no porque
+   *  no haya novedades. Sin esta distinción el estado vacío decía «Todas las
+   *  novedades están resueltas» sobre una cola con veinte pendientes. */
+  vacioPorBusqueda?: boolean;
 }
 
 /** Tinte de urgencia por antigüedad. Mismos cortes de siempre (7 / 4 días),
@@ -63,7 +67,7 @@ const URGENCIA = {
   neutral: { chip: 'bg-muted/40 border-border text-muted-foreground', dot: 'bg-muted-foreground' },
 } as const;
 
-export default function NovedadView({ items, stateKey = 'novedades:callOrderId', incidenciaAbierta = null }: Props) {
+export default function NovedadView({ items, stateKey = 'novedades:callOrderId', incidenciaAbierta = null, vacioPorBusqueda = false }: Props) {
   const { loadNovedades } = useOrders();
   const { markNovedad } = useMarkNovedadResolved();
   const recordContacto = useRecordGestion();
@@ -87,6 +91,21 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
 
   const keyOf = (it: OrderData) => it.externalId || it.dbId || it.phone;
+
+  // El descarte vive solo hasta que la cola confirma que el pedido salió. Antes
+  // `dismissed` no se vaciaba nunca: si al mismo pedido le entraba una novedad
+  // NUEVA (la transportadora lo re-ofreció y volvió a fallar), la card quedaba
+  // oculta hasta remontar la pestaña — trabajo real escondido, el error caro
+  // de este proyecto. Se sueltan las llaves que ya no vienen en `items`; las
+  // que siguen viniendo (el poll todavía no reconcilió) se quedan ocultas.
+  useEffect(() => {
+    if (!dismissed.size) return;
+    const vivas = new Set(items.map(keyOf));
+    let cambio = false;
+    const next = new Set<string>();
+    dismissed.forEach((k) => { if (vivas.has(k)) next.add(k); else cambio = true; });
+    if (cambio) setDismissed(next);
+  }, [items, dismissed]);
 
   const visibleItems = items.filter((it) => !dismissed.has(keyOf(it)));
 
@@ -156,6 +175,11 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
     setSolution('');
     setShowReturnConfirm(false);
     setSubmitting(false);
+    // El rechazo de Dropi es de UN pedido. Sin limpiarlo acá, cuando el poll
+    // sacaba de la cola al pedido A, su cartel quedaba sobre el pedido B y el
+    // botón «Registrar resuelta solo acá» marcaba B — una novedad que Dropi
+    // nunca rechazó, resuelta sin que nadie la gestionara.
+    setDropiRechazo(null);
   }, [o?.dbId]);
 
   // ⛔ ARRIBA del early-return. Estaba más abajo y violaba las reglas de hooks:
@@ -166,6 +190,21 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
   const [escribiendo, setEscribiendo] = useState(false);
 
   if (!visibleItems.length || !o) {
+    // Vacío por BÚSQUEDA ≠ vacío por cola resuelta: el verde con 🎉 sobre una
+    // búsqueda que no coincidió le decía a la asesora que no quedaba nada.
+    if (vacioPorBusqueda) {
+      return (
+        <div className="flex flex-col items-center justify-center py-10 gap-3 text-center" role="status">
+          <span className="w-12 h-12 rounded-2xl bg-muted/40 border border-border text-muted-foreground flex items-center justify-center" aria-hidden="true">
+            <AlertTriangle size={24} />
+          </span>
+          <div>
+            <p className="text-sm font-semibold text-foreground">Ninguna novedad coincide con la búsqueda</p>
+            <p className="text-xs text-muted-foreground mt-1">Las pendientes siguen en la cola; probá con otro nombre, teléfono o ID.</p>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
         <span className="w-12 h-12 rounded-2xl bg-success/14 border border-success/30 text-success glow-success flex items-center justify-center" aria-hidden="true">
@@ -779,6 +818,11 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
             producto: o.producto,
             valor: o.valor ? formatCOP(o.valor) : null,
           }}
+          // Sin `modulo` el envío se registraba como `SEG:` — contaba como
+          // gestión de SEGUIMIENTO y escondía la tarjeta en ese tablero, por
+          // escribirle desde Novedades. Mismo módulo que la ChatClienteCard de
+          // arriba: es un intento de contacto, no la gestión de aquella cola.
+          modulo="WHATSAPP"
         />
       )}
     </>

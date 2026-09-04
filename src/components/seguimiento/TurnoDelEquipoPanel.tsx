@@ -50,13 +50,19 @@ interface Props {
    * `null`/ausente = no se sabe: no se resalta ninguna. Nunca se adivina.
    */
   yoId?: string | null;
+  /**
+   * La lista de asesoras (`store_members`) NO se pudo leer. Sin esto, un fallo
+   * de red dejaba el panel sin filas y todo "sin dueño", que se lee como "no
+   * hay equipo" — cero que sustituye a "no se pudo medir" (4-sep-2026).
+   */
+  equipoNoLeido?: boolean;
 }
 
 /** `null` = no se pudo medir. NUNCA se dibuja como 0 — ver la regla en turnoDelEquipo.ts. */
 const cifra = (n: number | null) => (n === null ? '—' : String(n));
 
 export default function TurnoDelEquipoPanel({
-  resumen, nombreDe, onRepartir, repartiendo, onPedirMas, pidiendo, yoId,
+  resumen, nombreDe, onRepartir, repartiendo, onPedirMas, pidiendo, yoId, equipoNoLeido,
 }: Props) {
   const { filas, sinDueno, totalAccionable, tocadosTotal, medible } = resumen;
 
@@ -101,6 +107,15 @@ export default function TurnoDelEquipoPanel({
           >
             <AlertTriangle size={11} aria-hidden="true" />
             <span className="font-mono tabular-nums">{sinDueno}</span> sin dueño
+          </span>
+        )}
+        {equipoNoLeido && (
+          <span
+            className="text-[11px] font-semibold text-danger inline-flex items-center gap-1"
+            title="La lista de asesoras no cargó (red o permisos). Las filas por persona faltan por eso, no porque no haya nadie."
+          >
+            <AlertTriangle size={11} aria-hidden="true" />
+            No se pudo leer el equipo
           </span>
         )}
         <span className="ml-auto flex shrink-0 items-center gap-2">

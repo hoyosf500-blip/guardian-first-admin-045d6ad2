@@ -69,19 +69,21 @@ export default function NovedadesSeguimiento() {
         />
       </motion.div>
 
-      {/* Cobertura del día */}
+      {/* Cobertura del día. Mientras carga, «—» y no 0: un cero acá se lee como
+          medición («En cola ahora 0» = no hay trabajo) y todavía no se preguntó
+          a la base. Mismo centinela que usa el resto del área. */}
       <motion.div {...fadeUp(0.05)} className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Stat
-          icon={<Inbox size={17} />} label="En cola ahora" value={s.pendientes}
+          icon={<Inbox size={17} />} label="En cola ahora" value={s.loading ? '—' : s.pendientes}
           tone={s.pendientes > 0 ? 'warning' : 'default'} hint="novedades sin gestionar"
         />
         <Stat
-          icon={<CheckCircle2 size={17} />} label="Gestionadas hoy" value={s.gestionadasHoy}
+          icon={<CheckCircle2 size={17} />} label="Gestionadas hoy" value={s.loading ? '—' : s.gestionadasHoy}
           tone={s.gestionadasHoy > 0 ? 'success' : 'default'}
-          // Con la lectura caída, "nadie tocó novedades hoy" no es un hecho.
-          hint={!s.loadError && s.pendientes > 0 && s.gestionadasHoy === 0 ? '⚠ nadie tocó novedades hoy' : undefined}
+          // Con la lectura caída (o todavía en curso), "nadie tocó novedades hoy" no es un hecho.
+          hint={!s.loading && !s.loadError && s.pendientes > 0 && s.gestionadasHoy === 0 ? '⚠ nadie tocó novedades hoy' : undefined}
         />
-        <Stat icon={<TrendingUp size={17} />} label="Nuevas hoy ≈" value={s.nuevasHoy} tone="info" hint="entraron / se movieron hoy" />
+        <Stat icon={<TrendingUp size={17} />} label="Nuevas hoy ≈" value={s.loading ? '—' : s.nuevasHoy} tone="info" hint="entraron / se movieron hoy" />
         <Stat
           icon={<Clock size={17} />} label="Resp. promedio"
           value={formatDuration(s.tiempoRespuestaPromMs)} tone="default" hint="desde que se movió en Dropi"
@@ -97,7 +99,11 @@ export default function NovedadesSeguimiento() {
           note={`(${RANGES.find((r) => r.key === s.range)?.label})`}
         >
           {s.porOperadora.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-6 text-center">Sin operadoras en esta tienda.</p>
+            // «Sin operadoras» es una afirmación sobre el equipo: solo cuando ya
+            // se leyó el roster. Mientras carga, se dice que se está leyendo.
+            <p className="text-xs text-muted-foreground py-6 text-center">
+              {s.loading ? 'Leyendo el equipo…' : 'Sin operadoras en esta tienda.'}
+            </p>
           ) : (
             <ul className="space-y-0.5">
               {s.porOperadora.map((op) => {

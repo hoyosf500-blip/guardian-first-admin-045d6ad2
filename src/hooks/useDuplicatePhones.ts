@@ -39,6 +39,12 @@ export function useDuplicatePhones(storeId: string | null, phones: string[]) {
   return {
     dupMap: query.data ?? EMPTY,
     isLoading: query.isLoading,
+    /** ⛔ La RPC FALLÓ (red/RLS/500). Un `dupMap` vacío por fallo se ve IGUAL que
+     *  "ningún teléfono repetido": el panel pintaba «listo para subir» y «Subir
+     *  todos» no excluía nada (4-sep-2026). Quien consuma esto tiene que
+     *  distinguir "no hay duplicados" de "no se pudo revisar". Migración no
+     *  aplicada NO es error (arriba devuelve EMPTY a propósito). */
+    isError: query.isError,
     refetch: query.refetch,
   };
 }

@@ -41,8 +41,10 @@ import ChatClienteCard from '@/components/chat/ChatClienteCard';
 import EscribirWhatsappDialog from '@/components/seguimiento/EscribirWhatsappDialog';
 import { useRiesgoChat } from '@/hooks/useRiesgoChat';
 import { usePedidoALaVista } from '@/hooks/useBitacoraPedido';
-import { AddressAutocomplete } from '@/components/address/AddressAutocomplete';
+import { AddressAutocomplete, type AddressUpdate } from '@/components/address/AddressAutocomplete';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
+import { splitName } from '@/components/confirmar/CustomerForm';
+import { parseInvoke } from '@/lib/parseInvoke';
 import { DespachoGateButton } from '@/components/address/DespachoGateButton';
 import { canConfirmOrder } from '@/lib/canConfirmOrder';
 import { heuristicValidate } from '@/lib/addressHeuristic';
@@ -96,9 +98,22 @@ interface Props {
   /** Alertas por pedido (duplicado en curso + sobreprecio vs Shopify) —
    *  las computa ConfirmarTab una sola vez para toda la cola. */
   alerts?: ConfirmarOrderAlerts;
+  /** `items` ya viene FILTRADO por ConfirmarTab (búsqueda, chip, fechas, "solo
+   *  sin tocar"). Con esto la ficha distingue "no queda nada" de "nada matchea
+   *  el filtro": antes celebraba «¡Todos gestionados!» sobre una búsqueda sin
+   *  resultados, con 40 pendientes detrás (4-sep-2026). */
+  hayFiltroActivo?: boolean;
+  /** Pendientes reales de la cola SIN el filtro (el titular de ConfirmarTab). */
+  pendientesSinFiltro?: number;
 }
 
-export default function CallView({ items, alerts }: Props) {
+/** Cuánta quietud espera la ficha antes de guardar una dirección escrita a
+ *  mano. Cada guardado es un viaje a Dropi + un UPDATE en `orders`, así que
+ *  no puede ser por tecla; y tampoco puede ser solo al salir del campo, porque
+ *  la asesora a veces no sale (ver `commitDelayMs` en AddressAutocomplete). */
+const DIRECCION_COMMIT_MS = 1500;
+
+export default function CallView({ items, alerts, hayFiltroActivo = false, pendientesSinFiltro = 0 }: Props) {
   const { markResult, undoLast, lastMark, allOrders, setAllOrders, buildWorkQueue } = useOrders();
   const { user, isAdmin } = useAuth();
   const { activeStore, activeStoreId, isOwnerOfActive } = useStore();
@@ -189,6 +204,14 @@ export default function CallView({ items, alerts }: Props) {
   // `suggestedTotal` viene del chip de sobreprecio (total de Shopify).
   const [editorState, setEditorState] = useState<{ order: OrderData; suggestedTotal?: number } | null>(null);
   const refreshOrderRow = useRefreshOrderRow();
+  // Cola de guardados de dirección (ver `guardarDireccion` más abajo). Un
+  // guardado viaja a Dropi y tarda segundos; si la asesora sigue escribiendo
+  // llegan más. Se ejecutan EN ORDEN (la cadena) y solo el ÚLTIMO pendiente
+  // (el número de secuencia): mandar a Dropi tres versiones intermedias de la
+  // misma dirección es ruido y la de en medio podría aterrizar después de la
+  // final si corrieran en paralelo.
+  const direccionSeqRef = useRef(0);
+  const direccionChainRef = useRef<Promise<void>>(Promise.resolve());
   // El modal de cancelación es estado por-componente y CallView NO se re-monta
   // al pasar de pedido (solo cambia `callOrderId`). Reseteamos al cambiar de
   // pedido para que el texto de "Otro" no se filtre al siguiente pedido.
@@ -270,7 +293,11 @@ export default function CallView({ items, alerts }: Props) {
         });
       });
     return () => { cancelled = true; };
-  }, [o?.phone, activeStoreId]);
+    // `o?.dbId` es dependencia REAL: el filtro de arriba excluye "el propio
+    // pedido en pantalla" por dbId. Dos pedidos seguidos del mismo teléfono
+    // (el reemplazo que crea Dropi al editar) no re-disparaban la consulta y
+    // el segundo se evaluaba excluyendo al PRIMERO — contándose a sí mismo.
+  }, [o?.phone, o?.dbId, activeStoreId]);
 
   // Claim a lock on the current order; if held by someone else, skip forward.
   // BUG 3 fix: NO liberar el lock en cleanup. Cambiar de pestaña desmonta
@@ -840,6 +867,22 @@ export default function CallView({ items, alerts }: Props) {
   if (!items.length || !o) {
     // Sin pedido en pantalla no hay atajos (ver hotkeysRef arriba).
     hotkeysRef.current = null;
+    // `items` es la lista FILTRADA. Vacía con un filtro puesto no es "terminé":
+    // es "nada coincide" — y decir lo primero mandaba a la asesora a otra cola
+    // con pendientes reales detrás del filtro.
+    if (hayFiltroActivo) {
+      return (
+        <div className="text-center py-10 text-muted-foreground" role="status">
+          <AlertTriangle size={40} className="mx-auto mb-3 text-warning" aria-hidden="true" />
+          <p className="text-sm font-medium text-foreground">Ningún pedido coincide con el filtro</p>
+          <p className="text-xs mt-1">
+            {pendientesSinFiltro > 0
+              ? `Hay ${pendientesSinFiltro} pendiente${pendientesSinFiltro === 1 ? '' : 's'} fuera de este filtro. Limpiá la búsqueda o volvé a «Pendientes» para verlos.`
+              : 'Limpiá la búsqueda o volvé a «Pendientes».'}
+          </p>
+        </div>
+      );
+    }
     return (
       <div className="text-center py-10 text-muted-foreground">
         <CheckCircle2 size={40} className="mx-auto mb-3 text-success" />
@@ -1078,6 +1121,120 @@ export default function CallView({ items, alerts }: Props) {
   // nota allá sobre el crash de hooks que reportó Colombia.)
   const waPhone = getWhatsAppPhone(o.phone, countryCode);
 
+  /**
+   * GUARDAR UNA DIRECCIÓN CORREGIDA DESDE LA FICHA — primero Dropi, después Guardian.
+   *
+   * Hasta el 4-sep-2026 el campo de dirección escribía `orders.direccion` EN
+   * CADA TECLA y nada más: `markResult` → `dropi-update-order` solo hace PUT del
+   * estado, así que la dirección corregida NUNCA llegaba a Dropi — y el cron la
+   * pisaba con la de Dropi en el siguiente sync. La asesora veía la dirección
+   * buena, colgaba, y el paquete salía a la vieja.
+   *
+   * Ahora, si el pedido existe en Dropi (`externalId`), la dirección viaja por
+   * el MISMO camino que «Editar orden»: `dropi-update-order-full`, que exige
+   * nombre/ciudad/departamento además de la dirección (la ficha los tiene) y
+   * conserva el número de pedido. `phone` NO se manda (es opcional en el edge y
+   * así no se toca el teléfono, que es la llave de todo el CRM); `email` SÍ,
+   * porque el edge escribe `email: email || null` en la fila local y omitirlo
+   * borraría el que hay. Solo si Dropi acepta se escribe `orders`; si rechaza,
+   * se dice claro y la fila queda como estaba — mostrar una dirección que Dropi
+   * no tiene es exactamente el bug que esto arregla.
+   *
+   * Si al pedido le falta un obligatorio del edge no se inventa nada: se manda
+   * a «Editar orden», que es donde se completan esos datos.
+   */
+  const guardarDireccion = async (orden: OrderData, update: AddressUpdate, extra: Record<string, unknown> = {}) => {
+    if (!orden.dbId) return;
+    const direccion = update.direccion.trim();
+    const patch: Record<string, unknown> = { direccion: update.direccion, ...extra };
+    if (update.barrio !== undefined) patch.barrio = update.barrio;
+    if (update.place_id !== undefined) patch.google_place_id = update.place_id;
+    if (update.lat !== undefined) patch.lat = update.lat;
+    if (update.lng !== undefined) patch.lng = update.lng;
+    patch.address_kind = update.address_kind;
+    if (update.source === 'autocomplete' || update.source === 'recurrent_customer') {
+      patch.validation_decision = 'green';
+      patch.missing_fields = [];
+      patch.suggested_customer_message = '';
+    }
+
+    if (orden.externalId) {
+      // Una dirección vacía no se manda a Dropi (el edge la rechaza con 400) ni
+      // se guarda: borrar la dirección de un pedido pendiente no es una corrección.
+      if (!direccion) return;
+      const faltan = [
+        !orden.nombre?.trim() && 'nombre',
+        !orden.ciudad?.trim() && 'ciudad',
+        !orden.departamento?.trim() && 'departamento',
+      ].filter(Boolean);
+      if (faltan.length > 0) {
+        toast.error(`La dirección no se guardó: al pedido le falta ${faltan.join(' y ')}, y Dropi no acepta la corrección sin eso.`, {
+          description: 'Completalo desde «Editar orden» (se abrió) y volvé a escribir la dirección ahí.',
+          duration: 10000,
+        });
+        setEditorState({ order: orden });
+        return;
+      }
+      const { nombre, apellido } = splitName(orden.nombre);
+      const { data, error } = await supabase.functions.invoke('dropi-update-order-full', {
+        body: {
+          externalId: orden.externalId,
+          // El número de pedido ya no identifica una empresa (20260820140000).
+          storeId: activeStoreId,
+          nombre,
+          apellido,
+          ciudad: orden.ciudad.trim(),
+          departamento: orden.departamento.trim(),
+          direccion,
+          email: (orden.email || '').trim(),
+        },
+      });
+      // parseInvoke: con non-2xx `invoke` deja data=null y el motivo real queda
+      // en error.context — mismo rescate que hace el editor.
+      const d = await parseInvoke<{
+        ok?: boolean; error?: string; code?: string; noChange?: boolean;
+        warning?: string; dropiAccepted?: boolean;
+      }>(data, error);
+      // `dropiAccepted` = Dropi SÍ la guardó y lo que falló fue la fila local:
+      // seguimos al UPDATE de acá, que es justo lo que faltó.
+      if (d?.ok !== true && d?.dropiAccepted !== true) {
+        toast.error('La dirección NO se guardó en Dropi', {
+          description: `${d?.error || (error instanceof Error ? error.message : 'Dropi no respondió')}. El pedido sigue con la dirección anterior; si Dropi no la acepta acá, corregila desde «Editar orden».`,
+          duration: 12000,
+        });
+        return;
+      }
+      if (d?.warning) toast.warning(d.warning, { duration: 12000 });
+    }
+
+    const { error: dbError } = await supabase.from('orders').update(patch as never).eq('id', orden.dbId);
+    if (dbError) {
+      toast.error(orden.externalId ? 'Dropi guardó la dirección pero la ficha local no' : 'No se pudo guardar la dirección', {
+        description: `${dbError.message}. ${orden.externalId ? 'Refrescá el pedido desde Dropi.' : 'Volvé a escribirla.'}`,
+        duration: 10000,
+      });
+      return;
+    }
+    // Un solo toast (mismo id): las versiones intermedias que sí viajaron no
+    // apilan tres carteles verdes.
+    if (orden.externalId) toast.success('Dirección guardada en Dropi', { id: 'direccion-dropi', duration: 2500 });
+  };
+
+  /** Encola un guardado (ver `direccionSeqRef`): en orden, y solo el más nuevo. */
+  const encolarDireccion = (orden: OrderData, update: AddressUpdate, extra?: Record<string, unknown>) => {
+    const seq = ++direccionSeqRef.current;
+    direccionChainRef.current = direccionChainRef.current
+      .then(async () => {
+        // Llegó una versión más nueva mientras esta esperaba: la de ahora ya no
+        // vale, la siguiente en la cadena lleva el texto final.
+        if (seq !== direccionSeqRef.current) return;
+        await guardarDireccion(orden, update, extra);
+      })
+      .catch((e: unknown) => {
+        toast.error('No se pudo guardar la dirección', { description: e instanceof Error ? e.message : String(e) });
+      });
+  };
+
   const handleWhatsApp = () => {
     // ⛔ `wa.me` ARRANCA UN HILO NUEVO, aparte del de ImporChat: el bot no lo
     // ve, Guardian no lo ve, y el cliente termina con dos conversaciones con
@@ -1090,7 +1247,9 @@ export default function CallView({ items, alerts }: Props) {
     }
     // Sin conversación en ImporChat (o tienda que no lo usa) se conserva la
     // salida de siempre: es preferible un hilo aparte a no poder escribir.
-    void recordContacto(o.phone, 'WHATSAPP', 'abrió WhatsApp');
+    // Con el pedido: sin él la bitácora no sabe SOBRE CUÁL fue el contacto y
+    // la vista se cierra como `salto` (4-sep-2026).
+    void recordContacto(o.phone, 'WHATSAPP', 'abrió WhatsApp', o.externalId);
     window.open(`https://wa.me/${waPhone}`, '_blank', 'noopener,noreferrer');
   };
 
@@ -1157,7 +1316,7 @@ export default function CallView({ items, alerts }: Props) {
       e.preventDefault();
       // Mismo registro de gestión que el link "Llamar" — la tecla también
       // cuenta como contacto.
-      void recordContacto(o.phone, 'LLAMADA', 'llamó');
+      void recordContacto(o.phone, 'LLAMADA', 'llamó', o.externalId);
       window.location.href = `tel:+${waPhone}`;
     } else if (k === 'w' || k === 'W') {
       e.preventDefault();
@@ -1364,7 +1523,7 @@ export default function CallView({ items, alerts }: Props) {
             {/* Contacto de 1 click — antes el teléfono SOLO se copiaba. */}
             <a
               href={`tel:+${waPhone}`}
-              onClick={() => void recordContacto(o.phone, 'LLAMADA', 'llamó')}
+              onClick={() => void recordContacto(o.phone, 'LLAMADA', 'llamó', o.externalId)}
               className="ml-1 inline-flex items-center gap-1.5 text-xs font-semibold px-3 min-h-11 rounded-xl bg-gradient-to-br from-accent/25 to-accent/10 text-accent border border-accent/30 glow-accent hover:brightness-110 no-underline transition-all duration-200"
             >
               <Phone size={14} aria-hidden="true" /> Llamar
@@ -1484,26 +1643,12 @@ export default function CallView({ items, alerts }: Props) {
               ciudad={o.ciudad}
               departamento={o.departamento}
               customerPhone={o.phone}
+              // Diferido: nada de UPDATE por tecla (ver `guardarDireccion`). El
+              // campo avisa al quedarse quieto, al salir de él o al desmontarse.
+              commitDelayMs={DIRECCION_COMMIT_MS}
               onChange={(update) => {
                 if (!o.dbId) return;
-                const patch: Record<string, unknown> = { direccion: update.direccion };
-                if (update.barrio !== undefined) patch.barrio = update.barrio;
-                if (update.place_id !== undefined) patch.google_place_id = update.place_id;
-                if (update.lat !== undefined) patch.lat = update.lat;
-                if (update.lng !== undefined) patch.lng = update.lng;
-                patch.address_kind = update.address_kind;
-                if (update.source === 'autocomplete' || update.source === 'recurrent_customer') {
-                  patch.validation_decision = 'green';
-                  patch.missing_fields = [];
-                  patch.suggested_customer_message = '';
-                }
-                // `error` leído (4-sep-2026): era fire-and-forget. Si la RLS o la red
-                // rechazaban el UPDATE, la dirección nueva se veía en pantalla, la
-                // asesora colgaba y el pedido salía con la vieja sin que nadie lo supiera.
-                void supabase.from('orders').update(patch as never).eq('id', o.dbId)
-                  .then(({ error }) => {
-                    if (error) toast.error('No se pudo guardar la dirección', { description: `${error.message}. Volvé a escribirla.` });
-                  });
+                encolarDireccion(o, update);
               }}
             />
             <AddressFeedbackCard
@@ -1521,12 +1666,13 @@ export default function CallView({ items, alerts }: Props) {
                 o.suggestedAddress && locationMatches(o.suggestedAddress, o.ciudad, o.departamento)
                   ? () => {
                     if (!o.dbId) return;
-                    void supabase.from('orders').update({
-                      direccion: o.suggestedAddress,
-                      validation_decision: null, // re-validar con la dirección nueva
-                    }).eq('id', o.dbId).then(({ error }) => {
-                      if (error) toast.error('No se pudo aplicar la sugerencia', { description: error.message });
-                    });
+                    // Mismo camino que el campo (Dropi primero): aplicar la
+                    // sugerencia escribía `orders` directo y tampoco llegaba a Dropi.
+                    encolarDireccion(
+                      o,
+                      { direccion: o.suggestedAddress, address_kind: mapAddressKind(o.suggestedAddress), source: 'free_write' },
+                      { validation_decision: null }, // re-validar con la dirección nueva
+                    );
                   }
                   : undefined
               }
