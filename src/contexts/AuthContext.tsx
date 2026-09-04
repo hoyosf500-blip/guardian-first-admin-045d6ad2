@@ -156,9 +156,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(session?.user ?? null);
       if (session?.user) fetchProfile(session.user.id);
       setLoading(false);
-    });
+    })
+      // ⛔ EL .catch QUE FALTABA (4-sep-2026). Acá no había ninguno: si
+      // `getSession()` RECHAZA —un blip de red, o el servicio de auth lento (se
+      // midió en 2,9 s ese día contra 266 ms de la base)— el `.then` no corre
+      // nunca. Y si `onAuthStateChange` tampoco dispara porque el refresco del
+      // token falló, `loading` se queda en `true` PARA SIEMPRE: la operadora ve
+      // "Cargando..." eterno y no puede trabajar. Es exactamente lo que
+      // reportó el equipo.
+      //
+      // Soltar el loading acá NO es fingir que hay sesión: `user` queda null y
+      // `ProtectedLayout` manda a /auth, que es una pantalla donde se puede
+      // hacer algo. Un spinner infinito no lo es.
+      .catch((e) => {
+        console.warn('[auth] getSession falló; se suelta la pantalla:', e);
+        setLoading(false);
+      });
 
-    return () => subscription.unsubscribe();
+    // ⛔ PERRO GUARDIÁN. Aun con el catch de arriba puede pasar que NI
+    // `onAuthStateChange` NI `getSession` resuelvan (la promesa queda colgada,
+    // no rechazada — es lo que hace una petición que nunca vuelve). Sin esto la
+    // app se queda en "Cargando..." sin límite. Diez segundos es de sobra: en
+    // condiciones normales esto resuelve en menos de uno.
+    const perroGuardian = setTimeout(() => {
+      setLoading((prev) => {
+        if (prev) console.warn('[auth] la sesión no resolvió en 10 s; se suelta la pantalla');
+        return false;
+      });
+    }, 10_000);
+
+    return () => { clearTimeout(perroGuardian); subscription.unsubscribe(); };
   }, []);
 
   const signUp = async (email: string, password: string, displayName: string) => {

@@ -287,7 +287,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setLoading(false);
   }, [user, sincronizarScope]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  // ⛔ EL .catch QUE FALTABA (4-sep-2026). Era `void refresh()`, que se traga
+  // cualquier excepción: si `refresh` reventaba en medio (un throw de
+  // `sincronizarScope`, un await que rechaza), el `setLoading(false)` del final
+  // NO corría y `store.loading` quedaba en `true` PARA SIEMPRE. `ProtectedLayout`
+  // muestra "Cargando..." mientras `loading || store.loading`, así que la
+  // operadora quedaba mirando un spinner sin salida.
+  //
+  // Los errores DEVUELTOS ya estaban bien tratados (cada rama suelta el
+  // loading y marca `storesError`); lo que faltaba era la red para los
+  // errores LANZADOS.
+  useEffect(() => {
+    refresh().catch((e) => {
+      console.warn('[StoreContext] refresh reventó; se suelta la pantalla:', e);
+      setStoresError(true);
+      setLoading(false);
+    });
+  }, [refresh]);
 
   // ⛔ Reintento del scope (revisión 3-sep-2026). Si `set_active_store` falló
   // (un blip de red al entrar), `scopeStoreId` quedaba en null PARA SIEMPRE:
