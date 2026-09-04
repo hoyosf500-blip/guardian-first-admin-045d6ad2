@@ -149,3 +149,82 @@ describe("componerEstadoPedido — el mensaje", () => {
     expect(r.texto.startsWith("¡Hola!")).toBe(true);
   });
 });
+
+// ── Lo que agregó el responder automático (4-sep-2026) ───────────────────────
+import {
+  esNumeroSuelto,
+  esPromesaPendiente,
+  elegirPedidoParaResponder,
+} from "../../supabase/functions/_shared/estadoPedidoRespuesta";
+
+describe("esNumeroSuelto — el cliente contestó con su número", () => {
+  it("acepta teléfonos y números de pedido pelados, con o sin separadores", () => {
+    for (const t of ["0960915765", "+593 96 091 5765", "6821793", "593-99-868-1178", " 0999263107 "]) {
+      expect(esNumeroSuelto(t), t).toBe(true);
+    }
+  });
+  it("no acepta texto, números cortos ni cantidades", () => {
+    for (const t of ["hola", "2", "ok 3", "quiero 2 gafas", "", "12345", "1".repeat(14), "$29,99"]) {
+      expect(esNumeroSuelto(t), t).toBe(false);
+    }
+  });
+});
+
+describe("esPromesaPendiente — el negocio dijo que verificaba y no volvió", () => {
+  it("reconoce las promesas reales del bot y de la asesora", () => {
+    const si = [
+      "Perfecto, ya lo busco con ese número 😊 Un momentito que lo verifico con el equipo y le confirmo por aquí 🙏",
+      "Déjeme revisar el detalle de su envío y ya mismo le confirmo por aquí 🙏",
+      "Permítame verificar el estado de su pedido, deme un momento por favor",
+      "dejame verificar y le aviso por aquí",
+    ];
+    for (const t of si) expect(esPromesaPendiente(t), t).toBe(true);
+  });
+  it("una respuesta que YA trae la guía, un saludo o una venta no son promesas", () => {
+    const no = [
+      "¡Buenas noticias! Su 1 x GAFAS ya tiene guía y salió de bodega. Guía LC55165087",
+      "Su guía es 6805342, va con Servientrega",
+      "Hola, ¿en qué le puedo ayudar?",
+      "Perfecto, ¿me confirma con qué número hizo el pedido?",
+      "Gracias por su compra",
+      "",
+    ];
+    for (const t of no) expect(esPromesaPendiente(t), t).toBe(false);
+  });
+});
+
+describe("elegirPedidoParaResponder — por cuál pedido se contesta", () => {
+  const ahora = Date.UTC(2026, 8, 4, 12, 0, 0);
+  const dias = (n: number) => ahora - n * 86400_000;
+  it("con un solo pedido vivo responde por ese", () => {
+    const r = elegirPedidoParaResponder([{ estado: "NOVEDAD", movidoMs: dias(1) }], ahora);
+    expect(r.motivo).toBe("unico");
+    expect(r.pedido?.estado).toBe("NOVEDAD");
+  });
+  it("descarta el REEMPLAZADO y el CANCELADO: el vivo es el que queda", () => {
+    const r = elegirPedidoParaResponder([
+      { estado: "REEMPLAZADA", movidoMs: dias(2) },
+      { estado: "CANCELADO", movidoMs: dias(3) },
+      { estado: "EN TRANSITO", movidoMs: dias(0) },
+    ], ahora);
+    expect(r.motivo).toBe("unico");
+    expect(r.pedido?.estado).toBe("EN TRANSITO");
+  });
+  it("un entregado viejo no compite; uno reciente sí cuenta como vivo", () => {
+    expect(elegirPedidoParaResponder([
+      { estado: "ENTREGADO", movidoMs: dias(30) },
+      { estado: "EN REPARTO", movidoMs: dias(0) },
+    ], ahora).motivo).toBe("unico");
+    expect(elegirPedidoParaResponder([
+      { estado: "ENTREGADO", movidoMs: dias(2) },
+      { estado: "EN REPARTO", movidoMs: dias(0) },
+    ], ahora).motivo).toBe("ambiguo");
+  });
+  it("dos vivos = ambiguo (no se responde); ninguno vivo lo dice; sin pedidos lo dice", () => {
+    expect(elegirPedidoParaResponder([
+      { estado: "NOVEDAD", movidoMs: dias(1) }, { estado: "EN TRANSITO", movidoMs: dias(1) },
+    ], ahora).motivo).toBe("ambiguo");
+    expect(elegirPedidoParaResponder([{ estado: "CANCELADO", movidoMs: dias(1) }], ahora).motivo).toBe("sin_vivos");
+    expect(elegirPedidoParaResponder([], ahora).motivo).toBe("sin_pedidos");
+  });
+});

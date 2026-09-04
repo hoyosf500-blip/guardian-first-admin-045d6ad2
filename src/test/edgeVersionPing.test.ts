@@ -40,6 +40,7 @@ const REQUERIDAS = [
   "importchat-chat",
   "importchat-send",
   "importchat-plantillas",
+  "importchat-responder",
   "chateapro-chat",
   "chateapro-send",
   "chateapro-plantillas",

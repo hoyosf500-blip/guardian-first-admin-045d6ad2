@@ -281,3 +281,84 @@ export function componerEstadoPedido(o: EstadoPedidoInput): EstadoPedidoRespuest
       };
   }
 }
+
+// ── 3. Lo que necesita un RESPONDEDOR AUTOMÁTICO además de la intención ──────
+//
+// Agregado el 4-sep-2026 para `importchat-responder`. Caso real que lo motivó
+// (chat de Ecuador): el bot pidió el número, el cliente mandó "0960915765", el
+// bot dijo *"un momentito que lo verifico con el equipo y le confirmo por aquí"*
+// … y se calló 13 horas. Guardian tiene el pedido y puede cumplir esa promesa.
+
+/**
+ * El cliente mandó SOLO un número: su teléfono o el número de pedido, con o
+ * sin espacios/guiones/+. Es la respuesta típica a "¿me confirma con qué
+ * número hizo el pedido?". Entre 6 y 13 dígitos; un "2" o un "ok 3" no cuentan.
+ */
+export function esNumeroSuelto(texto: string): boolean {
+  const t = (texto || "").trim();
+  if (!t) return false;
+  const digitos = t.replace(/[\s\-+().]/g, "");
+  if (!/^\d+$/.test(digitos)) return false;
+  return digitos.length >= 6 && digitos.length <= 13;
+}
+
+const PATRONES_PROMESA: RegExp[] = [
+  /\bverific/,                        // "lo verifico", "permítame verificar"
+  /\bd[eé]j[ea]me (revisar|verificar|consultar|ver)\b/,
+  /\bun momentito\b|\bun momento\b/,
+  /\ble confirmo por (aqu[ií]|este medio)\b/,
+  /\ble (aviso|escribo) (por aqu[ií]|en un momento|enseguida)\b/,
+  /\bya (lo|la) busco\b/,
+];
+
+/**
+ * El NEGOCIO (bot o asesora) dejó una promesa de verificar y ese es el ÚLTIMO
+ * mensaje del chat: nadie volvió. Si el texto ya trae una guía (5+ dígitos
+ * junto a la palabra guía) NO es una promesa pendiente: ya cumplió.
+ */
+export function esPromesaPendiente(texto: string): boolean {
+  const t = NORM(texto);
+  if (!t) return false;
+  if (/\bgu[ií]a\b[^\n]{0,40}\b[a-z]{0,3}\d{5,}/.test(t)) return false;
+  return PATRONES_PROMESA.some((re) => re.test(t));
+}
+
+export interface PedidoElegible {
+  estado?: string | null;
+  /** Último movimiento conocido (ms). `null` = no se sabe. */
+  movidoMs?: number | null;
+}
+
+export type MotivoEleccion = "unico" | "sin_pedidos" | "sin_vivos" | "ambiguo";
+
+/** Diez días: un entregado/devuelto más viejo que esto ya no es "el pedido" del que pregunta. */
+const VIEJO_MS = 10 * 24 * 60 * 60 * 1000;
+
+/**
+ * De todos los pedidos que cuelgan de un chat, ¿sobre CUÁL se responde?
+ *
+ * ⛔ Un mismo teléfono tiene varios pedidos (el reemplazado, el cancelado, el
+ * vivo). Responder por el equivocado es peor que callarse: se le dice a alguien
+ * que su pedido va en camino cuando ese es el que se canceló. Regla:
+ *   - se descartan cancelados/archivados y los REEMPLAZADOS (no existen para el cliente);
+ *   - un entregado o devuelto de hace más de 10 días tampoco cuenta;
+ *   - queda UNO → se responde por ese; quedan dos o más → `ambiguo` y no se responde;
+ *   - no queda ninguno → `sin_vivos` (que lo mire una persona).
+ */
+export function elegirPedidoParaResponder<T extends PedidoElegible>(
+  pedidos: T[],
+  ahoraMs: number,
+): { pedido: T | null; motivo: MotivoEleccion } {
+  if (!pedidos.length) return { pedido: null, motivo: "sin_pedidos" };
+  const vivos = pedidos.filter((p) => {
+    const s = (p.estado || "").toUpperCase();
+    if (s.includes("REEMPLAZ")) return false;
+    const fase = faseDePedido(p.estado);
+    if (fase === "cancelado") return false;
+    if ((fase === "entregado" || fase === "devolucion") && p.movidoMs != null && ahoraMs - p.movidoMs > VIEJO_MS) return false;
+    return true;
+  });
+  if (vivos.length === 1) return { pedido: vivos[0], motivo: "unico" };
+  if (vivos.length === 0) return { pedido: null, motivo: "sin_vivos" };
+  return { pedido: null, motivo: "ambiguo" };
+}
