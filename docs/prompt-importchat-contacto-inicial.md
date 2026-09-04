@@ -68,3 +68,40 @@ Desde un WhatsApp de prueba, al número de la cuenta de Ecuador:
 El bot sigue sin poder buscar por nombre — eso es una limitación de su integración con Dropi, no
 del prompt. Lo que este cambio corta es la **pregunta inútil** y la **doble pedida del número**,
 que es donde se estaba perdiendo la venta.
+
+---
+
+## ✅ Aplicado el 4-sep-2026
+
+Pegado y verificado tras recargar la página. El prompt pasó de 75.293 a 76.328
+caracteres (**+1.035**, exactamente lo que pesa el bloque nuevo), con los mismos
+611 saltos de línea. Las tres frases que Guardian detecta siguen textuales.
+
+## ⛔ La trampa del textarea, para el próximo que lo toque
+
+Lo que se ve en el textarea **NO es lo que está guardado**: la plataforma le
+añade al final, en cada carga, un bloque de ~3.276 caracteres:
+
+```
+===== REGLAS ADICIONALES DE LA TIENDA =====
+…
+===== FIN REGLAS ADICIONALES =====
+```
+
+Si se lee, se edita y se guarda tal cual, ese bloque queda **horneado** y al
+recargar se añade otra vez. Pasó: de 1 copia a 3 en un solo guardado, y hubo que
+recortarlo. **Antes de guardar hay que cortar desde ese marcador hasta el final.**
+
+⚠️ No confundirlo con el bloque `= REGLAS ADICIONALES DE LA TIENDA =` de **un
+solo `=`**, que sí es parte del prompt original y no se toca.
+
+Y tres cosas más, todas medidas:
+
+- El prompt usa **comillas normales** y saltos de línea reales. Guardarlo a
+  archivo desde el navegador lo devuelve **JSON-escapado** y hace creer lo
+  contrario: medir siempre contra `document.querySelector('textarea').value`.
+- El textarea lo controla React: asignar `.value` a secas no actualiza el estado
+  y se guarda el texto viejo. Hay que usar el setter nativo del prototipo y
+  disparar `new Event('input', {bubbles:true})`.
+- **No hay toast de confirmación** y el rótulo de versión sigue diciendo `v7`.
+  La única comprobación válida es recargar y volver a leer.
