@@ -201,7 +201,14 @@ export default function SiguienteAccionBar() {
     >
       <Icono size={15} className={cn('flex-shrink-0', t.texto)} aria-hidden="true" />
 
-      <div className="min-w-0 flex-1 flex items-baseline gap-x-2">
+      {/*
+        `overflow-x-auto` (4-sep-2026, visto en producción a 1366 px): los chips son
+        `shrink-0` a propósito, pero sin esta línea los que no cabían seguían de
+        largo POR DEBAJO del botón «Ver» y el último quedaba cortado
+        («+262 devoluciones para rescatarVer»). Ahora lo que no cabe se desliza
+        dentro de la franja, sin barra visible, y el botón queda entero.
+      */}
+      <div className="min-w-0 flex-1 flex items-baseline gap-x-2 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_right,black_calc(100%-20px),transparent)]">
         <span className="shrink-0 text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground">
           {mira ? 'La cola' : 'Lo que sigue'}
         </span>

@@ -19,6 +19,7 @@ import { pollWhenVisible } from '@/lib/pollWhenVisible';
 import { ShoppingBag, RefreshCw, Copy, Check, ExternalLink, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Truck, Loader2, History, Ban, ShieldCheck, Search, X, Link2, ClipboardCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { copiarAlPortapapeles } from '@/lib/portapapeles';
 
 const DONE_KEY = (storeId: string) => `guardian.shopifyDone:${storeId}`;
 const DUP_OVERRIDE_KEY = (storeId: string) => `guardian.dupOverride:${storeId}`;
@@ -317,9 +318,14 @@ export default function ShopifyPendingPanel() {
   // auditoría (quién y cuándo) — escape para la recompra legítima.
   const markNotDuplicate = useCallback((p: ShopifyPendingItem) => {
     if (!activeStoreId) return;
+    // Un paso de confirmación (4-sep-2026): destraba el candado anti-duplicado de
+    // esa fila por 24 h y no había forma de volver atrás desde la pantalla.
+    if (!window.confirm(`¿Seguro que ${p.name} NO es un duplicado? Se destraba solo este pedido y queda registrado quién lo hizo.`)) return;
     saveOverride(activeStoreId, p.id);
     setDupOverrides(prev => new Set(prev).add(p.id));
     if (user) {
+      // El rastro de auditoría es justo lo que se necesita cuando aparece una
+      // guía doble: si no se pudo dejar, se dice (antes era fire-and-forget).
       void supabase.from('touchpoints').insert({
         phone: p.phone,
         action: `DUP_OVERRIDE: "No es duplicado", enviar igual (${p.name})`,
@@ -327,6 +333,8 @@ export default function ShopifyPendingPanel() {
         action_date: bogotaToday(),
         action_time: new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: BOGOTA }),
         store_id: activeStoreId,
+      }).then(({ error }) => {
+        if (error) toast.warning('Destrabado, pero no quedó el registro de auditoría', { description: error.message });
       });
     }
     toast.success('Marcado como no-duplicado — ya podés enviarlo');
@@ -340,11 +348,15 @@ export default function ShopifyPendingPanel() {
   // `shopify_manual_marks`, igual que "Ya lo metí": el equipo entero ve la misma
   // lista y queda con autor, hora y botón de revertir en el Historial.
   const quitarDelCrm = useCallback(async (p: ShopifyPendingItem) => {
-    if (!activeStoreId || done.has(p.id) || markedIds.has(p.id)) return;
+    // Mismo candado anti-doble-clic que «Ya lo metí» (4-sep-2026): dos taps en el
+    // mismo frame veían el `done` viejo y disparaban dos marcas.
+    if (!activeStoreId || lockMarks || done.has(p.id) || markedIds.has(p.id)) return;
+    setLockMarks(true);
     markDone(p.id);
     const r = await markEntered({ id: p.id, name: p.name, customer: p.customer, phone: p.phone, total: p.total, city: p.city });
     if (!r.ok) toast.error('No se pudo compartir con el equipo: ' + (r.error || ''));
-  }, [activeStoreId, done, markedIds, markDone, markEntered]);
+    setTimeout(() => setLockMarks(false), 600);
+  }, [activeStoreId, lockMarks, done, markedIds, markDone, markEntered]);
 
   // "Ya lo corregí" (valor distinto): la operadora ya ajustó el precio en Dropi →
   // lo sacamos de la lista (dismiss local por tienda). Al re-sincar con el valor
@@ -359,7 +371,11 @@ export default function ShopifyPendingPanel() {
   }, [activeStoreId]);
 
   const copyPhone = useCallback(async (phone: string) => {
-    try { await navigator.clipboard.writeText(phone); setCopied(phone); setTimeout(() => setCopied(null), 1500); } catch { /* noop */ }
+    // `copiarAlPortapapeles` dice la verdad: antes el catch era mudo y la asesora
+    // no sabía si pegar o transcribir el número a mano (4-sep-2026).
+    const ok = await copiarAlPortapapeles(phone);
+    if (ok) { setCopied(phone); setTimeout(() => setCopied(null), 1500); }
+    else toast.error('No se pudo copiar el teléfono', { description: 'Copialo a mano desde la tarjeta.' });
   }, []);
 
   const visible = useMemo(

@@ -127,6 +127,12 @@
      DARK MODE — PRIMARY (production default)
      ───────────────────────────────────────────────────────── */
   .dark {
+    /* `color-scheme` (4-sep-2026): sin esto el navegador pinta los controles
+       NATIVOS (el <select> de /actividad, su menú desplegable, los inputs de
+       fecha, la barra de scroll por defecto) con el esquema CLARO, y salían
+       cajas blancas en medio del tema oscuro. Medido en producción:
+       `getComputedStyle(html).colorScheme === 'normal'`. */
+    color-scheme: dark;
     /* Base surfaces — Dirección 3D (deep indigo-black, aurora shell) */
     --background: 230 45% 3%;         /* #05060c */
     --foreground: 226 35% 95%;        /* #eef0f7 */

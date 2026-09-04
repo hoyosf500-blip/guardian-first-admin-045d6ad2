@@ -210,14 +210,16 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
 
             {/* Cliente */}
             <div className="grid grid-cols-2 gap-3">
-              <div><label className={label}>Nombre</label><input className={input} value={client.name} onChange={e => setField('name', e.target.value)} /></div>
-              <div><label className={label}>Apellido</label><input className={input} value={client.surname} onChange={e => setField('surname', e.target.value)} /></div>
-              <div><label className={label}>Teléfono</label><input className={input} value={client.phone} onChange={e => setField('phone', e.target.value)} /></div>
-              <div><label className={label}>Email</label><input className={input} value={client.email} onChange={e => setField('email', e.target.value)} /></div>
-              <div className="col-span-2"><label className={label}>Dirección</label><input className={input} value={client.dir} onChange={e => setField('dir', e.target.value)} /></div>
-              <div><label className={label}>Ciudad</label><input className={input} value={client.city} onChange={e => setField('city', e.target.value)} /></div>
-              <div><label className={label}>Departamento</label><input className={input} value={client.state} onChange={e => setField('state', e.target.value)} /></div>
-              <div className="col-span-2"><label className={label}>Notas (van en la guía)</label><input className={input} value={client.notes} onChange={e => setField('notes', e.target.value)} /></div>
+              {/* `htmlFor` + `id` (4-sep-2026): el <label> era hermano sin asociación,
+                  así que el lector de pantalla y el clic en el rótulo no llegaban al campo. */}
+              <div><label htmlFor="ptd-name" className={label}>Nombre</label><input id="ptd-name" autoComplete="given-name" className={input} value={client.name} onChange={e => setField('name', e.target.value)} /></div>
+              <div><label htmlFor="ptd-surname" className={label}>Apellido</label><input id="ptd-surname" autoComplete="family-name" className={input} value={client.surname} onChange={e => setField('surname', e.target.value)} /></div>
+              <div><label htmlFor="ptd-phone" className={label}>Teléfono</label><input id="ptd-phone" type="tel" inputMode="tel" className={input} value={client.phone} onChange={e => setField('phone', e.target.value)} /></div>
+              <div><label htmlFor="ptd-email" className={label}>Email</label><input id="ptd-email" type="email" inputMode="email" className={input} value={client.email} onChange={e => setField('email', e.target.value)} /></div>
+              <div className="col-span-2"><label htmlFor="ptd-dir" className={label}>Dirección</label><input id="ptd-dir" className={input} value={client.dir} onChange={e => setField('dir', e.target.value)} /></div>
+              <div><label htmlFor="ptd-city" className={label}>Ciudad</label><input id="ptd-city" className={input} value={client.city} onChange={e => setField('city', e.target.value)} /></div>
+              <div><label htmlFor="ptd-state" className={label}>Departamento</label><input id="ptd-state" className={input} value={client.state} onChange={e => setField('state', e.target.value)} /></div>
+              <div className="col-span-2"><label htmlFor="ptd-notes" className={label}>Notas (van en la guía)</label><input id="ptd-notes" className={input} value={client.notes} onChange={e => setField('notes', e.target.value)} /></div>
             </div>
 
             {/* Productos */}
@@ -236,8 +238,10 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
                         </div>
                       </div>
                       <input type="number" min={1} value={l.quantity} onChange={e => setLine(i, 'quantity', Number(e.target.value))}
+                        aria-label={`Cantidad de ${l.title}`}
                         className="h-8 w-full rounded border border-border bg-background px-1 text-center text-sm" />
                       <input type="number" min={0} value={l.price} onChange={e => setLine(i, 'price', Number(e.target.value))}
+                        aria-label={`Precio unitario de ${l.title}`}
                         className="h-8 w-full rounded border border-border bg-background px-1 text-right text-sm font-mono" />
                     </div>
 
@@ -251,11 +255,11 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
                         <details className="text-[11px]">
                           <summary className="cursor-pointer text-muted-foreground select-none">o pegá el id de Dropi manual</summary>
                           <div className="flex items-center gap-2 mt-1.5">
-                            <input inputMode="numeric" placeholder="ID producto Dropi"
+                            <input inputMode="numeric" placeholder="ID producto Dropi" aria-label="ID de producto en Dropi"
                               value={linkInputs[l.product_id]?.dropiId ?? ''}
                               onChange={e => setLinkInput(l.product_id, 'dropiId', e.target.value)}
                               className="h-8 flex-1 min-w-0 rounded border border-border bg-background px-2 text-sm" />
-                            <input inputMode="numeric" placeholder="Variación (opc.)"
+                            <input inputMode="numeric" placeholder="Variación (opc.)" aria-label="ID de variación en Dropi (opcional)"
                               value={linkInputs[l.product_id]?.variationId ?? ''}
                               onChange={e => setLinkInput(l.product_id, 'variationId', e.target.value)}
                               className="h-8 w-28 rounded border border-border bg-background px-2 text-sm" />
@@ -306,7 +310,14 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
                   </span>
                 </div>
                 <div className="flex justify-end">
-                  <button onClick={() => doConfirm(true)} disabled={submitting}
+                  <button
+                    // Un paso de confirmación (4-sep-2026): este botón crea una orden COD
+                    // real saltándose el candado anti-duplicado. Un clic de más era una
+                    // segunda guía.
+                    onClick={() => {
+                      if (window.confirm('Este teléfono ya tiene pedidos en Dropi. ¿Confirmás que es una recompra real y NO un duplicado? Se va a crear otra orden COD.')) void doConfirm(true);
+                    }}
+                    disabled={submitting}
                     className="h-8 px-3 rounded-lg border border-destructive/40 bg-card text-xs font-medium text-destructive hover:bg-destructive/10 flex items-center gap-1 disabled:opacity-50">
                     {submitting ? <Loader2 size={12} className="animate-spin" /> : <Truck size={12} />} Subir igual (no es duplicado)
                   </button>
@@ -325,7 +336,11 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
                 </div>
                 {verifyBlock.reason !== 'in_progress' && (
                   <div className="flex justify-end">
-                    <button onClick={() => doConfirm(false, true)} disabled={submitting}
+                    <button
+                      onClick={() => {
+                        if (window.confirm('¿Ya miraste en Dropi y este pedido NO está? Si sí está, «Forzar» crea una segunda guía COD.')) void doConfirm(false, true);
+                      }}
+                      disabled={submitting}
                       className="h-8 px-3 rounded-lg border border-warning/40 bg-card text-xs font-medium text-warning hover:bg-warning/10 flex items-center gap-1 disabled:opacity-50">
                       {submitting ? <Loader2 size={12} className="animate-spin" /> : <Truck size={12} />} Forzar (ya verifiqué en Dropi)
                     </button>

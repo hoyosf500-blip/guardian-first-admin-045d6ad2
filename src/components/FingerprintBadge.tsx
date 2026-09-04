@@ -197,7 +197,7 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
     return (
       <div className="rounded-xl border border-border bg-card overflow-hidden">
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border/60">
-          <Fingerprint size={14} className="text-accent animate-pulse" />
+          <Fingerprint size={14} className="text-accent motion-safe:animate-pulse" aria-hidden="true" />
           <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Huella Dropi
           </span>

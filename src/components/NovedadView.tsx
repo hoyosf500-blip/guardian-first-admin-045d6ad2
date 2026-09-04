@@ -173,7 +173,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
         </span>
         <div>
           <p className="text-sm font-semibold text-foreground">No hay novedades pendientes</p>
-          <p className="text-xs text-muted-foreground mt-1">Todas las novedades están resueltas 🎉</p>
+          <p className="text-xs text-muted-foreground mt-1">Todas las novedades están resueltas.</p>
         </div>
       </div>
     );
@@ -566,7 +566,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
         {/* Gestión: marca local (la colaboradora ya resolvió en Dropi). */}
         {submitting ? (
           <div className="text-center py-4 text-sm font-semibold inline-flex items-center gap-2 justify-center w-full text-success">
-            <CheckCircle2 size={18} className="animate-pulse" aria-hidden="true" />
+            <CheckCircle2 size={18} className="motion-safe:animate-pulse" aria-hidden="true" />
             Marcando…
           </div>
         ) : (
@@ -616,6 +616,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
               )}
               <textarea
                 value={solution}
+                aria-label="Solución de la novedad"
                 /* ⛔ NO se trunca lo que la asesora escribe. Antes el
                    `.slice()` la dejaba sin poder agregar ni el teléfono ni el
                    barrio: llegaba a 120/120 y el textarea se volvía de piedra,

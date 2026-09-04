@@ -35,7 +35,7 @@ export default function MetaDiaBar({ total, sinTocar }: {
         ) : colaVacia ? (
           <span className="text-xs text-success font-semibold">cola en cero · nada frío ✓</span>
         ) : todosLlamados ? (
-          <span className="text-xs text-success font-semibold">todos con primer intento · nada frío 🎉</span>
+          <span className="text-xs text-success font-semibold">todos con primer intento · nada frío ✓</span>
         ) : (
           <span className="text-xs text-muted-foreground">
             llamados <strong className="tabular-nums text-foreground">{llamados}</strong> de {total} ·{' '}

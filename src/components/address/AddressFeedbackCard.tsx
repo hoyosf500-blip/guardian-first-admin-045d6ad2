@@ -80,7 +80,7 @@ export function AddressFeedbackCard({
       // sepa que el sistema está trabajando, en vez de no ver nada.
       return (
         <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-          <span className="inline-block h-2 w-2 rounded-full bg-warning animate-pulse" aria-hidden />
+          <span className="inline-block h-2 w-2 rounded-full bg-warning motion-safe:animate-pulse" aria-hidden />
           <span>Validando dirección...</span>
         </div>
       );

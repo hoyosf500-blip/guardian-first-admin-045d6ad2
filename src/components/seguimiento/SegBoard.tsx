@@ -852,7 +852,14 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           {waPhone && (
             <a
               href={'tel:+' + waPhone}
-              onClick={(e) => { e.stopPropagation(); void recordGestion(o.phone, 'LLAMADA', 'llamó'); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                // El tablero es donde se hace el grueso de las llamadas; un fallo mudo
+                // acá es trabajo invisible (4-sep-2026).
+                void recordGestion(o.phone, 'LLAMADA', 'llamó').then((r) => {
+                  if (!r.ok) toast.error('La llamada no quedó registrada en la bitácora');
+                });
+              }}
               title="Llamar al cliente"
               aria-label="Llamar al cliente"
               className="p-2 min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg text-muted-foreground/70 hover:text-accent hover:bg-accent/10 transition-colors"

@@ -1497,7 +1497,13 @@ export default function CallView({ items, alerts }: Props) {
                   patch.missing_fields = [];
                   patch.suggested_customer_message = '';
                 }
-                void supabase.from('orders').update(patch as never).eq('id', o.dbId);
+                // `error` leído (4-sep-2026): era fire-and-forget. Si la RLS o la red
+                // rechazaban el UPDATE, la dirección nueva se veía en pantalla, la
+                // asesora colgaba y el pedido salía con la vieja sin que nadie lo supiera.
+                void supabase.from('orders').update(patch as never).eq('id', o.dbId)
+                  .then(({ error }) => {
+                    if (error) toast.error('No se pudo guardar la dirección', { description: `${error.message}. Volvé a escribirla.` });
+                  });
               }}
             />
             <AddressFeedbackCard
@@ -1518,7 +1524,9 @@ export default function CallView({ items, alerts }: Props) {
                     void supabase.from('orders').update({
                       direccion: o.suggestedAddress,
                       validation_decision: null, // re-validar con la dirección nueva
-                    }).eq('id', o.dbId);
+                    }).eq('id', o.dbId).then(({ error }) => {
+                      if (error) toast.error('No se pudo aplicar la sugerencia', { description: error.message });
+                    });
                   }
                   : undefined
               }
@@ -1849,6 +1857,7 @@ export default function CallView({ items, alerts }: Props) {
                   value={reagendaTexto}
                   onChange={(e) => setReagendaTexto(e.target.value)}
                   placeholder="Nota para cuando vuelva (opcional)"
+                  aria-label="Nota para cuando vuelva"
                   maxLength={120}
                   className="w-full rounded-xl border border-border bg-card/40 px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/40"
                 />

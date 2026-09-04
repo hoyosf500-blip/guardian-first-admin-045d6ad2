@@ -185,21 +185,23 @@ export default function ActividadPage() {
         <button
           type="button"
           onClick={() => void recargar()}
-          className="ml-auto inline-flex items-center gap-1.5 rounded-xl border border-border bg-card/40 px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground"
+          disabled={estado === 'cargando'}
+          aria-busy={estado === 'cargando'}
+          className="ml-auto inline-flex items-center gap-1.5 rounded-xl border border-border bg-card/40 px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground disabled:opacity-60 disabled:cursor-wait"
         >
           <RefreshCw size={13} className={estado === 'cargando' ? 'animate-spin' : ''} /> Actualizar
         </button>
       </div>
 
       {estado === 'cargando' && (
-        <div className="flex items-center justify-center py-16 text-muted-foreground text-sm">
-          <Loader2 size={16} className="animate-spin mr-2" /> Leyendo la bitácora…
+        <div role="status" aria-live="polite" className="flex items-center justify-center py-16 text-muted-foreground text-sm">
+          <Loader2 size={16} className="animate-spin mr-2" aria-hidden="true" /> Leyendo la bitácora…
         </div>
       )}
 
       {/* ⛔ Esto NO es "no hizo nada". Es "la tabla todavía no existe". */}
       {estado === 'not_ready' && (
-        <div className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+        <div role="status" className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
           <p className="font-semibold">La bitácora todavía no está prendida en la base.</p>
           <p className="text-xs mt-1 opacity-90">
             Falta aplicar la migración <span className="font-mono">order_events</span>. Hasta que corra, esta
@@ -209,7 +211,7 @@ export default function ActividadPage() {
       )}
 
       {estado === 'error' && (
-        <div className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+        <div role="alert" className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
           No se pudo leer la bitácora ahora mismo. Reintentá en un momento.
         </div>
       )}
@@ -220,7 +222,7 @@ export default function ActividadPage() {
               estos números se habla con una persona. Lo que falta es lo más
               viejo del día (la mañana). */}
           {truncado && (
-            <div className="rounded-2xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning mb-4">
+            <div role="status" className="rounded-2xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning mb-4">
               Este día tiene más eventos de los que puedo leer de una vez: la lista y el resumen
               están <strong>incompletos</strong> (falta lo más temprano). Elegí una persona para verla completa.
             </div>

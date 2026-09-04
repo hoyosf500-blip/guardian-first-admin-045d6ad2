@@ -475,7 +475,7 @@ export default function StoreCredentialsPanel() {
                   placeholder={hasApiKey ? '•••••• (pegá una nueva para cambiarla)' : 'eyJ0eXAi...'}
                   className="w-full h-10 rounded-xl border border-border bg-card/40 px-3 pr-10 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
                 />
-                <button type="button" onClick={() => setShowApi(!showApi)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <button type="button" onClick={() => setShowApi(!showApi)} aria-label={showApi ? 'Ocultar la clave' : 'Mostrar la clave'} className="absolute right-1 top-1/2 -translate-y-1/2 p-2 rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   {showApi ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
@@ -501,7 +501,7 @@ export default function StoreCredentialsPanel() {
                   placeholder={hasSessionToken ? '•••••• (pegá uno nuevo para cambiarlo)' : 'eyJhbGci... (vence ~12-24h)'}
                   className="w-full h-10 rounded-xl border border-border bg-card/40 px-3 pr-10 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
                 />
-                <button type="button" onClick={() => setShowSession(!showSession)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <button type="button" onClick={() => setShowSession(!showSession)} aria-label={showSession ? 'Ocultar el token' : 'Mostrar el token'} className="absolute right-1 top-1/2 -translate-y-1/2 p-2 rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   {showSession ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
@@ -584,7 +584,7 @@ export default function StoreCredentialsPanel() {
                   autoComplete="new-password"
                   className="w-full h-10 rounded-xl border border-border bg-card/40 px-3 pr-10 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
                 />
-                <button type="button" onClick={() => setShowLoginPass(!showLoginPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <button type="button" onClick={() => setShowLoginPass(!showLoginPass)} aria-label={showLoginPass ? 'Ocultar la contraseña' : 'Mostrar la contraseña'} className="absolute right-1 top-1/2 -translate-y-1/2 p-2 rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   {showLoginPass ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
@@ -696,7 +696,7 @@ export default function StoreCredentialsPanel() {
               <input id="cred-shopify-client-secret" type={showShopSecret ? 'text' : 'password'} value={shopClientSecret} onChange={e => setShopClientSecret(e.target.value)}
                 placeholder={shopConfigured ? '•••••• (pegá uno nuevo para cambiarlo)' : 'shpss_...'}
                 className="w-full h-10 rounded-xl border border-border bg-card/40 px-3 pr-10 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30" />
-              <button type="button" onClick={() => setShowShopSecret(!showShopSecret)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <button type="button" onClick={() => setShowShopSecret(!showShopSecret)} aria-label={showShopSecret ? 'Ocultar el secreto' : 'Mostrar el secreto'} className="absolute right-1 top-1/2 -translate-y-1/2 p-2 rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 {showShopSecret ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
             </div>

@@ -43,7 +43,9 @@ function claseCelda(celda: CeldaMapa, maximo: number): string {
     return 'bg-[repeating-linear-gradient(45deg,transparent,transparent_3px,hsl(var(--muted-foreground)/0.25)_3px,hsl(var(--muted-foreground)/0.25)_4px)] text-muted-foreground';
   }
   if (celda.estado === 'todavia_no') {
-    return 'bg-muted/25 text-muted-foreground/60';
+    // Sin `/60`: el número de la celda es EL dato del mapa y a 60 % sobre
+    // `muted/25` quedaba en ~3.5:1 en oscuro (auditoría visual 4-sep-2026).
+    return 'bg-muted/25 text-muted-foreground';
   }
   if (celda.estado === 'sin_trabajo') {
     // El hueco se VE. Es el dato que se busca, no un espacio en blanco.

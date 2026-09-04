@@ -175,7 +175,7 @@ export default function SiguienteColaBanner({ supersededIds }: Props) {
           </button>
         )}
         {!bandejaMedida && !bandejaNoAplica && !bandejaCargando && (
-          <p className="flex-1 self-center text-[11px] text-warning">
+          <p role="status" className="flex-1 self-center text-[11px] text-warning">
             No pude leer la bandeja: puede haber clientes esperando respuesta.
           </p>
         )}

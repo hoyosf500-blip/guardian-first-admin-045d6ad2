@@ -270,6 +270,7 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
                 <>
                   <Input
                     list="ec-provincias"
+                    aria-label="Provincia"
                     value={form.departamento}
                     onChange={e => onChange(f => ({ ...f, departamento: e.target.value }))}
                     placeholder="Ej. Guayas"
@@ -284,7 +285,7 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
                 value={form.departamento || undefined}
                 onValueChange={(v) => onChange(f => ({ ...f, departamento: v, ciudad: '' }))}
               >
-                <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                <SelectTrigger aria-label="Departamento"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
                 <SelectContent>
                   {deptoOptions.map(d => (
                     <SelectItem key={d} value={d}>{d}</SelectItem>
@@ -313,6 +314,7 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
                 <div className="space-y-1">
                   <Input
                     value={form.ciudad}
+                    aria-label="Ciudad"
                     onChange={e => onChange(f => ({ ...f, ciudad: e.target.value }))}
                     placeholder="Ej. Guayaquil"
                     autoFocus={ecOtraCity}
@@ -334,6 +336,7 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
               // poder cargar la ciudad.
               <Input
                 value={form.ciudad}
+                aria-label="Municipio"
                 onChange={e => onChange(f => ({ ...f, ciudad: e.target.value }))}
                 placeholder="Ej. Quetzaltenango"
               />
@@ -343,7 +346,7 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
                 onValueChange={(v) => onChange(f => ({ ...f, ciudad: v }))}
                 disabled={!form.departamento}
               >
-                <SelectTrigger>
+                <SelectTrigger aria-label="Ciudad">
                   <SelectValue placeholder={form.departamento ? 'Seleccionar...' : 'Elige depto. primero'} />
                 </SelectTrigger>
                 <SelectContent>

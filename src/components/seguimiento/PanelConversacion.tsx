@@ -201,7 +201,7 @@ export default function PanelConversacion({
       {/* El estado de la ventana: decide si tiene sentido escribir. */}
       {averiguando ? (
         <div className="flex items-center gap-2 rounded-xl border border-border bg-card/40 px-3 py-2 text-xs text-muted-foreground">
-          <Clock size={13} aria-hidden="true" className="shrink-0 animate-pulse" />
+          <Clock size={13} aria-hidden="true" className="shrink-0 motion-safe:animate-pulse" />
           <span>Viendo si todavía se le puede escribir…</span>
         </div>
       ) : puedeEscribir ? (

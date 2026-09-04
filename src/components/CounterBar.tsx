@@ -96,7 +96,7 @@ export default function CounterBar() {
           : `Confirmación del día del equipo: ${tasa}% (${counter.conf} confirmados ÷ ${total} gestionados · meta ${CONF_TARGET_PCT}%). Incluye los "no contestó": también son ventas por sacar.`}
       >
         <div
-          className={`h-full rounded-full ${barTone} transition-all duration-500 ease-out`}
+          className={`h-full rounded-full ${barTone} transition-[width] duration-500 ease-out`}
           style={{ width: `${pct}%` }}
         />
       </div>

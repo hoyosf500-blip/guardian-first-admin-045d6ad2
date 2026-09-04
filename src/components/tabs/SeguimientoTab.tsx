@@ -1529,7 +1529,7 @@ export default function SeguimientoTab() {
                       </div>
                       {/* Barra de progreso del día — se llena a medida que gestionás. */}
                       <div className="h-1.5 w-full rounded-full bg-foreground/10 overflow-hidden" aria-hidden="true">
-                        <div className={`h-full rounded-full ${barTone} transition-all duration-300`} style={{ width: `${pct}%` }} />
+                        <div className={`h-full rounded-full ${barTone} transition-[width] duration-300`} style={{ width: `${pct}%` }} />
                       </div>
                       {/* "Ocultar gestionados" se mudó a la barra de listas
                           (27-ago-2026). Vivía acá dentro, y el hero arranca

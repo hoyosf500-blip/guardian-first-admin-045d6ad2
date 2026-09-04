@@ -797,12 +797,23 @@ export default function DashboardTab() {
         .order('result_date', { ascending: false })
         .order('phone', { ascending: true }) as never,
     );
-    if (error || !data.length) { toast.error(error ? 'Error' : 'Sin datos'); return; }
+    // Dos causas, dos mensajes (4-sep-2026): «Error» a secas no decía qué hacer y
+    // fundía «falló la consulta» con «no hay filas».
+    if (error) { toast.error('No se pudo leer el histórico', { description: `${error} — reintentá; si sigue, avisá.` }); return; }
+    if (!data.length) { toast.info('No hay gestiones tuyas en ese período'); return; }
     if (truncado) toast.warning('El archivo llegó al tope y puede estar incompleto — pedí un rango más corto.');
     downloadCsv(`historico_${sinceStr}.csv`, ['Fecha', 'Hora', 'Teléfono', 'Resultado', 'Razón', 'Módulo'],
       data.map(r => [r.result_date, r.result_time || '', r.phone, r.result === 'conf' ? 'Confirmado' : r.result === 'canc' ? 'Cancelado' : 'No respondió', r.reason || '', r.module]));
   };
+  // Candado del botón (4-sep-2026): el INSERT tarda y el segundo clic caía en el
+  // 23505 «Ya enviaste el cierre de hoy» — un error para quien no hizo nada mal.
+  const [enviandoCierre, setEnviandoCierre] = useState(false);
   const handleCierre = async () => {
+    if (!user || !activeStoreId || enviandoCierre) return;
+    setEnviandoCierre(true);
+    try { await enviarCierre(); } finally { setEnviandoCierre(false); }
+  };
+  const enviarCierre = async () => {
     if (!user || !activeStoreId) return;
     // Fecha BOGOTÁ, no UTC: con new Date().toISOString() un cierre enviado
     // después de las 7pm quedaba fechado MAÑANA y el reporte del día se perdía
@@ -817,8 +828,10 @@ export default function DashboardTab() {
     // alcance: el histórico quedaba con cifras incomparables.
     const { error } = await supabase.from('daily_reports').insert({ operator_id: user.id, report_date: today, report_type: 'cierre', store_id: activeStoreId,
       data: { confirmados: myCounter.conf, cancelados: myCounter.canc, no_respondio: myCounter.noresp, total_gestionados: cierreTotal, tasa_confirmacion: cierreDiaPct ?? null, pendientes_manana: pendLeft } });
-    if (error) toast.error(error.code === '23505' ? 'Ya enviaste el cierre de hoy' : 'Error');
-    else toast.success('Cierre enviado correctamente');
+    if (error) {
+      if (error.code === '23505') toast.error('Ya enviaste el cierre de hoy');
+      else toast.error('No se pudo enviar el cierre', { description: `${error.message} — reintentá; si sigue, avisá.` });
+    } else toast.success('Cierre enviado correctamente');
   };
   // ⚠️ El rótulo "Tasa" a secas causó una disputa real (30-jul): el equipo mandó
   // "Tasa: 99%" (= conf ÷ los que CONTESTARON) y el dueño la leyó como la
@@ -1031,8 +1044,9 @@ export default function DashboardTab() {
           <button onClick={exportarResultadosHoy} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground text-sm font-medium hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
             <Download size={13} aria-hidden="true" /> CSV
           </button>
-          <button onClick={handleCierre} className="btn-accent-3d inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
-            <Send size={13} aria-hidden="true" /> Enviar cierre
+          <button onClick={handleCierre} disabled={enviandoCierre} aria-busy={enviandoCierre}
+            className="btn-accent-3d inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none disabled:opacity-60 disabled:cursor-wait">
+            <Send size={13} aria-hidden="true" /> {enviandoCierre ? 'Enviando…' : 'Enviar cierre'}
           </button>
           {/* More actions dropdown */}
           <div className="relative">

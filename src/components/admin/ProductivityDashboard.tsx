@@ -829,7 +829,7 @@ export default function ProductivityDashboard() {
                 {isToday && liveTeam.status === 'ok' && (
                   <div className="flex items-center gap-3 text-[11px] text-muted-foreground font-medium flex-wrap">
                     <span className="inline-flex items-center gap-1.5 text-success">
-                      <Radio size={12} className="animate-pulse" aria-hidden="true" />{trabajandoAhora} trabajando
+                      <Radio size={12} className="motion-safe:animate-pulse" aria-hidden="true" />{trabajandoAhora} trabajando
                     </span>
                     {ausentesAhora > 0 && <span className="text-warning">{ausentesAhora} ausente{ausentesAhora === 1 ? '' : 's'}</span>}
                     {backlogConfirmar != null && <span>· {backlogConfirmar} por confirmar</span>}

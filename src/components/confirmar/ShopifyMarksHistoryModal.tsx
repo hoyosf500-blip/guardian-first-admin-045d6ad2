@@ -71,17 +71,17 @@ export default function ShopifyMarksHistoryModal({ storeId, pendingIds, onClose,
         <div className="px-5 py-4 border-b border-border flex items-center gap-2 flex-shrink-0">
           <History size={16} className="text-primary" />
           <h3 className="text-sm font-semibold text-foreground flex-1">Historial · "Ya lo metí"</h3>
-          <button onClick={onClose} className="h-7 w-7 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground"><X size={14} /></button>
+          <button onClick={onClose} aria-label="Cerrar historial" className="h-8 w-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><X size={14} aria-hidden="true" /></button>
         </div>
 
         {/* Filtro de fechas + totales */}
         <div className="px-5 py-3 border-b border-border flex flex-col gap-2 flex-shrink-0">
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="text-muted-foreground">Desde</span>
-            <input type="date" value={range.from} max={range.to}
+            <input type="date" value={range.from} max={range.to} aria-label="Desde"
               onChange={e => setRange(r => ({ ...r, from: e.target.value }))} className={dateInput} />
             <span className="text-muted-foreground">hasta</span>
-            <input type="date" value={range.to} min={range.from}
+            <input type="date" value={range.to} min={range.from} aria-label="Hasta"
               onChange={e => setRange(r => ({ ...r, to: e.target.value }))} className={dateInput} />
             <button onClick={resetRange} className="h-8 px-2.5 rounded-lg border border-border bg-card text-xs text-muted-foreground hover:text-foreground">Últimos 3 días</button>
           </div>

@@ -720,6 +720,8 @@ export default function CrmCallView({
           <button
             onClick={() => navCall(-1)}
             disabled={idx <= 0}
+            aria-label="Pedido anterior"
+            title="Pedido anterior"
             className="px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
             <ChevronLeft size={14} aria-hidden="true" />
@@ -727,9 +729,11 @@ export default function CrmCallView({
           <button
             onClick={() => navCall(1)}
             disabled={idx >= items.length - 1}
+            aria-label="Pedido siguiente"
+            title="Pedido siguiente"
             className="px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
-            <ChevronRight size={14} />
+            <ChevronRight size={14} aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -895,7 +899,9 @@ export default function CrmCallView({
                         void supabase.from('orders').update({
                           direccion: o.suggestedAddress,
                           validation_decision: null, // re-validar con la dirección nueva
-                        }).eq('id', o.dbId);
+                        }).eq('id', o.dbId).then(({ error }) => {
+                          if (error) toast.error('No se pudo aplicar la sugerencia', { description: error.message });
+                        });
                       }
                       : undefined
                   }

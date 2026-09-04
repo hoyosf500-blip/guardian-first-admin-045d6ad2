@@ -338,13 +338,17 @@ export default function AdminTab() {
               </p>
               <div className="space-y-1.5">
                 {avisosProblema.map(sync => (
-                  <div key={sync.id} className="flex items-center justify-between gap-2 text-xs bg-card/40 rounded-xl px-3 py-2 border border-border hover:border-border-strong transition-colors">
-                    <div className="min-w-0">
+                  <div key={sync.id} className="flex items-start justify-between gap-2 text-xs bg-card/40 rounded-xl px-3 py-2 border border-border hover:border-border-strong transition-colors">
+                    {/* `flex-1 min-w-0` + `break-words` (4-sep-2026, visto en producción):
+                        el mensaje era un <span> inline con `truncate`, que no recorta
+                        nada en inline → el texto seguía de largo hasta 2.600 px y se
+                        salía de la tarjeta. Un error se lee entero, así que ENVUELVE. */}
+                    <div className="flex-1 min-w-0">
                       <span className="text-muted-foreground font-mono tabular-nums">
                         {format(new Date(sync.created_at), "d MMM, HH:mm", { locale: es })}
                       </span>
                       {sync.error_message && (
-                        <span className="ml-2 text-danger truncate">{sync.error_message}</span>
+                        <span className="ml-2 text-danger break-words">{sync.error_message}</span>
                       )}
                     </div>
                     <button
@@ -429,7 +433,8 @@ export default function AdminTab() {
                   className="w-full h-10 rounded-xl border border-border bg-card/40 px-3 pr-10 text-sm font-mono tabular-nums text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
                 />
                 <button type="button" onClick={() => setShowAiKey(!showAiKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                  aria-label={showAiKey ? 'Ocultar la clave' : 'Mostrar la clave'}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 p-2 rounded-md text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   {showAiKey ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>

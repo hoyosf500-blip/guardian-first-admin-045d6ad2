@@ -62,7 +62,12 @@ export const RIESGO_INFO: Record<NivelRiesgo, RiesgoInfo> = {
     que: 'Escribió, pero nunca apretó el botón de confirmar.',
     tasa: '34% se cancela',
     queHacer: 'Casi siempre es una duda del producto. Contestala y cerrá vos.',
-    clase: 'bg-warning/15 text-warning-foreground border-warning/30',
+    // `text-warning`, no `text-warning-foreground` (4-sep-2026, medido en producción):
+    // `--warning-foreground` es casi negro (es el color que va SOBRE un fondo ámbar
+    // pleno) y acá el fondo es `warning/15` sobre la tarjeta oscura → texto negro
+    // sobre negro, «Quedó con dudas» se leía a ~1.2:1. Las hermanas ya usan el
+    // color pleno (`text-destructive`, `text-success`).
+    clase: 'bg-warning/15 text-warning border-warning/30',
   },
   sin_dato: {
     etiqueta: 'Sin leer',

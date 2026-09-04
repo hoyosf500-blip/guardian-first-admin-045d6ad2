@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { MessageSquare, Phone, MapPin, Package, Clock, Inbox, CheckCircle2, Loader2, Search } from 'lucide-react';
+import { MessageSquare, Phone, MapPin, Package, Clock, Inbox, CheckCircle2, Loader2, Search, AlertTriangle } from 'lucide-react';
 import { useStore } from '@/contexts/StoreContext';
 import { useInboxEsperando, HORAS_SIN_RESPUESTA, type InboxItem } from '@/hooks/useInboxEsperando';
 import { useImporchatSyncHealth } from '@/hooks/useImporchatSyncHealth';
@@ -470,12 +470,19 @@ export default function InboxPage() {
     return Number.isFinite(t) && t > o.esperaDesde + margen;
   }, [estadoSello, selloDe, vista]);
 
-  const marcarResuelto = useCallback((o: InboxItem) => {
+  const marcarResuelto = useCallback(async (o: InboxItem) => {
     if (!o.phone) {
       toast.error('Este pedido no tiene teléfono, así que no puedo dejar la marca.');
       return;
     }
-    void recordContacto(o.phone, 'SEG', 'Resuelto: no espera respuesta', o.externalId || undefined);
+    // `ok` leído (4-sep-2026): `useRecordGestion` nunca lanza, devuelve `{ ok }`.
+    // Acá se ignoraba y se cantaba éxito siempre: con la red caída el cliente
+    // quedaba sin marca y la asesora veía el toast verde.
+    const { ok } = await recordContacto(o.phone, 'SEG', 'Resuelto: no espera respuesta', o.externalId || undefined);
+    if (!ok) {
+      toast.error('No se pudo dejar la marca. Reintentá.', { description: 'El cliente sigue en la lista tal como estaba.' });
+      return;
+    }
     toast.success('Marcado como resuelto', {
       description: 'Queda al final de la lista, no se esconde. Si el cliente vuelve a escribir, vuelve a aparecer arriba.',
     });
@@ -641,6 +648,7 @@ export default function InboxPage() {
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
               <input
                 type="search"
+                aria-label="Buscar en la bandeja por nombre, teléfono o número de pedido"
                 value={busca}
                 onChange={(e) => setBusca(e.target.value)}
                 placeholder="Buscar por nombre, teléfono o número de pedido…"
@@ -667,33 +675,41 @@ export default function InboxPage() {
       </header>
 
       {feedDudoso && (
-        <div className="mb-4 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
-          ⚠️ El sync de {canalNombre} está fallando o lleva mucho sin correr — esta lista puede estar
-          <strong> incompleta</strong>. Si dice "nadie esperando", puede que sí haya clientes esperando.
-          Avisá para revisar la conexión.
+        <div role="alert" className="mb-4 flex items-start gap-2.5 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <span>
+            {/* Colgarse y fallar no son lo mismo (mismo criterio que el badge): si las
+                últimas corridas cerraron bien pero alguna de antes quedó colgada, decir
+                «está fallando» manda a buscar un error que no existe (4-sep-2026). */}
+            {(salud.data?.colgadas ?? 0) > 0
+              ? `El sync de ${canalNombre} se colgó en ${salud.data!.colgadas} de las últimas ${salud.data!.corridasVistas} corridas — en esas ventanas el WhatsApp del cliente no entró y esta lista puede estar`
+              : `El sync de ${canalNombre} está fallando o lleva mucho sin correr — esta lista puede estar`}
+            <strong> incompleta</strong>. Si dice "nadie esperando", puede que sí haya clientes esperando.
+            Avisá para revisar la conexión.
+          </span>
         </div>
       )}
 
       {status === 'cargando' && (
-        <div className="flex items-center justify-center py-16 text-muted-foreground text-sm">
-          <Loader2 size={16} className="animate-spin mr-2" /> Leyendo quién escribió…
+        <div role="status" aria-live="polite" className="flex items-center justify-center py-16 text-muted-foreground text-sm">
+          <Loader2 size={16} className="animate-spin mr-2" aria-hidden="true" /> Leyendo quién escribió…
         </div>
       )}
 
       {status === 'error' && (
-        <div className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+        <div role="alert" className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
           No se pudo leer la bandeja ahora mismo. Reintentá en un momento.
         </div>
       )}
 
       {status === 'not_ready' && (
-        <div className="rounded-2xl border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+        <div role="status" className="rounded-2xl border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
           La bandeja se prende cuando {canalNombre} esté configurado en esta tienda.
         </div>
       )}
 
       {status === 'sin_medir' && (
-        <div className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+        <div role="status" className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
           <p className="font-semibold">Todavía no puedo medir quién está esperando en esta tienda.</p>
           <p className="text-xs mt-1 opacity-90">
             Ningún pedido tiene registrada la actividad del chat, así que esta lista estaría vacía
@@ -742,8 +758,8 @@ export default function InboxPage() {
             </p>
             <p className="text-xs text-muted-foreground mt-1">
               {vista === 'esperan'
-                ? 'Todos los que escribieron ya fueron atendidos 🎉'
-                : `A todos los que les escribimos hace más de ${HORAS_SIN_RESPUESTA} horas ya les contestaron 🎉`}
+                ? 'Todos los que escribieron ya fueron atendidos.'
+                : `A todos los que les escribimos hace más de ${HORAS_SIN_RESPUESTA} horas ya les contestaron.`}
             </p>
           </div>
         </div>

@@ -1,5 +1,7 @@
 import { useMemo } from 'react';
 import { ExternalLink, X, CheckCircle2, Clock, Copy as CopyIcon, AlertTriangle } from 'lucide-react';
+import { toast } from 'sonner';
+import { copiarAlPortapapeles } from '@/lib/portapapeles';
 import { formatCOP } from '@/lib/utils';
 import type {
   ShopifyPendingItem,
@@ -91,7 +93,15 @@ export default function CuadreDelDia({
   // listas. Es exactamente el miedo del dueño y no se puede tapar.
   const cuadra = !sinDetalle && enDropi + sinPasar === shopifyDelDia;
 
-  const copiar = (t: string) => { void navigator.clipboard?.writeText(t); };
+  // `copiarAlPortapapeles` (4-sep-2026): el `?.` de antes cortaba la cadena entera
+  // en contexto no seguro — ni copiaba ni avisaba. Es el mismo bug que SegBoard ya
+  // documenta como corregido.
+  const copiar = (t: string) => {
+    void copiarAlPortapapeles(t).then((ok) => {
+      if (ok) toast.success('Copiado');
+      else toast.error('No se pudo copiar', { description: 'Copialo a mano.' });
+    });
+  };
 
   return (
     <div className="border-t border-border/60 bg-card/40">

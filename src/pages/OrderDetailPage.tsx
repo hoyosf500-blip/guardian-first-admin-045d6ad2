@@ -538,7 +538,7 @@ export default function OrderDetailPage() {
       : 'NOVEDAD: Devolver al remitente';
 
     // 1. Insert touchpoint
-    const { data: tpData } = await supabase.from('touchpoints').insert({
+    const { data: tpData, error: tpError } = await supabase.from('touchpoints').insert({
       phone: order.phone,
       action: sanitizeAction(touchAction),
       operator_id: user.id,
@@ -546,6 +546,9 @@ export default function OrderDetailPage() {
       action_time: time,
       store_id: activeStoreId,
     }).select();
+    // Las dos hermanas de arriba avisan cuando la bitácora falla; esta no lo hacía
+    // (4-sep-2026): la novedad se resolvía y la gestión podía no quedar anotada.
+    if (tpError) toast.error('No se pudo registrar la gestión en la bitácora', { description: tpError.message });
     if (tpData) setTouchpoints(prev => [...(tpData as Touchpoint[]), ...prev]);
 
     // Para el rollback: preservar el estado previo real (p.ej. 'INTENTO DE
@@ -791,6 +794,7 @@ export default function OrderDetailPage() {
           <p className="text-xs font-semibold text-info">Solución para reprogramar entrega:</p>
           <input
             value={solutionText}
+            aria-label="Solución para reprogramar la entrega"
             onChange={(e) => setSolutionText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleResolveNovedad('reoffer')}
             placeholder="Ej: Cliente pide enviar el martes, nueva dirección Cra 45 #12-30"
@@ -1178,8 +1182,9 @@ function InfoRow({ icon, label, value, copyable, highlight, mono }: { icon: Reac
       </div>
       {copyable && (
         <button onClick={() => { void copyToClipboard(value, 'Copiado'); }}
-          className="p-1 rounded-lg text-muted-foreground hover:text-foreground transition-colors">
-          <Copy size={10} />
+          aria-label="Copiar" title="Copiar"
+          className="p-2 rounded-lg text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <Copy size={11} aria-hidden="true" />
         </button>
       )}
     </div>

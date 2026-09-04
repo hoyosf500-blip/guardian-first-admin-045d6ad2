@@ -433,7 +433,7 @@ function ProtectedLayoutInner() {
                   >
                     {brandLogoUrl
                       ? <img src={brandLogoUrl} alt="" className="w-full h-full object-cover" />
-                      : <Package size={17} className="text-white" aria-hidden="true" />}
+                      : <Package size={17} className="text-accent-foreground" aria-hidden="true" />}
                   </div>
                   {isMobile && (
                     <>
@@ -484,8 +484,8 @@ function ProtectedLayoutInner() {
                   </div>
                 )}
                 <button onClick={signOut} aria-label="Cerrar sesión" title="Cerrar sesión"
-                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
-                  <LogOut size={14} />
+                  className="p-2.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
+                  <LogOut size={15} aria-hidden="true" />
                 </button>
               </div>
             }

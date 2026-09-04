@@ -1035,7 +1035,10 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
               className={`rounded-xl px-6 font-semibold ${
                 plan.length === 0
                   ? 'bg-muted text-muted-foreground border border-border disabled:opacity-100'
-                  : 'btn-accent-3d text-white'
+                  // Sin `text-white`: `.btn-accent-3d` ya pone `--accent-foreground`
+                  // (casi negro sobre el índigo claro del tema oscuro). El blanco lo
+                  // pisaba y dejaba el botón de guardar en ~3.3:1 (4-sep-2026).
+                  : 'btn-accent-3d'
               }`}
               {...(plan.length === 0 ? { 'aria-describedby': 'order-editor-estado' } : {})}
             >

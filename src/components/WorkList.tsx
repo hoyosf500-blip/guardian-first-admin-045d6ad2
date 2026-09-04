@@ -123,7 +123,7 @@ export default function WorkList({ items, onOpenCall, notesIndex, riesgoIndex, a
               'min-h-[56px] cursor-pointer transition-colors duration-200',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent',
               o.result
-                ? 'opacity-50 bg-background'
+                ? 'opacity-70 bg-background'
                 : isPending
                   ? 'bg-surface hover:bg-card'
                   : 'bg-surface hover:bg-card',

@@ -894,7 +894,7 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
               </div>
               <span className="hidden sm:block h-1.5 w-20 rounded-full bg-foreground/10 overflow-hidden self-end mb-1" aria-hidden="true">
                 <span
-                  className="block h-full rounded-full bg-success transition-all duration-300"
+                  className="block h-full rounded-full bg-success transition-[width] duration-300"
                   style={{ width: `${Math.min(100, Math.round((managedCount / data.length) * 100))}%` }}
                 />
               </span>
@@ -1310,7 +1310,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
 
   return (
     <div
-      className={`group bg-card/40 rounded-xl border border-border overflow-hidden transition-colors duration-200 hover:border-border-strong ${managed ? 'opacity-40' : ''}`}
+      className={`group bg-card/40 rounded-xl border border-border overflow-hidden transition-colors duration-200 hover:border-border-strong ${managed ? 'opacity-70' : ''}`}
     >
       {/* Card body — OLD-8: keyboard-navegable. Antes era <div onClick>
           sin role/tabIndex; operadora con teclado no podía expandir. */}

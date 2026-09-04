@@ -1150,7 +1150,7 @@ export default function ConfirmarTab({ profile }: Props) {
                             ? 'Sin gestiones todavía: aún no hay confirmación del día que medir'
                             : `Confirmación del día del equipo: ${tasa}% (${counter.conf} confirmados ÷ ${total} gestionados · meta ${CONF_TARGET_PCT}%). Incluye los "no contestó".`}
                         >
-                          <div className={`h-full rounded-full ${barTone} transition-all duration-500 ease-out`} style={{ width: `${pct}%` }} />
+                          <div className={`h-full rounded-full ${barTone} transition-[width] duration-500 ease-out`} style={{ width: `${pct}%` }} />
                         </div>
                         <span className="text-xs font-semibold text-muted-foreground shrink-0 tabular-nums">
                           <span className="font-mono text-foreground">{total}</span>/{goal} · {pct}%
@@ -1351,7 +1351,7 @@ export default function ConfirmarTab({ profile }: Props) {
                   <AlertTriangle size={17} />
                 </span>
                 <span className="font-semibold text-foreground">
-                  ⚠ {liveDups.length} DUPLICADO{liveDups.length > 1 ? 'S' : ''} VIVO{liveDups.length > 1 ? 'S' : ''} en Dropi
+                  {liveDups.length} DUPLICADO{liveDups.length > 1 ? 'S' : ''} VIVO{liveDups.length > 1 ? 'S' : ''} en Dropi
                 </span>
                 <span className="text-muted-foreground">— el pedido viejo sigue activo y puede despacharse dos veces</span>
               </div>
@@ -1474,7 +1474,7 @@ export default function ConfirmarTab({ profile }: Props) {
                       title={`Este cliente ya tiene un pedido más nuevo activo (#${nuevoId}) — gestioná ese y no toques este`}
                       className="text-[9px] font-bold px-2 py-0.5 rounded-lg border bg-warning/15 text-warning border-warning/30 inline-flex items-center gap-0.5"
                     >
-                      ⚠ YA REENVIADO — gestioná el #{nuevoId}
+                      <AlertTriangle size={9} aria-hidden="true" /> YA REENVIADO — gestioná el #{nuevoId}
                     </span>
                   </div>
                 ))}
