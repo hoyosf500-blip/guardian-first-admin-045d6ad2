@@ -25,6 +25,7 @@
 
 /** Fase del pedido de cara al cliente. Es un bucket propio, NO el estado crudo. */
 export type FasePedido =
+  | "por_confirmar" // creado, todavía SIN confirmar: no se le dice que se está preparando
   | "preparando"   // confirmado pero sin guía en ruta todavía
   | "en_camino"    // despachado, viajando
   | "en_oficina"   // llegó a agencia, el cliente lo retira
@@ -134,6 +135,14 @@ export function faseDePedido(estado?: string | null): FasePedido {
   )
     return "en_camino";
 
+  // ⛔ Todavía NO está confirmado. Va ANTES del bucket "preparando" porque
+  // "PENDIENTE CONFIRMACION" contiene "PENDIENTE": el 4-sep-2026 el responder
+  // le dijo "su pedido está en preparación, ya lo estamos preparando" a un
+  // cliente cuyo pedido nadie había confirmado todavía (#6851563). Mentira
+  // chica, pero mentira — y le pisa el trabajo a quien lo va a llamar a confirmar.
+  if (s.includes("PENDIENTE CONFIRMACION") || s.includes("POR CONFIRMAR") || s.includes("SIN CONFIRMAR"))
+    return "por_confirmar";
+
   // Confirmado / preparándose (todavía en bodega o guía recién generada).
   if (
     s.includes("PENDIENTE") ||
@@ -224,6 +233,18 @@ export function componerEstadoPedido(o: EstadoPedidoInput): EstadoPedidoRespuest
           `o referencia clara y lo coordino enseguida para que le llegue 📦`,
       };
     }
+
+    case "por_confirmar":
+      // Registrado pero sin confirmar: se le dice eso, no que se está preparando.
+      return {
+        fase,
+        incluyeGuia: false,
+        derivarAHumano: false,
+        texto:
+          `${hola}😊 Su pedido ya quedó registrado y está en proceso de confirmación. ` +
+          `En cuanto quede confirmado y salga a ruta, le comparto por aquí el número de guía para que lo siga.` +
+          `\n\n¿Le ayudo con algo más?`,
+      };
 
     case "preparando": {
       // Confirmado pero sin guía en ruta: honesto, sin inventar número.

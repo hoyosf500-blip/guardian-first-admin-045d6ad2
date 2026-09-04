@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Clock, Loader2 } from 'lucide-react';
 import { useStoreSchedule, DEFAULT_SCHEDULE_MINUTES } from '@/hooks/useStoreSchedule';
 import { useMapaCalorDia } from '@/hooks/useMapaCalorDia';
-import { construirMapaCalor, intensidad, rangoHora, type CeldaMapa } from '@/lib/mapaCalor';
+import { construirMapaCalor, etiquetaColumna, intensidad, rangoHora, type CeldaMapa } from '@/lib/mapaCalor';
 import { bogotaToday, cn } from '@/lib/utils';
 import { correrDia, horaDelDiaBogota } from '@/lib/diaBitacora';
 
@@ -185,8 +185,12 @@ export default function MapaCalorEquipo({ storeId, asesores, refreshKey }: Props
                 Asesora
               </th>
               {mapa.horas.map((h) => (
-                <th key={h} className="text-center text-[10px] font-mono tabular-nums text-muted-foreground font-normal">
-                  {h}
+                <th
+                  key={h}
+                  title={rangoHora(h)}
+                  className="text-center text-[10px] font-mono tabular-nums text-muted-foreground font-normal whitespace-nowrap"
+                >
+                  {etiquetaColumna(h)}
                 </th>
               ))}
               <th
@@ -270,10 +274,12 @@ export default function MapaCalorEquipo({ storeId, asesores, refreshKey }: Props
       )}
 
       <p className="px-4 pb-3 text-[10px] leading-relaxed text-muted-foreground">
-        Cada columna es una hora del horario de la tienda. Los huecos en rojo son horas que
-        pasaron sin ninguna gestión; el rayado es «no se sabe», no «no trabajó». Se cuentan
-        las gestiones registradas en Guardian: una llamada hecha desde el celular, sin marcar,
-        no aparece acá.
+        Cada columna es una hora del horario de la tienda («16-17» va de 16:00 a 16:59). Los
+        huecos en rojo son horas que pasaron sin ninguna gestión; el rayado es «no se sabe», no
+        «no trabajó». Se cuenta cada gestión registrada en Guardian una sola vez: confirmar,
+        cancelar, «no respondió», las marcas de Seguimiento, las novedades, los WhatsApp y
+        llamadas desde el CRM, las ediciones del pedido y las conversaciones leídas. Una llamada
+        hecha desde el celular, sin marcar, no aparece acá.
       </p>
     </section>
   );

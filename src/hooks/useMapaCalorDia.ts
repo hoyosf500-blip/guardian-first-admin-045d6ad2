@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { rangoDiaBogota, horaDelDiaBogota, horaBogota } from '@/lib/diaBitacora';
-import type { MarcaHoraria } from '@/lib/mapaCalor';
+import {
+  EVENTOS_BITACORA_QUE_CUENTAN, NOMBRE_EVENTO_MAPA, quitarSellosEspejo,
+  type FuenteGestion, type GestionCruda, type MarcaHoraria,
+} from '@/lib/mapaCalor';
 
 /**
  * TODAS las gestiones de UN día, con la hora en que se hicieron.
@@ -33,8 +36,9 @@ export interface GestionDelDia {
   hora: number;
   /** `14:53`, para la lista del detalle. */
   reloj: string;
-  /** De dónde salió: la cola de llamadas o el resto del CRM. */
-  fuente: 'confirmar' | 'gestion';
+  /** De dónde salió: la cola de llamadas, el resto del CRM o la bitácora
+   *  (`order_events`: ediciones y conversaciones leídas). */
+  fuente: FuenteGestion;
   /** Qué se hizo, en el idioma de la botonera. */
   accion: string;
   phone: string;
@@ -49,7 +53,7 @@ const PAGINA = 1_000;
 
 /** Lee una tabla del día entera, por páginas. */
 async function leerTodo(
-  tabla: 'touchpoints' | 'order_results',
+  tabla: 'touchpoints' | 'order_results' | 'order_events',
   columnas: string,
   storeId: string,
   desdeIso: string,
@@ -85,16 +89,20 @@ export function useMapaCalorDia(storeId: string | null, ymd: string | null) {
     const seq = ++seqRef.current;
     setEstado('cargando');
 
-    const [tps, res] = await Promise.all([
+    const [tps, res, evs] = await Promise.all([
       leerTodo('touchpoints', 'operator_id, created_at, action, phone', storeId, rango.desdeIso, rango.hastaIso),
       leerTodo('order_results', 'operator_id, created_at, result, module, phone', storeId, rango.desdeIso, rango.hastaIso),
+      // La bitácora: lo que se hace en pantalla y no deja fila en las otras dos
+      // (editar el pedido, leer la conversación). Solo los eventos de
+      // `EVENTOS_BITACORA_QUE_CUENTAN` — el resto se filtra al leer.
+      leerTodo('order_events', 'operator_id, created_at, evento, phone', storeId, rango.desdeIso, rango.hastaIso),
     ]);
     if (seq !== seqRef.current) return;
 
-    // ⛔ Si CUALQUIERA de las dos falló, no se pinta media verdad. Un mapa con
-    // solo la mitad de las fuentes deja horas en cero que sí tuvieron trabajo —
+    // ⛔ Si CUALQUIERA de las tres falló, no se pinta media verdad. Un mapa con
+    // solo parte de las fuentes deja horas en cero que sí tuvieron trabajo —
     // y sobre esas celdas el dueño le reclama a una persona.
-    const err = tps.error || res.error;
+    const err = tps.error || res.error || evs.error;
     if (err) {
       const code = err.code;
       const msg = err.message || '';
@@ -103,39 +111,48 @@ export function useMapaCalorDia(storeId: string | null, ymd: string | null) {
       return;
     }
 
-    const out: GestionDelDia[] = [];
-    for (const r of tps.filas) {
+    type Cruda = GestionCruda & { hora: number; iso: string };
+    const crudas: Cruda[] = [];
+    // Sin persona o sin hora legible la fila se descarta: inventar cualquiera
+    // de las dos mueve una gestión de dueño o de franja.
+    const base = (r: Record<string, unknown>): Pick<Cruda, 'operatorId' | 'hora' | 'iso' | 'ms' | 'phone'> | null => {
       const op = typeof r.operator_id === 'string' ? r.operator_id : null;
       const iso = typeof r.created_at === 'string' ? r.created_at : null;
       const hora = horaDelDiaBogota(iso);
-      // Sin persona o sin hora legible la fila se descarta: inventar cualquiera
-      // de las dos mueve una gestión de dueño o de franja.
-      if (!op || hora == null || !iso) continue;
-      out.push({
-        operatorId: op,
-        hora,
-        reloj: horaBogota(iso),
-        fuente: 'gestion',
-        accion: typeof r.action === 'string' && r.action ? r.action : 'Gestión',
-        phone: typeof r.phone === 'string' ? r.phone : '',
-      });
+      const ms = iso ? Date.parse(iso) : NaN;
+      if (!op || hora == null || !iso || !Number.isFinite(ms)) return null;
+      return { operatorId: op, hora, iso, ms, phone: typeof r.phone === 'string' ? r.phone : '' };
+    };
+    for (const r of tps.filas) {
+      const b = base(r);
+      if (!b) continue;
+      crudas.push({ ...b, fuente: 'gestion', accion: typeof r.action === 'string' && r.action ? r.action : 'Gestión' });
     }
     for (const r of res.filas) {
-      const op = typeof r.operator_id === 'string' ? r.operator_id : null;
-      const iso = typeof r.created_at === 'string' ? r.created_at : null;
-      const hora = horaDelDiaBogota(iso);
-      if (!op || hora == null || !iso) continue;
+      const b = base(r);
+      if (!b) continue;
       const modulo = typeof r.module === 'string' ? r.module : '';
       const result = typeof r.result === 'string' ? r.result : '';
-      out.push({
-        operatorId: op,
-        hora,
-        reloj: horaBogota(iso),
-        fuente: 'confirmar',
-        accion: [modulo, result].filter(Boolean).join(': ') || 'Resultado',
-        phone: typeof r.phone === 'string' ? r.phone : '',
-      });
+      crudas.push({ ...b, fuente: 'confirmar', accion: [modulo, result].filter(Boolean).join(': ') || 'Resultado' });
     }
+    for (const r of evs.filas) {
+      const evento = typeof r.evento === 'string' ? r.evento : '';
+      if (!EVENTOS_BITACORA_QUE_CUENTAN.has(evento)) continue;
+      const b = base(r);
+      if (!b) continue;
+      crudas.push({ ...b, fuente: 'bitacora', accion: NOMBRE_EVENTO_MAPA[evento] ?? evento });
+    }
+
+    // ⛔ Cada marca UNA vez: el sello de Confirmar en `touchpoints` es la misma
+    // marca que su fila de `order_results` (ver `quitarSellosEspejo`).
+    const out: GestionDelDia[] = quitarSellosEspejo(crudas).map((g) => ({
+      operatorId: g.operatorId,
+      hora: g.hora,
+      reloj: horaBogota(g.iso),
+      fuente: g.fuente,
+      accion: g.accion,
+      phone: g.phone,
+    }));
     out.sort((a, b) => a.reloj.localeCompare(b.reloj));
     setGestiones(out);
     setEstado('ok');

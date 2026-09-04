@@ -198,3 +198,91 @@ export function intensidad(celda: CeldaMapa, maximo: number): number | null {
 export function rangoHora(hora: number): string {
   return `${hora}:00 a ${hora + 1}:00`;
 }
+
+/**
+ * El rótulo de la columna: "16-17", no "16".
+ *
+ * ⛔ Con el horario 8:00-17:00 la última columna decía «16» y el dueño leyó
+ * que el mapa "se cortaba a las 4" (4-sep-2026). No se cortaba: la celda 16
+ * cubre de 16:00 a 16:59, o sea hasta las 5. Pero un número solo no dice eso
+ * — el rango sí, y es la misma vara que `rangoHora` usa en el detalle.
+ */
+export function etiquetaColumna(hora: number): string {
+  return `${hora}-${hora + 1}`;
+}
+
+// ── Una gestión, una vez ─────────────────────────────────────────────────────
+
+export type FuenteGestion = 'confirmar' | 'gestion' | 'bitacora';
+
+/** Una gestión tal como sale de la base, antes de contarla. */
+export interface GestionCruda {
+  operatorId: string;
+  phone: string;
+  /** Epoch ms de cuándo actuó la persona. */
+  ms: number;
+  fuente: FuenteGestion;
+  accion: string;
+}
+
+/** Los sellos que `markResult` deja en `touchpoints` junto a cada fila de
+ *  `order_results`. Son la MISMA marca vista desde dos tablas. */
+const SELLO_CONFIRMAR = /^(Confirmado|No respondió|Cancelado:)/;
+
+/** Cuánto pueden distar la fila de `order_results` y su sello para seguir
+ *  siendo la misma marca. Se escriben una detrás de la otra (segundos); dos
+ *  minutos cubren una red lenta sin pegar dos marcas distintas del mismo
+ *  cliente, que la propia cola separa por un cooldown más largo. */
+export const VENTANA_ESPEJO_MS = 120_000;
+
+const ultimos9 = (phone: string): string => phone.replace(/\D/g, '').slice(-9);
+
+/**
+ * Quita el sello espejo de Confirmar para que cada marca cuente UNA vez.
+ *
+ * ⛔ Medido en producción el 4-sep-2026 (Ecuador, día anterior): una asesora
+ * con 468 marcas en Confirmar salía con **730** en el mapa. Cada «Confirmado»,
+ * «No respondió» y «Cancelado: …» escribe una fila en `order_results` Y un
+ * sello en `touchpoints` (`markResult`), y el mapa sumaba las dos. Sobre ese
+ * número el dueño compara personas y ritmos: inflado a casi el doble, la de
+ * Confirmar siempre "rendía más" que la de Seguimiento.
+ *
+ * Se descarta el sello SOLO si existe la fila de `order_results` de la misma
+ * persona, el mismo teléfono y a menos de {@link VENTANA_ESPEJO_MS}. Un sello
+ * sin su resultado (la fila de `order_results` falló o se deshizo) se queda:
+ * es la única prueba de esa marca.
+ */
+export function quitarSellosEspejo<T extends GestionCruda>(gestiones: T[]): T[] {
+  const resultados = new Map<string, number[]>();
+  for (const g of gestiones) {
+    if (g.fuente !== 'confirmar') continue;
+    const k = `${g.operatorId}|${ultimos9(g.phone)}`;
+    const arr = resultados.get(k);
+    if (arr) arr.push(g.ms); else resultados.set(k, [g.ms]);
+  }
+  if (resultados.size === 0) return gestiones;
+  return gestiones.filter((g) => {
+    if (g.fuente !== 'gestion' || !SELLO_CONFIRMAR.test(g.accion)) return true;
+    const cerca = resultados.get(`${g.operatorId}|${ultimos9(g.phone)}`);
+    if (!cerca) return true;
+    return !cerca.some((ms) => Math.abs(ms - g.ms) <= VENTANA_ESPEJO_MS);
+  });
+}
+
+/**
+ * Qué eventos de la bitácora (`order_events`) cuentan como gestión en el mapa.
+ *
+ * Solo los que NO tienen espejo en otra tabla: `gestiono`/`llamo`/`escribio`
+ * acompañan a un `touchpoints` (`useRecordGestion`) y `marco` a un
+ * `order_results` (`markResult`) — contarlos sería el mismo doble de arriba.
+ * `abrio`/`cerro`/`salto` son mirar, no hacer. Quedan editar el pedido y leer
+ * la conversación, que son trabajo real que hasta hoy no aparecía en el mapa
+ * (pedido del dueño, 4-sep-2026: *"que registre todo: inbox, seguimiento,
+ * novedades, confirmación"*).
+ */
+export const EVENTOS_BITACORA_QUE_CUENTAN: ReadonlySet<string> = new Set(['edito', 'leyo_chat']);
+
+export const NOMBRE_EVENTO_MAPA: Record<string, string> = {
+  edito: 'Editó el pedido',
+  leyo_chat: 'Leyó la conversación',
+};

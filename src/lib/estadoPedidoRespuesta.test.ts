@@ -56,6 +56,8 @@ describe("faseDePedido — estado crudo → fase de cliente", () => {
     expect(faseDePedido("EN REPARTO")).toBe("en_camino");
     expect(faseDePedido("GUIA GENERADA")).toBe("preparando");
     expect(faseDePedido("PENDIENTE")).toBe("preparando");
+    // ⛔ "PENDIENTE CONFIRMACION" contiene "PENDIENTE" pero NO está confirmado.
+    expect(faseDePedido("PENDIENTE CONFIRMACION")).toBe("por_confirmar");
     expect(faseDePedido("ALISTAMIENTO")).toBe("preparando");
   });
 
@@ -229,5 +231,17 @@ describe("elegirPedidoParaResponder — por cuál pedido se contesta", () => {
     ], ahora).motivo).toBe("ambiguo");
     expect(elegirPedidoParaResponder([{ estado: "CANCELADO", movidoMs: dias(1) }], ahora).motivo).toBe("sin_vivos");
     expect(elegirPedidoParaResponder([], ahora).motivo).toBe("sin_pedidos");
+  });
+});
+
+describe("componerEstadoPedido — pendiente de confirmar NO es 'en preparación'", () => {
+  it("le dice que está en proceso de confirmación y que la guía llega por aquí (caso real 4-sep-2026, pedido 6851563)", () => {
+    const r = componerEstadoPedido({ nombre: "Iván Pérez", estado: "PENDIENTE CONFIRMACION", guia: "" });
+    expect(r.fase).toBe("por_confirmar");
+    expect(r.derivarAHumano).toBe(false);
+    expect(r.texto).toContain("Iván");
+    expect(r.texto).toContain("proceso de confirmación");
+    expect(r.texto).not.toMatch(/preparaci[oó]n|preparando/);
+    expect(r.texto).toMatch(/gu[ií]a/);
   });
 });

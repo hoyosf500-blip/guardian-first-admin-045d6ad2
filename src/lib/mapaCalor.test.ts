@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
-  construirMapaCalor, horasDelHorario, intensidad, rangoHora,
-  type MarcaHoraria,
+  construirMapaCalor, etiquetaColumna, horasDelHorario, intensidad, quitarSellosEspejo, rangoHora,
+  EVENTOS_BITACORA_QUE_CUENTAN, VENTANA_ESPEJO_MS,
+  type GestionCruda, type MarcaHoraria,
 } from './mapaCalor';
 
 /** 9:00-17:00 con almuerzo 12:30-13:30 — el default de `useStoreSchedule`. */
@@ -205,5 +206,80 @@ describe('lo que se hizo fuera del horario', () => {
 describe('el nombre de la hora', () => {
   it('se dice como lo pidió el dueño: de 10 a 11', () => {
     expect(rangoHora(10)).toBe('10:00 a 11:00');
+  });
+});
+
+describe('el rótulo de la columna dice hasta dónde llega', () => {
+  it('«16-17», no «16»: con horario hasta las 17 el dueño leía que se cortaba a las 4', () => {
+    expect(etiquetaColumna(16)).toBe('16-17');
+    expect(etiquetaColumna(8)).toBe('8-9');
+  });
+});
+
+describe('cada marca cuenta UNA vez (el sello espejo de Confirmar)', () => {
+  const T0 = Date.parse('2026-09-03T14:00:00Z');
+  const cruda = (p: Partial<GestionCruda>): GestionCruda => ({
+    operatorId: 'a', phone: '0999123456', ms: T0, fuente: 'gestion', accion: 'SEG: Resuelto', ...p,
+  });
+
+  it('la fila de order_results y su sello «Confirmado» segundos después son la MISMA marca', () => {
+    const out = quitarSellosEspejo([
+      cruda({ fuente: 'confirmar', accion: 'confirmar: conf', ms: T0 }),
+      cruda({ fuente: 'gestion', accion: 'Confirmado', ms: T0 + 3_000 }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].fuente).toBe('confirmar');
+  });
+
+  it('«No respondió» y «Cancelado: …» son sellos igual', () => {
+    const out = quitarSellosEspejo([
+      cruda({ fuente: 'confirmar', accion: 'confirmar: noresp', ms: T0 }),
+      cruda({ fuente: 'gestion', accion: 'No respondió', ms: T0 + 1_000 }),
+      cruda({ fuente: 'confirmar', accion: 'confirmar: canc', ms: T0 + 600_000 }),
+      cruda({ fuente: 'gestion', accion: 'Cancelado: Se arrepintió', ms: T0 + 601_000 }),
+    ]);
+    expect(out.map((g) => g.accion)).toEqual(['confirmar: noresp', 'confirmar: canc']);
+  });
+
+  it('el sello se compara por PERSONA y por TELÉFONO, aunque el formato del número cambie', () => {
+    const out = quitarSellosEspejo([
+      cruda({ fuente: 'confirmar', accion: 'confirmar: conf', phone: '+593 999 123 456', ms: T0 }),
+      cruda({ fuente: 'gestion', accion: 'Confirmado', phone: '0999123456', ms: T0 + 2_000 }),
+      // Otra persona marcó al mismo cliente: no es espejo de nada.
+      cruda({ fuente: 'gestion', accion: 'Confirmado', operatorId: 'b', ms: T0 + 2_000 }),
+    ]);
+    expect(out).toHaveLength(2);
+    expect(out.map((g) => g.operatorId)).toEqual(['a', 'b']);
+  });
+
+  it('un sello sin su fila de order_results SE QUEDA: es la única prueba de esa marca', () => {
+    const out = quitarSellosEspejo([cruda({ fuente: 'gestion', accion: 'Confirmado' })]);
+    expect(out).toHaveLength(1);
+  });
+
+  it('dos marcas del mismo cliente separadas por más de la ventana son dos marcas', () => {
+    const out = quitarSellosEspejo([
+      cruda({ fuente: 'confirmar', accion: 'confirmar: noresp', ms: T0 }),
+      cruda({ fuente: 'gestion', accion: 'No respondió', ms: T0 + VENTANA_ESPEJO_MS + 1 }),
+    ]);
+    expect(out).toHaveLength(2);
+  });
+
+  it('las gestiones de Seguimiento, las llamadas y la bitácora no se tocan', () => {
+    const lista = [
+      cruda({ fuente: 'confirmar', accion: 'confirmar: conf', ms: T0 }),
+      cruda({ fuente: 'gestion', accion: 'SEG: Avisé: en oficina', ms: T0 + 1_000 }),
+      cruda({ fuente: 'gestion', accion: 'LLAMADA: llamó', ms: T0 + 1_000 }),
+      cruda({ fuente: 'bitacora', accion: 'Editó el pedido', ms: T0 + 1_000 }),
+    ];
+    expect(quitarSellosEspejo(lista)).toHaveLength(4);
+  });
+
+  it('de la bitácora solo cuentan editar y leer la conversación: lo demás ya vive en otra tabla o es solo mirar', () => {
+    expect(EVENTOS_BITACORA_QUE_CUENTAN.has('edito')).toBe(true);
+    expect(EVENTOS_BITACORA_QUE_CUENTAN.has('leyo_chat')).toBe(true);
+    for (const e of ['abrio', 'cerro', 'salto', 'gestiono', 'llamo', 'escribio', 'marco', 'deshizo']) {
+      expect(EVENTOS_BITACORA_QUE_CUENTAN.has(e)).toBe(false);
+    }
   });
 });
