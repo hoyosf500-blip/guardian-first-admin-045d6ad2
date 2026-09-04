@@ -136,7 +136,26 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
   //
   // El hook abre, mide y cierra solo cuando cambia `o`. Si mientras estuvo
   // abierta hubo alguna gestion escribe `cerro`; si no hubo ninguna, `salto`.
-  const { marcarGestion } = usePedidoALaVista(o ? { externalId: o.externalId, phone: o.phone } : null);
+  /**
+   * ⛔ ENTRAR A LA PANTALLA NO ES UNA GESTIÓN (4-sep-2026).
+   *
+   * El efecto de arriba elige la PRIMERA novedad de la lista sola, y desde ese
+   * mismo instante empezaba a medirse. Si la lista se reordena por su cuenta
+   * —realtime, un filtro, otra asesora resolviendo— la novedad "a la vista"
+   * cambiaba sin que nadie tocara nada, y Guardian anotaba `salto`: "la vio y la
+   * saltó", contra una asesora que nunca la eligió. Ese registro es el que el
+   * dueño mira para hablar con su equipo, así que una marca injusta ahí no es
+   * un detalle.
+   *
+   * Se mide desde que ELIGE: al navegar con las flechas o al abrir una tarjeta.
+   * El hook sigue montado siempre (lo exige `bitacoraRegistraTodo`), solo que
+   * hasta entonces recibe `null` — que es su forma de decir "no hay nada a la
+   * vista".
+   */
+  const [eligioAlguna, setEligioAlguna] = useState(false);
+  const { marcarGestion } = usePedidoALaVista(
+    o && eligioAlguna ? { externalId: o.externalId, phone: o.phone } : null,
+  );
 
   // Y mientras la ficha está abierta, la novedad queda EN ATENCIÓN: dos
   // asesoras trabajando la misma novedad terminan llamando al mismo cliente.
@@ -249,7 +268,8 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId',
 
   const navCall = (dir: number) => {
     const target = visibleItems[Math.max(0, Math.min(visibleItems.length - 1, callIdx + dir))];
-    if (target) { setCallOrderId(keyOf(target)); setDropiRechazo(null); }
+    // Desde acá SÍ eligió: a partir de este momento lo que mire queda medido.
+    if (target) { setEligioAlguna(true); setCallOrderId(keyOf(target)); setDropiRechazo(null); }
   };
 
   // Gestión de la novedad (29-ago-2026: los botones VUELVEN a hablar con Dropi).

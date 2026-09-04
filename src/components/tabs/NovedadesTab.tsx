@@ -80,6 +80,17 @@ export default function NovedadesTab() {
   const filtered = porGestionar.filter(matchesSearch);
   const esperandoFiltered = esperando.filter(matchesSearch);
 
+  /**
+   * ⛔ Un cero acá tiene que ser un cero MEDIDO (4-sep-2026).
+   *
+   * Las cuatro pastillas pintaban `stats.*` crudo: mientras la cola cargaba —o
+   * después de que la carga fallara— decían "Por gestionar 0 · D7+ 0" con toda
+   * la cara de una medición. `StatTile` ya sabe dibujar "—" con `null`, solo
+   * había que pasárselo. La lista de abajo ya distinguía los dos casos; el
+   * encabezado no.
+   */
+  const sinMedir = novedadesError != null || (novedadesLoading && novedadesQueue.length === 0);
+
   const stats = {
     total: porGestionar.length,
     // Por EDAD DE LA NOVEDAD (días sin movimiento en Dropi), no edad del pedido —
@@ -187,16 +198,16 @@ export default function NovedadesTab() {
       {/* KPIs — sistema unificado de tonos */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         <motion.div {...fadeUp(0.05)}>
-          <StatTile icon={ListChecks} label={conocido ? 'Por gestionar' : 'Pendientes'} value={stats.total} tone="accent" />
+          <StatTile icon={ListChecks} label={conocido ? 'Por gestionar' : 'Pendientes'} value={sinMedir ? null : stats.total} tone="accent" />
         </motion.div>
         <motion.div {...fadeUp(0.1)}>
-          <StatTile icon={AlertTriangle} label="D7+ críticas" value={stats.urgentes} tone="danger" />
+          <StatTile icon={AlertTriangle} label="D7+ críticas" value={sinMedir ? null : stats.urgentes} tone="danger" />
         </motion.div>
         <motion.div {...fadeUp(0.14)}>
-          <StatTile icon={Clock} label="D4-6 urgentes" value={stats.warning} tone="warning" />
+          <StatTile icon={Clock} label="D4-6 urgentes" value={sinMedir ? null : stats.warning} tone="warning" />
         </motion.div>
         <motion.div {...fadeUp(0.18)}>
-          <StatTile icon={Truck} label="Transportadoras" value={stats.carriers} tone="info" />
+          <StatTile icon={Truck} label="Transportadoras" value={sinMedir ? null : stats.carriers} tone="info" />
         </motion.div>
       </div>
 

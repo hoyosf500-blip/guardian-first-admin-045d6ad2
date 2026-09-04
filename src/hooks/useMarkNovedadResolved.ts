@@ -157,7 +157,22 @@ export function useMarkNovedadResolved() {
         //    que protege la gestión contra el próximo sync).
         let filaActualizada = false;
         if (tipo !== 'sin_respuesta' && order.dbId) {
-          const patch = dropi === 'ok'
+          /**
+           * ⛔ UNA DEVOLUCIÓN NO SE ROTULA COMO ÉXITO (4-sep-2026).
+           *
+           * Antes, con Dropi aceptando, "Resuelta" y "Devolución" escribían el
+           * MISMO `estado: 'NOVEDAD SOLUCIONADA'`. Salir de la cola está bien en
+           * los dos casos —eso lo hace `novedad_sol`— pero la etiqueta no: ese
+           * `estado` arma las columnas del tablero y los buckets de Logística,
+           * así que un paquete que vuelve quedaba contado como novedad salvada,
+           * y el trigger que protege la gestión podía sostener esa mentira hasta
+           * el próximo sync.
+           *
+           * En la devolución NO se escribe estado: se deja el que reporte Dropi.
+           * Inventarle "DEVOLUCION" sería el error simétrico — poner un estado
+           * que la transportadora todavía no confirmó.
+           */
+          const patch = dropi === 'ok' && tipo !== 'devolucion'
             ? { novedad_sol: true, estado: 'NOVEDAD SOLUCIONADA' }
             : { novedad_sol: true };
           const { error: upError } = await supabase.from('orders').update(patch).eq('id', order.dbId);

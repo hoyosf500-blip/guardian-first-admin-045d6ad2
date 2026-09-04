@@ -119,7 +119,21 @@ export default function SiguienteAccionBar() {
     return bandeja.items.filter((i) => i.entranteAt <= corte).length;
   }, [bandejaOk, bandeja.items]);
   const bandejaEsperando = bandejaOk ? bandeja.items.length - (bandejaUrgentes ?? 0) : null;
-  const sinRespuesta = bandejaOk ? bandeja.sinRespuesta.length : null;
+  /**
+   * ⛔ TAMBIÉN `deudaError` (4-sep-2026), no solo el `status`.
+   *
+   * `useInboxEsperando` decide su `status` con las FILAS que trajo la primera
+   * consulta; si falla SOLO la segunda —la canasta de "les escribimos y no
+   * contestaron"— el status sigue en `'ok'`, `sinRespuesta` llegaba en 0 y el
+   * escalón no se disparaba nunca: la barra del turno decía "Todo al día" con
+   * una cola de deuda que no se pudo leer. Y esta barra vive en TODAS las rutas,
+   * así que es el cartel más caro de la app.
+   *
+   * `null` (no 0) es la respuesta correcta: `siguienteAccion` ya está hecho para
+   * que un escalón sin dato NO se dispare y la barra diga que no pudo medir, en
+   * vez de mandar a la asesora a una cola que nadie leyó.
+   */
+  const sinRespuesta = bandejaOk && !bandeja.deudaError ? bandeja.sinRespuesta.length : null;
 
   // La MISMA población que muestra la pantalla de Seguimiento (ventana 45d +
   // dedup + cierres del equipo). Con segData crudo la barra contaba trabajo

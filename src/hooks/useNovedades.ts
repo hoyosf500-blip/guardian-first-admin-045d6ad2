@@ -115,7 +115,30 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
       const orders = filas
         .filter((o) => !esNovedadResuelta((o as { estado?: string | null }).estado))
         .map((o, idx) => dbToOrderData(o, idx));
-      orders.sort((a, b) => b.dias - a.dias);
+      /**
+       * ⛔ EL RELOJ DE LA NOVEDAD, NO EL DEL PEDIDO (4-sep-2026).
+       *
+       * Ordenaba por `dias` = antigüedad del PEDIDO (viene de Dropi). Eso ponía
+       * primero un pedido de hace 40 días con una novedad de hoy, y última una
+       * novedad de hace 5 días sobre un pedido de ayer. Pero la transportadora
+       * retiene el paquete ~7 días DESDE LA NOVEDAD: el reloj que decide qué se
+       * pierde si espera un día más es `last_movement_at`, no la fecha de venta.
+       * El protocolo del turno dice exactamente eso: el orden es por lo que se
+       * pierde, no por antigüedad.
+       *
+       * Sin `last_movement_at` (Dropi no siempre lo reporta) se cae al orden
+       * viejo, que es mejor que nada: `NaN` no puede decidir un orden.
+       */
+      const quietoDesde = (o: { lastMovementAt?: string | null; dias: number }): number => {
+        const t = o.lastMovementAt ? Date.parse(o.lastMovementAt) : NaN;
+        return Number.isFinite(t) ? t : Number.POSITIVE_INFINITY;
+      };
+      orders.sort((a, b) => {
+        const qa = quietoDesde(a);
+        const qb = quietoDesde(b);
+        if (qa !== qb) return qa - qb;           // el que lleva más quieto, primero
+        return b.dias - a.dias;                  // desempate: el pedido más viejo
+      });
       setNovedadesQueue(orders);
       setNovedadesLoaded(true);
     } finally {

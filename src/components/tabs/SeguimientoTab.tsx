@@ -713,6 +713,14 @@ export default function SeguimientoTab() {
     [chatActividad, gestionSegPorTelefono, minutoTick],
   );
 
+  const dedupedRef = useRef(dedupedByDate);
+  dedupedRef.current = dedupedByDate;
+  const [chipsBaseFrozen, setChipsBaseFrozen] = useState<OrderData[] | null>(null);
+  const handleListDataApplied = useCallback(() => {
+    setChipsBaseFrozen(dedupedRef.current);
+  }, []);
+  const chipsBase = viewMode === 'list' && chipsBaseFrozen ? chipsBaseFrozen : dedupedByDate;
+
   const boardData = useMemo(() => {
     const displayData = displayDataMias;
     if (!onlyUntouchedSeg) return displayData;
@@ -747,12 +755,19 @@ export default function SeguimientoTab() {
   // accionable que trajo ImporChat y no vivía en ninguna pantalla.
   const esperandoRespuesta = useMemo(() => {
     const s = new Set<string>();
-    for (const o of boardData) {
+    // ⛔ `chipsBase`, no `boardData` (4-sep-2026). `boardData` está filtrado por
+    // el BUSCADOR, la lista activa y "Mías", así que este chip —que dice cuánta
+    // gente está esperando respuesta— BAJABA mientras la asesora tipeaba un
+    // nombre. Es el mismo defecto que este archivo dice haber cerrado el mismo
+    // día para la fuente de actividad de chat: quedó la mitad.
+    // Y `chipsBase` y no `dedupedByDate` crudo: la base congelada es la que
+    // respeta las mismas exclusiones que el resto de los chips.
+    for (const o of chipsBase) {
       if (!o.dbId) continue;
       if (estadoConversacion(chatActividad.get(String(o.dbId))) === 'espera_respuesta') s.add(String(o.dbId));
     }
     return s;
-  }, [boardData, chatActividad]);
+  }, [chipsBase, chatActividad]);
   const [soloEsperando, setSoloEsperando] = useSessionState<boolean>('seg:soloEsperando', false);
 
   // ── "Le escribimos y no contestó: toca LLAMAR" (28-ago-2026) ───────────────
@@ -767,7 +782,9 @@ export default function SeguimientoTab() {
   const tocaLlamarSet = useMemo(() => {
     const s = new Set<string>();
     const ahora = Date.now();
-    for (const o of boardData) {
+    // Misma razón que el chip de arriba: la cuenta no puede encogerse porque
+    // alguien esté buscando un nombre.
+    for (const o of chipsBase) {
       if (!o.dbId) continue;
       if (tocaLlamar(chatActividad.get(String(o.dbId)), o.estado, ahora)) s.add(String(o.dbId));
     }
@@ -775,7 +792,7 @@ export default function SeguimientoTab() {
     // `minutoTick` entra a propósito aunque el linter no lo vea: el umbral es de
     // TIEMPO, así que un pedido entra a esta cola sin que cambie ningún dato.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boardData, chatActividad, minutoTick]);
+  }, [chipsBase, chatActividad, minutoTick]);
   const [soloTocaLlamar, setSoloTocaLlamar] = useSessionState<boolean>('seg:soloTocaLlamar', false);
 
   // Cuántos de esos SIGUEN sin trabajarse hoy. El chip muestra los dos números
@@ -850,13 +867,6 @@ export default function SeguimientoTab() {
   // cada vez que APLICA data (carga inicial / cambio de vista / clic en el
   // banner) y acá capturamos el snapshot base de ese momento para los chips.
   // En vista Tablero (viva) los chips siguen la data en vivo, como siempre.
-  const dedupedRef = useRef(dedupedByDate);
-  dedupedRef.current = dedupedByDate;
-  const [chipsBaseFrozen, setChipsBaseFrozen] = useState<OrderData[] | null>(null);
-  const handleListDataApplied = useCallback(() => {
-    setChipsBaseFrozen(dedupedRef.current);
-  }, []);
-  const chipsBase = viewMode === 'list' && chipsBaseFrozen ? chipsBaseFrozen : dedupedByDate;
 
   // Conteo por lista SLA (sobre los pedidos ya filtrados por fecha + deduped).
   // Alimenta los chips de listas — la forma principal de priorizar. Las

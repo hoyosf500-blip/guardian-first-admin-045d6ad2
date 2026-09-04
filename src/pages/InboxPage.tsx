@@ -363,11 +363,20 @@ function Dato({ etiqueta, children, ancho }: { etiqueta: string; children: React
 }
 
 /** La tarjeta completa de la lista angosta (celular y tablet): como venía. */
-function TarjetaLista({ o, sello, estadoSello, miId, children }: {
+function TarjetaLista({ o, sello, estadoSello, miId, escribioElCliente, children }: {
   o: InboxItem;
   sello: Sello | null;
   estadoSello: EstadoSello;
   miId: string | null;
+  /**
+   * ⛔ ¿ESCRIBIÓ ÉL, O ESCRIBIMOS NOSOTROS? (4-sep-2026)
+   *
+   * Esta tarjeta decía siempre «Escribió · hace 7 h». En la canasta "Sin
+   * respuesta" el cliente NO escribió nunca —`esperaDesde` es NUESTRO último
+   * mensaje— así que le atribuía al cliente un mensaje que no existió, y la
+   * asesora abría el chat esperando encontrar una pregunta.
+   */
+  escribioElCliente: boolean;
   children: ReactNode;
 }) {
   const t = tono(o.esperaDesde);
@@ -378,7 +387,7 @@ function TarjetaLista({ o, sello, estadoSello, miId, children }: {
           <span className="text-base font-semibold text-foreground truncate">{o.nombre}</span>
           <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-xs font-semibold ${t.chip}`}>
             <span className={`w-1.5 h-1.5 rounded-full ${t.dot}`} aria-hidden="true" />
-            Escribió · {haceCuantoMs(o.esperaDesde)}
+            {escribioElCliente ? 'Escribió' : 'Le escribimos'} · {haceCuantoMs(o.esperaDesde)}
           </span>
           {/* Días EN ESE ESTADO, no desde que nació el pedido: es el reloj que
               dice qué tan cerca está de devolverse. `null` no se dibuja. */}
@@ -545,7 +554,9 @@ export default function InboxPage() {
   const items = useMemo(() => {
     const filtrados = busca.trim()
       ? cola.filter((o) => matchesQuery(
-          [o.nombre, o.phone, o.phone?.replace(/\D/g, ''), o.externalId, o.producto, o.ciudad],
+          // La GUÍA también: es el dato con el que el cliente escribe ("mi guía
+          // 1234 no llega"), y era justo el único que el buscador no miraba.
+          [o.nombre, o.phone, o.phone?.replace(/\D/g, ''), o.externalId, o.producto, o.ciudad, o.guia],
           busca,
         ))
       : cola;
@@ -568,6 +579,21 @@ export default function InboxPage() {
     () => items.find((i) => i.dbId === selId) ?? null,
     [items, selId],
   );
+  /**
+   * ⛔ ENTRAR A LA BANDEJA NO ES ATENDER A NADIE (4-sep-2026).
+   *
+   * Este efecto elige solo al primero de la lista —y está bien, la cola avanza
+   * sola y eso es deliberado— pero de esa selección colgaban DOS cosas que sí
+   * son gestión: el candado de atención (sus compañeras ven "En atención por
+   * ella" y lo saltean) y la bitácora (`abrio`/`salto` a su nombre). O sea que
+   * abrir la pantalla en un monitor ancho tomaba un cliente y lo anotaba, sin
+   * que nadie lo hubiera elegido.
+   *
+   * El auto-avance se conserva tal cual; lo que espera es el candado y el
+   * registro, hasta que la asesora elige a alguien. `usePedidoALaVista` sigue
+   * montado siempre (lo exige `bitacoraRegistraTodo`), recibiendo `null`.
+   */
+  const [eligioCliente, setEligioCliente] = useState(false);
   useEffect(() => {
     if (!ancha) return;
     if (sel) return;
@@ -578,10 +604,10 @@ export default function InboxPage() {
   // modal — así que el candado que pone el diálogo no corre. Se marca acá: el
   // cliente que estoy atendiendo queda tomado mientras lo tenga seleccionado, y
   // se suelta solo al pasar al siguiente.
-  useAtencionPedido(sel?.dbId ?? null, Boolean(ancha && sel));
+  useAtencionPedido(sel?.dbId ?? null, Boolean(ancha && sel && eligioCliente));
   // Bitácora de lo que está a la vista (ver CallView): la bandeja tampoco
   // dejaba rastro de "abrió el chat y pasó al siguiente".
-  usePedidoALaVista(sel ? { externalId: sel.externalId, phone: sel.phone } : null);
+  usePedidoALaVista(sel && eligioCliente ? { externalId: sel.externalId, phone: sel.phone } : null);
 
   // ¿El feed del canal podría estar caído? Si el sync falla o lleva mucho sin
   // correr, esta lista puede estar INCOMPLETA — y un "Nadie esperando" en verde
@@ -591,9 +617,16 @@ export default function InboxPage() {
   // `canal != null`: mientras el canal no se resolvió, `sourceSyncChat(null)`
   // apunta a importchat-sync y en Colombia eso es `never` → un destello del
   // banner rojo "el sync de ImporChat falla" en cada entrada (revisión 3-sep).
+  // ⛔ Y el fallo de la PROPIA consulta de salud (4-sep-2026). Se leía solo
+  // `salud.data?.status`, así que si la consulta que mide el feed se caía,
+  // `data` quedaba en undefined, la condición daba falso y el banner de «esta
+  // lista puede estar incompleta» se APAGABA — justo cuando menos se sabe del
+  // feed, la pantalla se veía más tranquila. No saber es la razón más fuerte
+  // para desconfiar, igual que con `never`.
   const feedDudoso = canal != null && (salud.data?.status === 'failing'
     || salud.data?.status === 'critical'
-    || salud.data?.status === 'never');
+    || salud.data?.status === 'never'
+    || salud.isError);
 
   // Cuántos llevan más de un día. Es el número que dice si la cola se está
   // trabajando o solo se está mirando — y no se puede leer de un vistazo
@@ -857,7 +890,7 @@ export default function InboxPage() {
                   key={o.dbId}
                   o={o}
                   seleccionada={o.dbId === selId}
-                  onSelect={() => setSelId(o.dbId)}
+                  onSelect={() => { setEligioCliente(true); setSelId(o.dbId); }}
                   sello={selloDe(o.phone)}
                   estadoSello={estadoSello}
                   miId={miId}
@@ -981,7 +1014,7 @@ export default function InboxPage() {
       {status === 'ok' && items.length > 0 && !ancha && (
         <div className="flex flex-col gap-2.5 min-w-0">
           {items.map((o) => (
-            <TarjetaLista key={o.dbId} o={o} sello={selloDe(o.phone)} estadoSello={estadoSello} miId={miId}>
+            <TarjetaLista key={o.dbId} o={o} sello={selloDe(o.phone)} estadoSello={estadoSello} miId={miId} escribioElCliente={vista === 'esperan'}>
               <div className="flex gap-2 flex-wrap">
                 {/* ⛔ ACÁ LEER VA PRIMERO, SIEMPRE (28-ago-2026).
                     Esta pantalla es, por definición, la de los clientes que

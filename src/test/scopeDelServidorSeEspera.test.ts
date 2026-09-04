@@ -46,6 +46,13 @@ describe('⛔ el scope del servidor se espera', () => {
     ['components/tabs/DashboardTab.tsx', 'get_daily_operator_stats'],
     ['components/admin/DailyReportsView.tsx', 'admin_daily_reports_range'],
     ['hooks/useSegAsignaciones.ts', 'operator_activity_stats'],
+    // 4-sep-2026: estos dos se habían quedado afuera. `novedades_root_cause`
+    // filtra con `(v_store IS NULL OR store_id = v_store)`, así que con el scope
+    // sin resolver devuelve TODAS las tiendas mezcladas — la causa raíz de
+    // Novedades y la tarjeta con la que se juzga a cada asesora leían el país
+    // anterior al cambiar de tienda.
+    ['hooks/useNovedadRootCause.ts', 'novedades_root_cause'],
+    ['hooks/useResponsabilidadAsesor.ts', 'novedades_root_cause'],
   ])('%s espera scopeStoreId antes de llamar a %s', (rel, rpc) => {
     const src = sinComentarios(leer(rel));
     expect(src, `${rel} ya no llama a ${rpc}`).toContain(rpc);
@@ -74,5 +81,13 @@ describe('⛔ el scope del servidor se espera', () => {
     const entre = src.slice(iActive, iEffect);
     expect(entre).toMatch(/setCurrencyCountry\(activeStore\?\.country_code\)/);
     expect(entre).toMatch(/setTrackingCountry\(activeStore\?\.country_code\)/);
+  });
+  it('la tarjeta de la asesora no da por medido un cero que salió de una consulta caída', () => {
+    const src = sinComentarios(leer('hooks/useResponsabilidadAsesor.ts'));
+    // El error de `novedades_root_cause` se degradaba a [] y la función igual
+    // terminaba en setStatus('ok'): "0 devoluciones · 0 evitables" con cara de
+    // medición sobre algo que nunca respondió.
+    expect(src, 'el fallo de la causa raíz vuelve a tragarse').toMatch(/if \(devErr\) setStatus\('error'\)/);
+    expect(src, "setStatus('ok') pisa el error de la causa raíz").toMatch(/if \(!devErr\) setStatus\('ok'\)/);
   });
 });

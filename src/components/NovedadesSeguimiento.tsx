@@ -26,6 +26,9 @@ function pct(n: number | null): string {
 
 export default function NovedadesSeguimiento() {
   const s = useNovedadesSeguimiento();
+  /** Cerradas = resueltas + devoluciones. Es el denominador de la tasa, y se
+   *  muestra: el rojo no puede dispararse con una muestra de un caso. */
+  const cerradas = s.resueltas + s.devoluciones;
   const entregaRate = s.resueltasConOutcome > 0 ? s.entregadasDeResueltas / s.resueltasConOutcome : null;
 
   // Techo de cada ranking. Si es 0 no hay proporción que dibujar: MetricBar
@@ -143,17 +146,28 @@ export default function NovedadesSeguimiento() {
         </NovCard>
       </motion.div>
 
+      {/* El denominador de la tasa de devolución, que hasta ahora no se veía:
+          «100%» sobre 1 caso y «100%» sobre 40 no son la misma noticia. */}
       {/* Resultados */}
       <motion.div {...fadeUp(0.14)} className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat icon={<CheckCircle2 size={17} />} label="Resueltas" value={s.resueltas} tone="success" />
-        <Stat icon={<Truck size={17} />} label="Devoluciones" value={s.devoluciones} tone="danger" />
+        {/* ⛔ El MISMO centinela que las tres pastillas de arriba (4-sep-2026).
+            Ellas ya hacían `s.loading ? '—' : …`; esta fila —doce líneas más
+            abajo, sobre los mismos datos— seguía pintando ceros con cara de
+            medición mientras la consulta viajaba o después de fallar. La misma
+            pantalla daba dos respuestas distintas. `Stat` trata '—' como tercer
+            estado (borde punteado), así que no hace falta tocar el componente. */}
+        <Stat icon={<CheckCircle2 size={17} />} label="Resueltas" value={s.loading ? '—' : s.resueltas} tone="success" />
+        <Stat icon={<Truck size={17} />} label="Devoluciones" value={s.loading ? '—' : s.devoluciones} tone="danger" />
+        {/* La tasa se pinta en ROJO en cuanto pasa el 30%, sin mirar sobre
+            cuántos casos se calculó: 1 de 1 salía como 100% en rojo. Se muestra
+            el denominador y el rojo se reserva para una muestra que aguante. */}
         <Stat
-          icon={<PhoneOff size={17} />} label="Tasa devolución" value={pct(s.tasaDevolucion)}
-          tone={s.tasaDevolucion != null && s.tasaDevolucion > 0.3 ? 'danger' : 'default'}
-          hint="de las cerradas"
+          icon={<PhoneOff size={17} />} label="Tasa devolución" value={s.loading ? '—' : pct(s.tasaDevolucion)}
+          tone={!s.loading && s.tasaDevolucion != null && s.tasaDevolucion > 0.3 && cerradas >= 5 ? 'danger' : 'default'}
+          hint={cerradas > 0 ? `sobre ${cerradas} cerradas` : 'de las cerradas'}
         />
         <Stat
-          icon={<PackageCheck size={17} />} label="Resueltas entregadas" value={pct(entregaRate)}
+          icon={<PackageCheck size={17} />} label="Resueltas entregadas" value={s.loading ? '—' : pct(entregaRate)}
           tone={entregaRate != null && entregaRate >= 0.5 ? 'success' : 'default'}
           hint={`${s.entregadasDeResueltas}/${s.resueltasConOutcome} ya entregadas`}
         />

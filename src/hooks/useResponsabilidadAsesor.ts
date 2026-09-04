@@ -48,7 +48,10 @@ export function useResponsabilidadAsesor(
   prodRows: ProdRowLite[],
   metaGestiones: number,
 ): ResponsabilidadAsesorData {
-  const { activeStoreId } = useStore();
+  // ⛔ Mismo caso que `useNovedadRootCause`: `novedades_root_cause` resuelve la
+  // tienda en el SERVIDOR y con el scope sin aterrizar mezcla países. Acá duele
+  // el doble, porque este número es con el que el dueño juzga a cada asesora.
+  const { activeStoreId, scopeStoreId, scopeSynced } = useStore();
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<RespStatus>('ok');
   const [scores, setScores] = useState<AsesorScore[]>([]);
@@ -66,6 +69,12 @@ export function useResponsabilidadAsesor(
 
   const load = useCallback(async () => {
     if (!activeStoreId) { setScores([]); setStatus('ok'); setLoading(false); return; }
+    if (scopeStoreId !== activeStoreId) {
+      setScores([]);
+      setStatus(scopeSynced ? 'ok' : 'error');
+      setLoading(scopeSynced);
+      return;
+    }
     const seq = ++seqRef.current;
     setLoading(true);
     const today = bogotaToday();
@@ -79,6 +88,12 @@ export function useResponsabilidadAsesor(
         'novedades_root_cause', { p_from: from, p_to: today },
       );
       if (seq !== seqRef.current) return;
+      // ⛔ El fallo de la causa raíz YA NO SE TRAGA (4-sep-2026). Antes se
+      // degradaba a `[]` y la función igual terminaba con `setStatus('ok')`, así
+      // que la tarjeta de la asesora mostraba "0 devoluciones · 0 evitables"
+      // COMO MEDICIÓN sobre una consulta que nunca respondió. Es exactamente el
+      // número con el que se le reclama a una persona.
+      if (devErr) setStatus('error');
       // La causa raíz puede fallar por permiso/migración; degradamos a solo-esfuerzo.
       const devRows: RootCauseRow[] = (devErr ? [] : (devData ?? [])).map((d) => ({
         orderId: d.order_id as string,
@@ -167,14 +182,14 @@ export function useResponsabilidadAsesor(
       if (seq !== seqRef.current) return;
       setScores(construirScores(inputs, metaGestiones));
       setSelloEscaso(totalConSello < 20);
-      setStatus('ok');
+      if (!devErr) setStatus('ok');
     } catch {
       if (seq === seqRef.current) { setStatus('error'); setScores([]); }
     } finally {
       if (seq === seqRef.current) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeStoreId, range, prodSig, metaGestiones]);
+  }, [activeStoreId, range, prodSig, metaGestiones, scopeStoreId, scopeSynced]);
 
   useEffect(() => { void load(); }, [load]);
 

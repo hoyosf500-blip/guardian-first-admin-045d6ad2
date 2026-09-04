@@ -79,7 +79,23 @@ function mapRow(d: Record<string, unknown>): RootCauseRow {
  * `not_ready` para que la UI muestre un cartel de "pendiente de activar".
  */
 export function useNovedadRootCause(): NovedadRootCauseData {
-  const { activeStoreId } = useStore();
+  /**
+   * ⛔ SE ESPERA EL SCOPE DEL SERVIDOR (4-sep-2026) — REGLA #1.
+   *
+   * `novedades_root_cause` resuelve la tienda EN EL SERVIDOR con
+   * `_resolve_scope_store()` (migración 20260623160000) y su filtro es
+   * `(v_store IS NULL OR store_id = v_store)`: con el scope sin resolver
+   * devuelve TODAS las tiendas mezcladas. Este hook disparaba con
+   * `[activeStoreId, range]`, o sea en el mismo instante del cambio de tienda,
+   * cuando el UPDATE de `set_active_store` todavía viaja — y como no es
+   * react-query, la invalidación de StoreContext tampoco lo alcanzaba. Un
+   * admin que pasaba de Colombia a Ecuador leía las devoluciones y la plata del
+   * país anterior bajo el rótulo del nuevo.
+   *
+   * El guardián `scopeDelServidorSeEspera` ya exigía esto en otros cinco
+   * consumidores; este y `useResponsabilidadAsesor` se habían quedado afuera.
+   */
+  const { activeStoreId, scopeStoreId, scopeSynced } = useStore();
   const [range, setRange] = useState<RootCauseRange>('30d');
   // Arranca en TRUE: el efecto que dispara la carga corre después del primer
   // render, y con false ese primer frame pasaba los gates `!s.loading` — el
@@ -95,6 +111,15 @@ export function useNovedadRootCause(): NovedadRootCauseData {
     // retorna sin pasar por el finally — sin esto, sin tienda activa la
     // pantalla quedaba "leyendo…" para siempre.
     if (!activeStoreId) { setSummary(EMPTY); setStatus('ok'); setLoading(false); return; }
+    // Todavía no aterrizó el scope: no se pregunta. Y se distingue "esperando"
+    // de "no llega" — si `scopeSynced` es false el UPDATE falló y hay que
+    // decirlo en vez de dejar la pantalla girando para siempre.
+    if (scopeStoreId !== activeStoreId) {
+      setSummary(EMPTY);
+      setStatus(scopeSynced ? 'ok' : 'error');
+      setLoading(scopeSynced);
+      return;
+    }
     const seq = ++seqRef.current;
     setLoading(true);
     const today = bogotaToday();
@@ -151,7 +176,7 @@ export function useNovedadRootCause(): NovedadRootCauseData {
     } finally {
       if (seq === seqRef.current) setLoading(false);
     }
-  }, [activeStoreId, range]);
+  }, [activeStoreId, range, scopeStoreId, scopeSynced]);
 
   useEffect(() => { void load(); }, [load]);
 
