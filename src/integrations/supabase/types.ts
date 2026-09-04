@@ -2615,6 +2615,58 @@ export type Database = {
           year_month: string
         }[]
       }
+      bandeja_esperando: {
+        Args: { p_limite?: number; p_store_id: string }
+        Returns: {
+          chat_entrante_at: string
+          chat_leido_at: string
+          chat_saliente_at: string
+          ciudad: string
+          direccion: string
+          estado: string
+          external_id: string
+          guia: string
+          id: string
+          last_movement_at: string
+          locked_at: string
+          locked_by: string
+          nombre: string
+          phone: string
+          producto: string
+          total_con_chat: number
+          total_general: number
+          transportadora: string
+          valor: number
+        }[]
+      }
+      bandeja_sin_respuesta: {
+        Args: {
+          p_dias?: number
+          p_horas?: number
+          p_limite?: number
+          p_store_id: string
+        }
+        Returns: {
+          chat_entrante_at: string
+          chat_leido_at: string
+          chat_saliente_at: string
+          ciudad: string
+          direccion: string
+          estado: string
+          external_id: string
+          guia: string
+          id: string
+          last_movement_at: string
+          locked_at: string
+          locked_by: string
+          nombre: string
+          phone: string
+          producto: string
+          total_general: number
+          transportadora: string
+          valor: number
+        }[]
+      }
       cancel_order_locally: { Args: { p_order_id: string }; Returns: boolean }
       cancel_orphan_pending_orders: { Args: never; Returns: number }
       cancelaciones_analisis: {
@@ -3919,6 +3971,21 @@ export type Database = {
       }
       wallet_summary: {
         Args: { p_from: string; p_to: string }
+        Returns: {
+          categorias: string[]
+          count_total: number
+          total_entradas: number
+          total_salidas: number
+          ultimo_saldo: number
+        }[]
+      }
+      wallet_summary_filtrado: {
+        Args: {
+          p_categoria?: string
+          p_from: string
+          p_tipo?: string
+          p_to: string
+        }
         Returns: {
           categorias: string[]
           count_total: number
