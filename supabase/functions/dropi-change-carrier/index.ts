@@ -1319,7 +1319,7 @@ async function resolveClientAndLines(
  *  Esta funcion es parte de la cadena que puede DUPLICAR un pedido en Dropi,
  *  y hasta hoy no habia forma de saber que version corria: el arreglo
  *  "exactamente UNO vivo" de julio-2026 se desplego sin poder comprobarlo. */
-const VERSION = "dropi-change-carrier 2026-09-04.3 la-ciudad-se-cambia-recreando-como-dropi";
+const VERSION = "dropi-change-carrier 2026-09-04.4 solo-la-ciudad-tambien-recrea";
 
 Deno.serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);
@@ -2507,8 +2507,12 @@ Deno.serve(async (req: Request) => {
         return jsonOk({ ok: false, error: "Valor nuevo inválido (debe ser un número mayor a 0)." });
       }
       const wantsLines = Array.isArray(body.newLines) && body.newLines.length > 0;
-      if (!hasCarrier && !wantsLines && newValorE === null) {
-        return jsonOk({ ok: false, error: "Sin cambios: mandá transportadora, líneas o valor nuevo." });
+      // Un cambio de ciudad/provincia SOLO también es una recreación (es lo
+      // que hace la web de Dropi). Probado en vivo 4-sep-2026: sin esto la
+      // edge contestaba "Sin cambios" y la ciudad seguía sin poder cambiarse.
+      const wantsDest = !!(String(body.ciudad || "").trim() || String(body.departamento || "").trim());
+      if (!hasCarrier && !wantsLines && newValorE === null && !wantsDest) {
+        return jsonOk({ ok: false, error: "Sin cambios: mandá transportadora, líneas, valor o ciudad nueva." });
       }
       const oldValorE = Number(orderRow.valor) || 0;
 
