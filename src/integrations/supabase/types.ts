@@ -100,6 +100,41 @@ export type Database = {
           },
         ]
       }
+      alertas_dueno: {
+        Row: {
+          created_at: string
+          id: string
+          minutos: number
+          operator_id: string
+          store_id: string
+          tipo: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          minutos?: number
+          operator_id: string
+          store_id: string
+          tipo: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          minutos?: number
+          operator_id?: string
+          store_id?: string
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alertas_dueno_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       app_settings: {
         Row: {
           created_at: string
