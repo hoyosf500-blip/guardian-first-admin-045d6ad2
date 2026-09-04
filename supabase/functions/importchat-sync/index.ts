@@ -522,6 +522,9 @@ Deno.serve(async (req) => {
       const url = `${baseSlash}clientes_chat_center/listar?id_configuracion=${encodeURIComponent(String(c0.id_configuracion))}&page=1&limit=3`;
       const r = await fetch(url, { headers: { Authorization: `Bearer ${String(c0.session_token || "")}` } });
       const texto = await r.text();
+      // Cierra la fila 'running' que abrió `traza("arrancó")`: si no, el sondeo
+      // queda como una corrida muerta en el badge (pasó el 3-sep-2026).
+      await log("success", "sondeo probe_listar: no escribe nada", 0);
       return json({ ok: r.ok, status: r.status, url: url.replace(/id_configuracion=\d+/, "id_configuracion=…"), cuerpo: texto.slice(0, 4000) });
     }
 
