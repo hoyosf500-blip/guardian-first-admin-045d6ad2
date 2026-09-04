@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Send, Lock, AlertTriangle, FileText, Search, ChevronRight, ChevronDown, ArrowLeft } from 'lucide-react';
 import { usePlantillasMeta, useEnviarPlantilla } from '@/hooks/usePlantillasMeta';
+import { useCanalChat, nombreCanal } from '@/hooks/useCanalChat';
 import type { ModuloEnvio } from '@/hooks/useEnviarWhatsapp';
 import {
   renderizar, faltantes, sugerirValores,
@@ -126,6 +127,9 @@ export default function PlantillasWhatsapp({ externalId, fase, estadoPedido, pho
 }) {
   const { plantillas, estado, error, recargar } = usePlantillasMeta(true, fase);
   const { enviarPlantilla, enviando } = useEnviarPlantilla();
+  // ⛔ El canal se NOMBRA, no se escribe a mano: en Colombia es Chatea Pro
+  // y decir "ImporChat" manda a la asesora a la app de otro país.
+  const canalNombre = nombreCanal(useCanalChat());
   const [elegida, setElegida] = useState<PlantillaMeta | null>(null);
   const [valores, setValores] = useState<Record<number, string>>({});
   const [verTodas, setVerTodas] = useState(false);
@@ -235,20 +239,52 @@ export default function PlantillasWhatsapp({ externalId, fase, estadoPedido, pho
     // touchpoint lo escribe el servidor y sin este aviso nadie se entera hasta
     // recargar (ver `eventosGestion.ts`).
     const r = await enviarPlantilla(externalId, elegida.nombre, valores, modulo, { phone });
-    if (r.ok && r.yaEnviado) {
-      // ⛔ `ok:true` NO es "le llegó": el servidor frenó el reenvío por la
-      // idempotencia del día y no salió ningún mensaje. Decir "enviada al
-      // cliente" acá es afirmar un envío que no ocurrió, y era lo que hacía la
-      // asesora dar por hecho el recordatorio de la tarde.
-      toast.info('Esta plantilla ya se le había mandado hoy — no se reenvió', {
-        description: 'Si necesitás insistir, llamalo o mandale un mensaje escrito.',
+    // ⛔ Otra pestaña o una compañera la está mandando AHORA. No es un error ni
+    // un éxito: es esperar y mirar el chat.
+    if (r.enCurso) {
+      toast.info('Se está mandando ahora mismo', {
+        description: 'Otra pestaña o una compañera la disparó hace unos segundos. Esperá y mirá el chat.',
       });
+      return;
+    }
+    // ⛔ ImporChat aceptó el envío y el mensaje NO apareció en la conversación
+    // (4-sep-2026: 9 de 14 en once días). NO se cierra el panel, NO se pinta la
+    // tarjeta y NO se anota la gestión: el cliente no tiene nada.
+    if (r.sinConfirmar) {
+      toast.error('No se pudo comprobar que saliera', {
+        description: `${canalNombre} aceptó el envío pero el mensaje NO aparece en la conversación. No lo des por enviado: abrí el chat y mirá. Si no está, reintentá.`,
+        duration: 12000,
+      });
+      return;
+    }
+    if (r.sinLectura) {
+      toast.error('No pude leer el chat, así que no mandé nada', {
+        description: 'Probá de nuevo en un momento, o mandala desde el panel de chat.',
+      });
+      return;
+    }
+    if (r.ok && r.yaEnviado) {
+      // Ahora esto SÍ es verdad: la fila solo bloquea cuando el mensaje se vio
+      // en el chat. Antes bloqueaba con haberlo intentado, así que el aviso
+      // salía sobre envíos que nunca ocurrieron y la asesora se quedaba sin
+      // camino: ni se reenviaba, ni sabía que el cliente no tenía nada.
+      const hora = r.enviadoAt
+        ? new Date(r.enviadoAt).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
+        : null;
+      toast.info(
+        hora
+          ? `Ya se le mandó hoy a las ${hora} y se vio en el chat — no se reenvió`
+          : 'Esta plantilla ya se le había mandado hoy — no se reenvió',
+        { description: 'Si necesitás insistir, llamalo o mandale un mensaje escrito.' },
+      );
       setElegida(null);
       // NO se llama a onEnviado: es lo que pinta la tarjeta como gestionada.
       return;
     }
     if (r.ok) {
-      toast.success('Plantilla enviada al cliente');
+      // `confirmado === undefined` = servidor sin redesplegar: se dice lo justo,
+      // sin afirmar que el cliente la recibió.
+      toast.success(r.confirmado ? 'Plantilla enviada — se ve en el chat del cliente' : 'Plantilla enviada');
       setElegida(null);
       onEnviado?.();
     } else {

@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { Send, Loader2, MessageCircle } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useEnviarWhatsapp, type ModuloEnvio } from '@/hooks/useEnviarWhatsapp';
+import { useCanalChat, nombreCanal } from '@/hooks/useCanalChat';
 import { usePlantillasMeta, useEnviarPlantilla } from '@/hooks/usePlantillasMeta';
 import { accionPrincipal, accionDePlantilla, plantillaParaAccion, faseParaPlantillas } from '@/lib/accionSeguimiento';
 import { plantillasPara } from '@/lib/plantillasChat';
@@ -58,6 +59,9 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
   fallback?: ReactNode;
   className?: string;
 }) {
+  // ⛔ El canal se NOMBRA, no se escribe a mano: en Colombia es Chatea Pro
+  // y decir "ImporChat" manda a la asesora a la app de otro país.
+  const canalNombre = nombreCanal(useCanalChat());
   const [abierto, setAbierto] = useState(false);
   const accion = accionPrincipal(estado);
   const fase = useMemo(() => classifySegEstado(estado || ''), [estado]);
@@ -226,15 +230,50 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
     // servidor pudo haber frenado el reenvío por la idempotencia del día sin
     // mandar nada. El toast verde y `onEnviado` —que pinta la tarjeta como
     // trabajada— afirmaban un envío que no ocurrió.
-    if (r.ok && 'yaEnviado' in r && r.yaEnviado) {
-      toast.info('Esta plantilla ya se le había mandado hoy — no se reenvió', {
-        description: 'Si necesitás insistir, llamalo o mandale un mensaje escrito.',
+    // ⛔ Los tres "no salió" se dicen distinto (4-sep-2026). Todos caían antes en
+    // un error genérico, y la asesora no sabía si reintentar, esperar o usar
+    // otro canal. El popover queda ABIERTO para que reintente sin rearmar nada.
+    if ('enCurso' in r && r.enCurso) {
+      toast.info('Se está mandando ahora mismo', {
+        description: 'Otra pestaña o una compañera la disparó hace unos segundos. Esperá y mirá el chat.',
       });
+      return;
+    }
+    if ('sinConfirmar' in r && r.sinConfirmar) {
+      toast.error('No se pudo comprobar que saliera', {
+        description: `${canalNombre} aceptó el envío pero el mensaje NO aparece en la conversación. No lo des por enviado: abrí el chat y mirá. Si no está, reintentá.`,
+        duration: 12000,
+      });
+      return;
+    }
+    if ('sinLectura' in r && r.sinLectura) {
+      toast.error('No pude leer el chat, así que no mandé nada', {
+        description: 'Probá de nuevo en un momento, o mandala desde el panel de chat.',
+      });
+      return;
+    }
+    if (r.ok && 'yaEnviado' in r && r.yaEnviado) {
+      // Ahora es verdad: la fila solo bloquea cuando el mensaje SE VIO en el chat.
+      const hora = 'enviadoAt' in r && r.enviadoAt
+        ? new Date(r.enviadoAt).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
+        : null;
+      toast.info(
+        hora
+          ? `Ya se le mandó hoy a las ${hora} y se vio en el chat — no se reenvió`
+          : 'Esta plantilla ya se le había mandado hoy — no se reenvió',
+        { description: 'Si necesitás insistir, llamalo o mandale un mensaje escrito.' },
+      );
       setAbierto(false);
       return;
     }
     if (r.ok) {
-      toast.success(gestion, { description: 'El cliente ya lo recibió por WhatsApp.' });
+      // ⛔ Murió "El cliente ya lo recibió por WhatsApp": era la mentira, textual.
+      // El servidor confirmaba con que ImporChat aceptara el pedido, y del
+      // 25-ago al 4-sep eso fue falso 9 de 14 veces. Ahora solo se dice cuando
+      // el mensaje se VIO en la conversación; con un servidor sin redesplegar
+      // (`confirmado === undefined`) se dice lo justo y nada más.
+      const confirmado = 'confirmado' in r && r.confirmado === true;
+      toast.success(gestion, confirmado ? { description: 'Se ve en el chat del cliente.' } : undefined);
       setAbierto(false);
       onEnviado?.(gestion);
     } else {

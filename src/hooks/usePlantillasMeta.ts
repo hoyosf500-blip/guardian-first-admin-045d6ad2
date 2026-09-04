@@ -178,6 +178,26 @@ export interface ResultadoPlantilla {
    * la pantalla afirme un envío que no ocurrió.
    */
   yaEnviado?: boolean;
+  /**
+   * ⛔ true = el mensaje SE VIO en la conversación del cliente (4-sep-2026).
+   *
+   * Antes el servidor devolvía `ok:true` con que ImporChat contestara
+   * `success:true`, y eso confirma que RECIBIERON EL PEDIDO, no que ENTREGARON
+   * EL MENSAJE. Medido del 25-ago al 4-sep en Ecuador: 14 plantillas anotadas
+   * como enviadas y **9 clientes que no recibieron nada**.
+   *
+   * `undefined` = servidor sin redesplegar (o Colombia antes de su commit): se
+   * trata como antes, NO se degrada. Solo `false` corta.
+   */
+  confirmado?: boolean;
+  /** ImporChat aceptó el envío y el mensaje NO apareció en el chat. */
+  sinConfirmar?: boolean;
+  /** No se pudo leer el chat, así que NO se mandó nada. */
+  sinLectura?: boolean;
+  /** Otra pestaña o una compañera la está mandando en este mismo momento. */
+  enCurso?: boolean;
+  /** Cuándo se vio en el chat, para el aviso de "ya se le mandó hoy a las HH:MM". */
+  enviadoAt?: string;
 }
 
 export function useEnviarPlantilla() {
@@ -210,8 +230,28 @@ export function useEnviarPlantilla() {
         const { detalle } = await motivoReal(error, 'No se pudo enviar la plantilla');
         return { ok: false, error: detalle };
       }
-      const r = data as { ok?: boolean; error?: string; faltantes?: number[]; ya_enviado?: boolean } | null;
-      if (!r?.ok) return { ok: false, error: r?.error || 'No se pudo confirmar el envío', faltantes: r?.faltantes };
+      const r = data as {
+        ok?: boolean; error?: string; faltantes?: number[]; ya_enviado?: boolean;
+        confirmado?: boolean; sin_confirmar?: boolean; sin_lectura?: boolean;
+        en_curso?: boolean; enviado_at?: string;
+      } | null;
+      if (!r?.ok) {
+        // ⛔ Se distinguen los tres "no salió" (4-sep-2026). Antes todos caían en
+        // un error genérico y la asesora no sabía si reintentar, esperar, o usar
+        // otro canal. Y `confirmado === false` corta ACÁ, antes de los dos
+        // `if (!r.ya_enviado)` de abajo, así que la bitácora y la gestión
+        // optimista quedan intactas — el guardián `escribioYLlamoDejanRastro`
+        // exige esos dos literales y sigue verde sin tocarlo.
+        return {
+          ok: false,
+          error: r?.error || 'No se pudo confirmar el envío',
+          faltantes: r?.faltantes,
+          confirmado: r?.confirmado,
+          sinConfirmar: r?.sin_confirmar === true,
+          sinLectura: r?.sin_lectura === true,
+          enCurso: r?.en_curso === true,
+        };
+      }
       // El touchpoint lo escribe el servidor: sin este aviso el contador de la
       // pantalla no se entera hasta recargar (mismo bug que se acaba de
       // arreglar en `useRecordGestion`).
@@ -243,7 +283,13 @@ export function useEnviarPlantilla() {
           detalle: { modulo: modulo === 'WHATSAPP' ? 'WHATSAPP' : 'SEG', accion: gestion?.accion || `Mandé la plantilla ${nombre}`, plantilla: nombre },
         });
       }
-      return { ok: true, yaEnviado: r.ya_enviado === true };
+      return {
+        ok: true,
+        yaEnviado: r.ya_enviado === true,
+        // `undefined` con un servidor viejo: la pantalla lo trata como antes.
+        confirmado: r.confirmado,
+        enviadoAt: r.enviado_at,
+      };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : 'No se pudo enviar la plantilla' };
     } finally {

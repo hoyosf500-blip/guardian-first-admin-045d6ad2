@@ -50,6 +50,7 @@ import {
 import { ensureFreshImporchatToken, decodeJwtExp, IMPORCHAT_BASE_DEFAULT } from "../_shared/imporchatSession.ts";
 import { fechaHoraLocal } from "../_shared/horaLocal.ts";
 import { respuestaPing } from "../_shared/versionEdge.ts";
+import { enviarPlantillaVerificada } from "../_shared/imporchatPlantillaVerificada.ts";
 
 /**
  * ⛔ MARCA DE LA VERSIÓN DESPLEGADA. Subirla en el MISMO commit que cambie algo,
@@ -62,7 +63,7 @@ import { respuestaPing } from "../_shared/versionEdge.ts";
  * un deploy llegó era adivinar comparando comportamientos. Ese agujero ya costó
  * dos rondas enteras en agosto (ver `lovable_despliega_codigo_viejo`).
  */
-const VERSION = "importchat-plantillas 2026-09-02.1 primer-ping";
+const VERSION = "importchat-plantillas 2026-09-04.1 no-se-canta-sin-verla";
 
 const BASE_IC = "https://chat.imporfactory.app/api/v1";
 const TIMEOUT_MS = 25_000;
@@ -234,60 +235,146 @@ Deno.serve(async (req) => {
       return json({ ok: true, dry_run: true, enviaria_a: destino, payload, chat_id: pedido.importchat_chat_id });
     }
 
-    // ── IDEMPOTENCIA: un reintento de red NO puede mandar la misma plantilla dos
-    //    veces al mismo pedido el mismo día. Se CLAMA antes del POST (patrón de
-    //    shopify-push-dropi: claim atómico antes del efecto externo). El `enviando`
-    //    del cliente solo bloquea el doble-click de UNA pestaña; esto blinda contra
-    //    reintentos de red, otra pestaña, o dos asesoras — clave con envío masivo.
+    // ── IDEMPOTENCIA + CONFIRMACIÓN (reescrito el 4-sep-2026) ───────────────
+    //
+    // Lo que había: se clamaba una fila antes del POST y, si el POST fallaba, se
+    // BORRABA. Medido del 25-ago al 4-sep en Ecuador: 14 plantillas anotadas
+    // como enviadas y **9 clientes sin recibir nada** — ImporChat contestaba
+    // `success:true`, Guardian escribía el touchpoint, pintaba la tarjeta como
+    // gestionada, y el mensaje nunca entraba al hilo. Al reintentar, el candado
+    // decía "ya se le mandó hoy" sobre un envío que no existió.
+    //
+    // Ahora el candado significa **"se VIO en el chat"**, no "se intentó":
+    //   · la fila se sigue clamando ANTES del POST (es lo único que gana la
+    //     carrera de dos clics simultáneos), pero NUNCA SE BORRA: cambia de
+    //     `estado`. Borrar destruía la prueba — de los 9 perdidos no quedó
+    //     rastro salvo un touchpoint que miente.
+    //   · solo `confirmado` bloquea un reenvío. Una fila no confirmada documenta.
     const { fecha: diaLocal } = fechaHoraLocal(tienda?.country_code);
-    let claimHecho = false;
-    const liberarClaim = async () => {
-      if (!claimHecho) return;
-      await sb.from("importchat_envios").delete()
-        .eq("store_id", storeId).eq("external_id", externalId)
-        .eq("plantilla", elegida.nombre).eq("dia", diaLocal);
-    };
+    const ahoraIso = new Date().toISOString();
+    /** Un `enviando` más viejo que esto tiene dueño muerto: la plataforma mata
+     *  una edge function a los ~150 s. No hay que adivinar. */
+    const RECLAMO_MS = 180_000;
+    let filaId: string | null = null;
+
     {
-      const { error: claimErr } = await sb.from("importchat_envios").insert({
+      const ins = await sb.from("importchat_envios").insert({
         store_id: storeId, external_id: externalId, plantilla: elegida.nombre, dia: diaLocal,
-      });
-      if (claimErr) {
-        const code = (claimErr as { code?: string }).code;
-        // 23505 = ya hay un envío (o intento en curso) de esta plantilla a este
-        // pedido hoy → NO se reenvía. Se responde éxito suave para que la pantalla
-        // no muestre un error rojo por algo que en realidad ya salió.
-        if (code === "23505") {
-          return json({ ok: true, ya_enviado: true, enviado_a: destino, plantilla: elegida.nombre });
-        }
-        // 42P01 = la tabla todavía no existe (Lovable no aplicó la migración).
-        // Se degrada al comportamiento anterior (sin candado) en vez de romper.
-        if (code !== "42P01" && !/does not exist|relation .* does not exist/i.test(claimErr.message || "")) {
-          throw new Error(claimErr.message);
-        }
-        console.warn("[importchat-plantillas] sin tabla importchat_envios — envío SIN idempotencia (aplicar migración)");
+        estado: "enviando", intento_at: ahoraIso, operador_id: u.user.id,
+        canal: "importchat", chat_id: String(pedido.importchat_chat_id),
+      }).select("id").maybeSingle();
+
+      if (!ins.error) {
+        filaId = (ins.data as { id?: string } | null)?.id ?? null;
       } else {
-        claimHecho = true;
+        const code = (ins.error as { code?: string }).code;
+        const falta = code === "42703" || /column .* does not exist/i.test(ins.error.message || "");
+        if (falta) {
+          // ⛔ FALLA CERRADO. Antes acá había un `console.warn` y se seguía "sin
+          // idempotencia": una degradación silenciosa es exactamente la familia
+          // de la que salió este bug. Mejor no mandar y decirlo.
+          return json({ ok: false, error: "Falta aplicar la migración 20260904220000 (importchat_envios sin las columnas de confirmación). No se mandó nada." }, 503);
+        }
+        if (code !== "23505" && !/duplicate key|unique/i.test(ins.error.message || "")) {
+          throw new Error(ins.error.message);
+        }
+        // Ya hay fila de hoy para esta plantilla y este pedido. Se lee para
+        // decidir: ¿se confirmó de verdad, hay una en curso, o quedó colgada?
+        const { data: previa, error: leerErr } = await sb.from("importchat_envios")
+          .select("id, estado, intento_at, confirmado_at")
+          .eq("store_id", storeId).eq("external_id", externalId)
+          .eq("plantilla", elegida.nombre).eq("dia", diaLocal)
+          .maybeSingle();
+        if (leerErr) throw new Error(leerErr.message);
+
+        const fila = previa as { id: string; estado: string; intento_at: string; confirmado_at: string | null } | null;
+        if (fila?.estado === "confirmado") {
+          // Ahora sí es verdad: se vio en el chat.
+          return json({
+            ok: true, ya_enviado: true, confirmado: true,
+            enviado_at: fila.confirmado_at, enviado_a: destino, plantilla: elegida.nombre,
+          });
+        }
+        const enCurso = fila?.estado === "enviando"
+          && Date.now() - Date.parse(fila.intento_at) < RECLAMO_MS;
+        if (enCurso) {
+          return json({
+            ok: false, en_curso: true,
+            error: "Se está mandando ahora mismo. Esperá unos segundos y mirá el chat.",
+          }, 409);
+        }
+        // Colgada, fallida o no confirmada: se toma posesión ATÓMICAMENTE. El
+        // predicado se re-evalúa contra la versión nueva, así que si dos toman a
+        // la vez, una sola se lleva la fila.
+        const limite = new Date(Date.now() - RECLAMO_MS).toISOString();
+        const { data: tomada, error: tomaErr } = await sb.from("importchat_envios")
+          .update({
+            estado: "enviando", intento_at: ahoraIso, operador_id: u.user.id,
+            confirmado_at: null, mensaje_id: null, senal: null, respuesta: null,
+            chat_id: String(pedido.importchat_chat_id),
+          })
+          .eq("id", fila?.id ?? "")
+          .neq("estado", "confirmado")
+          .or(`estado.neq.enviando,intento_at.lt.${limite}`)
+          .select("id");
+        // ⛔ El error SE MIRA. El `liberarClaim()` viejo hacía el DELETE sin
+        // mirarlo: si fallaba, el candado quedaba puesto todo el día sobre nada.
+        if (tomaErr) throw new Error(tomaErr.message);
+        if (!tomada?.length) {
+          return json({
+            ok: false, en_curso: true,
+            error: "Otra pestaña o una compañera la está mandando en este momento.",
+          }, 409);
+        }
+        filaId = fila?.id ?? null;
       }
     }
 
-    const envio = await postIC("whatsapp_managment/enviar_template_masivo", token, {
-      id_configuracion: idConf,
-      body: payload,
-      id_cliente_chat_center: String(pedido.importchat_chat_id),
-      header_default_asset: null,
+    // Manda y RELEE el chat: solo se da por enviada si se la ve ahí.
+    const verificado = await enviarPlantillaVerificada({
+      cred: { token, idConf: Number(idConf) },
+      chatId: String(pedido.importchat_chat_id),
+      cuerpoPlantilla: elegida.cuerpo,
+      nombrePlantilla: elegida.nombre,
+      enviar: () => postIC("whatsapp_managment/enviar_template_masivo", token, {
+        id_configuracion: idConf,
+        body: payload,
+        id_cliente_chat_center: String(pedido.importchat_chat_id),
+        header_default_asset: null,
+      }),
     });
-    // El envío no salió: se LIBERA el claim para que un reintento legítimo pueda
-    // volver a intentar (si no, el candado bloquearía el reenvío todo el día).
-    if (!envio.ok) { await liberarClaim(); return json({ ok: false, error: `Meta rechazó el envío: ${envio.detalle}` }, 502); }
-    if (envio.datos?.success !== true) {
-      // Respondió 200 pero sin confirmar: NO se marca nada. Un "listo" sin
-      // confirmación es peor que un error — la asesora tacharía el pedido.
-      await liberarClaim();
+
+    /** Deja escrito qué pasó. La fila no se borra nunca: es la prueba. */
+    const cerrarFila = async (campos: Record<string, unknown>) => {
+      if (!filaId) return;
+      const { error } = await sb.from("importchat_envios").update(campos).eq("id", filaId);
+      // Si esto falla la fila queda `enviando` y se auto-cura a los 3 minutos,
+      // en vez de bloquear el reenvío todo el día. Estrictamente mejor que el
+      // DELETE de antes, que al fallar dejaba el candado puesto para siempre.
+      if (error) console.warn(`[importchat-plantillas] no pude cerrar la fila ${filaId}: ${error.message}`);
+    };
+
+    if (verificado.estado !== "confirmado") {
+      await cerrarFila({
+        estado: verificado.estado === "sin_lectura" ? "fallido" : verificado.estado,
+        respuesta: "respuesta" in verificado ? verificado.respuesta : null,
+      });
+      // ⛔ NI touchpoint NI `chat_saliente_at`: no se anota una gestión que no
+      // ocurrió. Eso es lo que hacía que la tarjeta quedara pintada y la
+      // productividad contara el trabajo mientras el cliente no tenía nada.
       return json({
         ok: false,
-        error: String(envio.datos?.message || "ImporChat no confirmó el envío"),
+        confirmado: false,
+        sin_confirmar: verificado.estado === "no_confirmado",
+        sin_lectura: verificado.estado === "sin_lectura",
+        error: verificado.motivo,
       }, 502);
     }
+
+    await cerrarFila({
+      estado: "confirmado", confirmado_at: new Date().toISOString(),
+      mensaje_id: verificado.mensajeId, senal: verificado.senal, respuesta: verificado.respuesta,
+    });
 
     // Recién con el envío CONFIRMADO se marca el pedido. `plantilla` (no
     // `directo`) es el mismo vocabulario que ya usa `chat_saliente_tipo`.
@@ -326,7 +413,8 @@ Deno.serve(async (req) => {
       confirmado: true,
       enviado_a: destino,
       plantilla: elegida.nombre,
-      wamid: envio.datos?.wamid ?? null,
+      senal: verificado.senal,
+      mensaje_id: verificado.mensajeId,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
