@@ -187,7 +187,7 @@ export default function PanelConversacion({
   };
 
   return (
-    <div className={cn('flex flex-col gap-4 min-w-0', className)}>
+    <div className={cn('flex flex-col gap-3 min-w-0', className)}>
       {/* Lo que pasó, primero. Aunque no se pueda escribir, esto es lo que
           decide si hay que llamar. */}
       <ConversacionChat
@@ -198,14 +198,18 @@ export default function PanelConversacion({
         {...(altoChat ? { altoClase: altoChat } : {})}
       />
 
-      {/* El estado de la ventana: decide si tiene sentido escribir. */}
+      {/* El estado de la ventana: decide si tiene sentido escribir.
+          En UNA línea de texto, sin caja (rediseño, 4-sep-2026): era un cartel
+          amarillo de dos renglones con borde y fondo, y salía en casi todas las
+          conversaciones de la bandeja (casi todos llevan +24 h). Lo que es la
+          regla no puede pintarse como alarma. El texto y el tono son los mismos. */}
       {averiguando ? (
-        <div className="flex items-center gap-2 rounded-xl border border-border bg-card/40 px-3 py-2 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
           <Clock size={13} aria-hidden="true" className="shrink-0 motion-safe:animate-pulse" />
           <span>Viendo si todavía se le puede escribir…</span>
         </div>
       ) : puedeEscribir ? (
-        <div className="flex items-center gap-2 rounded-xl border border-success/30 bg-success/10 px-3 py-2 text-xs text-success">
+        <div className="flex items-center gap-2 px-1 text-xs text-success">
           <Clock size={13} aria-hidden="true" className="shrink-0" />
           <span>
             Se puede escribir por {v.restanteMs == null ? '' : (() => {
@@ -218,7 +222,7 @@ export default function PanelConversacion({
           </span>
         </div>
       ) : (
-        <div className="flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+        <div className="flex items-start gap-2 px-1 text-xs text-warning">
           <X size={13} aria-hidden="true" className="shrink-0 mt-0.5" />
           <span>{sinConversacion
             ? `Este pedido todavía no tiene conversación en ${nombreCanal(canalChat)}, así que un mensaje escrito a mano no le llega. Se le puede mandar una plantilla aprobada, o llamarlo.`

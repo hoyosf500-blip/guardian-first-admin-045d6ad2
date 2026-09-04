@@ -544,6 +544,17 @@ Lo que hace la Fase 3, en las tres pantallas del día:
 Resultado medido en `npm run dev` con la sesión del dueño: el tablero empieza en **y≈390**, con
 las cuatro primeras columnas y dos tarjetas por columna visibles sin scrollear.
 
+**La Bandeja (`/inbox`, vista ancha), misma regla.** Medido en la pantalla del dueño (1780 px):
+cada fila de la cola apilaba cinco cosas —nombre, producto, pastilla de estado, pastilla amarilla
+«solo plantilla», pastilla índigo del sello— y medía ~115 px: cinco clientes a la vista de 75. Y las
+dos pastillas de color salían en TODAS las filas (casi todos llevan +24 h, casi todos tienen sello):
+no marcaban nada, eran fondo. Ahora la fila son tres renglones fijos de 82 px: (1) nombre + hace
+cuánto espera, con un candado de 10 px si solo admite plantilla; (2) el estado de Dropi tal cual,
+en una pastilla que no se parte; (3) producto · ciudad a la izquierda y el sello como TEXTO gris a
+la derecha (`SelloGestion plano`, verde solo si fue propio). El cartel amarillo de la ventana de
+24 h en la conversación pasa a una línea de texto sin caja, y la ficha «Su pedido» va en dos
+columnas. La lista usa el alto que queda de pantalla (`calc(100dvh-15rem)`), no un 70 % fijo.
+
 **Bug que vino en el mismo reporte** (*"cuando paso el mouse eso se va conmigo, la barra queda
 descoordinada"*): el arrastre del tablero con el mouse (`onPanDown/Move/Up` en `SegBoard`)
 quedaba ARMADO si el botón se soltaba fuera del tablero antes de recorrer los 6 px que activan la

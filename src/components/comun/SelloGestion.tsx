@@ -27,7 +27,7 @@ import { cn } from '@/lib/utils';
  * datos que no llegaron es una acusación falsa, y es exactamente el error que
  * este componente viene a corregir.
  */
-export default function SelloGestion({ sello, estado, miId, className, compacto = false }: {
+export default function SelloGestion({ sello, estado, miId, className, compacto = false, plano = false }: {
   /** La última gestión sobre ese teléfono, o `null` si no hay ninguna. */
   sello: Sello | null;
   /** De `useSelloGestion`. Decide si el silencio significa algo. */
@@ -37,6 +37,9 @@ export default function SelloGestion({ sello, estado, miId, className, compacto 
   className?: string;
   /** Sin la acción, solo quién y cuándo. Para filas angostas. */
   compacto?: boolean;
+  /** Como TEXTO gris (verde si fue propio), sin pastilla. Para listas largas
+   *  donde una pastilla por fila se vuelve fondo. */
+  plano?: boolean;
 }) {
   const { nameOf } = useOperatorNames();
 
@@ -62,6 +65,30 @@ export default function SelloGestion({ sello, estado, miId, className, compacto 
   const cuando = haceCuanto(sello.createdAt);
   const que = accionLegible(sello.action);
   const Icono = propio ? CheckCircle2 : UserCheck;
+
+  // Variante de TEXTO (rediseño, 4-sep-2026): en una lista de 75 filas la
+  // pastilla índigo repetida en cada una dejaba de ser una etiqueta y pasaba a
+  // ser fondo. Como tercera línea de la fila va en gris, y en verde solo si fue
+  // propio. Mismo dato, mismo `title`; cambia el peso.
+  if (plano) {
+    return (
+      <span
+        className={cn(
+          'inline-flex items-center gap-1 text-[11px] min-w-0',
+          propio ? 'text-success' : 'text-muted-foreground',
+          className,
+        )}
+        title={`${quien} · ${que || 'gestión registrada'} · ${cuando}`}
+      >
+        <Icono size={10} className="shrink-0" aria-hidden="true" />
+        <span className="truncate">
+          {quien}
+          {!compacto && que ? ` · ${que}` : ''}
+          {cuando ? ` · ${cuando}` : ''}
+        </span>
+      </span>
+    );
+  }
 
   return (
     <span

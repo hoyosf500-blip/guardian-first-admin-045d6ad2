@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { MessageSquare, Phone, MapPin, Package, Clock, Inbox, CheckCircle2, Loader2, Search, AlertTriangle } from 'lucide-react';
+import { MessageSquare, Phone, MapPin, Package, Clock, Inbox, CheckCircle2, Loader2, Search, AlertTriangle, Lock } from 'lucide-react';
 import { useStore } from '@/contexts/StoreContext';
 import { useInboxEsperando, HORAS_SIN_RESPUESTA, type InboxItem } from '@/hooks/useInboxEsperando';
 import { useImporchatSyncHealth } from '@/hooks/useImporchatSyncHealth';
@@ -258,16 +258,16 @@ function FilaCola({ o, seleccionada, onSelect, sello, estadoSello, miId, resuelt
       type="button"
       onClick={onSelect}
       aria-current={seleccionada ? 'true' : undefined}
-      className={`w-full text-left px-3 py-2.5 flex items-start gap-2.5 min-w-0 border-l-2 transition-colors ${
+      className={`w-full text-left px-3 py-2 flex items-start gap-2.5 min-w-0 border-l-2 transition-colors ${
         seleccionada
           ? 'bg-accent/10 border-l-accent'
           : 'border-l-transparent hover:bg-card/60'
       } ${resuelto ? 'opacity-55' : ''}`}
     >
-      <span className="relative shrink-0">
+      <span className="relative shrink-0 mt-0.5">
         <span
-          className={`w-9 h-9 rounded-full border flex items-center justify-center text-[11px] font-bold ${
-            seleccionada ? 'bg-accent/20 border-accent/40 text-accent' : 'bg-card/60 border-border text-muted-foreground'
+          className={`w-8 h-8 rounded-full border flex items-center justify-center text-[11px] font-bold ${
+            seleccionada ? 'bg-accent/20 border-accent/40 text-accent' : 'bg-card border-border text-muted-foreground'
           }`}
           aria-hidden="true"
         >
@@ -277,63 +277,80 @@ function FilaCola({ o, seleccionada, onSelect, sello, estadoSello, miId, resuelt
         <span className={`absolute -right-0.5 -top-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-background ${t.dot}`} aria-hidden="true" />
       </span>
 
+      {/* ══ UNA FILA, TRES SEÑALES (rediseño, 4-sep-2026) ═══════════════════
+          Antes cada fila apilaba cinco cosas —nombre, producto, pastilla de
+          estado, pastilla amarilla «solo plantilla», pastilla índigo del sello—
+          y medía ~115 px: cinco clientes a la vista de 75. Y las dos pastillas
+          de color salían en TODAS las filas (casi todos llevan +24 h, casi
+          todos tienen sello), así que no marcaban nada: eran fondo.
+            1. EL CLIENTE — nombre + hace cuánto espera (el reloj lleva el tono).
+            2. EL PEDIDO — estado · días, y producto · ciudad al lado, en gris.
+            3. NOSOTROS — quién lo tocó y quién lo tiene abierto, en texto.
+          «Solo plantilla» pasa a un candado de 10 px junto al reloj: es la
+          regla, no la excepción, y una regla no se pinta de amarillo. */}
       <span className="min-w-0 flex-1 block">
         <span className="flex items-baseline gap-2 min-w-0">
-          <span className="text-[15px] font-semibold text-foreground truncate min-w-0 leading-tight">{o.nombre}</span>
+          <span className="text-sm font-semibold text-foreground truncate min-w-0 leading-tight">{o.nombre}</span>
           <span className={`ml-auto shrink-0 inline-flex items-center gap-1 text-[11px] font-mono tabular-nums font-semibold ${t.texto}`}>
+            {!resuelto && soloPlantilla(o) && (
+              <span
+                className="inline-flex text-muted-foreground"
+                title="Pasaron más de 24 h desde su último mensaje: WhatsApp ya no entrega texto escrito a mano, hay que mandarle una plantilla aprobada."
+                aria-label="Solo se le puede mandar una plantilla aprobada"
+              >
+                <Lock size={10} aria-hidden="true" />
+              </span>
+            )}
             {resuelto && <CheckCircle2 size={11} aria-label="Resuelto" />}
             {haceCuantoMs(o.esperaDesde)}
           </span>
         </span>
-        {contexto && (
-          <span className="block text-xs text-muted-foreground truncate mt-0.5">{contexto}</span>
-        )}
-        {/* Fase 1 del rediseño (4-sep-2026): el estado y los días en él son UNA
-            pastilla (el «D2» suelto a 9 px no se leía); «solo plantilla» pasa a
-            11 px. Texto de Dropi tal cual, sin traducir. */}
-        <span className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+        {/* El estado de Dropi tal cual (los de Ecuador son largos: «PARA RETIRO
+            EN AGENCIA SERVIENTREGA»), en su propia línea y sin partirse: el
+            texto se recorta, los días no. */}
+        <span className="mt-1 flex min-w-0">
           <span
-            className="pill pill-neutral text-[11px] max-w-full"
+            className="pill pill-neutral text-[11px] min-w-0 max-w-full whitespace-nowrap"
             title={o.diasEnEstado == null
               ? 'Dropi no reporta cuándo se movió por última vez'
               : `Lleva ${o.diasEnEstado} ${o.diasEnEstado === 1 ? 'día' : 'días'} en «${o.estado || 'este estado'}»`}
           >
             <span className="truncate">{o.estado || '—'}</span>
-            {o.diasEnEstado != null && <span className="font-mono opacity-80">· {o.diasEnEstado === 0 ? 'hoy' : `${o.diasEnEstado} d`}</span>}
+            {o.diasEnEstado != null && <span className="shrink-0 font-mono opacity-80">· {o.diasEnEstado === 0 ? 'hoy' : `${o.diasEnEstado} d`}</span>}
           </span>
-          {soloPlantilla(o) && (
-            <span
-              className="pill pill-warning text-[11px]"
-              title="Pasaron más de 24 h desde su último mensaje: WhatsApp ya no entrega texto escrito a mano, hay que mandarle una plantilla aprobada."
-            >
-              solo plantilla
-            </span>
-          )}
         </span>
         {/* ⛔ EL SELLO (3-sep-2026). Esta bandeja no mostraba NADA de gestión:
             una asesora podía haberle contestado a este cliente hace diez minutos
             desde otra pantalla y acá seguía viéndose como si nadie lo hubiera
             tocado. Eso es exactamente el regaño injusto que el dueño quiere
-            evitar. Compacto porque la columna es angosta. */}
-        {sello && (
-          <span className="block mt-1">
-            <SelloGestion sello={sello} estado={estadoSello} miId={miId} compacto />
+            evitar. El sello dice quién lo tocó ANTES; el candado dice quién lo
+            tiene ABIERTO ahora. Son dos preguntas distintas y las dos hacen
+            falta para no escribirle dos veces al mismo cliente.
+            Va a la DERECHA del producto, en la misma línea: la fila queda en
+            tres renglones fijos y la lista muestra el doble de clientes. */}
+        {(contexto || sello || o.lockedBy) && (
+          <span className="mt-1 flex items-center gap-2 min-w-0">
+            {contexto && (
+              <span className="text-xs text-muted-foreground truncate min-w-0" title={contexto}>{contexto}</span>
+            )}
+            {(sello || o.lockedBy) && (
+              <span className="ml-auto flex shrink-0 items-center gap-2 max-w-[55%]">
+                {sello && <SelloGestion sello={sello} estado={estadoSello} miId={miId} compacto plano />}
+                <LockBadge lockedBy={o.lockedBy} lockedAt={o.lockedAt} />
+              </span>
+            )}
           </span>
         )}
-        {/* El sello dice quién lo tocó ANTES; esto dice quién lo tiene ABIERTO
-            AHORA. Son dos preguntas distintas y las dos hacen falta para no
-            escribirle dos veces al mismo cliente. */}
-        <LockBadge lockedBy={o.lockedBy} lockedAt={o.lockedAt} className="mt-1" />
       </span>
     </button>
   );
 }
 
 /** Una fila de la ficha del cliente: etiqueta arriba, valor abajo. */
-function Dato({ etiqueta, children }: { etiqueta: string; children: ReactNode }) {
+function Dato({ etiqueta, children, ancho }: { etiqueta: string; children: ReactNode; /** Ocupa las dos columnas de la ficha (texto largo). */ ancho?: boolean }) {
   return (
-    <div className="min-w-0">
-      <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">{etiqueta}</div>
+    <div className={ancho ? 'min-w-0 col-span-2' : 'min-w-0'}>
+      <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold">{etiqueta}</div>
       <div className="text-xs text-foreground break-words">{children}</div>
     </div>
   );
@@ -789,7 +806,7 @@ export default function InboxPage() {
           página entera. Pasó en producción el 3-sep-2026: la pantalla se
           desbordó a lo ancho y había que scrollear de lado para ver el menú. */}
       {status === 'ok' && items.length > 0 && ancha && (
-        <div className="grid min-w-0 grid-cols-[minmax(0,290px)_minmax(0,1fr)] xl:grid-cols-[minmax(0,300px)_minmax(0,1fr)_minmax(0,280px)] rounded-2xl border border-border bg-card/30 overflow-hidden">
+        <div className="grid min-w-0 grid-cols-[minmax(0,300px)_minmax(0,1fr)] xl:grid-cols-[minmax(0,320px)_minmax(0,1fr)_minmax(0,272px)] rounded-xl border border-border bg-surface overflow-hidden">
 
           {/* 1 · LA COLA */}
           <div className="min-w-0 flex flex-col border-r border-border">
@@ -798,7 +815,10 @@ export default function InboxPage() {
               <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Esperando</span>
               <span className="ml-auto text-[11px] font-mono tabular-nums font-bold text-danger">{items.length}</span>
             </div>
-            <div className="overflow-y-auto max-h-[70vh] divide-y divide-border/50" role="list">
+            {/* Alto = lo que queda de pantalla debajo de la cabecera (no un 70 %
+                fijo): en una pantalla de 900 px eso son dos clientes más a la
+                vista. Mínimo 320 px para que en pantallas bajas siga habiendo lista. */}
+            <div className="overflow-y-auto max-h-[max(320px,calc(100dvh-15rem))] divide-y divide-border/50" role="list">
               {items.map((o) => (
                 <FilaCola
                   key={o.dbId}
@@ -828,8 +848,8 @@ export default function InboxPage() {
                   </div>
                   <span className="ml-auto shrink-0 flex items-center gap-2">
                     <SelloGestion sello={selloDe(sel.phone)} estado={estadoSello} miId={miId} />
-                    <span className="pill pill-neutral text-[10px] px-2 py-0.5 rounded-full font-semibold">
-                      {sel.estado || '—'}
+                    <span className="pill pill-neutral text-[11px] max-w-[14rem]">
+                      <span className="truncate">{sel.estado || '—'}</span>
                     </span>
                   </span>
                 </div>
@@ -861,7 +881,7 @@ export default function InboxPage() {
                     datos={datosDe(sel)}
                     modulo="SEG"
                     altoChat="min-h-[220px] max-h-[42vh]"
-                    className="p-4 gap-3 min-w-0"
+                    className="p-3 gap-2.5 min-w-0"
                   />
                 ) : (
                   <p className="p-4 text-xs text-muted-foreground">
@@ -883,19 +903,23 @@ export default function InboxPage() {
             <div className="px-3 py-2 border-b border-border/70 shrink-0">
               <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Su pedido</span>
             </div>
+            {/* Ficha en DOS columnas (rediseño, 4-sep-2026): los datos cortos
+                —valor, ciudad, guía, teléfono— se leen de a pares; producto y
+                dirección van a lo ancho porque son texto largo. Antes cada dato
+                ocupaba un renglón propio y la ficha medía 460 px. */}
             {sel ? (
-              <div className="overflow-y-auto max-h-[70vh] p-3 flex flex-col gap-3 min-w-0">
-                <Dato etiqueta="Producto">{sel.producto || '—'}</Dato>
+              <div className="overflow-y-auto max-h-[70vh] p-3 grid grid-cols-2 gap-x-3 gap-y-2.5 min-w-0">
+                <Dato etiqueta="Producto" ancho>{sel.producto || '—'}</Dato>
                 <Dato etiqueta="Valor">
                   <span className="font-mono tabular-nums font-semibold">{sel.valor ? formatCOP(sel.valor) : '—'}</span>
                 </Dato>
                 <Dato etiqueta="Ciudad">{sel.ciudad || '—'}</Dato>
-                <Dato etiqueta="Dirección">{sel.direccion || '—'}</Dato>
+                <Dato etiqueta="Dirección" ancho>{sel.direccion || '—'}</Dato>
                 <Dato etiqueta="Transportadora">{sel.transportadora || '—'}</Dato>
                 <Dato etiqueta="Guía">
                   <span className="font-mono tabular-nums">{sel.guia || '—'}</span>
                 </Dato>
-                <Dato etiqueta="Estado">
+                <Dato etiqueta="Estado" ancho>
                   {sel.estado || '—'}
                   {sel.diasEnEstado != null && (
                     <span className="text-muted-foreground"> · {sel.diasEnEstado} {sel.diasEnEstado === 1 ? 'día' : 'días'} así</span>
@@ -907,7 +931,7 @@ export default function InboxPage() {
                 {sel.externalId && (
                   <Link
                     to={`/pedido/${sel.externalId}`}
-                    className="mt-1 text-[11px] font-semibold text-accent hover:underline"
+                    className="col-span-2 mt-1 text-[11px] font-semibold text-accent hover:underline"
                   >
                     Abrir el pedido #{sel.externalId} →
                   </Link>
