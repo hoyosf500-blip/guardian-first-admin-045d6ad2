@@ -27,12 +27,13 @@ import {
   type ShopifyPendingLike,
   type PushedRecord,
 } from "../_shared/autoPushSelect.ts";
+import { aplicarCortacircuitos, resumenPausa } from "../_shared/cortacircuitos.ts";
 import { respuestaPing } from "../_shared/versionEdge.ts";
 
 const SHOPIFY_API_VERSION = "2024-10";
 /** Se despliega A MANO. `POST .../shopify-auto-push?ping=1` contesta esta marca:
  *  sin ella no hay forma de saber si el robot que corre cada 15 min es el nuevo. */
-const VERSION = "shopify-auto-push 2026-09-04.1 tres-horas-de-gracia-para-dropify";
+const VERSION = "shopify-auto-push 2026-09-04.1 deja-de-martillar-lo-que-no-sale";
 /** Gracia: dejar que Dropify (la app de Shopify de Dropi) lo suba solo primero.
  *
  *  Era 30 min. Medido el 4-sep-2026 en Ecuador (25-ago → 4-sep): Dropify tarda
@@ -196,7 +197,7 @@ async function processStore(
   }
 
   // 3. Intentos previos (idempotencia + enfriamiento de 'error').
-  const pushedByOrderId = new Map<string, PushedRecord>();
+  const pushedByOrderId = new Map<string, PushedRecord & { errorMessage: string | null }>();
   {
     // Solo importan los intentos dentro de la ventana de candidatos (3 días) +
     // margen de 1 día: sin este filtro PostgREST corta en 1000 filas SIN orden
@@ -205,13 +206,17 @@ async function processStore(
     // que queman el cap de candidatos y pintan el badge en warn mintiendo).
     // El order desc es doble seguro por si aun así se pasa de 1000.
     const { data } = await sb
-      .from("shopify_pushed_orders").select("shopify_order_id, status, pushed_at")
+      // `error_message` se lee para agrupar por CAUSA (cortacircuitos). Sin el
+      // texto no hay causa, y sin causa el robot no puede saber que esta
+      // martillando 39 veces el mismo producto sin stock.
+      .from("shopify_pushed_orders").select("shopify_order_id, status, error_message, pushed_at")
       .eq("store_id", storeId)
       .gte("pushed_at", new Date(Date.now() - (MAX_AGE_MS + 86400000)).toISOString())
       .order("pushed_at", { ascending: false });
-    for (const r of ((data || []) as { shopify_order_id: string; status: string; pushed_at: string }[])) {
+    for (const r of ((data || []) as { shopify_order_id: string; status: string; error_message: string | null; pushed_at: string }[])) {
       pushedByOrderId.set(String(r.shopify_order_id), {
         status: String(r.status || ""),
+        errorMessage: r.error_message ?? null,
         pushedAtMs: new Date(r.pushed_at).getTime() || 0,
       });
     }
@@ -224,15 +229,25 @@ async function processStore(
     createdAtMs: new Date(o.created_at).getTime() || 0,
   }));
   const nameById = new Map(shopify.map((o) => [String(o.id), o.name]));
-  const picked = selectAutoPushCandidates(candidatesInput, dropiActivePhones, pushedByOrderId, {
+  // ⛔ SIN TOPE ACA A PROPOSITO (`cap: 0`). El cortacircuitos tiene que decidir
+  // ANTES de que se reparta el cupo, no despues: los atascados son los MAS
+  // VIEJOS y esta lista viene ordenada del mas viejo al mas nuevo, asi que
+  // aplicando el corte despues del tope los 20 cupos se los siguen comiendo
+  // ellos y no se arregla nada. El tope se aplica abajo, sobre lo que quedo.
+  const ordenados = selectAutoPushCandidates(candidatesInput, dropiActivePhones, pushedByOrderId, {
     nowMs: Date.now(), minAgeMs: MIN_AGE_MS, maxAgeMs: MAX_AGE_MS,
-    errorCooldownMs: ERROR_COOLDOWN_MS, cap: PER_STORE_CAP,
+    errorCooldownMs: ERROR_COOLDOWN_MS, cap: 0,
   }, contraparteDropiMs);
+  const corte = aplicarCortacircuitos(ordenados, pushedByOrderId, { nowMs: Date.now() });
+  const picked = corte.aSubir.slice(0, PER_STORE_CAP);
 
   if (dryRun) {
     return {
       store_id: storeId, dry_run: true,
       shopify_recientes: shopify.length, candidatos: picked.length,
+      en_pausa: corte.enPausa.length,
+      causas_en_pausa: corte.causas.map((c) => ({ clave: c.clave, pedidos: c.pedidos, etiqueta: c.etiqueta })),
+      sondas: corte.sondas.map((x) => x.shopify_order_id),
       subiria: picked.map((p) => ({ shopify_order_id: p.shopify_order_id, name: nameById.get(p.shopify_order_id) })),
     };
   }
@@ -288,6 +303,12 @@ async function processStore(
   //     → warn con el desglose real, para que el panel deje de mentir en verde.
   //   - sino → success.
   const zeroWithCandidates = picked.length > 0 && pushed === 0;
+  // ⛔ La pausa OBLIGA a escribir el log. Sin esta condicion, una corrida con 52
+  // ventas paradas y ningun candidato deja `picked.length === 0`, no entra por
+  // ninguna de las otras ramas y sale 'success' con el mensaje vacio: el panel
+  // se pinta VERDE con 52 ventas paradas. Es `wallet_cron_fallaba_en_verde`
+  // entrando por la puerta nueva.
+  const hayPausa = corte.enPausa.length > 0;
   let logStatus: "success" | "warn" = "success";
   let logError: string | null = null;
   // El desglose SIEMPRE lleva "bloqueados: N" — es la forma que lee el panel
@@ -295,7 +316,7 @@ async function processStore(
   // red escribía un texto SIN esa palabra y ganaba sobre esta, así que una corrida
   // con fallos de red Y pedidos trabados dejaba al panel en VERDE: leía 0
   // bloqueados porque el número no estaba escrito en ningún lado.
-  if (errors > 0 || zeroWithCandidates || sinTiempo > 0) {
+  if (errors > 0 || zeroWithCandidates || sinTiempo > 0 || hayPausa) {
     logStatus = "warn";
     // Primeros 3 motivos concretos del array `detail` para diagnóstico rápido.
     const firstReasons = detail.slice(0, 3).map((d) => {
@@ -307,7 +328,7 @@ async function processStore(
     const cortado = sinTiempo > 0
       ? ` CORTADA POR TIEMPO: ${sinTiempo} sin intentar (reintenta en la próxima corrida).`
       : "";
-    logError = `${pushed} de ${picked.length} subidos — bloqueados: ${blocked}, duplicados: ${dup}, errores: ${errors}.${cortado} Primeros motivos: ${firstReasons || "(sin detalle)"}`;
+    logError = `${pushed} de ${picked.length} subidos — bloqueados: ${blocked}, duplicados: ${dup}, errores: ${errors}.${cortado}${resumenPausa(corte)} Primeros motivos: ${firstReasons || "(sin detalle)"}`;
   }
   try {
     await sb.from("sync_logs").insert({
@@ -321,7 +342,14 @@ async function processStore(
     });
   } catch { /* logging best-effort */ }
 
-  return { store_id: storeId, candidatos: picked.length, subidos: pushed, duplicados: dup, bloqueados: blocked, errores: errors, detail };
+  return {
+    store_id: storeId, candidatos: picked.length, subidos: pushed, duplicados: dup,
+    bloqueados: blocked, errores: errors,
+    en_pausa: corte.enPausa.length,
+    causas_en_pausa: corte.causas.map((c) => ({ clave: c.clave, pedidos: c.pedidos })),
+    sondas: corte.sondas.length,
+    detail,
+  };
 }
 
 Deno.serve(async (req: Request) => {

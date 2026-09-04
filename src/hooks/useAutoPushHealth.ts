@@ -60,6 +60,15 @@ const RE_BLOQUEADOS = /bloqueados:\s*(\d+)/i;
 const RE_ERRORES = /errores:\s*(\d+)/i;
 /** La corrida se cortó por presupuesto de pared y dejó candidatos sin intentar. */
 const RE_SIN_INTENTAR = /(\d+)\s+sin intentar/i;
+/** ⛔ El cortacircuitos puso una causa EN PAUSA (4-sep-2026). Estos pedidos son
+ *  los más peligrosos de todos para el panel: el robot decidió a propósito no
+ *  intentarlos, así que no figuran como "bloqueados" ni como "errores" ni como
+ *  "sin intentar" — y sin esta línea el panel los leería como CERO y se pintaría
+ *  VERDE con 52 ventas de clientes reales paradas. Es exactamente
+ *  `wallet_cron_fallaba_en_verde` entrando por la puerta nueva. La forma
+ *  `en pausa: N` la escribe `resumenPausa` en `_shared/cortacircuitos.ts`; si se
+ *  cambia allá hay que cambiarla acá, y hay un guardián que lo exige. */
+const RE_EN_PAUSA = /en pausa:\s*(\d+)/i;
 
 /** Parte los motivos que el robot concatena con " | " y les quita el prefijo
  *  técnico `#7472697999585→error: `, que a la asesora no le dice nada. */
@@ -99,9 +108,12 @@ export function evaluarCorrida(
   const bloqueados = Number(msg.match(RE_BLOQUEADOS)?.[1] ?? 0);
   const errores = Number(msg.match(RE_ERRORES)?.[1] ?? 0);
   const sinIntentar = Number(msg.match(RE_SIN_INTENTAR)?.[1] ?? 0);
-  // Las tres son la misma cosa para el dueño: pedidos de clientes reales que NO
-  // llegaron a Dropi. Separarlas solo servía para que dos de las tres no se vieran.
-  const cuantos = bloqueados + errores + sinIntentar;
+  const enPausa = Number(msg.match(RE_EN_PAUSA)?.[1] ?? 0);
+  // Las CUATRO son la misma cosa para el dueño: pedidos de clientes reales que
+  // NO llegaron a Dropi. Separarlas solo servía para que tres de las cuatro no
+  // se vieran. Que el robot haya decidido pausar la causa no cambia el hecho:
+  // la venta sigue sin despachar y alguien tiene que reponer el stock.
+  const cuantos = bloqueados + errores + sinIntentar + enPausa;
 
   // `status` solo no alcanza: el robot marca 'warn' también cuando no había nada
   // que hacer. Lo que define la falla es que haya pedidos sin subir.
