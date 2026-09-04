@@ -74,20 +74,25 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
   const totalPages = Math.max(1, Math.ceil((movQ.data?.total ?? 0) / PAGE_SIZE));
   const neto = (movQ.data?.totalEntradas ?? 0) - (movQ.data?.totalSalidas ?? 0);
 
-  // ⛔ LOS KPIs NO RESPONDEN A TIPO NI A CATEGORÍA (medido 4-sep-2026, Ecuador,
-  // agosto). `useWalletMovements` aplica los dos filtros a la TABLA (líneas
-  // 67-68) pero llama a `wallet_summary(p_from, p_to)` SIN ellos: la función
-  // desplegada ni siquiera los acepta (probada con p_tipo → PGRST202). Así que
-  // con "Tipo: Salida" puesto, la tabla muestra 276 movimientos y las tarjetas
-  // siguen diciendo $12.607 de entradas y 943 movimientos del rango entero.
+  // ⛔ LOS KPIs NO RESPONDÍAN A TIPO NI A CATEGORÍA (medido 4-sep-2026, Ecuador,
+  // agosto). `useWalletMovements` aplicaba los dos filtros a la TABLA pero
+  // llamaba a `wallet_summary(p_from, p_to)` SIN ellos. Con "Tipo: Salida"
+  // puesto, la tabla mostraba 276 movimientos y las tarjetas seguían diciendo
+  // $12.607,01 de entradas y 943 movimientos, del rango entero.
   //
-  // Hasta que exista la función filtrada, las tarjetas de plata DICEN que son
-  // del rango completo en vez de fingir que miden lo filtrado. Y "Movimientos"
-  // pasa a `total` —el conteo que ya viene filtrado de la propia consulta de la
-  // tabla— porque decía 943 justo encima de una línea que decía 276: la misma
-  // pantalla dando dos respuestas al mismo número.
+  // Ahora los agregados salen de `wallet_summary_filtrado`. Si esa función
+  // todavía no está aplicada, el hook cae a la vieja y lo DICE
+  // (`agregadosFiltrados === false`): entonces las tarjetas de plata avisan de
+  // qué rango hablan en vez de fingir que miden lo filtrado.
+  //
+  // "Movimientos" usa `total` —el conteo que ya viene filtrado de la propia
+  // consulta de la tabla— y no `countTotal`: decía 943 tres centímetros encima
+  // de una línea que decía 276, la misma pantalla dando dos respuestas al mismo
+  // número. Con la función aplicada los dos coinciden; sin ella, `total` es el
+  // único de los dos que respeta el filtro.
   const filtroActivo = tipo !== 'ALL' || categoria !== 'ALL';
-  const notaRango = filtroActivo ? 'del rango completo — el filtro de abajo no llega a este número' : undefined;
+  const agregadosCiegos = filtroActivo && movQ.data?.agregadosFiltrados === false;
+  const notaRango = agregadosCiegos ? 'del rango completo — el filtro de abajo no llega a este número' : undefined;
 
   return (
     <div className="space-y-5">
@@ -168,7 +173,7 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
                 aclaración, dos "neto" distintos del mismo rango parecían
                 contradecirse (auditoría 24-ago-2026). */}
             <KpiCard label="Movimiento neto" value={COP(neto)} icon={TrendingUp} tone={neto >= 0 ? 'success' : 'danger'}
-              hint={`entradas − salidas de TODO el wallet · incluye retiros y depósitos — no es ganancia${filtroActivo ? ' · del rango completo, sin el filtro de abajo' : ''}`} />
+              hint={`entradas − salidas de TODO el wallet · incluye retiros y depósitos — no es ganancia${agregadosCiegos ? ' · del rango completo, sin el filtro de abajo' : ''}`} />
             {/* `total` (conteo de la consulta de la tabla, YA filtrado), no
                 `countTotal` (del RPC, sin filtrar): son el mismo número y la
                 pantalla los mostraba distintos con un filtro puesto. */}

@@ -36,6 +36,11 @@ export interface WalletMovementsResult {
   totalSalidas: number;
   countTotal: number;
   categorias: string[];
+  /** true = los agregados SÍ respetan Tipo y Categoría. false = la función
+   *  filtrada todavía no está aplicada y las cifras son del rango completo.
+   *  La pantalla tiene que decirlo: una tarjeta que dice $12.607 con "Salida"
+   *  puesto no es un número aproximado, es un número de otra pregunta. */
+  agregadosFiltrados: boolean;
 }
 
 // COST-2 (2026-04-29): los agregados se calculan server-side vía RPC
@@ -75,15 +80,54 @@ export function useWalletMovements(params: UseWalletMovementsParams) {
       if (error) throw error;
 
       // 2. Agregados via RPC (Postgres devuelve 1 fila, no 10.000)
-      const { data: aggData, error: aggError } = await supabase.rpc('wallet_summary', {
-        p_from: fromTs,
-        p_to: toTs,
-      });
-      if (aggError) throw aggError;
-      const agg = (aggData?.[0] ?? {}) as {
+      //
+      // ⛔ 4-sep-2026: acá se llamaba a `wallet_summary(p_from, p_to)` SIN los
+      // filtros, mientras la consulta de arriba SÍ los aplicaba. Con "Tipo:
+      // Salida" puesto la tabla mostraba 276 movimientos de agosto en Ecuador y
+      // las tarjetas seguían diciendo $12.607,01 de entradas y 943 movimientos.
+      // La función vieja ni acepta los parámetros (`p_tipo` → PGRST202), así que
+      // el arreglo es una función NUEVA (20260904190000) — la vieja no se toca.
+      type Agg = {
         total_entradas?: number; total_salidas?: number; count_total?: number;
         ultimo_saldo?: number | null; categorias?: string[] | null;
       };
+      let agg: Agg = {};
+      let agregadosFiltrados = true;
+
+      // `types.ts` se autogenera del esquema y todavía no conoce la función
+      // nueva. Mismo molde EXACTO que useInboxEsperando: el cast se aplica en
+      // la llamada, dentro de una flecha. Guardar `supabase.rpc` en una variable
+      // pierde el `this` (memoria rpc_supabase_binding_pattern, y el guardián
+      // rpcBinding.test.ts lo atrapa); llamarlo inline lo conserva.
+      const rpc = (fn: string, args: Record<string, unknown>) =>
+        (supabase.rpc as unknown as (f: string, a: Record<string, unknown>) =>
+          Promise<{ data: Agg[] | null; error: { code?: string; message?: string } | null }>)(fn, args);
+
+      const filtrada = await rpc('wallet_summary_filtrado', {
+        p_from: fromTs,
+        p_to: toTs,
+        p_tipo: tipo === 'ALL' ? null : tipo,
+        p_categoria: categoria === 'ALL' ? null : categoria,
+      });
+
+      if (filtrada.error) {
+        // La función todavía no está aplicada: se sigue con la vieja para no
+        // dejar la pantalla en negro, pero se AVISA que no respeta el filtro.
+        // Mismo respaldo que useEstadoBreakdown, así el orden de publicación
+        // (frontend antes que SQL) deja de importar.
+        const noExiste = filtrada.error.code === 'PGRST202'
+          || /does not exist|schema cache/i.test(filtrada.error.message ?? '');
+        if (!noExiste) throw filtrada.error;
+        agregadosFiltrados = false;
+        const { data: viejo, error: aggError } = await supabase.rpc('wallet_summary', {
+          p_from: fromTs,
+          p_to: toTs,
+        });
+        if (aggError) throw aggError;
+        agg = (viejo?.[0] ?? {}) as Agg;
+      } else {
+        agg = (filtrada.data?.[0] ?? {}) as Agg;
+      }
 
       return {
         rows: (data as WalletMovement[]) ?? [],
@@ -93,6 +137,7 @@ export function useWalletMovements(params: UseWalletMovementsParams) {
         totalSalidas: Number(agg.total_salidas ?? 0),
         countTotal: Number(agg.count_total ?? 0),
         categorias: (agg.categorias ?? []).slice().sort(),
+        agregadosFiltrados,
       };
     },
     enabled: Boolean(storeId),      // espera a conocer la tienda activa

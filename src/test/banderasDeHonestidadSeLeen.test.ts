@@ -97,15 +97,25 @@ describe('⛔ las banderas de honestidad se leen', () => {
   // Con "Tipo: Salida" puesto la tabla mostraba 276 movimientos y las tarjetas
   // seguían diciendo $12.607,01 de entradas y 943 movimientos. Peor: el KPI
   // "Movimientos" decía 943 tres centímetros encima de una línea que decía 276.
-  it('los KPIs de Billetera no fingen medir lo que el filtro dejó afuera', () => {
+  it('los KPIs de Billetera respetan Tipo y Categoría, o avisan que no', () => {
+    const hook = sinComentarios(leer('hooks/useWalletMovements.ts'));
+    expect(hook, 'los agregados volvieron a ignorar los filtros de la pantalla')
+      .toMatch(/rpc\(.wallet_summary_filtrado./);
+    expect(hook).toMatch(/p_tipo: tipo === 'ALL' \? null : tipo/);
+    expect(hook).toMatch(/p_categoria: categoria === 'ALL' \? null : categoria/);
+    // Respaldo: sin la función aplicada NO se cae, pero tampoco se miente.
+    expect(hook, 'sin respaldo, publicar antes que el SQL deja la Billetera en error')
+      .toMatch(/PGRST202/);
+    expect(hook).toMatch(/agregadosFiltrados = false/);
+
     const src = sinComentarios(leer('components/logistics/BilleteraTab.tsx'));
-    expect(src, 'la pantalla dejó de saber que hay un filtro puesto').toMatch(/filtroActivo/);
-    // Las tarjetas de plata avisan de qué rango hablan.
+    expect(src, 'la pantalla dejó de saber que sus cifras no miran el filtro')
+      .toMatch(/agregadosFiltrados === false/);
     expect(src, 'las tarjetas de plata volvieron a callarse el rango que miden')
       .toMatch(/hint=\{notaRango\}/);
-    // Y el conteo sale de la consulta YA filtrada, no del RPC sin filtrar.
+    // Y el conteo sale de la consulta YA filtrada, no del RPC.
     expect(src, 'el KPI "Movimientos" volvió a contradecir a la línea de abajo')
-      .toMatch(/label="Movimientos"[\s\S]{0,120}movQ\.data\?\.total\s*\?\?/);
-    expect(src).not.toMatch(/label="Movimientos"[\s\S]{0,120}countTotal/);
+      .toMatch(/label="Movimientos"[\s\S]{0,160}movQ\.data\?\.total\s*\?\?/);
+    expect(src).not.toMatch(/label="Movimientos"[\s\S]{0,160}countTotal/);
   });
 });
