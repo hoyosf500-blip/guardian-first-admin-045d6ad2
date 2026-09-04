@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { variantesDeBusqueda, fusionarResultados } from '@/lib/busquedaTelefono';
 
 /**
  * Búsqueda de pedidos EN EL SERVIDOR (RPC `search_orders`).
@@ -56,14 +57,35 @@ export function useOrderSearch(storeId: string | null | undefined, query: string
       // El binding directo pierde `this` (memoria rpc_supabase_binding_pattern).
       type Rpc = (fn: string, p: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>;
       const rpc = supabase.rpc.bind(supabase) as unknown as Rpc;
-      const { data, error: err } = await rpc('search_orders', { p_store_id: storeId, p_q: q, p_limit: 50 });
+      // ⛔ DOS CONSULTAS CUANDO EL TÉRMINO ES UN TELÉFONO (4-sep-2026).
+      //
+      // `search_orders` compara con `phone LIKE '%loQueEscribiste%'`, y eso es
+      // asimétrico: `'%986255535%'` encuentra `0986255535`, pero
+      // `'%0986255535%'` NO encuentra `986255535`. En Ecuador los 12.000
+      // pedidos están guardados en 9 dígitos limpios y el cliente escribe el
+      // cero inicial, así que copiar su número del chat al buscador no
+      // devolvía NADA — con el pedido ahí (#6853503, Néstor Isaías Ayme).
+      //
+      // La RPC no se reescribe: REGLA #1, está desplegada y el repo va atrás.
+      // Se compensa acá, y de la forma que no puede romper nada: la búsqueda
+      // de siempre se hace igual y PRIMERO, y solo se AGREGA la canónica
+      // cuando aporta algo distinto. Para un nombre o una guía sigue siendo
+      // una sola consulta, como antes.
+      const variantes = variantesDeBusqueda(q);
+      const respuestas = await Promise.all(
+        variantes.map((t) => rpc('search_orders', { p_store_id: storeId, p_q: t, p_limit: 50 })),
+      );
       if (mine !== runId.current) return; // llegó tarde: ya hay otra búsqueda
+      // Un error en CUALQUIERA de las dos se reporta: decir "no hay pedidos"
+      // sobre una consulta que falló es la clase de cero afirmado que este
+      // proyecto persigue. La primera es la que la asesora escribió.
+      const err = respuestas.find((r) => r.error)?.error ?? null;
       if (err) {
         setError(err.message);
         setHits([]);
       } else {
         setError(null);
-        setHits((data as OrderSearchHit[]) ?? []);
+        setHits(fusionarResultados(respuestas.map((r) => r.data as OrderSearchHit[] | null), 50));
       }
       setLoading(false);
     }, 400);
