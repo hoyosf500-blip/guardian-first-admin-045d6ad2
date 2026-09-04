@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { rangoDiaBogota, horaDelDiaBogota, horaBogota } from '@/lib/diaBitacora';
 import {
-  EVENTOS_BITACORA_QUE_CUENTAN, NOMBRE_EVENTO_MAPA, quitarSellosEspejo,
+  EVENTOS_BITACORA_QUE_CUENTAN, NOMBRE_EVENTO_MAPA, depurarGestiones, nombreResultado,
   type FuenteGestion, type GestionCruda, type MarcaHoraria,
 } from '@/lib/mapaCalor';
 
@@ -144,13 +144,14 @@ export function useMapaCalorDia(storeId: string | null, ymd: string | null) {
     }
 
     // ⛔ Cada marca UNA vez: el sello de Confirmar en `touchpoints` es la misma
-    // marca que su fila de `order_results` (ver `quitarSellosEspejo`).
-    const out: GestionDelDia[] = quitarSellosEspejo(crudas).map((g) => ({
+    // marca que su fila de `order_results`, y una edición con tres filas de
+    // auditoría es una edición (ver `depurarGestiones`).
+    const out: GestionDelDia[] = depurarGestiones(crudas).map((g) => ({
       operatorId: g.operatorId,
       hora: g.hora,
       reloj: horaBogota(g.iso),
       fuente: g.fuente,
-      accion: g.accion,
+      accion: g.fuente === 'confirmar' ? nombreResultado(g.accion.split(':').pop()?.trim() ?? '') : g.accion,
       phone: g.phone,
     }));
     out.sort((a, b) => a.reloj.localeCompare(b.reloj));

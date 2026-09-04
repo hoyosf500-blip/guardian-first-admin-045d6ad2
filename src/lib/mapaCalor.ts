@@ -270,19 +270,75 @@ export function quitarSellosEspejo<T extends GestionCruda>(gestiones: T[]): T[] 
 }
 
 /**
+ * Las filas de AUDITORÍA que el editor deja en `order_results`
+ * (`EDIT_RESULTS` de `dropiSyncFailures.ts`: `edicion_orden`,
+ * `edicion_completa`, `cambio_valor`, `cambio_transportadora`). El resto del
+ * CRM ya las trata aparte (no cuentan como "tocado hoy", ver
+ * `gestionPorPedido.ts`); acá se cuentan como UNA edición.
+ *
+ * ⛔ Visto en el detalle real del 3-sep: a las 09:13 una sola edición del
+ * pedido de un cliente dejó TRES filas (`edicion_orden` + dos
+ * `edicion_completa`) — y el mapa las sumaba como tres gestiones. Se colapsan
+ * por persona + teléfono + ventana de {@link VENTANA_ESPEJO_MS}: una edición
+ * con varios pasos es una edición.
+ */
+export const RESULTADOS_DE_EDICION: ReadonlySet<string> = new Set([
+  'edicion_orden', 'edicion_completa', 'cambio_valor', 'cambio_transportadora',
+]);
+
+/** ¿La fila de `order_results` es auditoría de una edición? `accion` llega
+ *  como "confirmar: edicion_orden" (módulo: resultado). */
+function esAuditoriaEdicion(g: GestionCruda): boolean {
+  if (g.fuente !== 'confirmar') return false;
+  const resultado = g.accion.split(':').pop()?.trim() ?? '';
+  return RESULTADOS_DE_EDICION.has(resultado);
+}
+
+export function colapsarEdiciones<T extends GestionCruda>(gestiones: T[]): T[] {
+  const vistas = new Map<string, number[]>();
+  const orden = [...gestiones].sort((a, b) => a.ms - b.ms);
+  const quedan = new Set<T>();
+  for (const g of orden) {
+    if (!esAuditoriaEdicion(g)) { quedan.add(g); continue; }
+    const k = `${g.operatorId}|${ultimos9(g.phone)}`;
+    const previas = vistas.get(k) ?? [];
+    if (previas.some((ms) => Math.abs(ms - g.ms) <= VENTANA_ESPEJO_MS)) continue;
+    previas.push(g.ms);
+    vistas.set(k, previas);
+    quedan.add(g);
+  }
+  // Se respeta el orden original de entrada.
+  return gestiones.filter((g) => quedan.has(g));
+}
+
+/** Lo que el mapa cuenta: sin el sello espejo y con cada edición una vez. */
+export function depurarGestiones<T extends GestionCruda>(gestiones: T[]): T[] {
+  return colapsarEdiciones(quitarSellosEspejo(gestiones));
+}
+
+/** Texto de una fila de `order_results` para el detalle de la celda. */
+export function nombreResultado(result: string): string {
+  if (result === 'conf') return 'Confirmó';
+  if (result === 'canc') return 'Canceló';
+  if (result === 'noresp') return 'No respondió';
+  if (RESULTADOS_DE_EDICION.has(result)) return 'Editó el pedido';
+  return result || 'Resultado';
+}
+
+/**
  * Qué eventos de la bitácora (`order_events`) cuentan como gestión en el mapa.
  *
  * Solo los que NO tienen espejo en otra tabla: `gestiono`/`llamo`/`escribio`
- * acompañan a un `touchpoints` (`useRecordGestion`) y `marco` a un
- * `order_results` (`markResult`) — contarlos sería el mismo doble de arriba.
- * `abrio`/`cerro`/`salto` son mirar, no hacer. Quedan editar el pedido y leer
- * la conversación, que son trabajo real que hasta hoy no aparecía en el mapa
+ * acompañan a un `touchpoints` (`useRecordGestion`), `marco` a un
+ * `order_results` (`markResult`) y `edito` a las filas de auditoría de
+ * `order_results` (`OrderEditorDialog`) — contarlos sería el mismo doble de
+ * arriba. `abrio`/`cerro`/`salto` son mirar, no hacer. Queda leer la
+ * conversación, que es trabajo real que hasta hoy no aparecía en el mapa
  * (pedido del dueño, 4-sep-2026: *"que registre todo: inbox, seguimiento,
  * novedades, confirmación"*).
  */
-export const EVENTOS_BITACORA_QUE_CUENTAN: ReadonlySet<string> = new Set(['edito', 'leyo_chat']);
+export const EVENTOS_BITACORA_QUE_CUENTAN: ReadonlySet<string> = new Set(['leyo_chat']);
 
 export const NOMBRE_EVENTO_MAPA: Record<string, string> = {
-  edito: 'Editó el pedido',
   leyo_chat: 'Leyó la conversación',
 };

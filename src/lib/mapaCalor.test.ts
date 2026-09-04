@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   construirMapaCalor, etiquetaColumna, horasDelHorario, intensidad, quitarSellosEspejo, rangoHora,
-  EVENTOS_BITACORA_QUE_CUENTAN, VENTANA_ESPEJO_MS,
+  EVENTOS_BITACORA_QUE_CUENTAN, VENTANA_ESPEJO_MS, colapsarEdiciones, depurarGestiones, nombreResultado,
   type GestionCruda, type MarcaHoraria,
 } from './mapaCalor';
 
@@ -275,11 +275,54 @@ describe('cada marca cuenta UNA vez (el sello espejo de Confirmar)', () => {
     expect(quitarSellosEspejo(lista)).toHaveLength(4);
   });
 
-  it('de la bitácora solo cuentan editar y leer la conversación: lo demás ya vive en otra tabla o es solo mirar', () => {
-    expect(EVENTOS_BITACORA_QUE_CUENTAN.has('edito')).toBe(true);
+  it('de la bitácora solo cuenta leer la conversación: lo demás ya vive en otra tabla (edito ↔ order_results) o es solo mirar', () => {
     expect(EVENTOS_BITACORA_QUE_CUENTAN.has('leyo_chat')).toBe(true);
-    for (const e of ['abrio', 'cerro', 'salto', 'gestiono', 'llamo', 'escribio', 'marco', 'deshizo']) {
+    for (const e of ['abrio', 'cerro', 'salto', 'gestiono', 'llamo', 'escribio', 'marco', 'deshizo', 'edito']) {
       expect(EVENTOS_BITACORA_QUE_CUENTAN.has(e)).toBe(false);
     }
+  });
+});
+
+describe('una edición con varios pasos es UNA edición', () => {
+  const T0 = Date.parse('2026-09-03T14:13:00Z');
+  const cruda = (p: Partial<GestionCruda>): GestionCruda => ({
+    operatorId: 'a', phone: '0995193388', ms: T0, fuente: 'confirmar', accion: 'confirmar: edicion_orden', ...p,
+  });
+
+  it('las tres filas de auditoría del mismo minuto (caso real 3-sep 09:13) se cuentan una vez', () => {
+    const out = colapsarEdiciones([
+      cruda({ accion: 'confirmar: edicion_orden', ms: T0 }),
+      cruda({ accion: 'confirmar: edicion_completa', ms: T0 + 2_000 }),
+      cruda({ accion: 'confirmar: edicion_completa', ms: T0 + 4_000 }),
+      // Y la confirmación del minuto siguiente es OTRA gestión.
+      cruda({ accion: 'confirmar: conf', ms: T0 + 60_000 }),
+    ]);
+    expect(out.map((g) => g.accion)).toEqual(['confirmar: edicion_orden', 'confirmar: conf']);
+  });
+
+  it('dos ediciones separadas (otro cliente, u horas después) son dos', () => {
+    const out = colapsarEdiciones([
+      cruda({ ms: T0 }),
+      cruda({ ms: T0, phone: '0986623273' }),
+      cruda({ ms: T0 + 3 * 3600_000 }),
+    ]);
+    expect(out).toHaveLength(3);
+  });
+
+  it('depurarGestiones hace las dos cosas: quita el sello espejo Y colapsa la edición', () => {
+    const out = depurarGestiones([
+      cruda({ accion: 'confirmar: edicion_orden', ms: T0 }),
+      cruda({ accion: 'confirmar: edicion_completa', ms: T0 + 1_000 }),
+      cruda({ accion: 'confirmar: conf', ms: T0 + 60_000 }),
+      cruda({ fuente: 'gestion', accion: 'Confirmado', ms: T0 + 61_000 }),
+    ]);
+    expect(out).toHaveLength(2);
+  });
+
+  it('el detalle nombra la fila en el idioma de la botonera', () => {
+    expect(nombreResultado('conf')).toBe('Confirmó');
+    expect(nombreResultado('noresp')).toBe('No respondió');
+    expect(nombreResultado('edicion_completa')).toBe('Editó el pedido');
+    expect(nombreResultado('cambio_transportadora')).toBe('Editó el pedido');
   });
 });
