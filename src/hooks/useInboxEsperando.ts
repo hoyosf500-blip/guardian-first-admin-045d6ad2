@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { estadoConversacion } from '@/lib/actividadChat';
+import {
+  DIAS_VENTANA_PROMESAS, promesaSigueAbierta, unaPorPedido, type PromesaCruda,
+} from '@/lib/promesasPendientes';
 
 /**
  * La bandeja central: TODOS los clientes de la tienda que escribieron y nadie
@@ -52,6 +55,9 @@ export interface InboxItem {
    *  que nació el pedido. `null` si Dropi no reporta el movimiento — y `null`
    *  se dibuja "—", nunca 0: no saber cuántos días lleva no es "llegó hoy". */
   diasEnEstado: number | null;
+  /** Solo en la canasta «El bot prometió»: cuándo prometió y por qué el robot
+   *  no lo contestó él mismo. Ver `src/lib/promesasPendientes.ts`. */
+  promesa?: { motivo: string; at: number };
 }
 
 /**
@@ -124,7 +130,11 @@ export interface InboxDosColas {
 interface Snapshot {
   items: InboxItem[];
   sinRespuesta: InboxItem[];
+  /** El bot prometió que seguía una persona y esa persona no llegó. */
+  prometidos: InboxItem[];
   status: InboxStatus;
+  /** La tercera canasta no se pudo leer: va vacía y no se afirma nada de ella. */
+  promesasError: boolean;
   /**
    * ⛔ La SEGUNDA canasta ("les escribimos y no contestaron") falló al leerse.
    * `sinRespuesta` va vacía y NO se puede afirmar nada sobre ella. Hasta el
@@ -137,7 +147,10 @@ interface Snapshot {
 
 // Arranca en 'cargando', NO en 'ok': con 'ok'+vacío la pantalla afirmaría
 // "nadie esperando" sobre datos que todavía no llegaron (el bug de la casa).
-const VACIO: Snapshot = { items: [], sinRespuesta: [], status: 'cargando', deudaError: false };
+const VACIO: Snapshot = {
+  items: [], sinRespuesta: [], prometidos: [], status: 'cargando',
+  deudaError: false, promesasError: false,
+};
 
 /**
  * ⛔ UNA SOLA CONSULTA Y UN SOLO CANAL PARA TODA LA APP (3-sep-2026).
@@ -185,7 +198,12 @@ async function cargarTienda(storeId: string | null): Promise<void> {
     // `crm_lento_cinco_bucles_realtime` mide 112 peticiones/min con la pantalla
     // quieta por acumular bucles. Dos SELECT en paralelo cuestan un viaje; un
     // hook más costaría un canal más, para siempre.
-    const [conEntrante, sinEntrante] = await Promise.all([
+    // La TERCERA canasta sale de otra tabla: la bitácora de decisiones del
+    // robot (`importchat-responder`). Va en el mismo viaje, por lo mismo que
+    // las otras dos: un hook aparte costaría otro canal de realtime para
+    // siempre. Es una tabla chica (una fila por decisión, ~50 por noche).
+    const desdePromesas = new Date(Date.now() - DIAS_VENTANA_PROMESAS * 86_400_000).toISOString();
+    const [conEntrante, sinEntrante, promesas] = await Promise.all([
       supabase
         .from('orders')
         .select(COLUMNAS)
@@ -203,6 +221,15 @@ async function cargarTienda(storeId: string | null): Promise<void> {
         .not('chat_saliente_at', 'is', null)
         .order('chat_saliente_at', { ascending: false })
         .limit(TOPE),
+      supabase
+        .from('importchat_auto_respuestas')
+        .select('external_id, phone, disparador_at, motivo')
+        .eq('store_id', storeId)
+        .eq('resultado', 'omitido')
+        .not('external_id', 'is', null)
+        .gte('disparador_at', desdePromesas)
+        .order('disparador_at', { ascending: false })
+        .limit(TOPE),
     ]);
     if (seq !== SECUENCIA.get(storeId)) return;
     const { data, error } = conEntrante;
@@ -212,7 +239,7 @@ async function cargarTienda(storeId: string | null): Promise<void> {
       // 42703 = la migración de columnas de chat no corrió: la función no está
       // prendida todavía, no es un error que avisar.
       publicar(storeId, {
-        items: [], sinRespuesta: [], deudaError: true,
+        items: [], sinRespuesta: [], prometidos: [], deudaError: true, promesasError: true,
         status: code === '42703' || /does not exist|column/i.test(msg) ? 'not_ready' : 'error',
       });
       return;
@@ -232,6 +259,9 @@ async function cargarTienda(storeId: string | null): Promise<void> {
 
     const esperandoOut: InboxItem[] = [];
     const deudaOut: InboxItem[] = [];
+    // Todo pedido que se leyó, por número: la tercera canasta lo necesita para
+    // ponerle nombre y estado a la promesa.
+    const porExternal = new Map<string, InboxItem>();
 
     const clasificar = (r: Fila) => {
       if (TERMINALES.has((r.estado || '').toUpperCase().trim())) return;
@@ -269,6 +299,8 @@ async function cargarTienda(storeId: string | null): Promise<void> {
           : null,
       });
 
+      if (r.external_id) porExternal.set(String(r.external_id), item());
+
       if (estado === 'espera_respuesta') { esperandoOut.push(item()); return; }
 
       // Le escribimos y la última palabra sigue siendo nuestra. Es deuda solo
@@ -285,6 +317,30 @@ async function cargarTienda(storeId: string | null): Promise<void> {
     for (const r of filas) clasificar(r);
     for (const r of filasSinEntrante) clasificar(r);
 
+    // ── TERCERA CANASTA: el bot prometió una persona y no llegó ──────────────
+    // El pedido tiene que estar entre los que ya se leyeron. Si no está (cayó
+    // fuera del tope, o su estado es terminal) la promesa NO se muestra: sin la
+    // ficha del pedido la fila sería un teléfono suelto, y una cola con filas
+    // que no se pueden trabajar se deja de mirar.
+    const prometidosOut: InboxItem[] = [];
+    if (!promesas.error) {
+      const crudas: PromesaCruda[] = ((promesas.data ?? []) as unknown as {
+        external_id: string | null; phone: string | null; disparador_at: string | null; motivo: string | null;
+      }[]).flatMap((p) => {
+        const at = p.disparador_at ? Date.parse(p.disparador_at) : NaN;
+        if (!p.external_id || !Number.isFinite(at)) return [];
+        return [{ externalId: String(p.external_id), phone: p.phone || '', at, motivo: p.motivo || '' }];
+      });
+      for (const p of unaPorPedido(crudas)) {
+        const pedido = porExternal.get(p.externalId);
+        if (!pedido) continue;
+        if (!promesaSigueAbierta(p, { salienteAt: pedido.salienteAt, entranteAt: pedido.entranteAt || null })) continue;
+        prometidosOut.push({ ...pedido, esperaDesde: p.at, promesa: { motivo: p.motivo, at: p.at } });
+      }
+    } else {
+      console.warn('[inbox] la canasta "el bot prometió" no se pudo leer:', promesas.error.message);
+    }
+
     // Quien lleva MÁS esperando, primero: es a quien más urge no dejar enfriar.
     esperandoOut.sort((a, b) => a.entranteAt - b.entranteAt);
     // Y en la deuda, aquel a quien le escribimos hace más y sigue sin contestar.
@@ -298,8 +354,12 @@ async function cargarTienda(storeId: string | null): Promise<void> {
     publicar(storeId, {
       items: esperandoOut,
       sinRespuesta: deudaOut,
+      prometidos: prometidosOut,
       status: filas.length === 0 && filasSinEntrante.length === 0 ? 'sin_medir' : 'ok',
       deudaError: Boolean(sinEntrante.error),
+      // 42P01 = la tabla del robot todavía no existe en esta base. No es un
+      // fallo que avisar: la tienda simplemente no tiene el disparador puesto.
+      promesasError: Boolean(promesas.error) && (promesas.error as { code?: string })?.code !== '42P01',
     });
 }
 
@@ -364,7 +424,10 @@ export function useInboxEsperando(storeId: string | null) {
   const recargar = useCallback(async () => { await cargarTienda(storeId); }, [storeId]);
 
   return useMemo(
-    () => ({ items: snap.items, sinRespuesta: snap.sinRespuesta, status: snap.status, deudaError: snap.deudaError, recargar }),
+    () => ({
+      items: snap.items, sinRespuesta: snap.sinRespuesta, prometidos: snap.prometidos,
+      status: snap.status, deudaError: snap.deudaError, promesasError: snap.promesasError, recargar,
+    }),
     [snap, recargar],
   );
 }

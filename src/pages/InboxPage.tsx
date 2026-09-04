@@ -7,6 +7,7 @@ import { useImporchatSyncHealth } from '@/hooks/useImporchatSyncHealth';
 import { useCanalChat, nombreCanal } from '@/hooks/useCanalChat';
 import { sourceSyncChat } from '@/lib/canalChat';
 import { haceCuantoMs } from '@/lib/actividadChat';
+import { motivoLegible } from '@/lib/promesasPendientes';
 import { ventanaWhatsapp } from '@/lib/ventanaWhatsapp';
 import { getWhatsAppPhone, formatPhone } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
@@ -250,7 +251,12 @@ function FilaCola({ o, seleccionada, onSelect, sello, estadoSello, miId, resuelt
   const t = resuelto
     ? { chip: 'bg-success/12 border-success/25 text-success', dot: 'bg-success', texto: 'text-success' }
     : tono(o.esperaDesde);
-  const contexto = [o.producto, o.ciudad].filter(Boolean).join(' · ');
+  // En la canasta «El bot prometió», lo primero que la asesora necesita leer no
+  // es el producto: es QUÉ le prometieron. El producto ya está en la ficha de
+  // la derecha; la promesa colgada no está en ningún otro lado.
+  const contexto = o.promesa
+    ? motivoLegible(o.promesa.motivo)
+    : [o.producto, o.ciudad].filter(Boolean).join(' · ');
   // El check va ADEMAS del tono apagado: en blanco y negro, o para quien no
   // distingue colores, la opacidad sola no dice nada.
   return (
@@ -413,7 +419,7 @@ function TarjetaLista({ o, sello, estadoSello, miId, children }: {
 
 export default function InboxPage() {
   const { activeStoreId, activeStore } = useStore();
-  const { items: esperan, sinRespuesta, status, deudaError } = useInboxEsperando(activeStoreId);
+  const { items: esperan, sinRespuesta, prometidos, status, deudaError, promesasError } = useInboxEsperando(activeStoreId);
 
   /**
    * Las dos canastas de la bandeja.
@@ -428,8 +434,17 @@ export default function InboxPage() {
    * mismo trabajo (abrir el chat y escribir) sobre el mismo hilo, y separarlas
    * en rutas obligaría a la asesora a acordarse de visitar la segunda.
    */
-  const [vista, setVista] = useState<'esperan' | 'deuda'>('esperan');
-  const cola = vista === 'esperan' ? esperan : sinRespuesta;
+  /**
+   * ── «El bot prometió» (4-sep-2026) ────────────────────────────────────────
+   * La tercera canasta, y la que no miraba nadie. Las otras dos se preguntan
+   * quién habló último; acá el último mensaje es NUESTRO —el bot dijo «en un
+   * momento le comparto su guía» o «déjeme verificar y le confirmo por aquí»—
+   * y la persona prometida nunca llegó. Por eso estos clientes no aparecían en
+   * ninguna lista del CRM. Una sola noche de Ecuador: 21, uno de ellos pidiendo
+   * DUPLICAR su pedido. El detalle, en `src/lib/promesasPendientes.ts`.
+   */
+  const [vista, setVista] = useState<'esperan' | 'deuda' | 'prometidos'>('esperan');
+  const cola = vista === 'esperan' ? esperan : vista === 'deuda' ? sinRespuesta : prometidos;
   // El canal se pregunta por tienda: Ecuador atiende por ImporChat y Colombia
   // por Chatea Pro. Escribirlo a mano mandaba a la asesora colombiana a revisar
   // la app de otro país.
@@ -486,7 +501,7 @@ export default function InboxPage() {
     // verdad (2 min de margen), no el sello del mismo envío. Sin esto, la
     // pestaña "Sin respuesta" daba por resuelto a todo el que recibió una
     // plantilla (producción, 3-sep-2026: «174 en la cola · 106 ya resueltos»).
-    const margen = vista === 'deuda' ? 2 * 60_000 : 0;
+    const margen = vista === 'esperan' ? 0 : 2 * 60_000;
     return Number.isFinite(t) && t > o.esperaDesde + margen;
   }, [estadoSello, selloDe, vista]);
 
@@ -624,7 +639,7 @@ export default function InboxPage() {
 
         {/* Las dos canastas. La segunda solo aparece cuando hay alguien: una
             pestaña vacía permanente enseña a no mirar ninguna de las dos. */}
-        {(sinRespuesta.length > 0 || vista === 'deuda' || deudaError) && (
+        {(sinRespuesta.length > 0 || prometidos.length > 0 || vista !== 'esperan' || deudaError || promesasError) && (
           <div className="inline-flex rounded-xl border border-border bg-surface p-0.5">
             <button
               type="button"
@@ -647,6 +662,19 @@ export default function InboxPage() {
               Sin respuesta
               <span className="ml-1.5 font-mono tabular-nums">{sinRespuesta.length}</span>
             </button>
+            {(prometidos.length > 0 || vista === 'prometidos' || promesasError) && (
+              <button
+                type="button"
+                onClick={() => { setVista('prometidos'); setSelId(null); }}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
+                  vista === 'prometidos' ? 'bg-danger/18 text-danger' : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title="El bot les dijo que una persona les escribe, y esa persona todavía no llegó."
+              >
+                El bot prometió
+                <span className="ml-1.5 font-mono tabular-nums">{prometidos.length}</span>
+              </button>
+            )}
           </div>
         )}
         {/* ⛔ Acá había otro `ImporchatSyncBadge`. Desde el 28-ago-2026 el badge
@@ -771,24 +799,29 @@ export default function InboxPage() {
       {/* ⛔ La canasta de deuda falló al leerse: NO se celebra un cero sobre
           una consulta caída (4-sep-2026). Es el incidente de Colombia otra vez
           — 39 clientes esperando y «todos atendidos 🎉» — en la misma pantalla. */}
-      {vista === 'deuda' && deudaError && (
+      {((vista === 'deuda' && deudaError) || (vista === 'prometidos' && promesasError)) && (
         <div className="rounded-2xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning">
           No se pudo leer esta lista ahora mismo. No quiere decir que nadie haya quedado sin respuesta: reintentá en un momento.
         </div>
       )}
-      {status === 'ok' && items.length === 0 && !busca.trim() && !(vista === 'deuda' && deudaError) && (
+      {status === 'ok' && items.length === 0 && !busca.trim()
+        && !(vista === 'deuda' && deudaError) && !(vista === 'prometidos' && promesasError) && (
         <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
           <span className="w-12 h-12 rounded-2xl bg-success/14 border border-success/30 text-success flex items-center justify-center" aria-hidden="true">
             <CheckCircle2 size={24} />
           </span>
           <div>
             <p className="text-sm font-semibold text-foreground">
-              {vista === 'esperan' ? 'Nadie esperando respuesta' : 'Nadie quedó sin respuesta'}
+              {vista === 'esperan' ? 'Nadie esperando respuesta'
+                : vista === 'deuda' ? 'Nadie quedó sin respuesta'
+                : 'Ninguna promesa del bot quedó colgada'}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
               {vista === 'esperan'
                 ? 'Todos los que escribieron ya fueron atendidos.'
-                : `A todos los que les escribimos hace más de ${HORAS_SIN_RESPUESTA} horas ya les contestaron.`}
+                : vista === 'deuda'
+                ? `A todos los que les escribimos hace más de ${HORAS_SIN_RESPUESTA} horas ya les contestaron.`
+                : 'Cuando el bot diga que una persona le escribe y esa persona no llegue, aparece acá.'}
             </p>
           </div>
         </div>
