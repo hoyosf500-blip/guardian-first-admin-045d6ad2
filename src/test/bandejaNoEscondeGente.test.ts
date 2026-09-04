@@ -76,4 +76,42 @@ describe('⛔ la bandeja no esconde a quien espera', () => {
     expect(PAGE, 'la bandeja volvió a mostrar su lista recortada como si fuera el total')
       .toMatch(/totalDeLaCola != null && totalDeLaCola > cola\.length/);
   });
+
+  // ⛔ 4-sep-2026, medido en produccion DESPUES de aplicar el SQL. Al editar un
+  // pedido Dropi lo RECREA y deja el viejo REEMPLAZADA, pero el sync copia los
+  // sellos de chat a las DOS filas: la vieja quedaba "esperando" para siempre.
+  // Eran 193 de 281 en la cola de Ecuador y 385 de 776 en la de deuda, y por
+  // ser las mas viejas se sentaban ARRIBA de la lista. Hasta ese dia el tope de
+  // 500 las tapaba por accidente; mostrar la cola completa las habria puesto
+  // primeras. En 12 de 12 revisadas el gemelo vivo ya estaba ENTREGADO.
+  describe('los pedidos muertos no ocupan la cola', () => {
+    it('las dos funciones excluyen REEMPLAZADA', () => {
+      const filtros = SQL.match(/NOT IN\s*\(\s*'ENTREGADO'[^)]*\)/g) ?? [];
+      expect(filtros, 'faltan los dos filtros de estado terminal').toHaveLength(2);
+      for (const f of filtros) {
+        expect(f, 'un pedido REEMPLAZADA no es una mano levantada: su gemelo vivo es el que vale')
+          .toContain("'REEMPLAZADA'");
+      }
+      // Las variantes por transportadora ('CANCELADO POR TRANSPORTADORA').
+      expect(SQL.match(/NOT LIKE '%CANCEL%'/g) ?? []).toHaveLength(2);
+    });
+
+    it('el camino de respaldo del cliente filtra IGUAL que la funcion', () => {
+      expect(HOOK, 'si las dos listas se separan, el numero depende de si el SQL esta aplicado')
+        .toMatch(/const TERMINALES = new Set\(\[[\s\S]*?'REEMPLAZADA'[\s\S]*?\]\)/);
+      expect(HOOK).toMatch(/e\.includes\('CANCEL'\)/);
+      // Y el filtro se aplica por la funcion, no por el Set pelado (que se
+      // saltaba las variantes).
+      expect(HOOK).toMatch(/if \(esTerminal\(r\.estado\)\) return;/);
+    });
+
+    it('DEVOLUCION se queda ADENTRO a proposito', () => {
+      // El paquete vuelve pero la conversacion sigue viva. Sacarlo es decision
+      // de negocio, no parte de este arreglo: si alguien lo agrega sin hablarlo,
+      // desaparecen 95 conversaciones de Ecuador de golpe.
+      const filtros = SQL.match(/NOT IN\s*\(\s*'ENTREGADO'[^)]*\)/g) ?? [];
+      for (const f of filtros) expect(f).not.toContain('DEVOLUC');
+      expect(SQL).not.toMatch(/NOT LIKE '%DEVOLUC%'/);
+    });
+  });
 });

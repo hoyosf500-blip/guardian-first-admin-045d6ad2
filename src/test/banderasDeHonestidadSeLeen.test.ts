@@ -90,4 +90,22 @@ describe('⛔ las banderas de honestidad se leen', () => {
     const src = sinComentarios(leer('components/tabs/DashboardTab.tsx'));
     expect(src).not.toMatch(/tasa_confirmacion:\s*cierreDiaPct\s*\?\?\s*0/);
   });
+
+  // ⛔ 4-sep-2026, medido en Ecuador sobre agosto. `useWalletMovements`
+  // aplica Tipo y Categoría a la TABLA pero llama a `wallet_summary(p_from,
+  // p_to)` SIN ellos — la función desplegada ni los acepta (p_tipo → PGRST202).
+  // Con "Tipo: Salida" puesto la tabla mostraba 276 movimientos y las tarjetas
+  // seguían diciendo $12.607,01 de entradas y 943 movimientos. Peor: el KPI
+  // "Movimientos" decía 943 tres centímetros encima de una línea que decía 276.
+  it('los KPIs de Billetera no fingen medir lo que el filtro dejó afuera', () => {
+    const src = sinComentarios(leer('components/logistics/BilleteraTab.tsx'));
+    expect(src, 'la pantalla dejó de saber que hay un filtro puesto').toMatch(/filtroActivo/);
+    // Las tarjetas de plata avisan de qué rango hablan.
+    expect(src, 'las tarjetas de plata volvieron a callarse el rango que miden')
+      .toMatch(/hint=\{notaRango\}/);
+    // Y el conteo sale de la consulta YA filtrada, no del RPC sin filtrar.
+    expect(src, 'el KPI "Movimientos" volvió a contradecir a la línea de abajo')
+      .toMatch(/label="Movimientos"[\s\S]{0,120}movQ\.data\?\.total\s*\?\?/);
+    expect(src).not.toMatch(/label="Movimientos"[\s\S]{0,120}countTotal/);
+  });
 });

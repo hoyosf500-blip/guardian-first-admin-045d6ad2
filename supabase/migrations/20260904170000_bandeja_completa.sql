@@ -80,8 +80,30 @@ AS $$
       -- y nunca recibió respuesta: también está esperando.
       AND o.chat_entrante_at > coalesce(o.chat_saliente_at, '-infinity'::timestamptz)
       -- Un entregado o un cancelado no es una mano levantada.
+      --
+      -- ⛔ REEMPLAZADA es la trampa cara, y la lista de acá era la ÚNICA del
+      -- proyecto que se la había perdido (medido en producción el 4-sep-2026).
+      -- Al editar un pedido, Dropi lo RECREA y deja el viejo en REEMPLAZADA
+      -- (soft-delete), pero el sync copia los sellos de chat a las DOS filas.
+      -- La vieja no la trabaja nadie, así que queda "esperando" para siempre:
+      -- 193 de 281 en la cola de Ecuador y 385 de 776 en la de deuda. Y como
+      -- son las más viejas, se sientan ARRIBA DE TODO — justo donde la pantalla
+      -- pone lo más urgente. En las 12 que revisé una por una, el gemelo vivo
+      -- del mismo teléfono ya estaba ENTREGADO: no había nada que contestar.
+      -- El resto del código ya la trata como muerta (segLists.ts:135,
+      -- estadoBuckets.ts:131, useDataLoader.ts:237, DashboardTab.tsx:382).
+      --
+      -- DEVOLUCION se queda ADENTRO a propósito: un paquete que vuelve sigue
+      -- siendo una conversación abierta (el cliente pide reenvío o reclama), y
+      -- hoy la pantalla ya los muestra. Sacarlos sería una decisión de negocio,
+      -- no un arreglo de este bug.
       AND upper(btrim(coalesce(o.estado, ''))) NOT IN
-          ('ENTREGADO', 'CANCELADO', 'ARCHIVADO GHOST', 'ARCHIVADO_GHOST')
+          ('ENTREGADO', 'ENTREGADO A DESTINO', 'CANCELADO', 'REEMPLAZADA',
+           'INDEMNIZADA', 'ARCHIVADO GHOST', 'ARCHIVADO_GHOST')
+      -- Las variantes que Dropi inventa por transportadora ('CANCELADO POR
+      -- TRANSPORTADORA'). Hoy no hay ninguna en la cola: va como defensa, es el
+      -- mismo espejo que ya hace TERMINALES_PATTERNS en segLists.ts.
+      AND upper(btrim(coalesce(o.estado, ''))) NOT LIKE '%CANCEL%'
       -- Membresía: la RLS de `orders` ya scopea, pero un `p_store_id` ajeno
       -- devolvería vacío en silencio y eso se lee como "no hay nadie".
       AND EXISTS (
@@ -151,8 +173,12 @@ AS $$
       AND o.chat_saliente_at <= now() - make_interval(hours => greatest(0, coalesce(p_horas, 6)))
       -- Y no es historia: más de una semana ya no es "falta el 2º intento".
       AND o.chat_saliente_at >= now() - make_interval(days => greatest(1, coalesce(p_dias, 7)))
+      -- Misma lista que arriba, y por el mismo motivo: acá los REEMPLAZADA eran
+      -- 385 de 776. Si las dos listas se separan, la deuda vuelve a inflarse.
       AND upper(btrim(coalesce(o.estado, ''))) NOT IN
-          ('ENTREGADO', 'CANCELADO', 'ARCHIVADO GHOST', 'ARCHIVADO_GHOST')
+          ('ENTREGADO', 'ENTREGADO A DESTINO', 'CANCELADO', 'REEMPLAZADA',
+           'INDEMNIZADA', 'ARCHIVADO GHOST', 'ARCHIVADO_GHOST')
+      AND upper(btrim(coalesce(o.estado, ''))) NOT LIKE '%CANCEL%'
       AND EXISTS (
         SELECT 1 FROM public.store_members sm
         WHERE sm.store_id = p_store_id AND sm.user_id = auth.uid()

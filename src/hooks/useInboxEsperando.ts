@@ -75,7 +75,31 @@ export type InboxStatus = 'cargando' | 'ok' | 'sin_medir' | 'not_ready' | 'error
 
 // Estados terminales: un pedido entregado/cancelado no es una mano levantada que
 // haya que atender ya. Se filtran client-side (los borrados incluidos).
-const TERMINALES = new Set(['ENTREGADO', 'CANCELADO', 'ARCHIVADO GHOST', 'ARCHIVADO_GHOST']);
+//
+// ⛔ REEMPLAZADA (4-sep-2026). Esta lista era la ÚNICA del proyecto que no la
+// tenía, y era la que más caro salía: al editar un pedido Dropi lo RECREA y deja
+// el viejo REEMPLAZADA, pero el sync copia los sellos de chat a las DOS filas.
+// La vieja no la trabaja nadie → queda "esperando" para siempre. Medido en
+// producción: 193 de 281 en la cola de Ecuador y 385 de 776 en la de deuda, y
+// como son las más viejas se sientan ARRIBA de la lista. En 12 de 12 revisadas
+// el gemelo vivo ya estaba ENTREGADO. Hasta hoy el tope de 500 las tapaba por
+// accidente; al mostrar la cola completa habrían inundado la pantalla.
+//
+// Tiene que ser IDÉNTICA al filtro de bandeja_esperando/bandeja_sin_respuesta
+// (migración 20260904170000). Si se separan, cada camino cuenta distinto y el
+// número de la pantalla depende de si la función está aplicada o no.
+// DEVOLUCION se queda ADENTRO a propósito: el paquete vuelve pero la
+// conversación sigue viva. Eso es decisión de negocio, no parte de este bug.
+const TERMINALES = new Set([
+  'ENTREGADO', 'ENTREGADO A DESTINO', 'CANCELADO', 'REEMPLAZADA',
+  'INDEMNIZADA', 'ARCHIVADO GHOST', 'ARCHIVADO_GHOST',
+]);
+const esTerminal = (estado?: string | null) => {
+  const e = (estado || '').toUpperCase().trim();
+  // El `includes` cubre las variantes por transportadora ('CANCELADO POR
+  // TRANSPORTADORA'), espejo del NOT LIKE '%CANCEL%' de la función.
+  return TERMINALES.has(e) || e.includes('CANCEL');
+};
 
 // Tope de la consulta: se traen las conversaciones con inbound MÁS RECIENTE y se
 // filtra a las que esperan. Cubre la ventana de trabajo real; con volumen muy
@@ -422,7 +446,7 @@ async function cargarTienda(storeId: string | null): Promise<void> {
     const porExternal = new Map<string, InboxItem>();
 
     const clasificar = (r: Fila) => {
-      if (TERMINALES.has((r.estado || '').toUpperCase().trim())) return;
+      if (esTerminal(r.estado)) return;
       const entranteAt = r.chat_entrante_at ? Date.parse(r.chat_entrante_at) : null;
       const salienteAt = r.chat_saliente_at ? Date.parse(r.chat_saliente_at) : null;
       const leidoAt = r.chat_leido_at ? Date.parse(r.chat_leido_at) : ahora;

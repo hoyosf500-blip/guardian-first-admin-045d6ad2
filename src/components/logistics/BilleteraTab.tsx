@@ -74,6 +74,21 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
   const totalPages = Math.max(1, Math.ceil((movQ.data?.total ?? 0) / PAGE_SIZE));
   const neto = (movQ.data?.totalEntradas ?? 0) - (movQ.data?.totalSalidas ?? 0);
 
+  // ⛔ LOS KPIs NO RESPONDEN A TIPO NI A CATEGORÍA (medido 4-sep-2026, Ecuador,
+  // agosto). `useWalletMovements` aplica los dos filtros a la TABLA (líneas
+  // 67-68) pero llama a `wallet_summary(p_from, p_to)` SIN ellos: la función
+  // desplegada ni siquiera los acepta (probada con p_tipo → PGRST202). Así que
+  // con "Tipo: Salida" puesto, la tabla muestra 276 movimientos y las tarjetas
+  // siguen diciendo $12.607 de entradas y 943 movimientos del rango entero.
+  //
+  // Hasta que exista la función filtrada, las tarjetas de plata DICEN que son
+  // del rango completo en vez de fingir que miden lo filtrado. Y "Movimientos"
+  // pasa a `total` —el conteo que ya viene filtrado de la propia consulta de la
+  // tabla— porque decía 943 justo encima de una línea que decía 276: la misma
+  // pantalla dando dos respuestas al mismo número.
+  const filtroActivo = tipo !== 'ALL' || categoria !== 'ALL';
+  const notaRango = filtroActivo ? 'del rango completo — el filtro de abajo no llega a este número' : undefined;
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -145,16 +160,20 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
           </>
         ) : (
           <>
-            <KpiCard label="Total Entradas" value={COP(movQ.data?.totalEntradas ?? 0)} icon={ArrowDown} tone="success" />
-            <KpiCard label="Total Salidas"  value={COP(movQ.data?.totalSalidas ?? 0)}  icon={ArrowUp}   tone="danger" />
+            <KpiCard label="Total Entradas" value={COP(movQ.data?.totalEntradas ?? 0)} icon={ArrowDown} tone="success" hint={notaRango} />
+            <KpiCard label="Total Salidas"  value={COP(movQ.data?.totalSalidas ?? 0)}  icon={ArrowUp}   tone="danger"  hint={notaRango} />
             {/* Hint obligatorio: arriba en la misma pantalla hay OTRO "neto"
                 (Wallet neto del período, SOLO operativo) con otra definición.
                 Este suma TODO — retiros y depósitos incluidos. Sin la
                 aclaración, dos "neto" distintos del mismo rango parecían
                 contradecirse (auditoría 24-ago-2026). */}
             <KpiCard label="Movimiento neto" value={COP(neto)} icon={TrendingUp} tone={neto >= 0 ? 'success' : 'danger'}
-              hint="entradas − salidas de TODO el wallet · incluye retiros y depósitos — no es ganancia" />
-            <KpiCard label="Movimientos"    value={String(movQ.data?.countTotal ?? 0)} icon={ListOrdered} tone="neutral" />
+              hint={`entradas − salidas de TODO el wallet · incluye retiros y depósitos — no es ganancia${filtroActivo ? ' · del rango completo, sin el filtro de abajo' : ''}`} />
+            {/* `total` (conteo de la consulta de la tabla, YA filtrado), no
+                `countTotal` (del RPC, sin filtrar): son el mismo número y la
+                pantalla los mostraba distintos con un filtro puesto. */}
+            <KpiCard label="Movimientos"    value={String(movQ.data?.total ?? 0)} icon={ListOrdered} tone="neutral"
+              hint={filtroActivo ? 'con el filtro puesto' : undefined} />
           </>
         )}
       </motion.div>

@@ -414,6 +414,22 @@ devuelven en cada fila `total_general` (la cola completa, sin recortar) y
 - **El hook cae al camino viejo con `PGRST202`.** Sin ese respaldo, publicar el
   frontend antes de correr el SQL deja la bandeja caída en TODAS las rutas.
 
+**Y el filtro de estados terminales lleva `REEMPLAZADA`.** Esta lista era la
+única del proyecto que no la tenía, y el tope de 500 la estaba tapando por
+accidente: al mostrar la cola entera saltaron a la vista. Cuando se edita un
+pedido, Dropi lo RECREA con otro id y deja el viejo en `REEMPLAZADA`
+(soft-delete), pero el sync copia los sellos de chat a las DOS filas — y como la
+vieja no la trabaja nadie, queda «esperando» para siempre. Medido el 4-sep en
+Ecuador con el SQL ya aplicado: **193 de 281 en la cola y 385 de 776 en la
+deuda**, y por ser las más viejas se sentaban ARRIBA de todo. En las 12 que se
+revisaron una por una, el gemelo vivo del mismo teléfono ya estaba `ENTREGADO`.
+La cola real de Ecuador son **88 personas**, no 281. `DEVOLUCION` se queda
+adentro a propósito: el paquete vuelve pero la conversación sigue viva.
+
+⚠️ La lista vive DOS veces — en las funciones y en el `TERMINALES` del hook, que
+es el camino de respaldo. Si se separan, el número de la pantalla depende de si
+el SQL está aplicado o no. El guardián exige que coincidan.
+
 Guardián: `src/test/bandejaNoEscondeGente.test.ts`.
 
 ### Listas SLA en `/seguimiento` (`src/lib/segLists.ts`)
