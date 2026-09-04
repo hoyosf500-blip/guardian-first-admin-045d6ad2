@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ExternalLink, Wallet, ArrowDown, ArrowUp, TrendingUp, ListOrdered, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -54,6 +54,17 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
   const [page, setPage] = useState(1);
 
   const { fromDate, toDate } = filters;
+
+  // ⛔ VOLVER A LA PÁGINA 1 AL CAMBIAR UN FILTRO (4-sep-2026). `page` era estado
+  // local y nada lo reseteaba: si el dueño estaba en la página 5 y acotaba el
+  // rango a un período corto, la consulta pedía una página que ya no existe →
+  // la tabla decía "Sin movimientos", `totalPages` caía a 1 y el paginador
+  // desaparecía. Quedaba encerrado en una página vacía, sin forma de volver, y
+  // pareciendo que en ese período no hubo plata.
+  //
+  // Se resetea acá y no "acotando page a totalPages": eso sería circular
+  // (`totalPages` sale de la respuesta que la propia página condiciona).
+  useEffect(() => { setPage(1); }, [fromDate, toDate, tipo, categoria]);
 
   const movQ = useWalletMovements({ fromDate, toDate, tipo, categoria, page, pageSize: PAGE_SIZE });
   // Saldo real de HOY (último movimiento, sin filtro de rango) — el ultimoSaldo

@@ -44,6 +44,15 @@ export interface ReagendarParams {
   /** `orders.id` (el UUID interno, no el external_id). */
   orderId: string | null | undefined;
   phone: string | null | undefined;
+  /**
+   * El NÚMERO de pedido. No es decorativo: `useRecordGestion` arma con él la
+   * llave anti-duplicado. Sin este dato la llave cae al teléfono, y un cliente
+   * con dos pedidos reagendados seguidos deja UNA sola marca — el segundo no
+   * queda registrado en ningún lado (4-sep-2026). Es el mismo defecto que se
+   * cerró en otros cinco sitios y que fija `useRecordGestion.llave.test.ts`;
+   * este quedó afuera de aquella pasada.
+   */
+  externalId?: string | null;
   /** Cuándo volver a llamar. */
   remindAt: Date;
   /** Lo que dijo el cliente. Opcional pero es lo que hace útil el recordatorio. */
@@ -71,7 +80,7 @@ export function useReagendarPedido() {
   const recordContacto = useRecordGestion();
 
   return useCallback(async (params: ReagendarParams): Promise<ReagendarResult> => {
-    const { orderId, phone, remindAt, motivo } = params;
+    const { orderId, phone, externalId, remindAt, motivo } = params;
     if (!user || !activeStoreId) return { ok: false, error: 'sin usuario o tienda activa' };
     if (!orderId) return { ok: false, error: 'el pedido no tiene ID en la base' };
     if (!(remindAt instanceof Date) || Number.isNaN(remindAt.getTime())) {
@@ -105,7 +114,12 @@ export function useReagendarPedido() {
     //    línea de auditoría. useRecordGestion nunca lanza (devuelve null).
     const resumen = summarizeReminder(remindAt);
     if (phone) {
-      void recordContacto(phone, 'REAGENDA', nota ? `para ${resumen} — ${nota}` : `para ${resumen}`);
+      void recordContacto(
+        phone,
+        'REAGENDA',
+        nota ? `para ${resumen} — ${nota}` : `para ${resumen}`,
+        externalId || undefined,
+      );
     }
 
     return { ok: true, remindAt: iso, resumen };

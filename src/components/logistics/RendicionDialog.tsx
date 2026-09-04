@@ -80,10 +80,23 @@ export default function RendicionDialog({ open, onOpenChange, editando }: Props)
   // CUARTA aparición del mismo bug de parseo de plata (pauta dialog, simulador,
   // costos admin, acá) — siempre parseValorInput.
   const nItem = (s: string) => parseValorInput(String(s)) ?? 0;
-  const totalItems = items.reduce((a, i) => a + nItem(i.monto), 0);
+  /**
+   * ⛔ EL CUADRE SE CALCULA SOBRE LO QUE SE VA A GUARDAR (4-sep-2026).
+   *
+   * `totalItems` sumaba TODOS los renglones, pero al guardar solo viajan los que
+   * tienen concepto (`itemsValidos`, abajo y en `onSubmit`). Un comprobante al
+   * que se le olvidó escribir el concepto hacía que el diálogo dijera "cuadra
+   * exacto" y la rendición se guardara CORTA por ese monto — y esa diferencia
+   * reaparecía días después en "Sin explicar" del Balance, sin que nadie
+   * supiera de dónde había salido. Plata que se busca a mano.
+   */
+  const itemsValidos = items.filter((i) => i.concepto.trim() !== '');
+  const totalItems = itemsValidos.reduce((a, i) => a + nItem(i.monto), 0);
+  /** Renglones con monto pero sin concepto: NO se guardan y hay que decirlo. */
+  const itemsSinConcepto = items.filter((i) => i.concepto.trim() === '' && nItem(i.monto) !== 0);
+  const montoSinConcepto = itemsSinConcepto.reduce((a, i) => a + nItem(i.monto), 0);
   const retirado = nItem(montoRetirado);
   const diferencia = retirado - totalItems;
-  const itemsValidos = items.filter((i) => i.concepto.trim() !== '');
   const puedeGuardar = fecha !== '' && itemsValidos.length > 0 && !guardar.isPending;
 
   const setItem = (idx: number, campo: keyof ItemForm, valor: string) =>
@@ -219,6 +232,20 @@ export default function RendicionDialog({ open, onOpenChange, editando }: Props)
                 {Math.abs(diferencia) < 0.01 ? '—' : formatCOP(Math.abs(diferencia))}
               </span>
             </div>
+            {/* Un renglón con monto y sin concepto NO se guarda (ver `itemsValidos`).
+                Antes entraba igual al cuadre de esta caja y desaparecía al grabar:
+                el diálogo decía "cuadra exacto" y la rendición nacía corta. */}
+            {itemsSinConcepto.length > 0 && (
+              <div className="mt-2 pt-2 border-t border-border text-[11px] text-warning flex items-start gap-1.5">
+                <AlertTriangle size={13} className="shrink-0 mt-0.5" aria-hidden="true" />
+                <span>
+                  {itemsSinConcepto.length === 1
+                    ? `Hay 1 comprobante de ${formatCOP(montoSinConcepto)} SIN concepto: no se va a guardar.`
+                    : `Hay ${itemsSinConcepto.length} comprobantes por ${formatCOP(montoSinConcepto)} SIN concepto: no se van a guardar.`}
+                  {' '}Escribí el concepto o borrá el renglón.
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="space-y-1.5">

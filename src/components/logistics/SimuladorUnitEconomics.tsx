@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ElementType } from 'react';
+import { useEffect, useMemo, useRef, useState, type ElementType } from 'react';
 import {
   Calculator, Truck, PackageCheck, Undo2, TrendingDown, Receipt, RefreshCw,
   AlertTriangle,
@@ -145,6 +145,17 @@ export default function SimuladorUnitEconomics({
   const cargoDevolucionIncompleto = Boolean(
     costosUnit && costosUnit.devueltos > 0 && !costosUnit.cargoDevolucionConfiable,
   );
+  /**
+   * ⛔ EL OTRO CASO, EL QUE NO SE AVISABA (4-sep-2026).
+   *
+   * La bandera de arriba cubre "la muestra del cargo es coja" y eso está bien
+   * resuelto. Pero si la consulta de costos FALLA, `costosQ.data` es undefined,
+   * `costosUnit` queda en null, esa bandera da `false` y el cargo por devolución
+   * se pone en 0 SIN decir nada: el margen proyectado sale inflado y con cara de
+   * medido. Se distingue de la carga a propósito — mientras viaja la consulta
+   * `costosUnit` también es null, y avisar ahí sería un cartel en cada refresco.
+   */
+  const costosNoSeLeyeron = costosQ.isError && !costosQ.isLoading;
 
   // Seeds reales para el simulador (0-1 para %, COP para montos).
   const seed = useMemo<SimulationInput>(() => ({
@@ -177,9 +188,32 @@ export default function SimuladorUnitEconomics({
   }), [generadosSinCancel, kpis, ingresosBase, cogs, flete, pautaProrateada, adminProrateado, fleteUnit, cargoDevolucionUnit]);
 
   const [sim, setSim] = useState<SimulationInput>(seed);
-  // Re-seedear cuando llegan/cambian los datos reales (el usuario edita por encima
-  // hasta que cambia el mes/los datos). Mismo patrón que NetoRealCard.
-  useEffect(() => { setSim(seed); }, [seed]);
+  /**
+   * ⛔ NO PISAR LO QUE EL DUEÑO ESTÁ ESCRIBIENDO (4-sep-2026).
+   *
+   * `setSim(seed)` corría con CADA cambio de `seed`, y `seed` se rehace cuando
+   * cambian los KPIs — o sea, con cada pedido nuevo que entra por realtime. El
+   * dueño tecleaba un escenario ("¿y si subo el ticket un 10%?") y a mitad de
+   * frase el simulador volvía a los números reales.
+   *
+   * ⚠️ Y NO se usa `dirty` para frenarlo: `dirty` es una comparación derivada
+   * (`sim[k] !== seed[k]`), así que en cuanto se toca un campo queda en `true`
+   * PARA SIEMPRE y el simulador no volvería a actualizarse nunca. Lo que hace
+   * falta es una bandera explícita de "el usuario editó", que se limpia cuando
+   * cambia el PERÍODO (ahí el escenario viejo ya no aplica) o cuando él mismo
+   * pide restaurar.
+   */
+  const editadoRef = useRef(false);
+  useEffect(() => {
+    // Período nuevo: el escenario anterior habla de otros meses. Se re-siembra.
+    editadoRef.current = false;
+    setSim(seed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromDate, toDate, ciudad]);
+  useEffect(() => {
+    if (editadoRef.current) return;
+    setSim(seed);
+  }, [seed]);
 
   const result = useMemo(() => computeSimulation(sim), [sim]);
   const dirty = useMemo(
@@ -187,7 +221,10 @@ export default function SimuladorUnitEconomics({
     [sim, seed],
   );
 
-  const set = (patch: Partial<SimulationInput>) => setSim((s) => ({ ...s, ...patch }));
+  const set = (patch: Partial<SimulationInput>) => {
+    editadoRef.current = true;
+    setSim((s) => ({ ...s, ...patch }));
+  };
   const sinCostos = !costBasis && !costBasisLoading;
 
   return (
@@ -254,7 +291,7 @@ export default function SimuladorUnitEconomics({
           <span className="hud-label">Simulador de ganancia</span>
           {dirty && (
             <button
-              onClick={() => setSim(seed)}
+              onClick={() => { editadoRef.current = false; setSim(seed); }}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-card/40 border border-border text-muted-foreground text-[11px] font-medium hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
             >
               <RefreshCw size={11} aria-hidden="true" /> Restaurar reales
@@ -272,6 +309,24 @@ export default function SimuladorUnitEconomics({
             <p className="text-[11px] text-muted-foreground leading-relaxed flex-1 min-w-0">
               Faltan los costos reales (COGS y flete): aplicá la migration <code className="font-mono text-[10px]">logistics_cost_basis</code>.
               Mientras tanto podés tipear los % a mano.
+            </p>
+          </div>
+        )}
+
+        {/* La consulta de costos FALLÓ. Distinto del caso de abajo (muestra coja):
+            acá no sabemos nada, y el cargo por devolución entra en 0 — o sea que
+            el margen proyectado sale inflado sin que nada lo diga. */}
+        {costosNoSeLeyeron && (
+          <div className="relative flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning/10 px-4 pl-5 py-3 shadow-card3d">
+            <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-warning/20 glow-warning">
+              <AlertTriangle size={17} className="text-warning" aria-hidden="true" />
+            </div>
+            <p className="text-[11px] text-muted-foreground leading-relaxed flex-1 min-w-0">
+              No se pudieron leer los costos unitarios, así que el <strong>cargo por
+              devolución entra en $0</strong> y la ganancia que ves acá abajo está
+              INFLADA. No es que no haya costo: es que no se pudo medir. Recargá
+              antes de tomar una decisión con este número.
             </p>
           </div>
         )}

@@ -60,7 +60,10 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
   const { data, isLoading, isError, error } = useFinancialSummary(fromDate, toDate);
   const { data: gananciaNeta, isLoading: gananciaLoading, isError: gananciaError } = useGananciaNetaDropi(fromDate, toDate);
   const { data: sinClasificar } = useWalletSinClasificar(fromDate, toDate);
-  const { data: dailySeries, isLoading: seriesLoading } = useWalletDailySeries(fromDate, toDate);
+  // ⛔ `isError` SE LEE (4-sep-2026). Sin él, un fallo de la consulta del wallet
+  // dejaba `dailySeries` en undefined, el gráfico recibía `[]` y anunciaba
+  // "+$0 neto" en VERDE con "Sin movimientos en este rango".
+  const { data: dailySeries, isLoading: seriesLoading, isError: seriesError } = useWalletDailySeries(fromDate, toDate);
   // Bug 3: el hero usa el OPERATIVO POR COHORTE (pedidos creados en el mes; por
   // fecha de pedido — reconcilia con la Utilidad de Dropi) en vez de la caja del
   // wallet por fecha de movimiento (infla por mezcla de meses). Solo aplica si el
@@ -427,6 +430,7 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
             <CashFlowChart
               series={dailySeries ?? []}
               isLoading={seriesLoading}
+              isError={seriesError}
             />
           </motion.div>
 

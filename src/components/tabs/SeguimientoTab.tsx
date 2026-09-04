@@ -671,7 +671,20 @@ export default function SeguimientoTab() {
     () => dedupedByDate.map((o) => o.dbId).filter(Boolean) as string[],
     [dedupedByDate],
   );
-  const { actividad: chatActividad } = useRiesgoChat(storeIdChat, boardIds);
+  // ⛔ El `status` SE LEE (4-sep-2026). El hook lo devolvía desde siempre y acá
+  // se tiraba: si la lectura del chat fallaba, el mapa llegaba VACÍO y de eso
+  // salían dos afirmaciones falsas a la vez — todas las tarjetas etiquetadas
+  // «Sin avisar» y los chips de «te escribieron» / «toca llamar» en cero, con
+  // cara de medición. Es el mismo pecado que la bandeja ya cometió una vez con
+  // 39 clientes esperando.
+  //
+  // NO se toca `cicloContacto`: su contrato («sin actividad → Sin avisar») está
+  // fijado por prueba y es correcto para el caso de verdad. Lo que faltaba era
+  // decir en pantalla que esta vez no se pudo mirar.
+  const { actividad: chatActividad, status: chatStatus } = useRiesgoChat(storeIdChat, boardIds);
+  // `not_ready` = la columna de chat todavía no existe en esta tienda: no es un
+  // fallo que avisar, es una función que no está prendida.
+  const chatIlegible = chatStatus === 'error';
 
   // Latido de un minuto. El ciclo avanza SOLO con el paso del tiempo (un pedido
   // enfriado vuelve a la cola a la hora), no con un cambio de datos: sin esto el
@@ -1978,7 +1991,17 @@ export default function SeguimientoTab() {
                 más urgentes. Van primero, después de los interruptores. Los
                 handlers y las trampas documentadas (el escape «Ver todo» cuando
                 la cuenta cae a 0 con el filtro prendido) son los mismos. */}
-            {(esperandoRespuesta.size > 0 || (viewMode === 'board' && verSoloEsperando)) && (
+            {chatIlegible && (
+              <span
+                className="shrink-0 inline-flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 h-9 text-xs text-warning"
+                role="status"
+                title="La consulta del chat falló. Los chips y las etiquetas de aviso salen de ese dato, así que ahora mismo no se pueden creer."
+              >
+                <AlertTriangle size={13} aria-hidden="true" />
+                No pude leer el chat — «te escribieron» y «Sin avisar» pueden estar incompletos
+              </span>
+            )}
+            {!chatIlegible && (esperandoRespuesta.size > 0 || (viewMode === 'board' && verSoloEsperando)) && (
               <button
                 type="button"
                 onClick={() => {
@@ -2007,7 +2030,7 @@ export default function SeguimientoTab() {
                 </span>
               </button>
             )}
-            {(tocaLlamarSet.size > 0 || (viewMode === 'board' && soloTocaLlamar)) && (
+            {!chatIlegible && (tocaLlamarSet.size > 0 || (viewMode === 'board' && soloTocaLlamar)) && (
               <button
                 type="button"
                 onClick={() => {

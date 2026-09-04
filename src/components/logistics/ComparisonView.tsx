@@ -432,13 +432,23 @@ function DeltaSummary({ periodA, periodB }: { periodA: LogisticsSummary; periodB
     );
   }
 
-  const tasaA = mA.entrega;
-  const tasaB = mB.entrega;
-  const deltaTasa = tasaB - tasaA;
+  // ⛔ EL VEREDICTO ESTABA AL REVÉS (4-sep-2026). Acá se restaba `B − A`, pero
+  // **A es el período que el dueño está mirando y B es el ANTERIOR**: el padre
+  // arma `periodB` con `prevPeriod(...)` (LogisticaTab.tsx:314 y :522-523). Con
+  // la resta invertida, esta tarjeta anunciaba "Mejora operativa: la tasa de
+  // entrega subió" justo el mes en que BAJÓ, y "Empeoramiento" cuando mejoró —
+  // encima contradiciendo las flechas de las dos columnas de arriba, que sí
+  // comparan en el sentido correcto (`compareTo` cruzado, :136 y :145).
+  //
+  // Los nombres van por lo que SIGNIFICAN, no por la letra: mezclar "A/B" con
+  // "actual/anterior" fue exactamente lo que escondió el error a la vista.
+  const tasaActual = mA.entrega;
+  const tasaAnterior = mB.entrega;
+  const deltaTasa = tasaActual - tasaAnterior;
 
-  const devA = mA.devolucion;
-  const devB = mB.devolucion;
-  const deltaDev = devB - devA;
+  const devActual = mA.devolucion;
+  const devAnterior = mB.devolucion;
+  const deltaDev = devActual - devAnterior;
 
   // Muestra chica o cohorte a medio camino: se muestran los números pero SIN
   // veredicto (con 1-4 concluidos la tasa salta a 0%/100% por ruido).
@@ -453,9 +463,12 @@ function DeltaSummary({ periodA, periodB }: { periodA: LogisticsSummary; periodB
   const headline = (() => {
     if (prelim) return `Comparación preliminar: alguno de los períodos tiene menos de ${MIN_RESUELTOS_CONFIABLE} pedidos concluidos o sigue mayormente en tránsito. Todavía no hay veredicto.`;
     if (tone === 'neutral') return 'Sin cambios significativos entre los períodos.';
-    if (tone === 'success') return 'Mejora operativa: la tasa de entrega subió y/o devoluciones bajaron.';
-    if (tone === 'warning') return 'Cambios mixtos. Revisar detalle.';
-    return 'Empeoramiento: tasa de entrega cayó y/o devoluciones subieron.';
+    // El veredicto NOMBRA la dirección: "A contra B". Sin eso, un lector que
+    // eligió los períodos al revés no tiene cómo saber qué mejoró respecto de
+    // qué — y es justo la ambigüedad que dejó pasar el signo invertido.
+    if (tone === 'success') return 'Mejora operativa en A contra B: la tasa de entrega subió y/o las devoluciones bajaron.';
+    if (tone === 'warning') return 'Cambios mixtos entre A y B. Revisar detalle.';
+    return 'Empeoramiento en A contra B: la tasa de entrega cayó y/o las devoluciones subieron.';
   })();
 
   // Banner del lenguaje: barra lateral de color pleno + chip de 36px con glow +
@@ -477,8 +490,12 @@ function DeltaSummary({ periodA, periodB }: { periodA: LogisticsSummary; periodB
       <div className="flex-1 min-w-0">
         <div className={`text-xs font-semibold ${toneStyles.text}`}>{headline}</div>
         <div className="text-[10px] text-muted-foreground mt-0.5 font-mono tabular-nums leading-relaxed">
-          Tasa de entrega: <span className="font-mono">{tasaA.toFixed(1)}% → {tasaB.toFixed(1)}%</span> ({deltaTasa > 0 ? '+' : ''}{deltaTasa.toFixed(1)} pts) ·
-          {' '}Devolución: <span className="font-mono">{devA.toFixed(1)}% → {devB.toFixed(1)}%</span> ({deltaDev > 0 ? '+' : ''}{deltaDev.toFixed(1)} pts)
+          {/* La flecha va de B hacia A, y las letras van escritas: el delta es
+              «A respecto de B», igual que las flechas de las dos columnas de
+              arriba. Antes decía `A → B` sin rótulos, o sea el cambio leído al
+              revés, y ahí se escondía el signo invertido del veredicto. */}
+          Tasa de entrega: <span className="font-mono">B {tasaAnterior.toFixed(1)}% → A {tasaActual.toFixed(1)}%</span> ({deltaTasa > 0 ? '+' : ''}{deltaTasa.toFixed(1)} pts) ·
+          {' '}Devolución: <span className="font-mono">B {devAnterior.toFixed(1)}% → A {devActual.toFixed(1)}%</span> ({deltaDev > 0 ? '+' : ''}{deltaDev.toFixed(1)} pts)
           {prelim && (
             <> · <span className="font-semibold">prelim.</span> ({mA.resueltos} y {mB.resueltos} pedidos concluidos)</>
           )}

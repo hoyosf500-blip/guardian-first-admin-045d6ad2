@@ -2,7 +2,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip as RTooltip, Legend,
 } from 'recharts';
-import { Activity } from 'lucide-react';
+import { Activity, AlertTriangle } from 'lucide-react';
 import { formatCOP } from '@/lib/utils';
 import { TiltCard } from '@/components/ui3d';
 import {
@@ -16,6 +16,9 @@ export interface CashFlowSeriesPoint {
 }
 
 interface CashFlowChartProps {
+  /** La consulta falló. NO es lo mismo que una serie vacía: ver el bloque de
+   *  abajo. Sin esto, un error de red se dibujaba como "+$0 · sin movimientos". */
+  isError?: boolean;
   series: CashFlowSeriesPoint[];
   isLoading?: boolean;
 }
@@ -37,9 +40,31 @@ const CHART_SUCCESS = 'hsl(var(--success))';
 const CHART_DANGER = 'hsl(var(--danger))';
 const tickStyle = { fontSize: 10, fill: 'hsl(var(--muted-foreground))' };
 
-export default function CashFlowChart({ series, isLoading = false }: CashFlowChartProps) {
+export default function CashFlowChart({ series, isLoading = false, isError = false }: CashFlowChartProps) {
   if (isLoading) {
     return <div className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top animate-pulse h-[340px]" />;
+  }
+
+  // ⛔ NO SE PUDO LEER ≠ NO SE MOVIÓ PLATA (4-sep-2026). Con la consulta caída,
+  // `series` llegaba vacía y esta tarjeta calculaba `neto = 0 − 0`, lo pintaba
+  // EN VERDE DE ÉXITO y escribía "Sin movimientos en este rango". O sea: un
+  // fallo de red se leía como una quincena tranquila, en la pantalla de la
+  // plata. El cero se muestra solo cuando de verdad se midió cero.
+  if (isError) {
+    return (
+      <TiltCard className="bg-card/40 border border-warning/30 rounded-2xl p-5 shadow-card3d h-full">
+        <div className="flex items-start gap-2.5">
+          <AlertTriangle size={15} className="text-warning shrink-0 mt-0.5" aria-hidden="true" />
+          <div>
+            <div className="text-xs font-semibold text-warning">No se pudo leer el movimiento del wallet</div>
+            <p className="text-[11px] text-muted-foreground leading-relaxed mt-1">
+              No es que no haya movimientos: es que la consulta falló. Recargá o tocá
+              Sincronizar; hasta entonces este gráfico no dice nada.
+            </p>
+          </div>
+        </div>
+      </TiltCard>
+    );
   }
 
   const totalIn = series.reduce((acc, s) => acc + s.ENTRADA, 0);

@@ -475,7 +475,13 @@ export default memo(function CarrierStatsTable({ rows, fletePorCarrier, fletePar
                 <th className="px-3 py-2.5 text-right hud-label font-normal" title="Antigüedad promedio desde el último cambio de estado de los entregados — NO es el tiempo de tránsito despacho→entrega"><SortableHeader<Key> label="Antigüedad prom." sortKey="avg_dias_entrega" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal" title="Valor promedio de cada pedido entregado ($ entregado ÷ entregados)"><SortableHeader<Key> label="Ticket prom." sortKey="_ticketProm" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal" title={`Costo de envío promedio que te cobra esta transportadora (flete de los entregados)${fleteParcial ? ' — MUESTRA PARCIAL: el rango supera los 10.000 pedidos y el promedio sale de los primeros 10.000' : ''}`}><SortableHeader<Key> label={fleteParcial ? 'Flete prom. ·parcial' : 'Flete prom.'} sortKey="_fleteProm" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
-                <th className="px-3 py-2.5 text-right hud-label font-normal" title="Flete que pagaste en pedidos que VOLVIERON — plata quemada en envíos que no vendieron nada"><SortableHeader<Key> label="Flete devol." sortKey="_fleteDevol" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+                {/* ⛔ MISMA MUESTRA, MISMO AVISO (4-sep-2026). `_fleteDevol` sale
+                    del MISMO agregado que el flete promedio de al lado
+                    (`fletePorCarrier`), así que hereda su recorte a 10.000
+                    pedidos — pero solo la columna vecina lo declaraba. Un total
+                    de plata quemada presentado como total redondo, cuando es
+                    una suma parcial, se lee como si fuera toda. */}
+                <th className="px-3 py-2.5 text-right hud-label font-normal" title={`Flete que pagaste en pedidos que VOLVIERON — plata quemada en envíos que no vendieron nada${fleteParcial ? ' — MUESTRA PARCIAL: el rango supera los 10.000 pedidos y esta suma sale de los primeros 10.000' : ''}`}><SortableHeader<Key> label={fleteParcial ? 'Flete devol. ·parcial' : 'Flete devol.'} sortKey="_fleteDevol" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal"><SortableHeader<Key> label="Valor entregado" sortKey="valor_entregado" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal" title="Venta perdida en devoluciones"><SortableHeader<Key> label="$ Perdido" sortKey="valor_perdido" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal" title="Venta perdida promedio por cada pedido devuelto"><SortableHeader<Key> label="$ x devol." sortKey="_perdidaPorDevol" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
@@ -536,8 +542,8 @@ export default memo(function CarrierStatsTable({ rows, fletePorCarrier, fletePar
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted-foreground" title={fleteParcial ? 'Promedio sobre muestra PARCIAL (primeros 10.000 pedidos del rango)' : undefined}>
                   {fleteTotalProm != null ? `${formatCOP(fleteTotalProm)}${fleteParcial ? ' ·parcial' : ''}` : '—'}
                 </td>
-                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-danger">
-                  {tot.hayFleteDevol ? formatCOP(tot.fleteDevol) : '—'}
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-danger" title={fleteParcial ? 'Suma sobre muestra PARCIAL (primeros 10.000 pedidos del rango)' : undefined}>
+                  {tot.hayFleteDevol ? `${formatCOP(tot.fleteDevol)}${fleteParcial ? ' ·parcial' : ''}` : '—'}
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums text-xs">{formatCOP(tot.vEntregado)}</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums text-xs text-danger">{formatCOP(tot.vPerdido)}</td>

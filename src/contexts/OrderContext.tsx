@@ -77,7 +77,10 @@ interface OrderState {
   setAllOrders: (orders: OrderData[]) => void;
   buildWorkQueue: (orders: OrderData[]) => void;
   loadWorkQueue: () => Promise<void>;
-  markResult: (order: OrderData, result: string, reason?: string) => Promise<void>;
+  /** `true` = quedó guardado. Quien muestre un cartel de éxito TIENE que
+   *  mirarlo: hasta el 4-sep-2026 devolvía `void` y `CallView` cantaba
+   *  «No respondió» en verde aunque el INSERT hubiera fallado. */
+  markResult: (order: OrderData, result: string, reason?: string) => Promise<boolean>;
   undoLast: () => Promise<void>;
   lastMark: { order: OrderData; result: string; reason?: string; resultId?: string; touchpointId?: string } | null;
   resetOrders: () => void;
@@ -1308,16 +1311,16 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   }, [user, activeStoreId, dataLoader.setSegData]);
 
   const markResult = useCallback(async (order: OrderData, result: string, reason?: string) => {
-    if (!user || order.result) return;
+    if (!user || order.result) return false;
 
     if (!order.dbId) {
       toast.error('Este pedido no tiene ID en la base de datos — no se puede registrar');
-      return;
+      return false;
     }
 
     // BUG 7 fix: dedupe por dbId (único por pedido), no por phone — un
     // cliente con 2 pedidos puede confirmar ambos en paralelo.
-    if (markingInFlight.current.has(order.dbId)) return;
+    if (markingInFlight.current.has(order.dbId)) return false;
     markingInFlight.current.add(order.dbId);
     revertedIds.current.delete(order.dbId);
 
@@ -1407,7 +1410,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       }));
       markingInFlight.current.delete(order.dbId);
       toast.error(`Error guardando resultado: ${error.message}`);
-      return;
+      return false;
     }
 
     if (!error && result === 'conf' && order.dbId) {
@@ -1436,9 +1439,18 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         // La borramos. El touchpoint aún NO existe en este punto (se inserta
         // más abajo, tras el bloque conf), así que no hay nada más que limpiar.
         if (insertedResult?.id) {
-          await supabase.from('order_results').delete().eq('id', insertedResult.id);
+          // ⛔ Se LEE el error (4-sep-2026). El comentario de arriba ya dice qué
+          // pasa si este DELETE no entra —«inflaría productividad/cobertura y el
+          // cron la re-empujaría a Dropi»— y hasta hoy se disparaba a ciegas.
+          // No se le grita a la asesora (ella no puede hacer nada con esto: su
+          // pedido ya lo gestionó otra), pero queda en la consola para que el
+          // número raro de mañana tenga explicación.
+          const { error: delErr } = await supabase.from('order_results').delete().eq('id', insertedResult.id);
+          if (delErr) {
+            console.error('[markResult] quedó una fila conf huérfana:', insertedResult.id, delErr.message);
+          }
         }
-        return;
+        return false;
       }
       setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, estado: 'PENDIENTE' } : o));
 
@@ -1567,7 +1579,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         setMyCounter(prev => ({ ...prev, canc: Math.max(0, prev.canc - 1) }));
         markingInFlight.current.delete(order.dbId);
         toast.error(cancErr ? `Cancelación local falló: ${cancErr.message}` : 'Ese pedido ya fue gestionado por otra asesora', { id: toastId });
-        return;
+        return false;
       }
       // Ganó la carrera (flip atómico OK) → reflejar CANCELADO local ya (realtime
       // lo propaga). Si el RPC faltaba (rpcMissing), NO flipeamos acá: lo hará el
@@ -1684,6 +1696,9 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       ) => Promise<{ error: unknown }>)('release_order', { p_order_id: order.dbId });
     }
     markingInFlight.current.delete(order.dbId);
+    // Llegó hasta acá: la marca quedó escrita. Lo que pase después con
+    // Dropi ya se avisa con su propio toast y su propia fila `failed`.
+    return true;
   // MED-1: timerStart NO se lee dentro del callback (solo se setea con
   // setter funcional). Tenerlo en deps invalidaba ctxValue cada confirmación
   // y disparaba re-render en cascada en todos los consumers.

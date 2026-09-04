@@ -248,7 +248,10 @@ export default function CallView({ items, alerts, hayFiltroActivo = false, pendi
   // Fase 2a/2b: intentos previos del pedido (una sola query, compartida por el
   // historial de intentos Y el conteo de noresp que alimenta la etiqueta auto
   // "No contesta"). Hook antes del early-return para no violar reglas de hooks.
-  const { attempts, loadError: attemptsError } = useOrderAttempts(o?.dbId);
+  // `loading` se lee igual que el error: mientras la consulta viaja, los
+  // intentos NO se conocen — y "todavía no lo leí" no puede contarse como
+  // "nadie llamó" en el candado de cancelar (ver `intentosNoLeidos`).
+  const { attempts, loadError: attemptsError, loading: attemptsLoading } = useOrderAttempts(o?.dbId);
   const norespCount = attempts.filter(a => a.result === 'noresp').length;
 
   // VIP check: query order history for this phone (F4)
@@ -1030,7 +1033,11 @@ export default function CallView({ items, alerts, hayFiltroActivo = false, pendi
         fecha: o.fecha,
         motivo: reason ?? '',
         intentos: attempts,
-        intentosNoLeidos: attemptsError,
+        // ⛔ El error Y la carga (4-sep-2026). Con solo el error, al pasar
+        // rápido de un pedido a otro la lista llegaba vacía y el aviso entraba
+        // por la rama de "cero llamadas": frenaba una cancelación con un dato
+        // que nunca se midió, que es el mismo pecado que este candado combate.
+        intentosNoLeidos: attemptsError || attemptsLoading,
         yaDecidio: decididoCancelar.current.has(id),
         ahora: new Date(),
       });
@@ -1084,6 +1091,9 @@ export default function CallView({ items, alerts, hayFiltroActivo = false, pendi
       const res = await reagendarPedido({
         orderId: o.dbId,
         phone: o.phone,
+        // Con el número de pedido: sin él la marca de la reagenda se deduplica
+        // por teléfono y el segundo pedido del mismo cliente no deja rastro.
+        externalId: o.externalId,
         remindAt: reagendaFecha,
         motivo: nota,
       });
@@ -1122,13 +1132,26 @@ export default function CallView({ items, alerts, hayFiltroActivo = false, pendi
     setShowCancelModal(false);
     setCancelOtroMode(false);
     setCancelOtroText('');
-    await markResult(o, result, reason);
+    const guardado = await markResult(o, result, reason);
     // markResult ya libera el lock vía release_order RPC.
+    //
+    // ⛔ EL CARTEL VERDE SOLO SI SE GUARDÓ (4-sep-2026). Antes salía siempre:
+    // `markResult` devolvía `void`, así que un INSERT rechazado mostraba su
+    // `toast.error` y ENCIMA este verde arriba, sobre el mismo pedido. La
+    // asesora se llevaba la buena noticia, que es la que estaba más a mano.
+    //
+    // ⛔ Y solo el cartel: el avance de pedido (`setCallOrderId`, más arriba)
+    // NO se toca. Que la cola avance ANTES del await es deliberado desde el
+    // 7-jul-2026 —el siguiente se calcula con la cola fresca de ESTE render— y
+    // `duplicadoNoSeEscapaPorElLag` fija ese orden. Mover el await para "solo
+    // avanzar si salió bien" deshace ese arreglo y reabre el duplicado.
+    //
     // REG-1 / H9: Para `result === 'conf'` con externalId, el toast lo
     // maneja `markResult` (flujo unificado de Dropi sync: loading →
     // success/error con mismo toastId). Pero si el pedido NO tiene
     // externalId (ej. cargado vía Excel manual sin Dropi), markResult
     // no muestra ningún toast — restauramos el success local.
+    if (!guardado) return;
     if (result === 'conf') {
       if (!o.externalId) {
         toast.success(`Confirmado — ${o.nombre.split(' ')[0]}`, undoActionFor(o));
@@ -1679,6 +1702,18 @@ export default function CallView({ items, alerts, hayFiltroActivo = false, pendi
               <Mail size={12} /> Dirección
             </div>
             <AddressAutocomplete
+              // ⛔ UNA INSTANCIA POR PEDIDO (4-sep-2026). Sin `key`, React
+              // reusaba el MISMO campo al pasar de un pedido a otro, y el aviso
+              // pendiente del debounce se disparaba contra `onChangeRef.current`
+              // (AddressAutocomplete.tsx:84-85, 91), que SIEMPRE apunta al
+              // `onChange` del render actual: la dirección tipeada para el
+              // pedido A terminaba guardada en el pedido B — y desde el arreglo
+              // de esta mañana esa dirección se empuja a Dropi, o sea que
+              // corrompía la guía real. Con la `key`, el campo del pedido A se
+              // desmonta al cambiar y su flush (líneas 97-106) corre con el
+              // `onChange` correcto — que es justo lo que ya exige
+              // AddressAutocomplete.test.tsx:117.
+              key={o.dbId ?? o.externalId ?? 'sin-id'}
               value={o.direccion}
               ciudad={o.ciudad}
               departamento={o.departamento}
@@ -2228,15 +2263,23 @@ export default function CallView({ items, alerts, hayFiltroActivo = false, pendi
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {/* ⛔ LOS ROLES VAN AL REVÉS DE LO QUE PARECE, Y ES A PROPÓSITO
+              (4-sep-2026). Radix, al abrir un AlertDialog, hace UNA cosa:
+              `cancelRef.current?.focus()` — o sea, el foco SIEMPRE cae en el
+              `AlertDialogCancel`. La primera versión de este diálogo tenía
+              "Cancelar igual" ahí, así que un Enter cancelaba el pedido en
+              Dropi de un teclazo: el candado que el dueño pidió para que no se
+              cancele por cancelar le abría el camino más corto a hacerlo, en
+              una pantalla que se trabaja con el teclado.
+              Ahora la SALIDA SEGURA es el `Cancel` (se lleva el foco y el
+              Escape) y "Cancelar igual" es el `Action`, con el estilo apagado
+              que le corresponde: `bg-transparent` para matar el fondo primario
+              que trae `buttonVariants()` por defecto. En el orden del DOM va
+              primero para quedar a la IZQUIERDA en pantalla ancha y ABAJO en el
+              celular (el footer es `flex-col-reverse sm:flex-row`). */}
           <AlertDialogFooter>
             <AlertDialogAction
-              onClick={() => setPreguntaCancelar(null)}
-              className="bg-accent/15 text-accent border border-accent/40 hover:bg-accent/25"
-            >
-              {preguntaCancelar?.alternativa}
-            </AlertDialogAction>
-            <AlertDialogCancel
-              className="text-danger border-danger/40 hover:bg-danger/10 hover:text-danger"
+              className="bg-transparent border border-danger/40 text-danger hover:bg-danger/10 hover:text-danger"
               onClick={() => {
                 const actual = String(o.dbId ?? o.externalId ?? '');
                 const p = preguntaCancelar;
@@ -2251,6 +2294,12 @@ export default function CallView({ items, alerts, hayFiltroActivo = false, pendi
               }}
             >
               Cancelar igual
+            </AlertDialogAction>
+            <AlertDialogCancel
+              onClick={() => setPreguntaCancelar(null)}
+              className="bg-accent/15 text-accent border border-accent/40 hover:bg-accent/25 hover:text-accent"
+            >
+              {preguntaCancelar?.alternativa}
             </AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -447,7 +447,14 @@ export default function ConfirmarTab({ profile }: Props) {
   // decía "quién lo llamó, hace cuánto y qué pasó", pero no si el CLIENTE
   // escribió — que es lo que decide si alguien está esperando respuesta. Sale
   // del mismo hook, sin una consulta más.
-  const { index: riesgoIndex, actividad: chatActividad } = useRiesgoChat(activeStoreId, queueOrderIds);
+  // ⛔ El `status` se lee (4-sep-2026): el hook lo devuelve y acá se tiraba. Con
+  // la lectura del chat caída el mapa llega VACÍO, así que la cola pierde en
+  // silencio la prioridad de «te escribió y nadie contestó» (el orden de
+  // `filteredItems` la usa) y las tarjetas dejan de mostrar la señal — todo con
+  // cara de que no hay nadie esperando. `not_ready` no se avisa: es una función
+  // que la tienda todavía no tiene prendida, no un fallo.
+  const { index: riesgoIndex, actividad: chatActividad, status: chatStatus } = useRiesgoChat(activeStoreId, queueOrderIds);
+  const chatIlegible = chatStatus === 'error';
   // "Recordatorios para hoy/ahora": recordatorio que llega en ≤1h o ya vencido.
   // La constante vive en confirmarQueue para que el chip, este filtro y
   // `estaAplazado` usen el MISMO número (antes estaba duplicada en dos archivos).
@@ -1189,11 +1196,18 @@ export default function ConfirmarTab({ profile }: Props) {
                     // equipo nunca cerraba. `pendientesTotales` = lo pendiente
                     // vivo de la tienda, con reagendados y en atención de otras
                     // (que también son trabajo por cubrir), sin los superados.
+                    // ⛔ `counterCargado`, igual que las cuatro pastillas de
+                    // arriba (4-sep-2026). Las StatTile ya pintaban "—" cuando
+                    // el contador del día no se pudo leer, y esta barra —doce
+                    // líneas más abajo, con el MISMO `total`— seguía escribiendo
+                    // "0/meta · 0%" con cara de medición. La misma tarjeta daba
+                    // dos respuestas distintas sobre el mismo dato. Sin lectura
+                    // buena: barra vacía en tono neutro y guiones, nunca un cero.
                     const goal = total + pendientesTotales;
-                    const pct = goal > 0 ? Math.min(100, Math.round((total / goal) * 100)) : 0;
+                    const pct = counterCargado && goal > 0 ? Math.min(100, Math.round((total / goal) * 100)) : 0;
                     const { tasa } = confRateOficial(counter.conf, counter.canc, counter.noresp);
                     const barTone =
-                      tasa === null ? 'bg-muted-foreground/40'
+                      !counterCargado || tasa === null ? 'bg-muted-foreground/40'
                       : tasa >= CONF_TARGET_PCT ? 'bg-gradient-to-r from-success to-success/75'
                       : tasa >= CONF_TARGET_PCT - 5 ? 'bg-gradient-to-r from-warning to-warning/75'
                       : 'bg-gradient-to-r from-danger to-danger/75';
@@ -1202,15 +1216,21 @@ export default function ConfirmarTab({ profile }: Props) {
                         <span className="hud-label text-muted-foreground/70 shrink-0">Equipo hoy</span>
                         <div
                           className="flex-1 h-2 rounded-full bg-foreground/10 overflow-hidden"
-                          role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}
-                          title={tasa === null
-                            ? 'Sin gestiones todavía: aún no hay confirmación del día que medir'
-                            : `Confirmación del día del equipo: ${tasa}% (${counter.conf} confirmados ÷ ${total} gestionados · meta ${CONF_TARGET_PCT}%). Incluye los "no contestó".`}
+                          role="progressbar"
+                          aria-valuenow={counterCargado ? pct : undefined}
+                          aria-valuemin={0} aria-valuemax={100}
+                          title={!counterCargado
+                            ? 'No se pudo leer lo que gestionó el equipo hoy — el avance no se muestra hasta poder medirlo'
+                            : tasa === null
+                              ? 'Sin gestiones todavía: aún no hay confirmación del día que medir'
+                              : `Confirmación del día del equipo: ${tasa}% (${counter.conf} confirmados ÷ ${total} gestionados · meta ${CONF_TARGET_PCT}%). Incluye los "no contestó".`}
                         >
                           <div className={`h-full rounded-full ${barTone} transition-[width] duration-500 ease-out`} style={{ width: `${pct}%` }} />
                         </div>
                         <span className="text-xs font-semibold text-muted-foreground shrink-0 tabular-nums">
-                          <span className="font-mono text-foreground">{total}</span>/{goal} · {pct}%
+                          {counterCargado
+                            ? <><span className="font-mono text-foreground">{total}</span>/{goal} · {pct}%</>
+                            : <span className="font-mono">—/—</span>}
                         </span>
                       </div>
                     );
@@ -1584,6 +1604,14 @@ export default function ConfirmarTab({ profile }: Props) {
                   antes de despachar, verificá en Dropi que el cliente no tenga otro pedido en curso.
                 </span>
               </p>
+            </div>
+          )}
+
+          {chatIlegible && (
+            <div className="mb-3 rounded-2xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-[11px] text-warning" role="status">
+              No pude leer el chat de los clientes. La cola sigue funcionando, pero
+              ahora mismo no ordena por «te escribió y nadie contestó» ni muestra
+              esa señal en las tarjetas — no quiere decir que nadie esté esperando.
             </div>
           )}
 

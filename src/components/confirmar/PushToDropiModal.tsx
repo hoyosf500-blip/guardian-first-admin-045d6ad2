@@ -112,9 +112,25 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
     await doLinkResolved(productId, dropiProductId, dropiVariationId);
   }
 
+  /**
+   * ⛔ NI CANTIDAD 0 NI PRECIO 0 (4-sep-2026). Los `min={1}` / `min={0}` de los
+   * inputs son una sugerencia del navegador, no una validación: borrar el campo
+   * deja `Number('') === 0` en el estado y ese cero viajaba tal cual en
+   * `overrides.lines` — o sea, una guía contra entrega REAL por la que el
+   * mensajero no cobra nada. Mercadería entregada gratis, y el descuadre
+   * aparece días después en la billetera sin explicación.
+   *
+   * Se valida acá, en el único punto por donde pasa la creación desde esta
+   * pantalla. NO se toca `deriveTotal` ni el override de valor del editor: ahí
+   * un 0 significa otra cosa (cae al total de las líneas) y está fijado por
+   * `orderEditPlan.test.ts`.
+   */
+  const lineaInvalida = lines.find(l => !(Number(l.quantity) >= 1) || !(Number(l.price) > 0));
+
   const blockedReason =
     unmapped.length > 0 ? (diagnostic || `${unmapped.length} producto(s) sin vínculo a Dropi — no se importaron por Dropify. Súbelo manual en Dropi o vinculá el producto primero.`)
     : !client.name || !client.dir || !client.city || !client.state || !client.phone ? 'Faltan datos del cliente (nombre, dirección, ciudad, departamento, teléfono).'
+    : lineaInvalida ? `Revisá «${lineaInvalida.title}»: la cantidad tiene que ser 1 o más y el precio mayor que cero. Una guía en cero se entrega y no cobra nada.`
     : null;
 
   async function doConfirm(allowDuplicate = false, force = false) {

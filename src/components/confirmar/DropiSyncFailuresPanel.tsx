@@ -348,9 +348,15 @@ export default function DropiSyncFailuresPanel() {
   return (
     <>
     {avisoLectura}
-    /* Barra lateral de color + chip con halo: la fórmula de banner del DS.
-       Antes el bloque se distinguía solo por el fondo rojo claro, que en tema
-       claro casi no se separa de la card de al lado. */
+    {/* Barra lateral de color + chip con halo: la fórmula de banner del DS.
+        Antes el bloque se distinguía solo por el fondo rojo claro, que en tema
+        claro casi no se separa de la card de al lado.
+
+        ⛔ Las llaves NO son decoración (4-sep-2026): sin ellas, un `/* … *\/`
+        que es hijo directo de JSX no es un comentario, es TEXTO — y esto se
+        estuvo imprimiendo en /confirmar, debajo de "Quitar del CRM", cada vez
+        que había fallos de sincronización (o sea, justo cuando el panel
+        importa). Leído del DOM de producción, no deducido. */}
     <div className="relative mb-4 rounded-2xl border border-destructive/40 bg-destructive/10 shadow-card3d hairline-top overflow-hidden">
       <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger z-10" aria-hidden="true" />
       <div className="px-4 pl-5 py-3 flex items-center gap-3">

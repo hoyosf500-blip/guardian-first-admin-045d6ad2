@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { AttemptRow } from '@/lib/attemptFormat';
 
@@ -17,9 +17,22 @@ export function useOrderAttempts(orderId?: string | null) {
   // tragado, la ficha decía "sin intentos" y la asesora volvía a llamar a un
   // cliente que su compañera ya había gestionado hace diez minutos.
   const [loadError, setLoadError] = useState(false);
+  /**
+   * ⛔ CORRIDA EN CURSO (4-sep-2026). Este hook no descartaba las respuestas
+   * viejas ni vaciaba la lista al cambiar de pedido, así que al pasar de un
+   * cliente a otro la ficha seguía mostrando los intentos del ANTERIOR hasta
+   * que llegaba la consulta nueva — y si las respuestas llegaban fuera de
+   * orden, se quedaban los del anterior para siempre.
+   *
+   * No es cosmético: de acá sale `intentos` para `avisoAntesDeCancelar`, así
+   * que el candado de cancelar podía decirle a la asesora "se lo llamó 4 veces
+   * sin respuesta" sobre OTRO cliente.
+   */
+  const seqRef = useRef(0);
 
   const load = useCallback(async () => {
-    if (!orderId) { setAttempts([]); setLoadError(false); return; }
+    const seq = ++seqRef.current;
+    if (!orderId) { setAttempts([]); setLoadError(false); setLoading(false); return; }
     setLoading(true);
     const { data, error } = await supabase
       .from('order_results')
@@ -27,6 +40,9 @@ export function useOrderAttempts(orderId?: string | null) {
       .eq('order_id', orderId)
       .order('created_at', { ascending: false })
       .limit(20);
+    // Llegó tarde: mientras esperábamos, la asesora ya está en otro pedido.
+    // Pintar esto ahora sería ponerle el historial de un cliente a otro.
+    if (seq !== seqRef.current) return;
     if (error) {
       console.warn('[useOrderAttempts] no se pudo leer el historial:', error.message);
       setLoadError(true);
@@ -35,6 +51,17 @@ export function useOrderAttempts(orderId?: string | null) {
       setAttempts((data || []) as AttemptRow[]);
     }
     setLoading(false);
+  }, [orderId]);
+
+  // Al cambiar de pedido la lista se vacía EN EL ACTO y `loading` sube: entre
+  // el cambio y la respuesta no hay que mostrar —ni dejar que nadie cuente—
+  // los intentos del pedido anterior. Va antes del `load` y en el mismo efecto
+  // para que no quede un frame con el historial ajeno en pantalla.
+  useEffect(() => {
+    seqRef.current += 1;
+    setAttempts([]);
+    setLoadError(false);
+    setLoading(Boolean(orderId));
   }, [orderId]);
 
   useEffect(() => { void load(); }, [load]);

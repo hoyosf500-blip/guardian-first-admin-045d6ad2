@@ -44,11 +44,33 @@ interface Props {
 
 export default function BalanceTab({ fromDate, toDate }: Props) {
   const { isOwnerOfActive } = useStore();
+  /**
+   * ⛔ ESTA PESTAÑA ES MENSUAL Y AHORA LO DICE (4-sep-2026).
+   *
+   * `slice(0,7)` recorta el filtro global al MES: con el preset de 7 días a
+   * caballo de dos meses se muestran los DOS meses enteros, y con un rango
+   * dentro de un mes se muestra el mes completo. Eso es correcto para un
+   * balance mes a mes —la pauta y los costos admin son entradas mensuales— y no
+   * se cambia. Lo que estaba mal era callarlo: el dueño elegía "últimos 7 días"
+   * y leía la ganancia de dos meses como si fuera la de la semana.
+   *
+   * Y peor: la Conciliación de caja de más abajo cruzaba estos meses contra
+   * rendiciones pedidas con las fechas EXACTAS del filtro, o sea dos períodos
+   * distintos en la misma tarjeta. Ahora las rendiciones se piden por el mismo
+   * tramo de meses, y el rótulo dice cuál es.
+   */
   const desde = fromDate.slice(0, 7);
   const hasta = toDate.slice(0, 7);
+  const primerDiaDelTramo = `${desde}-01`;
+  const ultimoDiaDelTramo = (() => {
+    const [yy, mm] = hasta.split('-').map(Number);
+    if (!yy || !mm) return toDate;
+    return `${hasta}-${String(new Date(yy, mm, 0).getDate()).padStart(2, '0')}`;
+  })();
+  const tramoEsMasAnchoQueElFiltro = primerDiaDelTramo !== fromDate || ultimoDiaDelTramo !== toDate;
 
   const balanceQ = useBalanceMensual(desde, hasta);
-  const rendQ = useRendiciones(fromDate, toDate);
+  const rendQ = useRendiciones(primerDiaDelTramo, ultimoDiaDelTramo);
   const borrar = useBorrarRendicion();
 
   // "Mes a mes" tiene dos lecturas del mismo período: la corta (¿ganamos?) y la
@@ -65,6 +87,13 @@ export default function BalanceTab({ fromDate, toDate }: Props) {
     [balanceQ.data],
   );
   const cruce = useMemo(() => cruzarRendiciones(rendQ.data ?? []), [rendQ.data]);
+  // ⛔ ¿De verdad pudimos mirar las rendiciones? Un cuadre en verde solo vale si
+  // la lista se leyó. `data === null` es "la migración todavía no corrió", que
+  // el bloque de abajo ya trata aparte; acá interesa el error y la carga.
+  const rendicionesLeidas = !rendQ.isError && !rendQ.isLoading;
+  const motivoSinRendiciones = rendQ.isLoading
+    ? 'leyendo…'
+    : 'no se pudo leer la lista de rendiciones';
 
   // La migration todavía no está aplicada. NO se muestra un balance en ceros:
   // "no ganaste nada" y "todavía no está la tabla" son cosas muy distintas.
@@ -251,6 +280,14 @@ export default function BalanceTab({ fromDate, toDate }: Props) {
         <header className="px-5 py-3 border-b border-border flex items-center justify-between gap-3 flex-wrap">
           <h4 className="hud-label flex items-center gap-2">
             <Wallet size={13} className="text-accent" /> Conciliación de caja
+            {/* El período REAL, dicho en la cara. Esta pestaña trabaja por meses
+                completos aunque el filtro de arriba diga "7 días": sin este
+                rótulo, el dueño leía la plata de dos meses como la de la semana
+                que había elegido. */}
+            <span className="hud-label text-muted-foreground/70 font-normal">
+              · {desde === hasta ? mesLabel(desde) : `${mesLabel(desde)} – ${mesLabel(hasta)}`}
+              {tramoEsMasAnchoQueElFiltro && ' (meses completos)'}
+            </span>
           </h4>
           {isOwnerOfActive && (
             <Button size="sm" variant="outline" onClick={() => { setEditando(null); setDialogOpen(true); }}>
@@ -265,11 +302,11 @@ export default function BalanceTab({ fromDate, toDate }: Props) {
               retiros del wallet de Dropi. El rótulo viejo afirmaba una fuente
               que no era — y un retiro real SIN rendición cargada no aparece acá
               ni en "Sin explicar" (auditoría 24-ago-2026). */}
-          <Cifra label="Retirado (declarado)" valor={cruce.totalRetirado} tono="neutral" />
-          <Cifra label="Rendido con comprobante" valor={cruce.totalRendido} tono="neutral" />
+          <Cifra label="Retirado (declarado)" valor={rendicionesLeidas ? cruce.totalRetirado : null} tono="neutral" nota={rendicionesLeidas ? undefined : motivoSinRendiciones} />
+          <Cifra label="Rendido con comprobante" valor={rendicionesLeidas ? cruce.totalRendido : null} tono="neutral" />
           <Cifra
             label="Sin explicar"
-            valor={cruce.totalRetirado - cruce.totalRendido}
+            valor={rendicionesLeidas ? cruce.totalRetirado - cruce.totalRendido : null}
             tono={Math.abs(cruce.totalRetirado - cruce.totalRendido) < 0.01 ? 'ok' : 'alerta'}
           />
         </div>
@@ -404,15 +441,27 @@ export default function BalanceTab({ fromDate, toDate }: Props) {
   );
 }
 
-function Cifra({ label, valor, tono }: { label: string; valor: number; tono: 'neutral' | 'ok' | 'alerta' }) {
-  const color =
-    tono === 'alerta' ? 'text-warning' : tono === 'ok' ? 'text-success' : 'text-foreground';
+/**
+ * `valor === null` = NO SE PUDO MEDIR, y se dibuja "—" en gris.
+ *
+ * ⛔ Nació de un cero que mentía en el peor lugar (4-sep-2026): la Conciliación
+ * de caja hacía `cruzarRendiciones(rendQ.data ?? [])`, así que con la consulta
+ * caída —o con un usuario que la RLS no deja leer— los tres totales quedaban en
+ * 0 y "Sin explicar $0" salía EN VERDE, declarando cuadre perfecto sobre una
+ * lectura que nunca ocurrió.
+ */
+function Cifra({ label, valor, tono, nota }: { label: string; valor: number | null; tono: 'neutral' | 'ok' | 'alerta'; nota?: string }) {
+  const sinDato = valor === null;
+  const color = sinDato
+    ? 'text-muted-foreground'
+    : tono === 'alerta' ? 'text-warning' : tono === 'ok' ? 'text-success' : 'text-foreground';
   return (
     <div className="p-5">
       <div className="hud-label mb-1.5">{label}</div>
       <div className={`text-2xl font-mono font-bold tabular-nums ${color}`}>
-        {formatCOP(valor)}
+        {sinDato ? '—' : formatCOP(valor)}
       </div>
+      {nota && <div className="text-[11px] text-muted-foreground mt-1 leading-snug">{nota}</div>}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useOrders } from '@/contexts/OrderContext';
 import { OrderData, dbToOrderData } from '@/lib/orderUtils';
@@ -21,11 +22,24 @@ export function useRefreshOrderRow() {
 
   return useCallback(async (dbId: string | null | undefined): Promise<OrderData | null> => {
     if (!dbId) return null;
-    const { data } = await supabase
+    // ⛔ El error SE LEE (4-sep-2026). Antes se destructuraba solo `data` y un
+    // fallo de red devolvía `null` en silencio. Importa por lo que se desplegó
+    // esta mañana: cuando la edición RECREA el pedido en Dropi, el `external_id`
+    // CAMBIA y `CallView` usa esta fila para volver a anclarse. Sin relectura y
+    // sin aviso, la asesora se queda trabajando el pedido VIEJO — el que Dropi
+    // acaba de marcar REEMPLAZADA.
+    const { data, error } = await supabase
       .from('orders')
       .select(ORDER_COLUMNS)
       .eq('id', dbId)
       .maybeSingle();
+    if (error) {
+      console.warn('[useRefreshOrderRow] no se pudo releer el pedido:', error.message);
+      toast.error('No pude releer el pedido después de guardarlo.', {
+        description: 'El cambio SÍ se aplicó. Refrescá la pantalla antes de seguir con este cliente.',
+      });
+      return null;
+    }
     if (!data) return null;
     const updated = dbToOrderData(data as unknown as Parameters<typeof dbToOrderData>[0], 0);
     const merged = allOrders.map(ord => ord.dbId === updated.dbId

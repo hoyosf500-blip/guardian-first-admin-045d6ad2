@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useActiveStoreId } from '@/contexts/StoreContext';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -306,6 +306,24 @@ export default function LogisticaTab() {
   // al Resumen en vez de mostrar una pantalla en blanco.
   const TABS_VALIDAS = ['resumen', 'carriers', 'cities', 'products', 'decisiones', 'cancelaciones', 'finanzas', 'balance'];
   const activeTab = TABS_VALIDAS.includes(rawTab) ? rawTab : 'resumen';
+  /**
+   * ⛔ QUÉ PESTAÑAS DEPENDEN DE `useLogisticsStats` (4-sep-2026).
+   *
+   * `isError` es el OR de CUATRO consultas (summary, carriers, cities,
+   * products) y con cualquiera caída se reemplazaba el cuerpo ENTERO por la
+   * pantalla de error: Finanzas, Balance y Cancelaciones se iban a negro
+   * aunque no usen ni una de esas cuatro — tienen sus propios hooks y sus
+   * propios estados. El dueño perdía la plata de la pantalla por un fallo del
+   * ranking de transportadoras.
+   *
+   * ⚠️ Y NO se quita el corte sin más: las tablas de acá abajo reciben
+   * `carriers.data ?? []`, así que dejarlas dibujar con la consulta caída
+   * cambiaría "toda la pantalla en negro" por "cuatro tablas vacías con cara de
+   * dato", que es peor. Por eso el corte se mantiene EXACTAMENTE para las
+   * pestañas que sí leen esas cuatro consultas.
+   */
+  const TABS_CON_STATS = ['resumen', 'carriers', 'cities', 'products', 'decisiones'];
+  const necesitaStats = TABS_CON_STATS.includes(activeTab);
 
   // Modo comparación A vs B. Cuando está activo se reemplaza el body por la
   // vista lado-a-lado. Period A = filters principales, Period B se inicializa
@@ -316,6 +334,18 @@ export default function LogisticaTab() {
   const { summary, carriers, cities, products, isLoading, isError } = useLogisticsStats(filters);
   const activeStoreId = useActiveStoreId();
   const queryClient = useQueryClient();
+
+  // ⛔ LA CIUDAD NO CRUZA DE TIENDA (4-sep-2026). `filters` es estado local y
+  // nada lo limpiaba al cambiar de tienda: `activeStoreId` solo aparecía en las
+  // `queryKey` y en `enabled`, y el rango conserva `ciudad` a propósito. Pasar
+  // de Colombia a Ecuador dejaba "MEDELLIN" puesto y TODA la pantalla se iba a
+  // cero — con cara de medición, que es la peor forma de equivocarse acá: el
+  // dueño ve su operación de Ecuador en cero y no hay nada que se lo explique.
+  // El rango de fechas SÍ se conserva: ese sí significa lo mismo en las dos.
+  useEffect(() => {
+    setFilters((f) => (f.ciudad ? { ...f, ciudad: undefined } : f));
+    setPeriodB((f) => (f.ciudad ? { ...f, ciudad: undefined } : f));
+  }, [activeStoreId]);
   // Flete promedio por transportadora — client-side sobre orders.flete (ningún
   // RPC lo trae). Pedido del dueño 23-ago-2026. Si falla, la columna va en '—'.
   // Con la MISMA ciudad que las filas de la tabla (si no, la columna mezclaba
@@ -526,11 +556,7 @@ export default function LogisticaTab() {
         />
       )}
 
-      {!compareMode && isError && <LogisticsErrorState message={errorMsg} onRetry={refetchAll} />}
-
-      {!compareMode && !isError && isLoading && <LogisticsSkeleton />}
-
-      {!compareMode && !isError && !isLoading && (
+      {!compareMode && (
         // ── Tabs arriba, contenido full-width abajo ─────────────────────
         // El header + filtros quedan ARRIBA (fuera del Tabs).
         // El bloque hero (KPIs + bar chart de volumen) se movió a la tab
@@ -562,6 +588,15 @@ export default function LogisticaTab() {
           {/* Cascada de entrada: cada bloque entra 30-60ms después del anterior,
               así la pestaña "se arma" de arriba abajo en vez de aparecer de golpe.
               Los delays son los mismos del Dashboard. */}
+          {/* El fallo de las cuatro consultas operativas tapa SOLO sus cinco
+              pestañas, y sin desmontar la barra: antes reemplazaba el cuerpo
+              entero —barra incluida— así que Finanzas, Balance y Cancelaciones
+              se iban a negro por un fallo que no era suyo, y no quedaba forma
+              de navegar a ellas. */}
+          {necesitaStats && isError && <LogisticsErrorState message={errorMsg} onRetry={refetchAll} />}
+          {necesitaStats && !isError && isLoading && <LogisticsSkeleton />}
+
+          {!isError && !isLoading && (<>
           <TabsContent value="resumen" className="mt-4 space-y-5">
             {/* "Cómo voy este mes": tiles Dropi-parity + embudo por estado (sin
                 huecos) + conciliación (realizado vs pendiente vs perdido + wallet
@@ -666,6 +701,8 @@ export default function LogisticaTab() {
               <CarrierCityMatrix filters={filters} />
             </motion.div>
           </TabsContent>
+
+          </>)}
 
           {/* La tab "Trazabilidad" se ELIMINÓ el 24-ago-2026 a pedido del dueño
               ("yo no la miro, no me dice nada"): duplicaba el embudo del Resumen
