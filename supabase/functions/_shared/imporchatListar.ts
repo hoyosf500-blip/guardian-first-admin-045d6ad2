@@ -32,6 +32,10 @@ export interface UltimoMensajeChat {
   rol: "Cliente" | "Propietario" | "otro";
   tipo: string;
   texto: string;
+  /** El celular desde el que escribe, tal como lo manda ImporChat (con 593, con
+   *  cero, o como venga). Se normaliza al usarlo, nunca al guardarlo. `null` si
+   *  esa cuenta no lo devuelve. */
+  celular?: string | null;
 }
 
 const OFFSET_HORAS: Record<string, number> = { EC: -5, CO: -5, GT: -6 };
@@ -90,12 +94,20 @@ export function interpretarFila(rowRaw: unknown, cc: string): UltimoMensajeChat 
   // corrió tres veces sobre 858 chats y no encontró ni una consulta. Las demás
   // variantes se quedan por si ImporChat renombra.
   const texto = String(primero(row, ["ultimo_texto", "ultimo_mensaje", "texto_ultimo_mensaje", "ultimo_texto_mensaje", "ultimo_mensaje_texto", "texto_mensaje", "texto"]) ?? "");
+  // ⛔ `celular_cliente` estaba DOCUMENTADO arriba y no se leía (4-sep-2026):
+  // ImporChat manda el celular de quien escribe en cada fila del listado y
+  // Guardian lo tiraba. Sin él, el único cruce chat↔pedido es
+  // `importchat_chat_id`, que lo decide ImporChat: si ImporChat no enlazó el
+  // pedido, Guardian hereda la ceguera y se queda callado con un cliente que
+  // está esperando. Es opcional: nada de lo que ya funciona depende de él.
+  const celular = primero(row, ["celular_cliente", "celular", "telefono_cliente", "numero_cliente", "wa_id", "telefono"]);
   return {
     chatId: String(id),
     at,
     rol: rolListar(primero(row, ["ultimo_rol_mensaje", "rol_ultimo_mensaje", "ultimo_mensaje_rol", "rol_mensaje", "rol"])),
     tipo,
     texto,
+    celular: celular == null ? null : String(celular),
   };
 }
 

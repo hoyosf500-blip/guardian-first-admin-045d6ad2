@@ -48,6 +48,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { respuestaPing } from "../_shared/versionEdge.ts";
+import { indexarPedidos, candidatosParaChat, telefonoDelTexto, motivoSinPedido } from "../_shared/importchatCruce.ts";
 import { ensureFreshImporchatToken, decodeJwtExp, IMPORCHAT_BASE_DEFAULT } from "../_shared/imporchatSession.ts";
 import { traerUltimosMensajes, type UltimoMensajeChat } from "../_shared/imporchatListar.ts";
 import { usarSocket } from "../_shared/imporchatSocket.ts";
@@ -63,7 +64,7 @@ import { linkRastreoConGuia } from "../_shared/rastreo.ts";
 import type { MensajeConversacion } from "../_shared/conversacion.ts";
 
 /** ⛔ Subirla en el MISMO commit que cambie algo, o el ping miente. */
-const VERSION = "importchat-responder 2026-09-04.3 pendiente-confirmacion-no-es-preparando";
+const VERSION = "importchat-responder 2026-09-04.4 el-numero-que-el-cliente-escribe";
 const SOURCE = "importchat-responder";
 const AUTOR = "Guardian · respuesta automática";
 
@@ -77,6 +78,14 @@ const ESPERA_PROMESA_MS = 30 * 60_000;
 const MAX_ANTIGUEDAD_MS = 36 * 60 * 60_000;
 /** Cuánto atrás se buscan pedidos con chat para cruzar (los que están en la ventana de Seguimiento). */
 const DIAS_PEDIDOS = 45;
+/** Tope de la foto de pedidos. Si se alcanza, la foto está recortada y el
+ *  resumen lo dice — un silencio por truncamiento se lee igual que "no había
+ *  nada que hacer", que es la clase de mentira que este proyecto persigue. */
+const LIMITE_PEDIDOS = 5000;
+/** Cuántos envíos por corrida puede hacer una vía que NO es el enlace del chat.
+ *  El primer día, chats viejos que nunca se miraron pasan a ser candidatos de
+ *  golpe: que no dominen la corrida mientras se mira si funciona bien. */
+const MAX_ENVIOS_SIN_CHAT = 5;
 const ENFRIAMIENTO_MS = 6 * 60 * 60_000;
 const MAX_ENVIOS_POR_CORRIDA = 15;
 
@@ -266,22 +275,30 @@ Deno.serve(async (req) => {
 
         // ── Pedidos con conversación (ventana de Seguimiento) ────────────────
         const desde = new Date(Date.now() - DIAS_PEDIDOS * 86400_000).toISOString();
+        // ⛔ Ya NO se filtra por `importchat_chat_id` (4-sep-2026). Ese filtro era
+        // el bug: cuando ImporChat no enlazaba el pedido al chat, Guardian no lo
+        // veía nunca — ni aunque el cliente escribiera su número. Ahora se
+        // indexa por chat Y por teléfono, y las vías nuevas solo corren donde
+        // antes no se hacía nada. `order` por fecha desc para que un recorte del
+        // límite se lleve lo más viejo, no lo más nuevo.
         const { data: pedidos, error: pedErr } = await sb.from("orders")
           .select("external_id, phone, nombre, estado, guia, transportadora, importchat_chat_id, chat_entrante_at, chat_leido_at, last_movement_at, created_at")
           .eq("store_id", storeId)
-          .not("importchat_chat_id", "is", null)
           .gte("created_at", desde)
-          .limit(5000);
+          .order("created_at", { ascending: false })
+          .limit(LIMITE_PEDIDOS);
         if (pedErr) throw new Error(`orders: ${pedErr.message}`);
-        const porChat = new Map<string, PedidoConChat[]>();
-        for (const p of (pedidos ?? []) as PedidoConChat[]) {
-          const k = String(p.importchat_chat_id);
-          const arr = porChat.get(k);
-          if (arr) arr.push(p); else porChat.set(k, [p]);
-        }
-        if (porChat.size === 0) { resumen.push({ store_id: storeId, ok: true, chats: 0, enviados: 0 }); continue; }
+        const filas = (pedidos ?? []) as PedidoConChat[];
+        const idx = indexarPedidos(filas, cc);
+        const porChat = idx.porChat;
+        // Si esto llega al límite, la foto está recortada y hay que decirlo: un
+        // silencio por truncamiento se lee igual que "no había nada que hacer".
+        const pedidosTruncado = filas.length >= LIMITE_PEDIDOS;
+        if (filas.length === 0) { resumen.push({ store_id: storeId, ok: true, chats: 0, enviados: 0 }); continue; }
 
         // ── El último mensaje de cada chat (listado liviano) ─────────────────
+        // Sin acotar a los chats con pedido enlazado: los que NO lo tienen son
+        // justamente los que hay que mirar por teléfono.
         const listado = await traerUltimosMensajes(base, token, idConf, cc, vencimiento - 20_000, new Set(porChat.keys()));
         if (!listado) {
           resumen.push({ store_id: storeId, ok: false, error: "ImporChat no devolvió el listado de chats" });
@@ -308,7 +325,9 @@ Deno.serve(async (req) => {
         const ahora = Date.now();
         const candidatos: Array<{ chatId: string; u: UltimoMensajeChat; disparador: Disparador }> = [];
         for (const [chatId, u] of listado.porChat) {
-          if (!porChat.has(chatId)) continue;
+          // ⛔ Acá vivía `if (!porChat.has(chatId)) continue;` — el bug. Un chat
+          // sin pedido enlazado se descartaba entero, aunque el cliente acabara
+          // de escribir su número de teléfono.
           const d = clasificarUltimo(u, ahora);
           if (!d) continue;
           if (yaDecidido.has(`${chatId}|${u.at.toISOString()}`)) continue;
@@ -319,7 +338,7 @@ Deno.serve(async (req) => {
         // Los más viejos primero: llevan más tiempo esperando.
         candidatos.sort((a, b) => a.u.at.getTime() - b.u.at.getTime());
 
-        let enviados = 0, omitidos = 0;
+        let enviados = 0, omitidos = 0, enviadosSinChat = 0;
         const decidir = async (fila: Record<string, unknown>) => {
           if (dryRun) return;
           const { error } = await sb.from("importchat_auto_respuestas").insert({ store_id: storeId, ...fila });
@@ -333,8 +352,25 @@ Deno.serve(async (req) => {
             chat_id: c.chatId, disparador: c.disparador, disparador_at: c.u.at.toISOString(),
             mensaje_cliente: c.disparador === "promesa" ? null : c.u.texto.slice(0, 300),
           };
+          // Tres etapas escalonadas: enlace del chat, el número que el cliente
+          // escribió, y el celular desde el que escribe. Las dos últimas solo
+          // corren cuando la primera no da nada, así que ningún envío que hoy
+          // sale cambia de destinatario.
+          const { candidatos: cands, via } = candidatosParaChat(idx, {
+            chatId: c.chatId, textoCliente: c.u.texto, celularChat: c.u.celular, cc,
+          });
+          if (cands.length === 0) {
+            omitidos++;
+            const escrito = telefonoDelTexto(c.u.texto, cc) !== null;
+            await decidir({ ...base_fila, resultado: "omitido", motivo: motivoSinPedido(null, { escrito }) });
+            continue;
+          }
+          // Tope propio para las vías nuevas: el primer día que esto se prenda,
+          // chats de hasta 36 h atrás que nunca se miraron pasan a ser
+          // candidatos de golpe. Que no dominen la corrida.
+          if (via !== "chat" && enviadosSinChat >= MAX_ENVIOS_SIN_CHAT) continue;
           const { pedido, motivo } = elegirPedidoParaResponder(
-            porChat.get(c.chatId)!.map((p) => ({
+            cands.map((p) => ({
               ...p,
               movidoMs: p.last_movement_at ? Date.parse(p.last_movement_at) : (p.created_at ? Date.parse(p.created_at) : null),
             })),
@@ -342,6 +378,8 @@ Deno.serve(async (req) => {
           );
           if (!pedido) {
             omitidos++;
+            // ⛔ Si la etapa del CHAT salió ambigua no se cae a las otras: la
+            // ambigüedad es real y callarse es la respuesta correcta.
             await decidir({ ...base_fila, resultado: "omitido", motivo: `pedido ${motivo}` });
             continue;
           }
@@ -375,13 +413,29 @@ Deno.serve(async (req) => {
             continue;
           }
           enviados++;
-          await decidir({ ...base_fila, external_id: pedido.external_id, phone: pedido.phone, fase: r.fase, resultado: "enviado", texto: r.texto });
+          if (via !== "chat") enviadosSinChat++;
+          await decidir({
+            ...base_fila, external_id: pedido.external_id, phone: pedido.phone, fase: r.fase,
+            resultado: "enviado", texto: r.texto,
+            // La vía viaja en `motivo` (que hoy solo se escribe en los omitidos):
+            // sin columna nueva se puede contar cuántos se ubicaron por teléfono.
+            motivo: via === "chat" ? null : via === "telefono_mensaje" ? "ubicado por el teléfono del mensaje" : "ubicado por el celular del chat",
+          });
           // Que la pantalla reaccione ya (el sync lo reescribe después con el dato de ImporChat).
           await sb.from("orders").update({ chat_saliente_at: new Date().toISOString(), chat_saliente_tipo: "directo" })
             .eq("store_id", storeId).eq("external_id", pedido.external_id);
         }
         enviadosTotal += enviados;
-        resumen.push({ store_id: storeId, ok: true, chats: porChat.size, candidatos: candidatos.length, enviados, omitidos, listado_parcial: listado.parcial });
+        resumen.push({
+          store_id: storeId, ok: true, chats: porChat.size, candidatos: candidatos.length,
+          enviados, omitidos, listado_parcial: listado.parcial,
+          // Para poder MEDIR el arreglo en el dry run, en vez de suponerlo:
+          // cuantos pedidos entraron a la foto, si quedo recortada, cuantos
+          // telefonos no normalizan, y cuantos se ubicaron por una via nueva.
+          pedidos: filas.length, pedidos_truncado: pedidosTruncado,
+          telefonos_sin_normalizar: idx.sinTelefonoNormalizable,
+          enviados_sin_chat: enviadosSinChat,
+        });
         if (!dryRun) await traza(`tienda ${storeId}: ${enviados} enviados · ${omitidos} omitidos`, enviadosTotal);
       } catch (e) {
         huboError = true;
