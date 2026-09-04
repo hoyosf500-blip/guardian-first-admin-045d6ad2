@@ -212,6 +212,14 @@ export interface QuoteLine {
    *  Va opcional: en un producto simple queda `undefined` y NO se emite al
    *  payload, así los pedidos que hoy funcionan viajan exactamente igual. */
   variationId?: number | null;
+  /** SKU de la variante en la tienda (Shopify). Si `variationId` no vino, el
+   *  PASO A la resuelve contra `variations[].sku` del catálogo web de Dropi:
+   *  el lookup por integración no ve las variantes de los productos ajenos
+   *  (shampoo Dexe 147152, supplier 18332 → "No tiene permisos"), y sin la
+   *  variación la bodega da vacía. Medido el 4-sep-2026: 49 pedidos de Shopify
+   *  rechazados en 4 días con "no tiene stock en bodega" mientras Dropify los
+   *  creaba con la misma variante. */
+  sku?: string | null;
 }
 
 /** Ciudad destino ya resuelta por el caller (desde `dropi_city_catalog`).
@@ -251,15 +259,25 @@ export async function fetchWebProductInfo(
   quantity: number,
   price: number,
   variationId?: number | null,
+  sku?: string | null,
 ): Promise<WebProductInfo> {
   let productType = "SIMPLE";
   let supplierId: string | null = null;
+  let resolvedVariation: number | null = variationId ?? null;
   try {
     const { status, body } = await dropiWebFetch(cfg, `/api/products/productlist/v1/show/?id=${dropiId}`, { method: "GET", retryOnThrottle: true });
     if (status >= 200 && status < 300) {
       const obj = body?.objects ?? body?.data ?? {};
       if (obj?.user_id != null) supplierId = String(obj.user_id);
       if (obj?.type) productType = String(obj.type);
+      // Variante por SKU (ver `QuoteLine.sku`). Solo si no vino resuelta.
+      const skuNorm = String(sku || "").trim().toUpperCase();
+      if (resolvedVariation == null && skuNorm && Array.isArray(obj?.variations)) {
+        const hit = (obj.variations as Array<{ id?: number; sku?: string }>).find(
+          (v) => String(v?.sku || "").trim().toUpperCase() === skuNorm,
+        );
+        if (hit?.id) resolvedVariation = Number(hit.id) || null;
+      }
     } else {
       // Antes degradaba a SIMPLE/supplier null en silencio total — dejar rastro.
       console.warn(`[dropi-web] PASO A: producto ${dropiId} respondió ${status} — degrado a type SIMPLE / supplier null`);
@@ -270,7 +288,7 @@ export async function fetchWebProductInfo(
     if (e instanceof WebFallbackError && e.status === 422) throw e;
     console.error("[dropi-web] PASO A falló para producto", dropiId, e);
   }
-  return { dropiId, quantity, price, productType, supplierId, variationId: variationId ?? null };
+  return { dropiId, quantity, price, productType, supplierId, variationId: resolvedVariation };
 }
 
 /** Entrada de `products[]` para cotizar y para crear. Fuente ÚNICA del shape:
@@ -297,11 +315,17 @@ export async function getOriginCity(
   dropiId: number,
   destination: string,
   productType: string,
+  variationId?: number | null,
   // deno-lint-ignore no-explicit-any
 ): Promise<{ cityRemitente: any; warehouse: any; warehouseId: number }> {
+  // ⚠️ Producto VARIABLE: Dropi quiere el id de la VARIACIÓN, no el del
+  // producto. Probado en vivo 4-sep-2026 con el shampoo 147152: con el id del
+  // producto (SIMPLE o VARIABLE, con o sin variation_id aparte) responde
+  // `data: []` = "sin stock"; con `id: 56323` (la variante) devuelve la bodega.
+  const idParaOrigen = String(productType).toUpperCase() === "VARIABLE" && variationId ? variationId : dropiId;
   const { status, body } = await dropiWebFetch(cfg, `/api/orders/getOriginCityForCalculateShipping`, {
     method: "POST",
-    body: { id: dropiId, destination, type: productType },
+    body: { id: idParaOrigen, destination, type: productType },
     retryOnThrottle: true,
   });
   if (status < 200 || status >= 300) {
@@ -421,7 +445,7 @@ export async function quoteCarriers(
   // PASO A — info de cada producto (supplier_id + type).
   const products: WebProductInfo[] = [];
   for (const l of lines) {
-    products.push(await fetchWebProductInfo(cfg, Number(l.dropiId), l.quantity, l.price, l.variationId));
+    products.push(await fetchWebProductInfo(cfg, Number(l.dropiId), l.quantity, l.price, l.variationId, l.sku));
   }
   const primary = products[0]; // el primer producto manda para el cálculo de origen.
 
@@ -432,7 +456,7 @@ export async function quoteCarriers(
   //  destination = STRING "city, state" (minúsculas ok, verificado en vivo).
   const destinationStr = `${String(args.city || "").trim()}, ${String(args.state || "").trim()}`
     .toLowerCase();
-  const origin = await getOriginCity(cfg, primary.dropiId, destinationStr, primary.productType);
+  const origin = await getOriginCity(cfg, primary.dropiId, destinationStr, primary.productType, primary.variationId);
 
   // supplier_id: el del PASO A; fallback = warehouse.user_id del PASO C.
   const supplierId =

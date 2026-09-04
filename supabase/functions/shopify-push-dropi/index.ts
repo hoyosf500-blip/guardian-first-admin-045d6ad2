@@ -30,7 +30,7 @@ const SHOPIFY_API_VERSION = "2024-10";
 /** Se despliega A MANO: Lovable no redespliega edge functions al publicar.
  *  `POST .../shopify-push-dropi?ping=1` contesta esta marca — es la unica forma de saber si
  *  el arreglo del gemelo invisible llego de verdad al runtime. */
-const VERSION = "shopify-push-dropi 2026-09-04.1 quien-ve-cede-y-el-5xx-no-se-reintenta";
+const VERSION = "shopify-push-dropi 2026-09-04.2 la-bodega-de-un-variable-se-pide-por-la-variante";
 
 interface ShopifyLineItem {
   product_id: number;
@@ -544,7 +544,9 @@ async function createOrderViaWeb(
     city: args.client.city,
     state: args.client.state,
     destCity,
-    lines: lines.map((l) => ({ dropiId: Number(l.dropiId), quantity: l.quantity, price: l.price })),
+    // variationId + sku: un producto VARIABLE pide la bodega por la variante, y la
+    // variante se resuelve por SKU en el catálogo web cuando la integración no la ve.
+    lines: lines.map((l) => ({ dropiId: Number(l.dropiId), quantity: l.quantity, price: l.price, variationId: l.variationId ?? null, sku: l.sku || null })),
     total: args.total,
   });
   const { dest, origin, products, supplierId } = ctx;
