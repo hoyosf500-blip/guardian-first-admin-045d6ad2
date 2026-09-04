@@ -53,7 +53,21 @@ export function useVersionCheck(): void {
       // (y al volver, el chequeo de visibilitychange lo hace enseguida).
       if (document.visibilityState !== 'visible') return;
       try {
-        const res = await fetch(`/?v=${Date.now()}`, { cache: 'no-store' });
+        // ⛔ `credentials: 'omit'` NO es un detalle (4-sep-2026, medido en vivo).
+        // El hosting fija una cookie `__dpl=<id del despliegue>` que CLAVA al
+        // navegador a la versión que cargó — sirve para que los trozos lazy de
+        // esa sesión sigan existiendo. Efecto colateral: este chequeo mandaba la
+        // cookie, recibía el HTML del despliegue VIEJO, veía el mismo hash de
+        // bundle y concluía "no hay nada nuevo". O sea: el aviso que existe para
+        // decirle a la operadora que recargue NO SALTABA NUNCA después de una
+        // publicación. Se comprobó ese día: el mismo pedido con cookie devolvía
+        // el despliegue viejo y sin cookie el nuevo, cinco de cinco.
+        //
+        // Sin cookie se ve el despliegue REAL que está publicado. Y el
+        // botón «Actualizar» sí trae la versión nueva: una
+        // navegación de verdad reescribe la cookie (verificado en la misma
+        // sesión). El HTML es público, no necesita sesión para leerse.
+        const res = await fetch(`/?v=${Date.now()}`, { cache: 'no-store', credentials: 'omit' });
         if (!res.ok) return;
         const html = await res.text();
         const m = html.match(BUNDLE_RE);

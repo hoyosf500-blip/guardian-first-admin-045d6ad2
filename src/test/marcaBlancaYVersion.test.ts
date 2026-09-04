@@ -63,6 +63,19 @@ describe('aviso de versión nueva', () => {
     expect(hook).toMatch(/onClick: \(\) => window\.location\.reload\(\)/);
   });
 
+  // ⛔ 4-sep-2026, medido en vivo. El hosting fija una cookie
+  // `__dpl=<id del despliegue>` que clava al navegador a la version que cargo.
+  // Este chequeo mandaba la cookie, recibia el HTML del despliegue VIEJO, veia
+  // el mismo hash de bundle y concluia "no hay nada nuevo": el aviso NO SALTABA
+  // NUNCA despues de publicar. El mismo pedido sin cookie devolvia el
+  // despliegue nuevo, cinco de cinco.
+  it('pide el HTML SIN cookies, o no ve la version publicada', () => {
+    expect(hook, 'volvio la cookie __dpl: el aviso de version nueva no va a saltar nunca')
+      .toMatch(/credentials: 'omit'/);
+    // Y sigue siendo el mismo pedido cache-busted de siempre.
+    expect(hook).toMatch(/cache: 'no-store'/);
+  });
+
   it('el aviso no se auto-cierra (una operadora ocupada no lo pierde)', () => {
     expect(hook).toMatch(/duration: Infinity/);
   });
