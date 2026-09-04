@@ -37,9 +37,15 @@ export function useShopifyPushAttempts(storeId: string | null, shopifyOrderIds: 
         .select('shopify_order_id, status, error_message, dropi_order_id, pushed_at')
         .eq('store_id', storeId)
         .in('shopify_order_id', shopifyOrderIds);
-      // Feature informativa: si la lectura falla (RLS, tabla, red) degradamos a
-      // vacío — las filas simplemente no muestran el motivo previo, nada se rompe.
-      if (error) return EMPTY;
+      // ⛔ El error se PROPAGA (4-sep-2026). Antes acá había `if (error) return EMPTY`
+      // y alcanzaba, porque el único consumidor era un chip por fila: sin dato, la
+      // fila no mostraba el motivo previo y listo. Desde que hay un contador
+      // AGREGADO ("16 ventas no llegaron a Dropi"), tragarse el error convierte
+      // una consulta caída en "0 ventas trabadas" — un cero afirmado sobre algo
+      // que no se midió, que es justo lo que castiga
+      // `src/test/banderasDeHonestidadSeLeen.test.ts`. Ahora react-query marca
+      // `isError` y `pudoLeer` sale en false: la pantalla dice que no pudo leer.
+      if (error) throw error;
       const map = new Map<string, PushAttempt>();
       for (const r of (data ?? []) as PushAttempt[]) map.set(r.shopify_order_id, r);
       return map;
@@ -48,6 +54,10 @@ export function useShopifyPushAttempts(storeId: string | null, shopifyOrderIds: 
 
   return {
     attempts: query.data ?? EMPTY,
+    /** true = los intentos se leyeron de verdad. Con false NO se puede afirmar
+     *  ningún conteo: "0 trabadas" y "no sé cuántas hay" son cosas distintas. */
+    pudoLeer: !query.isError && !query.isLoading,
+    isError: query.isError,
     isLoading: query.isLoading,
     refetch: query.refetch,
   };

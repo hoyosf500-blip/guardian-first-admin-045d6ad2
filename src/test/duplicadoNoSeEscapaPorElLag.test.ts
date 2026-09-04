@@ -185,4 +185,40 @@ describe('⛔ el duplicado no se escapa por el lag del espejo', () => {
       expect(src, `${fn} no contesta el ping`).toMatch(/respuestaPing\(\s*req/);
     }
   });
+
+  // ⛔ EL ESLABÓN HUMANO (caso Johana Guerra, 4-sep-2026). Ningún candado del
+  // servidor puede frenar una carga hecha en el panel de Dropi: no deja fila en
+  // `shopify_pushed_orders` ni dispara el webhook. El robot creó #6854946 a las
+  // 8:18 y el operador cargó #6854983 a mano 3 minutos después, porque buscó en
+  // Dropi y no lo encontró — el espejo tarda hasta 15 min. El único lugar donde
+  // se corta es la pantalla, ANTES del clic.
+  it('el panel avisa ANTES de que el humano cargue a mano', () => {
+    const panel = readFileSync(join(process.cwd(), 'src', 'components', 'confirmar', 'ShopifyPendingPanel.tsx'), 'utf8');
+    expect(panel, 'el panel dejó de mirar lo que Guardian ya subió')
+      .toMatch(/usePushesRecientes/);
+    // Los dos botones que crean la guía a mano quedan deshabilitados.
+    // Se ancla en el JSX del botón, no en el texto suelto: "Subir a Dropi" y
+    // "Ya lo metí" también aparecen en comentarios del archivo.
+    const iSubir = panel.indexOf('<Truck size={12} /> Subir a Dropi');
+    expect(iSubir, 'no encontré el botón de subir').toBeGreaterThan(-1);
+    expect(panel.slice(Math.max(0, iSubir - 600), iSubir)).toMatch(/disabled=\{blocked \|\| !!yaSubido\}/);
+    const iMeti = panel.indexOf('handleYaLoMeti(p)');
+    expect(iMeti, 'no encontré el botón de "Ya lo metí"').toBeGreaterThan(-1);
+    expect(panel.slice(iMeti, iMeti + 300), 'se puede volver a marcar "Ya lo metí" sobre algo que Guardian ya subió')
+      .toMatch(/!!yaSubido/);
+    // Y el aviso dice lo único que destraba al operador: buscar por teléfono.
+    expect(panel).toMatch(/por TEL[ÉE]FONO, no por el n[úu]mero de la venta/);
+  });
+
+  it('la pantalla usa la MISMA ventana y la misma llave que el candado del servidor', () => {
+    const hook = readFileSync(join(process.cwd(), 'src', 'hooks', 'usePushesRecientes.ts'), 'utf8');
+    const gemelo = puro;
+    // Si la pantalla mirara otra ventana que el servidor, dirían cosas distintas
+    // sobre el mismo pedido — y la asesora le creería a la que está mirando.
+    expect(gemelo).toMatch(/VENTANA_GEMELO_MS = 24 \* 60 \* 60 \* 1000/);
+    expect(hook, 'la ventana de la pantalla se desalineó de la del servidor')
+      .toMatch(/VENTANA_PUSH_MS = 24 \* 60 \* 60 \* 1000/);
+    expect(hook, 'la llave de teléfono tiene que ser la misma: últimos 9 dígitos')
+      .toMatch(/slice\(-9\)/);
+  });
 });

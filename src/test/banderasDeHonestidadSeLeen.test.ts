@@ -118,4 +118,30 @@ describe('⛔ las banderas de honestidad se leen', () => {
       .toMatch(/label="Movimientos"[\s\S]{0,160}movQ\.data\?\.total\s*\?\?/);
     expect(src).not.toMatch(/label="Movimientos"[\s\S]{0,160}countTotal/);
   });
+
+  // ⛔ 4-sep-2026. `useShopifyPushAttempts` hacía `if (error) return EMPTY` y
+  // alcanzaba: el único consumidor era un chip por fila. Desde que hay un
+  // contador AGREGADO ("16 ventas no llegaron a Dropi"), tragarse el error
+  // convierte una consulta caída en "0 ventas trabadas" — sobre 85 ventas reales
+  // que nunca llegaron, 16 de ellas sin pedido y ~$506 sin despachar.
+  it('el aviso de ventas trabadas no afirma un cero sobre intentos que no se leyeron', () => {
+    const hook = sinComentarios(leer('hooks/useShopifyPushAttempts.ts'));
+    expect(hook, 'el hook volvió a tragarse el error de lectura')
+      .toMatch(/if \(error\) throw error/);
+    expect(hook, 'sin `pudoLeer` la pantalla no puede distinguir cero de no-sé')
+      .toMatch(/pudoLeer:/);
+
+    const puro = sinComentarios(leer('lib/backlogDropi.ts'));
+    expect(puro, 'con la lectura caída el backlog tiene que salir vacío Y marcado')
+      .toMatch(/if \(!o\.pudoLeer\) return \{ \.\.\.VACIO, pudoLeer: false \}/);
+
+    const panel = sinComentarios(leer('components/confirmar/ShopifyPendingPanel.tsx'));
+    expect(panel).toMatch(/backlog\.pudoLeer/);
+    // La rama honesta existe y NO lleva ningún número de trabadas.
+    const i = panel.indexOf('No pude leer por qu');
+    expect(i, 'falta la rama honesta del aviso de ventas trabadas').toBeGreaterThan(-1);
+    // Y el cartel rojo con los conteos SOLO sale con lectura buena.
+    expect(panel, 'el cartel con los conteos dejó de exigir una lectura buena')
+      .toMatch(/\{backlog\.pudoLeer && backlog\.fallaron\.length > 0 && \(/);
+  });
 });

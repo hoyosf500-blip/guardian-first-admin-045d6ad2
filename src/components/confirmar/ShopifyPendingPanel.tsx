@@ -6,6 +6,8 @@ import { usePushToDropi } from '@/hooks/usePushToDropi';
 import DropiProductSearch from '@/components/DropiProductSearch';
 import { useShopifyManualMarks } from '@/hooks/useShopifyManualMarks';
 import { useShopifyPushAttempts } from '@/hooks/useShopifyPushAttempts';
+import { armarBacklogDropi } from '@/lib/backlogDropi';
+import { usePushesRecientes, tel9 } from '@/hooks/usePushesRecientes';
 import { useDuplicatePhones } from '@/hooks/useDuplicatePhones';
 import { useAutoPushHealth } from '@/hooks/useAutoPushHealth';
 import { dupMatchesFor, isBlockedByDuplicate, repetidosEnElLote, uniquePhones } from '@/lib/duplicatePhones';
@@ -261,7 +263,27 @@ export default function ShopifyPendingPanel() {
   // muestra SU razón de no-pasar (falló con motivo / quedó a medias / ya se
   // subió pero el teléfono no matcheó). Complementa el guard anti-dup.
   const pendingIdsForAttempts = useMemo(() => pending.map(p => p.id), [pending]);
-  const { attempts, refetch: refetchAttempts } = useShopifyPushAttempts(activeStoreId, pendingIdsForAttempts);
+  const { attempts, pudoLeer: intentosLeidos, refetch: refetchAttempts } =
+    useShopifyPushAttempts(activeStoreId, pendingIdsForAttempts);
+
+  // ⛔ EL BACKLOG AGREGADO (4-sep-2026). El panel mostraba el motivo POR FILA
+  // desde siempre, y nadie suma 85 filas a ojo: medido ese día, de 480 ventas
+  // intentadas en Ecuador **85 nunca llegaron a Dropi** y 40 de ellas por UN solo
+  // producto sin stock. El equipo rescataba a mano (69 de las 85) y esa carga
+  // manual es la que choca con el robot y fabrica los duplicados. La cadena
+  // empieza acá: si el fallo del robot no se ve, alguien lo tapa a mano.
+  // ⛔ LO QUE GUARDIAN YA SUBIÓ (caso Johana Guerra, 4-sep-2026). El robot creó
+  // #6854946 a las 8:18; el operador, que no lo encontró buscando en Dropi, cargó
+  // #6854983 a mano 3 minutos después. Dos guías, dos fletes. El dato estaba acá
+  // sin lag: `orders` (el espejo) tarda hasta 15 min, así que lo recién creado NO
+  // se ve todavía en la lista de Dropi que mira el operador. Ningún candado del
+  // servidor puede frenar una carga hecha en el panel de Dropi: se corta acá.
+  const { porTelefono: pushesRecientes, pudoLeer: pushesLeidos } = usePushesRecientes(activeStoreId);
+
+  const backlog = useMemo(
+    () => armarBacklogDropi(pending, attempts, { ahoraMs: Date.now(), pudoLeer: intentosLeidos }),
+    [pending, attempts, intentosLeidos],
+  );
 
   // Limpieza del set local: si un pedido ya NO está pendiente (entró a Dropi),
   // lo sacamos del set para no inflar el "ya metidos".
@@ -755,6 +777,92 @@ export default function ShopifyPendingPanel() {
         trabados por lo menos se ve. Uno que murió a mitad de corrida no escribe
         nada, y hasta hoy esa ausencia se leía como "todo bien" (misma forma que
         el nightly que starvaba tiendas y que el wallet que fallaba en verde). */}
+    {/* ⛔ VENTAS QUE NO LLEGARON A DROPI (4-sep-2026). El panel mostraba el
+        motivo POR FILA desde siempre — y nadie suma 85 filas a ojo. Medido ese
+        día en Ecuador: de 480 ventas intentadas, 85 nunca llegaron; 40 de ellas
+        frenadas por UN solo producto sin stock, y el robot reintentando cada 15
+        minutos sin que nadie se enterara. El equipo rescató 69 a mano, y esa
+        carga manual es la que choca con el robot y fabrica los duplicados: la
+        cadena empieza en este cartel. Va ARRIBA de todo y junto a los botones,
+        porque acá está quien puede arreglarlo. */}
+    {!backlog.pudoLeer && pending.length > 0 && (
+      <div
+        role="alert"
+        className="mb-3 flex flex-wrap items-start gap-3 rounded-2xl border border-warning/40 bg-warning/10 px-4 pl-5 py-3 shadow-card3d relative"
+      >
+        <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
+        <span className="w-9 h-9 rounded-xl bg-warning/15 border border-warning/30 text-warning flex items-center justify-center flex-shrink-0" aria-hidden="true">
+          <AlertTriangle size={16} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-warning">No pude leer por qué no pasaron</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Hay {pending.length} {pending.length === 1 ? 'venta' : 'ventas'} sin llegar a Dropi y no puedo
+            decirte el motivo de ninguna. <strong>No quiere decir que estén bien.</strong>
+          </p>
+        </div>
+        <button
+          onClick={() => { void refetchAttempts(); }}
+          className="h-7 px-3 rounded-lg border border-warning/40 text-warning text-xs font-medium hover:bg-warning/10 flex-shrink-0"
+        >
+          Reintentar
+        </button>
+      </div>
+    )}
+
+    {backlog.pudoLeer && backlog.fallaron.length > 0 && (
+      <div
+        role="alert"
+        className="mb-3 rounded-2xl border border-danger/40 bg-danger/10 px-4 pl-5 py-3 shadow-card3d relative"
+      >
+        <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
+        <div className="flex flex-wrap items-start gap-3">
+          <span className="w-9 h-9 rounded-xl bg-danger/15 border border-danger/30 text-danger flex items-center justify-center flex-shrink-0" aria-hidden="true">
+            <AlertTriangle size={16} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-danger">
+              {backlog.fallaron.length} {backlog.fallaron.length === 1 ? 'venta no llegó' : 'ventas no llegaron'} a Dropi
+              {backlog.plataTrabada > 0 && <> — {formatCOP(backlog.plataTrabada)} sin despachar</>}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              El robot ya las intentó y le volvió a fallar. <strong>No se van a subir solas.</strong>
+              {backlog.masViejaMs >= 86400000 && <> La más vieja lleva {Math.floor(backlog.masViejaMs / 86400000)} días.</>}
+            </p>
+
+            <ul className="mt-2 space-y-1.5">
+              {backlog.grupos.slice(0, 5).map((g) => (
+                <li key={g.clave} className="text-xs">
+                  <span className="font-semibold text-foreground">
+                    {g.ventas.length} {g.ventas.length === 1 ? 'venta' : 'ventas'}
+                    {g.plata > 0 && <> · {formatCOP(g.plata)}</>}
+                  </span>
+                  <span className="text-muted-foreground"> — {g.causa.etiqueta}</span>
+                  <span className="block text-[11px] text-muted-foreground/80 italic">{g.causa.comoSeArregla}</span>
+                </li>
+              ))}
+            </ul>
+            {backlog.grupos.length > 5 && (
+              <p className="text-[11px] text-muted-foreground mt-1">
+                y {backlog.grupos.length - 5} motivo{backlog.grupos.length - 5 === 1 ? '' : 's'} más.
+              </p>
+            )}
+
+            {/* Lo que NO es falla pero tampoco es cero: decirlo evita que alguien
+                salga a cargar a mano algo que el robot va a subir en un rato. */}
+            {(backlog.esperandoTurno.length > 0 || backlog.nadieLasVaAIntentar.length > 0 || backlog.sinVerificar.length > 0) && (
+              <p className="text-[11px] text-muted-foreground mt-2 pt-2 border-t border-danger/20">
+                Además:
+                {backlog.esperandoTurno.length > 0 && <> <strong>{backlog.esperandoTurno.length} esperando turno</strong> — el robot las sube solo.</>}
+                {backlog.nadieLasVaAIntentar.length > 0 && <> <strong>{backlog.nadieLasVaAIntentar.length} que el robot ya soltó</strong> — hay que subirlas a mano.</>}
+                {backlog.sinVerificar.length > 0 && <> <strong>{backlog.sinVerificar.length} sin confirmar</strong> — buscar el teléfono en Dropi ANTES de reintentar.</>}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+
     {robot?.mudo && (
       <div
         role="alert"
@@ -1045,6 +1153,14 @@ export default function ShopifyPendingPanel() {
                     const dupHits = dupMatchesFor(p.phone, dupMap);
                     const overridden = dupOverrides.has(p.id);
                     const blocked = dupHits.length > 0 && !overridden;
+                    // Otro push de Guardian al MISMO teléfono en las últimas 24 h.
+                    // Se excluye esta misma venta: lo que importa es la hermana.
+                    const yaSubido = pushesLeidos
+                      ? (pushesRecientes.get(tel9(p.phone)) ?? []).find(x => x.shopify_order_id !== p.id)
+                      : undefined;
+                    const minutosDesdePush = yaSubido
+                      ? Math.max(0, Math.round((Date.now() - Date.parse(yaSubido.pushed_at)) / 60000))
+                      : 0;
                     // Razón de no-pasar de ESTA fila: error del último bulk de la
                     // sesión (más fresco) o el último intento persistido en
                     // shopify_pushed_orders (sobrevive refresh/sesión).
@@ -1116,17 +1232,39 @@ export default function ShopifyPendingPanel() {
                           className="h-7 w-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground flex-shrink-0">
                           <ExternalLink size={12} />
                         </a>
-                        <button onClick={() => setPushItem(p)} disabled={blocked}
-                          title={blocked ? 'Bloqueado: ya hay un pedido en Dropi con este teléfono' : 'Subir este pedido a Dropi'}
+                        <button onClick={() => setPushItem(p)} disabled={blocked || !!yaSubido}
+                          title={yaSubido ? 'Guardian ya subió otra venta de este cliente hace un rato' : blocked ? 'Bloqueado: ya hay un pedido en Dropi con este teléfono' : 'Subir este pedido a Dropi'}
                           className="h-7 px-2.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 flex items-center gap-1 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed">
                           <Truck size={12} /> Subir a Dropi
                         </button>
-                        <button onClick={() => handleYaLoMeti(p)} disabled={lockMarks || blocked}
-                          title={blocked ? 'Bloqueado: posible duplicado' : 'Ya lo cargué manualmente'}
+                        <button onClick={() => handleYaLoMeti(p)} disabled={lockMarks || blocked || !!yaSubido}
+                          title={yaSubido ? 'Guardian ya subió otra venta de este cliente hace un rato' : blocked ? 'Bloqueado: posible duplicado' : 'Ya lo cargué manualmente'}
                           className="h-7 px-2.5 rounded-lg border border-border bg-card text-xs font-medium text-muted-foreground hover:text-foreground flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed">
                           Ya lo metí
                         </button>
                       </div>
+
+                      {yaSubido && (
+                        <div className="ml-4 px-4 pb-2.5 pt-1 border-l-2 border-destructive/60 bg-destructive/10">
+                          <p className="text-xs font-semibold text-destructive flex items-center gap-1.5">
+                            <Ban size={12} aria-hidden="true" />
+                            Guardian ya subió a Dropi otra venta de este mismo cliente
+                            {minutosDesdePush < 60
+                              ? ` hace ${minutosDesdePush} ${minutosDesdePush === 1 ? 'minuto' : 'minutos'}`
+                              : ` hace ${Math.round(minutosDesdePush / 60)} h`}
+                            {yaSubido.dropi_order_id ? ` (Dropi #${yaSubido.dropi_order_id})` : ' (se está creando)'}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            Si la cargás a mano, el cliente recibe <strong>dos envíos</strong> y se paga doble flete.
+                            {' '}<strong>Buscá en Dropi por TELÉFONO, no por el número de la venta:</strong> la orden que
+                            creó Guardian está ahí con otro número, y el espejo tarda hasta 15 minutos en mostrarla.
+                          </p>
+                          <p className="text-[11px] text-muted-foreground mt-1">
+                            Si de verdad son dos pedidos distintos, marcalo con <strong>«No es duplicado»</strong> y dejalo
+                            que lo suba Guardian — nunca a mano.
+                          </p>
+                        </div>
+                      )}
 
                       {dupHits.length > 0 && (
                         <div className="ml-4 px-4 pb-2.5 pt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs border-l-2 border-destructive/40 bg-destructive/5">
