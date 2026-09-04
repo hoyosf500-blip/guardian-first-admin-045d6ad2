@@ -377,6 +377,45 @@ Son preguntas DISTINTAS y confundirlas ya costó:
 - **Pedidos con `estado IS NULL`**: `.not('estado','eq','X')` los descarta (`NOT (NULL='X')` es
   NULL). `useDataLoader` los trae con una query aparte. Medido: 0 hoy — es defensa, no reparación.
 
+### La bandeja (`/inbox`) — por qué el filtro vive en la base (4-sep-2026)
+
+`useInboxEsperando` sirve TRES canastas: los que escribieron y nadie contestó,
+los que recibieron un mensaje nuestro y no contestaron (deuda, umbral 6 h,
+ventana 7 días) y los que el bot prometió atender. Lo montan cuatro lugares a la
+vez —la barra del turno, que vive en todas las rutas, el banner de fin de cola de
+Confirmar, la bandeja y Productividad—, así que comparte **un solo snapshot y un
+solo canal de realtime por tienda** (`SNAPSHOT` / `CANALES`, guardián
+`canalRealtimeUnico`). Eso no se toca: acumular un canal por instancia es lo que
+ya dejó el CRM en 112 peticiones por minuto con la pantalla quieta.
+
+**El filtro lo hace Postgres, no el cliente.** «El último mensaje del chat es del
+cliente» es una comparación ENTRE COLUMNAS (`chat_entrante_at >
+coalesce(chat_saliente_at, -infinity)`) y PostgREST no la sabe expresar. Mientras
+se resolvía en el cliente había que traer filas y recortarlas por fecha: el hook
+pedía las 500 con entrada MÁS RECIENTE y después ordenaba «quien lleva más
+esperando, primero» — el tope se quedaba con lo nuevo y la pantalla existe para
+lo viejo. Medido en Ecuador el 4-sep: **273 esperando, 83 a la vista, 190
+invisibles**, 172 de ellos hace más de una semana y el más viejo de 31 días. La
+regla del dueño que eso rompía está citada textual en `controlDelTurno`.
+
+Desde `20260904170000_bandeja_completa.sql` van dos funciones —
+`bandeja_esperando(p_store_id, p_limite)` y `bandeja_sin_respuesta(p_store_id,
+p_limite, p_horas, p_dias)`— que filtran, ordenan del más viejo al más nuevo y
+devuelven en cada fila `total_general` (la cola completa, sin recortar) y
+`total_con_chat`. Tres detalles que no son casuales:
+
+- **La tienda va por parámetro**, no por `_resolve_scope_store()`: así no hereda
+  el problema de esperar el scope que sí tiene `novedades_root_cause`.
+- **`total_con_chat` es lo único que separa** «medimos y no hay nadie esperando»
+  de «esta tienda no tiene dato de chat». Con la lista ya filtrada a los que
+  esperan, un `length === 0` significaría lo primero — y afirmarlo sobre lo
+  segundo es exactamente el incidente de Colombia (39 clientes esperando en
+  Chatea Pro mientras la pantalla celebraba).
+- **El hook cae al camino viejo con `PGRST202`.** Sin ese respaldo, publicar el
+  frontend antes de correr el SQL deja la bandeja caída en TODAS las rutas.
+
+Guardián: `src/test/bandejaNoEscondeGente.test.ts`.
+
 ### Listas SLA en `/seguimiento` (`src/lib/segLists.ts`)
 
 Selector de listas pre-clasificadas estilo Boostec. Cada lista tiene un predicado puro `(o: OrderData) => boolean` que combina `estado` + `días hábiles desde creación` (vía `calcBusinessDays`). Las listas de FASE son **disjuntas** — una orden NO puede aparecer en 2 a la vez (ej. `pendientes_guia` requiere `dias < 4`, `indem_pendientes_guia_4d` requiere `dias >= 4`).
