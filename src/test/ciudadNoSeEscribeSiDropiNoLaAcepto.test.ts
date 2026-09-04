@@ -63,6 +63,39 @@ describe('dropi-update-order-full: la ciudad no se escribe si Dropi no la acept�
   });
 });
 
+const CARRIER = readFileSync(resolve(ROOT, 'supabase/functions/dropi-change-carrier/index.ts'), 'utf8');
+const PLAN = readFileSync(resolve(ROOT, 'src/lib/orderEditPlan.ts'), 'utf8');
+
+describe('la ciudad se cambia RECREANDO el pedido, como la web de Dropi (4-sep-2026)', () => {
+  // El PUT /orders/myorders/{id} de Dropi no lleva ciudad: su propia web, al
+  // cambiarla, llama createOrder (id nuevo, vieja REEMPLAZADA). Probado en
+  // producción sobre #6855164: PUT integración 200 + PUT web 200 y la ciudad
+  // siguió igual. El único camino real es la recreación.
+  it('el plan manda un cambio de ciudad a apply_edit', () => {
+    expect(PLAN).toMatch(/if \(f\.carrierChanged \|\| f\.linesChanged \|\| f\.destinoChanged\) steps\.push\('apply_edit'\)/);
+  });
+
+  it('el editor manda ciudad/departamento nuevos en el body de apply_edit', () => {
+    const i = EDITOR.indexOf("mode: 'apply_edit'");
+    expect(i).toBeGreaterThan(0);
+    expect(EDITOR.slice(i, i + 700)).toContain('ciudad: form.ciudad.trim(), departamento: form.departamento.trim()');
+  });
+
+  it('el PUT (update_full) NO lleva la ciudad nueva cuando esta viaja por la recreación', () => {
+    expect(EDITOR).toContain('const ciudadPut = destinoPorRecreacion ? initial.ciudad : form.ciudad.trim();');
+    const i = EDITOR.indexOf("supabase.functions.invoke('dropi-update-order-full'");
+    expect(EDITOR.slice(i, i + 900)).toContain('ciudad: ciudadPut,');
+  });
+
+  it('la edge recrea en el destino que manda el editor y escribe ese destino en la ficha nueva', () => {
+    expect(CARRIER).toContain('const cityE = String(body.ciudad || "").trim() || clientE.city;');
+    expect(CARRIER).toContain('resolveDestCity(sbAdmin, cfg, cfg.countryCode, cityE, stateE)');
+    expect(CARRIER).not.toMatch(/resolveDestCity\(sbAdmin, cfg, cfg\.countryCode, clientE\.city, clientE\.state\)/);
+    const i = CARRIER.indexOf('external_id: newIdE,');
+    expect(CARRIER.slice(i, i + 500)).toContain('ciudad: ctxE.dest.cityName');
+  });
+});
+
 describe('OrderEditorDialog: el editor no da por guardada una ciudad que Dropi no tomó', () => {
   it('manda storeId a dropi-update-order-full', () => {
     const i = EDITOR.indexOf("supabase.functions.invoke('dropi-update-order-full'");

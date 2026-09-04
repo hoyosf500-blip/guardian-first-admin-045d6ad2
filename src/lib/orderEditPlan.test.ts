@@ -23,6 +23,23 @@ describe('buildUpdatePlan — matriz de pasos', () => {
     expect(buildUpdatePlan({ ...base, valorChanged: true })).toEqual(['apply_value']);
   });
 
+  it('solo ciudad/provincia → apply_edit (la web de Dropi recrea; el PUT no lleva ciudad)', () => {
+    expect(buildUpdatePlan({ ...base, destinoChanged: true })).toEqual(['apply_edit']);
+  });
+
+  it('ciudad + datos del cliente → update_full (sin la ciudad) y después la recreación', () => {
+    expect(buildUpdatePlan({ ...base, clientDirty: true, destinoChanged: true }))
+      .toEqual(['update_full', 'apply_edit']);
+  });
+
+  it('ciudad + valor → una sola recreación', () => {
+    expect(buildUpdatePlan({ ...base, destinoChanged: true, valorChanged: true })).toEqual(['apply_edit']);
+  });
+
+  it('ciudad con guía → solo update_full (no se puede recrear; la edge avisa si Dropi la conserva)', () => {
+    expect(buildUpdatePlan({ ...base, hasGuia: true, destinoChanged: true })).toEqual(['update_full']);
+  });
+
   it('solo transportadora → apply_edit', () => {
     expect(buildUpdatePlan({ ...base, carrierChanged: true })).toEqual(['apply_edit']);
   });

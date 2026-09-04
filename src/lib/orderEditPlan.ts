@@ -16,8 +16,19 @@
 export type EditStep = 'update_full' | 'apply_edit' | 'apply_value';
 
 export interface EditFlags {
-  /** Cambió algún dato del cliente (nombre/apellido/teléfono/depto/ciudad/dirección/email). */
+  /** Cambió algún dato del cliente (nombre/apellido/teléfono/dirección/email) — SIN ciudad/depto. */
   clientDirty: boolean;
+  /** Cambió la ciudad o la provincia/departamento de destino.
+   *
+   *  ⛔ La ciudad NO viaja por el PUT (4-sep-2026). El código de la propia web
+   *  de Dropi (`verifyEditOrder` del chunk del editor) lo deja claro: el PUT
+   *  `/orders/myorders/{id}` solo lleva nombre/apellido/teléfono/email/dir/
+   *  notas; si cambió la ciudad, la provincia, los productos o la logística,
+   *  Dropi RECREA el pedido (`createOrder`, id nuevo, el viejo REEMPLAZADA).
+   *  Por eso el PUT devolvía 200 y conservaba la ciudad, y por eso el operador
+   *  "lo hacía mediante Dropi y se duplicaba": estaba recreando. Guardian hace
+   *  lo mismo por el camino que ya existía para la transportadora. */
+  destinoChanged?: boolean;
   /** La transportadora seleccionada difiere de la actual (comparar por nombre normalizado). */
   carrierChanged: boolean;
   /** Cambió cantidad o precio de alguna línea de producto. */
@@ -42,11 +53,13 @@ export interface EditFlags {
  */
 export function buildUpdatePlan(f: EditFlags): EditStep[] {
   if (f.hasGuia || f.isManaged) {
-    return f.clientDirty ? ['update_full'] : [];
+    // Con guía no hay recreación posible: la ciudad va por el PUT y, si Dropi
+    // la conserva, la edge lo dice (destStale) en vez de fingir que entró.
+    return f.clientDirty || f.destinoChanged ? ['update_full'] : [];
   }
   const steps: EditStep[] = [];
   if (f.clientDirty) steps.push('update_full');
-  if (f.carrierChanged || f.linesChanged) steps.push('apply_edit');
+  if (f.carrierChanged || f.linesChanged || f.destinoChanged) steps.push('apply_edit');
   else if (f.valorChanged) steps.push('apply_value');
   return steps;
 }

@@ -316,7 +316,19 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
     && !mismoDestino(order.ciudad || '', form.ciudad);
 
   // ---- Flags de cambios ----
-  const clientDirty = customerDirty(initial, form);
+  // Ciudad/provincia aparte de los demás datos: viajan por la RECREACIÓN
+  // (apply_edit), como hace la web de Dropi — el PUT no las lleva. Ver
+  // `destinoChanged` en orderEditPlan.ts.
+  const norm = (s: string) => String(s || '').trim().toUpperCase();
+  const destinoChanged = norm(initial.ciudad) !== norm(form.ciudad)
+    || norm(initial.departamento) !== norm(form.departamento);
+  const clientDirty = customerDirty(
+    { ...initial, ciudad: form.ciudad, departamento: form.departamento },
+    form,
+  );
+  // Con guía o gestionado no hay recreación: la ciudad va por el PUT igual que
+  // antes (y la edge avisa si Dropi la conservó).
+  const destinoPorRecreacion = destinoChanged && !order.guia && !order.result;
   const carrierChanged = selectedCarrier != null &&
     normCarrier(selectedCarrier.name) !== normCarrier(order.transportadora);
   const effectiveLines: EditableLine[] | null = drafts ? drafts.map(draftToLine) : null;
@@ -342,6 +354,7 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
 
   const plan: EditStep[] = buildUpdatePlan({
     clientDirty,
+    destinoChanged,
     carrierChanged,
     linesChanged,
     valorChanged,
@@ -448,6 +461,10 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
       toast.error('Email inválido'); return false;
     }
     const phoneToSend = normalizePhoneForCountry(form.phone, countryCode) ?? form.phone;
+    // La ciudad nueva NO va en este PUT cuando viaja por la recreación: Dropi
+    // la ignoraría (200 y ciudad vieja) y la edge, con razón, frenaría todo.
+    const ciudadPut = destinoPorRecreacion ? initial.ciudad : form.ciudad.trim();
+    const departamentoPut = destinoPorRecreacion ? initial.departamento : form.departamento.trim();
     const auditId = await insertPendingAudit('edicion_orden', {
       antes: {
         nombre: initial.nombre, apellido: initial.apellido, phone: initial.phone,
@@ -456,7 +473,7 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
       },
       despues: {
         nombre: form.nombre.trim(), apellido: form.apellido.trim(), phone: phoneToSend,
-        ciudad: form.ciudad.trim(), departamento: form.departamento.trim(),
+        ciudad: ciudadPut, departamento: departamentoPut,
         direccion: form.direccion.trim(), email: form.email.trim(),
       },
     });
@@ -473,8 +490,8 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
         nombre: form.nombre.trim(),
         apellido: form.apellido.trim(),
         phone: phoneToSend,
-        ciudad: form.ciudad.trim(),
-        departamento: form.departamento.trim(),
+        ciudad: ciudadPut,
+        departamento: departamentoPut,
         direccion: form.direccion.trim(),
         email: form.email.trim(),
       },
@@ -533,7 +550,10 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
     }
     await settleAudit(auditId, 'synced', d?.noChange ? 'Sin cambios que empujar a Dropi' : undefined);
     // Baseline reset: si un paso posterior falla, el retry no re-manda los datos.
-    setInitial({ ...form });
+    // La ciudad que va por recreación queda pendiente hasta que apply_edit la aplique.
+    setInitial(destinoPorRecreacion
+      ? { ...form, ciudad: initial.ciudad, departamento: initial.departamento }
+      : { ...form });
     return true;
   };
 
@@ -548,6 +568,7 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
         valor: currentValor,
       },
       despues: {
+        ...(destinoPorRecreacion ? { ciudad: form.ciudad.trim(), departamento: form.departamento.trim() } : {}),
         ...(carrierChanged && selectedCarrier ? { transportadora: selectedCarrier.name } : {}),
         ...(linesChanged && effectiveLines
           ? { lines: effectiveLines.map(l => ({ id: l.dropiId, q: l.quantity, p: l.price })) }
@@ -563,6 +584,11 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
         mode: 'apply_edit',
         // Settle server-authoritative por auditId (null → la edge lo ignora).
         auditId,
+        // Ciudad/provincia NUEVAS: la recreación nace en el destino de pantalla
+        // (antes releía el de Dropi y cementaba la ciudad vieja en el id nuevo).
+        ...(destinoPorRecreacion
+          ? { ciudad: form.ciudad.trim(), departamento: form.departamento.trim() }
+          : {}),
         ...(carrierChanged && selectedCarrier
           ? { distributionCompanyId: selectedCarrier.id, name: selectedCarrier.name }
           : {}),
@@ -633,6 +659,7 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
       // "Transportadora/cantidades/valor" confundía cuando solo se tocó el
       // precio (la asesora leía que la transportadora también falló).
       const intentado = [
+        ...(destinoPorRecreacion ? ['Ciudad'] : []),
         ...(carrierChanged && selectedCarrier ? ['Transportadora'] : []),
         ...(linesChanged && effectiveLines ? ['Cantidades/precios'] : []),
         ...(overrideValid ? ['Valor'] : []),

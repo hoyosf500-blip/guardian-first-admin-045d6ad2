@@ -89,6 +89,11 @@ interface ChangeCarrierBody {
   /** mode "quote": ciudad/departamento destino editados en pantalla (prevalece sobre la guardada). */
   city?: string;
   state?: string;
+  /** mode "apply_edit": ciudad/provincia NUEVAS de destino. La web de Dropi
+   *  cambia la ciudad RECREANDO el pedido (su PUT no la lleva); acá igual: la
+   *  recreación nace en este destino en vez de releer el viejo desde v2. */
+  ciudad?: string;
+  departamento?: string;
   /** mode "apply_edit": líneas editadas (mismo set de dropiIds, sin agregar/quitar). */
   newLines?: Array<{ dropiId?: number | string; quantity?: number | string; price?: number | string }>;
   /** modes apply/apply_value/apply_edit: id de la fila 'pending' de order_results
@@ -1314,7 +1319,7 @@ async function resolveClientAndLines(
  *  Esta funcion es parte de la cadena que puede DUPLICAR un pedido en Dropi,
  *  y hasta hoy no habia forma de saber que version corria: el arreglo
  *  "exactamente UNO vivo" de julio-2026 se desplego sin poder comprobarlo. */
-const VERSION = "dropi-change-carrier 2026-09-04.2 la-recuperacion-no-adopta-hermanas-viejas";
+const VERSION = "dropi-change-carrier 2026-09-04.3 la-ciudad-se-cambia-recreando-como-dropi";
 
 Deno.serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);
@@ -2553,9 +2558,14 @@ Deno.serve(async (req: Request) => {
           : (Number(orderRow.valor) || sumaLineasE);
 
       const countryE = countryNameOrFail(cfg.countryCode);
+      // Destino: el que manda el editor si cambió la ciudad; si no, el del
+      // pedido en Dropi (v2). Antes SIEMPRE el de v2: un cambio de ciudad hecho
+      // junto con la transportadora recreaba el pedido con la ciudad vieja.
+      const cityE = String(body.ciudad || "").trim() || clientE.city;
+      const stateE = String(body.departamento || "").trim() || clientE.state;
       let destCityE;
       try {
-        destCityE = await resolveDestCity(sbAdmin, cfg, cfg.countryCode, clientE.city, clientE.state);
+        destCityE = await resolveDestCity(sbAdmin, cfg, cfg.countryCode, cityE, stateE);
       } catch (e) {
         if (e instanceof WebFallbackError) {
           return jsonOk({ ok: false, code: "dropi_error", error: e.message });
@@ -2566,8 +2576,8 @@ Deno.serve(async (req: Request) => {
         return jsonOk({
           ok: false,
           code: "sin_cobertura_dropi",
-          error: noCoverageMessage(clientE.city, clientE.state),
-          city: clientE.city, state: clientE.state,
+          error: noCoverageMessage(cityE, stateE),
+          city: cityE, state: stateE,
         });
       }
 
@@ -2575,8 +2585,8 @@ Deno.serve(async (req: Request) => {
       try {
         ctxE = await quoteCarriers(cfg, {
           country: countryE,
-          city: clientE.city,
-          state: clientE.state,
+          city: cityE,
+          state: stateE,
           destCity: destCityE,
           lines: linesE,
           total: totalE,
@@ -2753,6 +2763,10 @@ Deno.serve(async (req: Request) => {
         .update({
           external_id: newIdE,
           transportadora: chosenE.name,
+          // La ficha nace en el destino con el que se recreó (nombre canónico
+          // del catálogo de Dropi), no con la ciudad vieja.
+          ciudad: ctxE.dest.cityName,
+          departamento: ctxE.dest.stateName,
           valor: totalE,
           // Ver la nota de `flete` en apply_value: el flete nuevo ya está acá y
           // no persistirlo dejaba el costo viejo a la vista.
