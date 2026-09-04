@@ -136,6 +136,18 @@ interface Snapshot {
   /** La tercera canasta no se pudo leer: va vacía y no se afirma nada de ella. */
   promesasError: boolean;
   /**
+   * ⛔ CUÁNTOS HAY DE VERDAD, no cuántos entraron (4-sep-2026).
+   *
+   * Medido en producción: Ecuador tenía 273 clientes esperando respuesta y esta
+   * pantalla mostraba 83. Los otros 190 —172 de ellos hace más de una semana,
+   * el más viejo de 31 días— caían fuera del tope de 500 filas más RECIENTES,
+   * mientras la lista prometía ordenar "quien lleva más esperando, primero".
+   * Ahora el total viene de la base sin recortar y la pantalla dice cuándo está
+   * mostrando menos. `null` = todavía no se sabe (camino viejo).
+   */
+  totalEsperando: number | null;
+  totalSinRespuesta: number | null;
+  /**
    * ⛔ La SEGUNDA canasta ("les escribimos y no contestaron") falló al leerse.
    * `sinRespuesta` va vacía y NO se puede afirmar nada sobre ella. Hasta el
    * 4-sep-2026 esta bandera no existía: si solo esa consulta fallaba, `status`
@@ -150,6 +162,7 @@ interface Snapshot {
 const VACIO: Snapshot = {
   items: [], sinRespuesta: [], prometidos: [], status: 'cargando',
   deudaError: false, promesasError: false,
+  totalEsperando: null, totalSinRespuesta: null,
 };
 
 /**
@@ -180,6 +193,144 @@ function publicar(storeId: string, s: Snapshot): void {
   if (subs) for (const f of subs) f(s);
 }
 
+/** Una fila tal como la devuelven `bandeja_esperando` / `bandeja_sin_respuesta`. */
+type FilaRpc = Fila & { total_general: number | string | null; total_con_chat?: number | string | null };
+
+/**
+ * ⛔ LA COLA COMPLETA, DEL MÁS VIEJO AL MÁS NUEVO (4-sep-2026).
+ *
+ * El camino viejo pedía las 500 conversaciones con entrada MÁS RECIENTE y
+ * después ordenaba "quien lleva más esperando, primero": el tope se quedaba con
+ * lo nuevo y la pantalla existe para lo viejo. Medido en Ecuador, dos veces y
+ * con métodos distintos: 273 personas esperando, 83 a la vista, **190
+ * invisibles** (172 hace más de una semana, la más vieja de 31 días).
+ *
+ * No se arregla subiendo el tope: el filtro correcto —"el último mensaje del
+ * chat es del cliente"— compara dos columnas entre sí y PostgREST no lo sabe
+ * expresar. Por eso el trabajo se hace en la base
+ * (`supabase/migrations/20260904170000_bandeja_completa.sql`), que además
+ * devuelve el total sin recortar para que la pantalla pueda decir "mostrando N
+ * de M" en vez de callar.
+ *
+ * Devuelve `false` si las funciones todavía no están aplicadas: ahí el llamador
+ * sigue con la consulta de siempre. Sin ese respaldo, publicar el frontend
+ * antes que el SQL dejaría la bandeja caída en TODAS las rutas (la barra del
+ * turno también monta este hook).
+ */
+async function cargarPorRpc(storeId: string, seq: number, desdePromesas: string): Promise<boolean> {
+  const rpc = (fn: string, args: Record<string, unknown>) =>
+    (supabase.rpc as unknown as (f: string, a: Record<string, unknown>) =>
+      Promise<{ data: FilaRpc[] | null; error: { code?: string; message: string } | null }>)(fn, args);
+
+  const [esp, deuda, promesas] = await Promise.all([
+    rpc('bandeja_esperando', { p_store_id: storeId, p_limite: TOPE }),
+    rpc('bandeja_sin_respuesta', {
+      p_store_id: storeId, p_limite: TOPE,
+      p_horas: HORAS_SIN_RESPUESTA, p_dias: DIAS_VENTANA_SIN_RESPUESTA,
+    }),
+    supabase
+      .from('importchat_auto_respuestas')
+      .select('external_id, phone, disparador_at, motivo')
+      .eq('store_id', storeId)
+      .eq('resultado', 'omitido')
+      .not('external_id', 'is', null)
+      .gte('disparador_at', desdePromesas)
+      .order('disparador_at', { ascending: false })
+      .limit(TOPE),
+  ]);
+
+  const noExiste = (e: { code?: string; message: string } | null) =>
+    !!e && (e.code === 'PGRST202' || /does not exist|could not find|schema cache/i.test(e.message));
+  // Migración sin aplicar → que siga el camino de siempre.
+  if (noExiste(esp.error) || noExiste(deuda.error)) return false;
+
+  if (seq !== SECUENCIA.get(storeId)) return true; // llegó tarde: ya hay otra corrida
+  if (esp.error) {
+    publicar(storeId, {
+      items: [], sinRespuesta: [], prometidos: [], deudaError: true, promesasError: true,
+      totalEsperando: null, totalSinRespuesta: null, status: 'error',
+    });
+    return true;
+  }
+
+  const ahora = Date.now();
+  const aItem = (r: Fila, esperaDesde: number): InboxItem => ({
+    dbId: String(r.id),
+    externalId: r.external_id || '',
+    nombre: r.nombre || 'Cliente',
+    phone: r.phone || '',
+    estado: r.estado || '',
+    ciudad: r.ciudad,
+    direccion: r.direccion,
+    producto: r.producto,
+    valor: r.valor != null ? Number(r.valor) : null,
+    guia: r.guia,
+    transportadora: r.transportadora,
+    entranteAt: r.chat_entrante_at ? Date.parse(r.chat_entrante_at) : 0,
+    esperaDesde,
+    salienteAt: r.chat_saliente_at ? Date.parse(r.chat_saliente_at) : null,
+    leidoAt: r.chat_leido_at ? Date.parse(r.chat_leido_at) : ahora,
+    lockedBy: r.locked_by,
+    lockedAt: r.locked_at,
+    diasEnEstado: r.last_movement_at
+      ? Math.max(0, Math.floor((ahora - Date.parse(r.last_movement_at)) / 86_400_000))
+      : null,
+  });
+
+  const filasEsp = (esp.data ?? []) as FilaRpc[];
+  const filasDeuda = deuda.error ? [] : ((deuda.data ?? []) as FilaRpc[]);
+  const total = (filas: FilaRpc[]) => (filas.length ? Number(filas[0].total_general) || filas.length : 0);
+  /** Filas de la tienda con dato de chat. 0 = nadie está midiendo este canal. */
+  const conChat = filasEsp.length
+    ? Number(filasEsp[0].total_con_chat ?? 0)
+    : (filasDeuda.length ? 1 : 0);
+
+  const esperandoOut = filasEsp.map((r) => aItem(r, r.chat_entrante_at ? Date.parse(r.chat_entrante_at) : 0));
+  const deudaOut = filasDeuda.map((r) => aItem(r, r.chat_saliente_at ? Date.parse(r.chat_saliente_at) : 0));
+
+  // La tercera canasta necesita la ficha del pedido, igual que antes.
+  const porExternal = new Map<string, InboxItem>();
+  for (const it of esperandoOut) if (it.externalId) porExternal.set(it.externalId, it);
+  for (const it of deudaOut) if (it.externalId && !porExternal.has(it.externalId)) porExternal.set(it.externalId, it);
+
+  const prometidosOut: InboxItem[] = [];
+  if (!promesas.error) {
+    const crudas: PromesaCruda[] = ((promesas.data ?? []) as unknown as {
+      external_id: string | null; phone: string | null; disparador_at: string | null; motivo: string | null;
+    }[]).flatMap((pr) => {
+      const at = pr.disparador_at ? Date.parse(pr.disparador_at) : NaN;
+      if (!pr.external_id || !Number.isFinite(at)) return [];
+      return [{ externalId: String(pr.external_id), phone: pr.phone || '', at, motivo: pr.motivo || '' }];
+    });
+    for (const pr of unaPorPedido(crudas)) {
+      const pedido = porExternal.get(pr.externalId);
+      if (!pedido) continue;
+      if (!promesaSigueAbierta(pr, { salienteAt: pedido.salienteAt, entranteAt: pedido.entranteAt || null })) continue;
+      prometidosOut.push({ ...pedido, esperaDesde: pr.at, promesa: { motivo: pr.motivo, at: pr.at } });
+    }
+  }
+
+  if (deuda.error) console.warn('[inbox] la canasta "sin respuesta" no se pudo leer:', deuda.error.message);
+
+  publicar(storeId, {
+    items: esperandoOut,
+    sinRespuesta: deudaOut,
+    prometidos: prometidosOut,
+    // ⛔ La base ya filtró y ordenó, así que "no vino nadie" SÍ es un cero
+    // medido — pero solo si la tienda tiene dato de chat. Sin una sola fila con
+    // `chat_entrante_at` no se puede afirmar nada, que es el incidente de
+    // Colombia (39 esperando y la pantalla celebrando). `total_con_chat` es lo
+    // único que separa las dos cosas; `.length === 0` no alcanzaba, porque con
+    // la función nueva la lista viene ya filtrada a los que esperan.
+    status: conChat === 0 ? 'sin_medir' : 'ok',
+    deudaError: Boolean(deuda.error),
+    promesasError: Boolean(promesas.error) && (promesas.error as { code?: string })?.code !== '42P01',
+    totalEsperando: total(filasEsp),
+    totalSinRespuesta: deuda.error ? null : total(filasDeuda),
+  });
+  return true;
+}
+
 async function cargarTienda(storeId: string | null): Promise<void> {
     if (!storeId) return;
     const seq = (SECUENCIA.get(storeId) ?? 0) + 1;
@@ -203,6 +354,12 @@ async function cargarTienda(storeId: string | null): Promise<void> {
     // las otras dos: un hook aparte costaría otro canal de realtime para
     // siempre. Es una tabla chica (una fila por decisión, ~50 por noche).
     const desdePromesas = new Date(Date.now() - DIAS_VENTANA_PROMESAS * 86_400_000).toISOString();
+
+    // Primero por la base (cola completa y ordenada de verdad). Si las
+    // funciones todavía no están aplicadas, sigue el camino de siempre — así el
+    // orden entre publicar el frontend y correr el SQL deja de importar.
+    if (await cargarPorRpc(storeId, seq, desdePromesas)) return;
+
     const [conEntrante, sinEntrante, promesas] = await Promise.all([
       supabase
         .from('orders')
@@ -240,6 +397,7 @@ async function cargarTienda(storeId: string | null): Promise<void> {
       // prendida todavía, no es un error que avisar.
       publicar(storeId, {
         items: [], sinRespuesta: [], prometidos: [], deudaError: true, promesasError: true,
+        totalEsperando: null, totalSinRespuesta: null,
         status: code === '42703' || /does not exist|column/i.test(msg) ? 'not_ready' : 'error',
       });
       return;
@@ -360,6 +518,10 @@ async function cargarTienda(storeId: string | null): Promise<void> {
       // 42P01 = la tabla del robot todavía no existe en esta base. No es un
       // fallo que avisar: la tienda simplemente no tiene el disparador puesto.
       promesasError: Boolean(promesas.error) && (promesas.error as { code?: string })?.code !== '42P01',
+      // Camino viejo: el tope recorta y no hay forma de saber cuánto quedó
+      // afuera. `null` es la respuesta honesta — no se afirma un total.
+      totalEsperando: null,
+      totalSinRespuesta: null,
     });
 }
 
@@ -426,7 +588,8 @@ export function useInboxEsperando(storeId: string | null) {
   return useMemo(
     () => ({
       items: snap.items, sinRespuesta: snap.sinRespuesta, prometidos: snap.prometidos,
-      status: snap.status, deudaError: snap.deudaError, promesasError: snap.promesasError, recargar,
+      status: snap.status, deudaError: snap.deudaError, promesasError: snap.promesasError,
+      totalEsperando: snap.totalEsperando, totalSinRespuesta: snap.totalSinRespuesta, recargar,
     }),
     [snap, recargar],
   );

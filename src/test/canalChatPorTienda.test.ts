@@ -476,7 +476,14 @@ describe('la bandeja no puede afirmar un cero sobre datos que no existen', () =>
     expect(i, 'el estado final tiene que decidirse entre sin_medir y ok').toBeGreaterThan(-1);
     const condicion = hook.slice(Math.max(0, i - 160), i);
     expect(
-      /\.length === 0/.test(condicion),
+      // 4-sep-2026: con las funciones `bandeja_*` la lista viene ya filtrada a
+      // los que ESPERAN, así que `.length === 0` dejó de significar "esta tienda
+      // no tiene dato de chat" — significaría "todos atendidos", que es lo
+      // contrario. El hook ahora decide con `total_con_chat`, que cuenta las
+      // filas con `chat_entrante_at` de la tienda: es el mismo criterio de
+      // siempre, medido en la base. Se aceptan las dos formas porque el camino
+      // viejo (respaldo, sin la migración aplicada) sigue usando `.length`.
+      /\.length === 0/.test(condicion) || /conChat === 0/.test(condicion),
       'el `ok` final tiene que depender de que haya llegado alguna fila',
     ).toBe(true);
   });

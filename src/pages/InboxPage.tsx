@@ -428,7 +428,7 @@ function TarjetaLista({ o, sello, estadoSello, miId, escribioElCliente, children
 
 export default function InboxPage() {
   const { activeStoreId, activeStore } = useStore();
-  const { items: esperan, sinRespuesta, prometidos, status, deudaError, promesasError } = useInboxEsperando(activeStoreId);
+  const { items: esperan, sinRespuesta, prometidos, status, deudaError, promesasError, totalEsperando, totalSinRespuesta } = useInboxEsperando(activeStoreId);
 
   /**
    * Las dos canastas de la bandeja.
@@ -571,6 +571,11 @@ export default function InboxPage() {
    *  filtrado: el encabezado cuenta el trabajo real, no lo que dejó ver el
    *  buscador. */
   const cuantosResueltos = useMemo(() => cola.filter(estaResuelto).length, [cola, estaResuelto]);
+  /** El total REAL de la canasta que se está mirando, sin el recorte. `null`
+   *  mientras la base no lo sepa decir (camino viejo del hook). */
+  const totalDeLaCola = vista === 'esperan' ? totalEsperando
+    : vista === 'deuda' ? totalSinRespuesta
+    : null;
 
   // La cola avanza sola: si el seleccionado ya no está (le contestaron y salió
   // de la lista), pasa al siguiente en vez de dejar el panel vacío. Ese detalle
@@ -744,6 +749,18 @@ export default function InboxPage() {
               )}
               <span className="font-mono tabular-nums font-semibold text-foreground">{cola.length}</span>
               {' '}en la cola
+              {/* ⛔ SI SE RECORTÓ, SE DICE (4-sep-2026). Antes la cola traía
+                  como mucho 500 filas y la pantalla mostraba ese número como si
+                  fuera el total: en Ecuador eran 83 a la vista sobre 273
+                  esperando de verdad. La regla del dueño está escrita en
+                  `controlDelTurno`: los pedidos NO se esconden, y siempre se
+                  muestra el total que hay que trabajar. */}
+              {totalDeLaCola != null && totalDeLaCola > cola.length && (
+                <> <span className="text-warning">(de {' '}
+                  <span className="font-mono tabular-nums font-semibold">{totalDeLaCola}</span>
+                  {' '}en total — se muestran los que llevan más esperando)</span>
+                </>
+              )}
               {cuantosResueltos > 0 && (
                 <> · <span className="font-mono tabular-nums text-success">{cuantosResueltos}</span>{' '}
                   ya resuelto{cuantosResueltos === 1 ? '' : 's'}
