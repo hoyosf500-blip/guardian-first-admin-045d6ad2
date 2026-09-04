@@ -558,6 +558,62 @@ export type Database = {
         }
         Relationships: []
       }
+      importchat_auto_respuestas: {
+        Row: {
+          chat_id: string
+          created_at: string
+          disparador: string
+          disparador_at: string
+          external_id: string | null
+          fase: string | null
+          id: string
+          mensaje_cliente: string | null
+          motivo: string | null
+          phone: string | null
+          resultado: string
+          store_id: string
+          texto: string | null
+        }
+        Insert: {
+          chat_id: string
+          created_at?: string
+          disparador: string
+          disparador_at: string
+          external_id?: string | null
+          fase?: string | null
+          id?: string
+          mensaje_cliente?: string | null
+          motivo?: string | null
+          phone?: string | null
+          resultado: string
+          store_id: string
+          texto?: string | null
+        }
+        Update: {
+          chat_id?: string
+          created_at?: string
+          disparador?: string
+          disparador_at?: string
+          external_id?: string | null
+          fase?: string | null
+          id?: string
+          mensaje_cliente?: string | null
+          motivo?: string | null
+          phone?: string | null
+          resultado?: string
+          store_id?: string
+          texto?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "importchat_auto_respuestas_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       importchat_envios: {
         Row: {
           created_at: string
@@ -1944,6 +2000,7 @@ export type Database = {
       store_importchat_config: {
         Row: {
           api_base: string
+          auto_estado: boolean
           created_at: string
           habilitado: boolean
           id_configuracion: number
@@ -1954,6 +2011,7 @@ export type Database = {
         }
         Insert: {
           api_base?: string
+          auto_estado?: boolean
           created_at?: string
           habilitado?: boolean
           id_configuracion: number
@@ -1964,6 +2022,7 @@ export type Database = {
         }
         Update: {
           api_base?: string
+          auto_estado?: boolean
           created_at?: string
           habilitado?: boolean
           id_configuracion?: number
