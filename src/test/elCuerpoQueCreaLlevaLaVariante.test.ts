@@ -75,6 +75,8 @@ describe('⛔ el cuerpo que CREA lleva la variante', () => {
     // obliga a tocar esta prueba en cada commit, que es como una prueba se
     // vuelve trámite. Lo que importa es que tenga forma de marca comprobable
     // con ?ping=1, y que el arreglo de la variante siga presente (arriba).
-    expect(push).toMatch(/const VERSION = "shopify-push-dropi 2026-09-04\.\d+ /);
+    // Con forma de marca (fecha.revisión), no una fecha clavada: la del 4-sep
+    // subió a la del 5-sep cuando cambió `_shared/dropiWebQuote.ts`.
+    expect(push).toMatch(/const VERSION = "shopify-push-dropi \d{4}-\d{2}-\d{2}\.\d+ /);
   });
 });

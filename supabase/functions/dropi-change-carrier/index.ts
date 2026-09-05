@@ -54,6 +54,7 @@ import {
   WebFallbackError,
   type QuoteLine,
 } from "../_shared/dropiWebQuote.ts";
+import { etiquetaVariante, completarVariantes, faltaAlgunaVariante } from "../_shared/varianteDeLinea.ts";
 import { resolveDestCity, noCoverageMessage } from "../_shared/dropiCityCatalog.ts";
 import { paisUsaCentavos, dropiCountryNameFor } from "../_shared/dropiCountry.ts";
 import { cancelOrderInDropi } from "../_shared/dropiCancelOrder.ts";
@@ -1210,9 +1211,12 @@ function parseOrderLines(body: Record<string, unknown>): LineDetail[] {
     // se descartaba acá. Sin ella, recrear un producto variable devuelve "El
     // producto X es variable, por lo tanto debe indicar una variación" y no
     // crea nada: el 84,6% de los pedidos de Colombia no se podían editar.
-    const variation = (d.variation ?? {}) as Record<string, unknown>;
-    const variationId = Number(d.variation_id ?? variation.id ?? 0) || null;
-    lines.push({ dropiId, quantity, price, variationId, ...(name ? { name } : {}) });
+    const variation = (d.variation ?? d.product_variation ?? {}) as Record<string, unknown>;
+    const variationId = Number(d.variation_id ?? d.product_variation_id ?? variation.id ?? 0) || null;
+    // La etiqueta ("OSCURO", "38 / NEGRO") viaja aparte del id: si el id no
+    // vino, la cotización la busca por nombre en el catálogo (5-sep-2026).
+    const variante = etiquetaVariante(variation) || null;
+    lines.push({ dropiId, quantity, price, variationId, ...(variante ? { variante } : {}), ...(name ? { name } : {}) });
   }
   return lines;
 }
@@ -1230,9 +1234,13 @@ function parseV2Lines(body: Record<string, unknown>): LineDetail[] {
     const name = String(p.name ?? "").trim() || undefined;
     // Misma variante que en `parseOrderLines`: este camino es el fallback para
     // los pedidos de bot, y si pierde la talla el recreate falla igual.
-    const v2var = (p.variation ?? {}) as Record<string, unknown>;
-    const variationId = Number(p.variation_id ?? v2var.id ?? 0) || null;
-    lines.push({ dropiId, quantity, price, variationId, ...(name ? { name } : {}) });
+    const v2var = (p.variation ?? p.product_variation ?? {}) as Record<string, unknown>;
+    // Los candidatos conocidos del id de variante, como en `mode: "variants"`.
+    // Si el V2 lo nombra de otra forma, la línea igual sale con la etiqueta y
+    // `resolveClientAndLines` la completa con la lectura de integración.
+    const variationId = Number(p.variation_id ?? p.product_variation_id ?? v2var.id ?? 0) || null;
+    const variante = etiquetaVariante(v2var) || null;
+    lines.push({ dropiId, quantity, price, variationId, ...(variante ? { variante } : {}), ...(name ? { name } : {}) });
   }
   return lines;
 }
@@ -1273,11 +1281,20 @@ async function resolveClientAndLines(
   }
 
   // Fallback de líneas: integration GET (parseOrderLines) si v2 no trajo productos.
+  //
+  // ⛔ Y COMPLETADO (5-sep-2026): si el V2 trajo productos pero alguna línea
+  // vino SIN variante, se lee también la integración —que sí trae
+  // `variation_id`, verificado en vivo el 6-ago-2026— y se completa lo que
+  // falte, por posición. Antes el V2 "ganaba" con la línea a medias y la bodega
+  // se pedía con el id del producto: "no tiene stock en bodega" sobre el
+  // shampoo 147152 mientras la cotización (que lee la integración) sí pasaba.
   let integrationBody: Record<string, unknown> | null = null;
-  if (lines.length === 0) {
+  if (lines.length === 0 || faltaAlgunaVariante(lines)) {
     const ord = await dropiGetOrder(cfg.base, cfg.apiKey, cfg.storeUrl, externalId);
     integrationBody = ord.body;
-    if (ord.ok) lines = parseOrderLines(ord.body);
+    if (ord.ok) {
+      lines = lines.length === 0 ? parseOrderLines(ord.body) : completarVariantes(lines, parseOrderLines(ord.body));
+    }
   }
   if (lines.length === 0) {
     return {
@@ -1319,7 +1336,7 @@ async function resolveClientAndLines(
  *  Esta funcion es parte de la cadena que puede DUPLICAR un pedido en Dropi,
  *  y hasta hoy no habia forma de saber que version corria: el arreglo
  *  "exactamente UNO vivo" de julio-2026 se desplego sin poder comprobarlo. */
-const VERSION = "dropi-change-carrier 2026-09-04.4 solo-la-ciudad-tambien-recrea";
+const VERSION = "dropi-change-carrier 2026-09-05.1 la-variante-no-se-pierde-entre-cotizar-y-aplicar";
 
 Deno.serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);
@@ -1993,6 +2010,18 @@ Deno.serve(async (req: Request) => {
       let realLines: LineDetail[] = [];
       if (ord.ok) {
         realLines = parseOrderLines(ord.body);
+        // Misma regla que `resolveClientAndLines`, al revés (5-sep-2026): si la
+        // integración trajo alguna línea sin variante, se completa con el V2.
+        // La cotización y el aplicar tienen que ver LAS MISMAS líneas: si no,
+        // la asesora elige una transportadora que después no se puede aplicar.
+        if (realLines.length > 0 && faltaAlgunaVariante(realLines)) {
+          try {
+            const v2c = await dropiGetOrderV2(cfg, externalId);
+            if (v2c.ok) realLines = completarVariantes(realLines, parseV2Lines(v2c.body));
+          } catch (e) {
+            console.error("[quote] completar variantes con v2 falló:", e);
+          }
+        }
       } else {
         try {
           await ensureSessionUsable(sbAdmin, cfg);

@@ -22,6 +22,8 @@
 // (dest/origin/products) para que el caller pueda crear la orden (PASO E) o solo
 // mostrar opciones.
 
+import { variacionPorEtiqueta, unicaVariacion } from "./varianteDeLinea.ts";
+
 /** Config mínima para hablar con el panel web de Dropi. */
 export interface DropiWebCfg {
   base: string;
@@ -192,6 +194,9 @@ export interface WebProductInfo {
   supplierId: string | null;
   /** Ver `QuoteLine.variationId`. */
   variationId?: number | null;
+  /** Ver `QuoteLine.variante`. No viaja en ningún payload: es para reconocer
+   *  la variante y para que un error diga de cuál habla. */
+  variante?: string | null;
 }
 
 /** Línea de pedido para cotizar. `productType`/`supplierId` se completan en PASO A. */
@@ -220,6 +225,13 @@ export interface QuoteLine {
    *  rechazados en 4 días con "no tiene stock en bodega" mientras Dropify los
    *  creaba con la misma variante. */
   sku?: string | null;
+  /** Etiqueta legible de la variante ("OSCURO", "38 / NEGRO"), tal como viene
+   *  en `attribute_values` de la línea del pedido. Si `variationId` no vino,
+   *  el PASO A la busca por este nombre en `variations[]` del catálogo web —
+   *  solo si hay UNA coincidencia. Es el caso del 5-sep-2026: el detalle que
+   *  lee el recrear traía la variante sin id, y la bodega pedida con el id del
+   *  producto devolvía "sin stock" con el stock puesto. */
+  variante?: string | null;
 }
 
 /** Ciudad destino ya resuelta por el caller (desde `dropi_city_catalog`).
@@ -260,6 +272,7 @@ export async function fetchWebProductInfo(
   price: number,
   variationId?: number | null,
   sku?: string | null,
+  variante?: string | null,
 ): Promise<WebProductInfo> {
   let productType = "SIMPLE";
   let supplierId: string | null = null;
@@ -278,17 +291,35 @@ export async function fetchWebProductInfo(
         );
         if (hit?.id) resolvedVariation = Number(hit.id) || null;
       }
+      // Variante por ETIQUETA (ver `QuoteLine.variante`), y si el producto es
+      // variable con UNA sola variante, esa. Las dos reglas solo corren cuando
+      // no hay id: una línea que ya lo trae viaja exactamente igual que antes.
+      if (resolvedVariation == null && Array.isArray(obj?.variations)) {
+        resolvedVariation = variacionPorEtiqueta(obj.variations, variante);
+        if (resolvedVariation == null && String(productType).toUpperCase() === "VARIABLE") {
+          resolvedVariation = unicaVariacion(obj.variations);
+        }
+      }
     } else {
       // Antes degradaba a SIMPLE/supplier null en silencio total — dejar rastro.
       console.warn(`[dropi-web] PASO A: producto ${dropiId} respondió ${status} — degrado a type SIMPLE / supplier null`);
+      // Si la línea trae variante, el producto ES variable aunque el catálogo no
+      // haya contestado: mandarlo como SIMPLE haría que la bodega se pidiera con
+      // el id del producto (= "sin stock" falso) y que el create dijera "debe
+      // indicar una variación".
+      if (resolvedVariation != null) productType = "VARIABLE";
     }
   } catch (e) {
     // Un 401 acá NO aborta (a diferencia del resto): seguimos con fallback de supplier.
     // Pero si el session token es inválido de plano, los pasos C-D también fallarán.
     if (e instanceof WebFallbackError && e.status === 422) throw e;
     console.error("[dropi-web] PASO A falló para producto", dropiId, e);
+    if (resolvedVariation != null) productType = "VARIABLE";
   }
-  return { dropiId, quantity, price, productType, supplierId, variationId: resolvedVariation };
+  return {
+    dropiId, quantity, price, productType, supplierId, variationId: resolvedVariation,
+    ...(variante ? { variante } : {}),
+  };
 }
 
 /** Entrada de `products[]` para cotizar y para crear. Fuente ÚNICA del shape:
@@ -316,13 +347,15 @@ export async function getOriginCity(
   destination: string,
   productType: string,
   variationId?: number | null,
+  variante?: string | null,
   // deno-lint-ignore no-explicit-any
 ): Promise<{ cityRemitente: any; warehouse: any; warehouseId: number }> {
   // ⚠️ Producto VARIABLE: Dropi quiere el id de la VARIACIÓN, no el del
   // producto. Probado en vivo 4-sep-2026 con el shampoo 147152: con el id del
   // producto (SIMPLE o VARIABLE, con o sin variation_id aparte) responde
   // `data: []` = "sin stock"; con `id: 56323` (la variante) devuelve la bodega.
-  const idParaOrigen = String(productType).toUpperCase() === "VARIABLE" && variationId ? variationId : dropiId;
+  const esVariable = String(productType).toUpperCase() === "VARIABLE";
+  const idParaOrigen = esVariable && variationId ? variationId : dropiId;
   const { status, body } = await dropiWebFetch(cfg, `/api/orders/getOriginCityForCalculateShipping`, {
     method: "POST",
     body: { id: idParaOrigen, destination, type: productType },
@@ -336,7 +369,23 @@ export async function getOriginCity(
   const cityRemitente = data?.city_dropi ?? null;
   const warehouse = data?.warehouse ?? null;
   if (!cityRemitente) {
-    throw new WebFallbackError(`El producto Dropi ${dropiId} no tiene stock en bodega (sin ciudad de origen).`, 422, body);
+    // ⛔ Un `data: []` NO siempre es "sin stock" (5-sep-2026). Para un producto
+    // variable preguntado SIN su variante, Dropi contesta exactamente lo mismo
+    // que para uno agotado — y así se le dijo a la asesora "no tiene stock en
+    // bodega" sobre el shampoo 147152 mientras Dropify lo despachaba. Los dos
+    // casos se separan acá: el segundo se llama por su nombre y `causaFalla`
+    // lo agrupa como `variable_sin_variacion`, no como falta de stock.
+    if (esVariable && !variationId) {
+      throw new WebFallbackError(
+        `El producto Dropi ${dropiId} es variable, por lo tanto debe indicar una variación (talla/color), ` +
+          `y el pedido no la trae de forma que Dropi la reconozca${variante ? ` (dice "${variante}")` : ""}. ` +
+          `Sin la variante Dropi no devuelve bodega. Cambiá la transportadora desde el panel de Dropi y avisá para revisar la variante de este producto.`,
+        422,
+        body,
+      );
+    }
+    const cual = variationId ? ` (variante ${variationId}${variante ? ` "${variante}"` : ""})` : "";
+    throw new WebFallbackError(`El producto Dropi ${dropiId}${cual} no tiene stock en bodega (sin ciudad de origen).`, 422, body);
   }
   return { cityRemitente, warehouse, warehouseId: Number(warehouse?.id) };
 }
@@ -445,7 +494,7 @@ export async function quoteCarriers(
   // PASO A — info de cada producto (supplier_id + type).
   const products: WebProductInfo[] = [];
   for (const l of lines) {
-    products.push(await fetchWebProductInfo(cfg, Number(l.dropiId), l.quantity, l.price, l.variationId, l.sku));
+    products.push(await fetchWebProductInfo(cfg, Number(l.dropiId), l.quantity, l.price, l.variationId, l.sku, l.variante));
   }
   const primary = products[0]; // el primer producto manda para el cálculo de origen.
 
@@ -456,7 +505,7 @@ export async function quoteCarriers(
   //  destination = STRING "city, state" (minúsculas ok, verificado en vivo).
   const destinationStr = `${String(args.city || "").trim()}, ${String(args.state || "").trim()}`
     .toLowerCase();
-  const origin = await getOriginCity(cfg, primary.dropiId, destinationStr, primary.productType, primary.variationId);
+  const origin = await getOriginCity(cfg, primary.dropiId, destinationStr, primary.productType, primary.variationId, primary.variante);
 
   // supplier_id: el del PASO A; fallback = warehouse.user_id del PASO C.
   const supplierId =

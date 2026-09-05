@@ -31,7 +31,10 @@ const SHOPIFY_API_VERSION = "2024-10";
 /** Se despliega A MANO: Lovable no redespliega edge functions al publicar.
  *  `POST .../shopify-push-dropi?ping=1` contesta esta marca — es la unica forma de saber si
  *  el arreglo del gemelo invisible llego de verdad al runtime. */
-const VERSION = "shopify-push-dropi 2026-09-04.4 le-pregunto-a-dropi-no-al-espejo";
+// 2026-09-05.1: sin cambios en este archivo — cambió `_shared/dropiWebQuote.ts`
+// (variante por etiqueta / única variante, y "variable sin variante" ya no se
+// reporta como "sin stock"). La marca sube para que el deploy se pueda comprobar.
+const VERSION = "shopify-push-dropi 2026-09-05.1 variable-sin-variante-no-es-sin-stock";
 
 interface ShopifyLineItem {
   product_id: number;
