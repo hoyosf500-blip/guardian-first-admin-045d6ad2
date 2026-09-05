@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useOrders } from '@/contexts/OrderContext';
 import { useStore } from '@/contexts/StoreContext';
@@ -215,6 +215,29 @@ export default function SeguimientoTab() {
   // Buscador libre (nombre/teléfono/ciudad/guía/producto). Transitorio (no
   // persiste) para que no quede un filtro pegado entre sesiones.
   const [search, setSearch] = useState('');
+  /**
+   * Lo que se BUSCA, que va un paso atrás de lo que se ESCRIBE.
+   *
+   * ⛔ Medido en producción el 5-sep-2026 con la cola real de Ecuador (432
+   * pedidos): escribir cinco caracteres costaba **531 ms de hilo principal
+   * bloqueado**, la peor tecla 218 ms. O sea que la pantalla se congela
+   * mientras la asesora teclea el número que le pasó el cliente — y justo
+   * cuando más apurada está.
+   *
+   * No es una sola cosa: cada tecla rehace el filtro sobre las 432 filas, y
+   * además `search` viaja dentro del `viewKey` de `CrmTable`, así que la tabla
+   * entera se reconciliaba de nuevo con cada letra.
+   *
+   * `useDeferredValue` deja que el input se pinte YA (la letra aparece al
+   * instante, que es lo único que la asesora percibe) y React recalcula la
+   * lista en una pasada de baja prioridad que puede interrumpir si sigue
+   * escribiendo. Cero cambios de comportamiento: el resultado final es el
+   * mismo texto, solo llega un frame después.
+   *
+   * El `value` del input sigue siendo `search` a secas — diferir ESO sí se
+   * vería como un teclado que se traba.
+   */
+  const busqueda = useDeferredValue(search);
 
   // Listas SLA estilo Boostec — selector de listas pre-clasificadas. La URL
   // y la sessionStorage se mantienen sincronizadas: ?lista=<slug> permite
@@ -345,11 +368,11 @@ export default function SeguimientoTab() {
   // (results + snooze 30d de cierres), así que NO lo pre-filtramos acá.
   const displayData = useMemo(() => {
     const base = listaActiva && !listaActiva.externalRoute ? filteredByList : dedupedByDate;
-    if (!search.trim()) return base;
+    if (!busqueda.trim()) return base;
     // Filtra tablero Y lista (ambos derivan de displayData). El contador diario
     // usa su propio feedBase sin buscador → "Te faltan N" no se altera al buscar.
-    return base.filter(o => matchesQuery([o.nombre, o.phone, o.ciudad, o.guia, o.producto, o.externalId], search));
-  }, [listaActiva, filteredByList, dedupedByDate, search]);
+    return base.filter(o => matchesQuery([o.nombre, o.phone, o.ciudad, o.guia, o.producto, o.externalId], busqueda));
+  }, [listaActiva, filteredByList, dedupedByDate, busqueda]);
 
   // Feed del TABLERO: contador diario. Oculta los pedidos que YO ya gestioné hoy
   // (mySegTouchedToday). El tablero no tiene la lógica de ocultado de CrmTable,
@@ -1430,8 +1453,8 @@ export default function SeguimientoTab() {
         {/* Búsqueda en la BASE (todo el histórico de la tienda). La lista de
             abajo solo puede filtrar lo descargado; esto evita concluir "no
             existe" cuando el pedido está fuera de la ventana de fechas. */}
-        {search.trim() && (
-          <GlobalOrderSearchPanel storeId={activeStoreId} query={search} />
+        {busqueda.trim() && (
+          <GlobalOrderSearchPanel storeId={activeStoreId} query={busqueda} />
         )}
 
 
@@ -2273,7 +2296,9 @@ export default function SeguimientoTab() {
           // cambios"). storeId incluido: sin él, el cambio de tienda dejaba la
           // tabla y los chips congelados con la tienda ANTERIOR detrás del
           // banner (review 2026-07-07).
-          viewKey={`${activeStoreId ?? ''}|${listaSlug ?? 'all'}|${search}`}
+          // `busqueda` (diferida), no `search`: con el texto crudo la tabla se
+          // reconciliaba entera en cada tecla. Ver el comentario de `busqueda`.
+          viewKey={`${activeStoreId ?? ''}|${listaSlug ?? 'all'}|${busqueda}`}
           onDataApplied={handleListDataApplied}
         />
       )}

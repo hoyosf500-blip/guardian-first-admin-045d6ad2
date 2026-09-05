@@ -203,6 +203,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // ⛔ ESTE RPC SALE YA, EN PARALELO CON `stores` (5-sep-2026).
+    //
+    // Solo necesita las MEMBRESÍAS, que ya están en la mano — no depende de
+    // `stores` para nada. Estaba esperando su turno detrás de ella, y eso se
+    // midió en producción con el cronómetro del navegador: el arranque eran
+    // cuatro viajes EN FILA (`store_members` 591 ms → `stores` 759 ms →
+    // `get_my_stores_dropi_status` 893 ms → `set_active_store` 1033 ms) y la
+    // primera consulta de datos de verdad no arrancaba hasta los **1.209 ms**.
+    // Todo ese rato `ProtectedLayout` tapa la app entera con «Cargando...»:
+    // la asesora mira un cartel, no su cola.
+    //
+    // Los otros dos sí encadenan de verdad (`stores` necesita los ids;
+    // `set_active_store` necesita saber cuál quedó activa), así que este es el
+    // único viaje que se puede sacar de la fila. Queda en tres.
+    //
+    // Se lanza sin await y se cosecha más abajo. El `.catch` es obligatorio:
+    // si `stores` falla, la función retorna antes de cosecharlo y una promesa
+    // rechazada sin dueño es un unhandled rejection. El error se trata igual
+    // que antes, en el mismo lugar de siempre.
+    const ownerStoreIds = memberships
+      .filter(m => m.role === 'owner').map(m => m.store_id);
+    type EstadoDropi = { data: { store_id: string; has_api_key: boolean }[] | null; error: { message?: string } | null };
+    const pDropi: Promise<EstadoDropi> = ownerStoreIds.length > 0
+      ? (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<EstadoDropi>)(
+          'get_my_stores_dropi_status', {},
+        ).catch((e) => ({ data: null, error: { message: String(e) } }))
+      : Promise.resolve({ data: null, error: null });
+
     const { data: storeRows, error: storesQueryError } = await supabase
       .from('stores')
       .select('id, name, country_code, status, brand_logo_url')
@@ -221,15 +249,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // 2126) y con ella se leen/crean/cancelan todos los pedidos de la cuenta —
     // no puede bajar al navegador para calcular un Boolean(). El RPC
     // (SECURITY DEFINER) devuelve la bandera y nada más.
-    const ownerStoreIds = (memberships ?? [])
-      .filter(m => m.role === 'owner').map(m => m.store_id);
     let dropiByStore = new Map<string, boolean>();
     if (ownerStoreIds.length > 0) {
-      const { data: cfgs, error: cfgError } = await (supabase.rpc as unknown as (
-        fn: string, args: Record<string, unknown>
-      ) => Promise<{ data: { store_id: string; has_api_key: boolean }[] | null; error: { message?: string } | null }>)(
-        'get_my_stores_dropi_status', {},
-      );
+      // Ya venía volando desde antes de `stores`: acá solo se cosecha.
+      const { data: cfgs, error: cfgError } = await pDropi;
       if (cfgError || !cfgs) {
         // No se pudo saber: asumimos que SÍ hay credenciales. needsSetup manda
         // al SetupWizard a pantalla completa, así que un fallo de red (o la

@@ -204,12 +204,48 @@ const VACIO: Snapshot = {
  *
  * Con el estado en el módulo, montar el hook diez veces cuesta lo mismo que
  * montarlo una. La cuenta de suscriptores decide cuándo abrir y cerrar el canal.
+ *
+ * ⚠️ Eso era verdad para el CANAL y mentira para la PRIMERA CARGA hasta el
+ * 5-sep-2026: el canal sí era uno solo, pero los tres montajes simultáneos
+ * disparaban tres lecturas. Lo cierra `EN_VUELO`, más abajo.
  */
 const SNAPSHOT = new Map<string, Snapshot>();
 const SUSCRIPTORES = new Map<string, Set<(s: Snapshot) => void>>();
 const CANALES = new Map<string, { ch: ReturnType<typeof supabase.channel>; n: number }>();
 /** Corrida en curso por tienda: descarta respuestas viejas que llegan tarde. */
 const SECUENCIA = new Map<string, number>();
+
+/**
+ * La carga que está EN EL AIRE ahora mismo, por tienda.
+ *
+ * ⛔ NO es un caché: la entrada se borra apenas la carga termina, así que la
+ * próxima llamada siempre vuelve a la base. Solo sirve para que tres montajes
+ * simultáneos no hagan tres veces el mismo viaje.
+ *
+ * ── Por qué hizo falta (medido en producción el 5-sep-2026) ────────────────
+ * `suscribir` decidía si cargar mirando `SNAPSHOT` — o sea el RESULTADO, que
+ * no existe hasta que el viaje vuelve. Los tres componentes que montan este
+ * hook (`SiguienteAccionBar`, que vive en el layout, `SiguienteColaBanner` y
+ * la pantalla de turno) montan en el MISMO tick: los tres ven el snapshot
+ * vacío y los tres disparan la carga. En el cronómetro de `/confirmar` se
+ * vieron las tres, tal cual: `bandeja_esperando` ×3, `bandeja_sin_respuesta`
+ * ×3 e `importchat_auto_respuestas` ×3 — **nueve peticiones para un solo
+ * dato**, en la pantalla donde la asesora trabaja todo el día.
+ *
+ * `SECUENCIA` no lo evitaba y no era su trabajo: descarta el resultado que
+ * llega tarde, pero los tres viajes ya se hicieron y ya compitieron por el
+ * mismo pool.
+ *
+ * Es la misma lección de `vueloCompartido` que `useSegTouchIndex` ya aplica.
+ * Ese helper no sirve tal cual acá porque esta carga no DEVUELVE un valor: lo
+ * publica a los suscriptores.
+ *
+ * ⚠️ El guard va SOLO en el montaje, nunca en el refresco. `cargarTienda`
+ * sigue arrancando un viaje nuevo siempre que la llamen — si el realtime avisa
+ * de un cambio mientras hay una lectura a mitad de camino, esa lectura puede
+ * ser ANTERIOR al cambio y reusarla dejaría la bandeja con el dato viejo.
+ */
+const EN_VUELO = new Map<string, Promise<void>>();
 
 function publicar(storeId: string, s: Snapshot): void {
   SNAPSHOT.set(storeId, s);
@@ -355,7 +391,22 @@ async function cargarPorRpc(storeId: string, seq: number, desdePromesas: string)
   return true;
 }
 
-async function cargarTienda(storeId: string | null): Promise<void> {
+/**
+ * Arranca una lectura de la bandeja y la deja anotada en `EN_VUELO` mientras
+ * dure. SIEMPRE arranca una nueva: el que no quiere duplicar es el montaje, y
+ * ese pregunta antes (ver `suscribir`).
+ */
+function cargarTienda(storeId: string | null): Promise<void> {
+  if (!storeId) return Promise.resolve();
+  const p = cargarTiendaAhora(storeId).finally(() => {
+    // Solo borro la MÍA: si mientras tanto arrancó otra, la anotación es suya.
+    if (EN_VUELO.get(storeId) === p) EN_VUELO.delete(storeId);
+  });
+  EN_VUELO.set(storeId, p);
+  return p;
+}
+
+async function cargarTiendaAhora(storeId: string | null): Promise<void> {
     if (!storeId) return;
     const seq = (SECUENCIA.get(storeId) ?? 0) + 1;
     SECUENCIA.set(storeId, seq);
@@ -580,8 +631,16 @@ function suscribir(storeId: string, avisar: (s: Snapshot) => void): () => void {
   // nunca; y al volver a una tienda se pintaba la cola de hace horas con
   // status 'ok' (revisión 3-sep-2026). El snapshot viejo se sigue pintando en
   // el acto; solo se agrega el refresco.
+  //
+  // ⛔ Y se pregunta también si YA HAY UNA CARGA EN EL AIRE. Sin eso, los tres
+  // componentes que montan este hook a la vez ven los tres el snapshot vacío
+  // —porque el resultado todavía no volvió— y disparan los tres. Medido en
+  // producción: nueve peticiones para un dato. Ver `EN_VUELO`.
   const previo = SNAPSHOT.get(storeId);
-  if (!previo || previo.status === 'error' || !canal) void cargarTienda(storeId);
+  const yaHayUnaCargando = EN_VUELO.has(storeId);
+  if (!yaHayUnaCargando && (!previo || previo.status === 'error' || !canal)) {
+    void cargarTienda(storeId);
+  }
 
   return () => {
     subs!.delete(avisar);

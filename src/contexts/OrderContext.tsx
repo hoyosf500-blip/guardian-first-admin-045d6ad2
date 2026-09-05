@@ -35,6 +35,14 @@ const VENTANA_PARCHE_MS = 5_000;
 const MAX_IDS_PARCHE = 60;
 /** Piso duro entre recargas completas. El peor caso pasa a ser una cada 90 s. */
 const PISO_REFRESCO_TOTAL_MS = 90_000;
+/**
+ * Ventana para juntar las gestiones (`order_results`) antes de recargar la cola
+ * de Confirmar. Corta a propósito: la asesora que acaba de marcar tiene que ver
+ * su cola moverse enseguida, así que acá no se puede ser tan generoso como con
+ * los 5 s del parche del cron. 1,2 s alcanza para juntar la ráfaga de un equipo
+ * marcando a la vez sin que ninguna sienta que la pantalla se quedó dura.
+ */
+const VENTANA_COLA_MS = 1_200;
 
 interface Counter { conf: number; canc: number; noresp: number; }
 
@@ -448,6 +456,40 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     }, 800);
   }, []);
 
+  /**
+   * Recarga SOLO la cola de Confirmar, agrupando la ráfaga.
+   *
+   * ⛔ Por qué hace falta. Cuando se separó el camino de `order_results` del
+   * `debouncedRefreshAll` (bien separado: una gestión no cambia la población de
+   * Seguimiento ni la de Novedades) el llamado quedó **pelado**, sin ningún
+   * freno — el único de todo el archivo. Los demás están todos protegidos:
+   * `onOrderChange` y `onVisibleCatchUp` pasan por los 800 ms de arriba, y
+   * `onOrderTouched` tiene ventana, tope de ids y piso de 90 s.
+   *
+   * Lo que pasa sin freno: la asesora marca «Confirmado» → un INSERT en
+   * `order_results` → **todas** las pantallas abiertas de la tienda recargan la
+   * cola entera, cada una con sus consultas paginadas. Marca cinco pedidos en
+   * un minuto y son cinco recargas completas por cada asesora conectada. Y es
+   * la operación que más se repite en el turno.
+   *
+   * Trailing, no debounce, por la misma razón que `handleOrderTouched` (está
+   * escrita más abajo): con gestiones entrando sin parar, un debounce que se
+   * reinicia dispara en huecos aleatorios y nunca se calma. Así junta todo lo
+   * que pase en la ventana y sale UNA sola recarga — y la primera no se
+   * retrasa más de lo que dura la ventana.
+   */
+  const timerColaRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recargarColaAgrupado = useCallback(() => {
+    if (timerColaRef.current) return; // ya hay una salida programada
+    timerColaRef.current = setTimeout(() => {
+      timerColaRef.current = null;
+      void refreshFnsRef.current.loadWorkQueue();
+    }, VENTANA_COLA_MS);
+  }, []);
+  useEffect(() => () => {
+    if (timerColaRef.current) clearTimeout(timerColaRef.current);
+  }, []);
+
   // ── EL BUCLE QUE HACÍA PESADO AL CRM (cortado 28-ago-2026) ─────────────────
   //
   // Medido en producción con `/seguimiento` abierto y NADIE tocando nada:
@@ -571,7 +613,9 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     // la de Novedades: es una gestión sobre un pedido que ya está en la cola. Lo
     // único que hay que recomputar es el `result`/`retryCount` de Confirmar. Con
     // `debouncedRefreshAll` cada confirmación costaba las tres cargas completas.
-    onResultChange: () => { void refreshFnsRef.current.loadWorkQueue(); },
+    // Agrupado: sin freno, cada «Confirmado» de cualquier asesora recargaba la
+    // cola entera en TODAS las pantallas abiertas. Ver `recargarColaAgrupado`.
+    onResultChange: recargarColaAgrupado,
     // Hallazgo 6: al volver la pestaña visible, los eventos que se descartaron
     // mientras estaba oculta se recuperan con un catch-up explícito (mismo
     // refresh debounced que usan orders/results).
