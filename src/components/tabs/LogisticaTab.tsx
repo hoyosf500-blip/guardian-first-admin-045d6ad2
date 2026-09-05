@@ -331,7 +331,17 @@ export default function LogisticaTab() {
   const [compareMode, setCompareMode] = useState(false);
   const [periodB, setPeriodB] = useState<LogisticsFilters>(() => prevPeriod(defaultRange()));
 
-  const { summary, carriers, cities, products, isLoading, isError } = useLogisticsStats(filters);
+  // ⛔ Solo se piden las RPCs que ALGUIEN va a dibujar (5-sep-2026). Ciudades y
+  // productos viven cada una en su pestaña; al entrar (pestaña Resumen) se
+  // pagaban igual — dos agregaciones sobre todos los pedidos del rango que no
+  // se veían hasta hacer clic. Con la pestaña cerrada su `TabsContent` ni
+  // siquiera está montado. Al abrirla, la consulta arranca sola (react-query
+  // la habilita) y se cachea 5 min como siempre. Carriers sí se queda: el
+  // gráfico de composición del Resumen lo lee.
+  const { summary, carriers, cities, products, isLoading, isError } = useLogisticsStats(filters, {
+    sinCiudades: activeTab !== 'cities',
+    sinProductos: activeTab !== 'products',
+  });
   const activeStoreId = useActiveStoreId();
   const queryClient = useQueryClient();
 
@@ -350,7 +360,12 @@ export default function LogisticaTab() {
   // RPC lo trae). Pedido del dueño 23-ago-2026. Si falla, la columna va en '—'.
   // Con la MISMA ciudad que las filas de la tabla (si no, la columna mezclaba
   // poblaciones) y apagado en modo comparación (nadie la dibuja ahí).
-  const fleteCarrier = useFleteByCarrier(filters.fromDate, filters.toDate, filters.ciudad, !compareMode);
+  // Y solo en la pestaña Transportadoras, que es la única que la dibuja: al
+  // entrar a /logistica se bajaban TODOS los pedidos del rango (página por
+  // página, en serie) para una columna que no estaba en pantalla (5-sep-2026).
+  const fleteCarrier = useFleteByCarrier(
+    filters.fromDate, filters.toDate, filters.ciudad, !compareMode && activeTab === 'carriers',
+  );
 
   // Query extra para los 4 gráficos nuevos (RPC `logistics_dashboard`).
   // Si el RPC no existe en DB, cae a EmptyChart y el resto sigue funcionando.
@@ -387,7 +402,9 @@ export default function LogisticaTab() {
     // !compareMode: en comparación el body entero se reemplaza por
     // ComparisonView y estos 4 charts no se dibujan — antes la query se pagaba
     // igual (auditoría 24-ago-2026).
-    enabled: Boolean(activeStoreId) && !compareMode,
+    // Y solo con la pestaña Transportadoras abierta: los 3 charts que dibuja
+    // viven ahí y en ningún otro lado (5-sep-2026).
+    enabled: Boolean(activeStoreId) && !compareMode && activeTab === 'carriers',
   });
 
   const errorMsg = useMemo(() => {

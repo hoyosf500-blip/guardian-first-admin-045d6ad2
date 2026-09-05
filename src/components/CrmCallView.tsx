@@ -10,7 +10,7 @@ import { copyToClipboard } from '@/lib/clipboard';
 import { OrderData, formatPhone, getTrackingUrl, calcBusinessDays, getWhatsAppPhone } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
 import { getAlertLevel } from '@/lib/alertSystem';
-import FingerprintBadge from '@/components/FingerprintBadge';
+import FingerprintBadge, { precargarHuella } from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
 import SectorSinCoberturaChip from '@/components/SectorSinCoberturaChipLazy';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
@@ -129,6 +129,15 @@ export default function CrmCallView({
     const firstUnmanaged = items.findIndex((it) => !isManaged(it, managed));
     derivedIdx = firstUnmanaged >= 0 ? firstUnmanaged : 0;
   }
+
+  // Pre-carga de la huella del pedido SIGUIENTE (5-sep-2026): mientras la
+  // asesora trabaja éste, la huella del próximo ya viaja al caché; al tocar
+  // «Siguiente» la tarjeta abre con la huella puesta en vez de un esqueleto
+  // esperando a Dropi. Una sola por delante — ver `precargarHuella`.
+  const siguientePhone = items[derivedIdx + 1]?.phone ?? null;
+  useEffect(() => {
+    precargarHuella(siguientePhone, activeStoreId);
+  }, [siguientePhone, activeStoreId]);
 
   // Only re-seed when the stored customer is gone (or never set).
   useEffect(() => {

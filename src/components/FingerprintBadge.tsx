@@ -3,6 +3,7 @@ import { Fingerprint, Package, CheckCircle2, RotateCcw, TrendingUp, ShieldAlert,
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import { parseBuyerContext, type BuyerContext } from '@/lib/buyerHistory';
+import { abierto as frenoAbierto } from '@/lib/frenoBase';
 import BuyerHistoryDetail from '@/components/BuyerHistoryDetail';
 
 
@@ -111,6 +112,100 @@ function devolutionColor(): { text: string; fill: string } {
   return { text: 'text-danger', fill: 'bg-danger' };
 }
 
+/** Cargas en el aire, por clave: dos tarjetas (o la tarjeta y la pre-carga)
+ *  pidiendo el mismo teléfono comparten UN viaje. */
+const enVuelo = new Map<string, Promise<FpState>>();
+
+/**
+ * Pide la huella a la edge function y la deja en el caché. Es EL camino de
+ * carga: lo usa el badge y lo usa la pre-carga del pedido siguiente.
+ *
+ * Los errores se devuelven pero NO se cachean (un fallo transitorio no puede
+ * esconder la huella 10 minutos — misma regla de siempre).
+ */
+export function cargarHuella(phone: string, storeId: string): Promise<FpState> {
+  const cacheKey = `${storeId}|${phone}`;
+  const cached = getCachedFp(cacheKey);
+  if (cached !== undefined) return Promise.resolve(cached);
+  const yaVa = enVuelo.get(cacheKey);
+  if (yaVa) return yaVa;
+
+  const p = (async (): Promise<FpState> => {
+    try {
+      // Multi-tienda + EC-aware: usa la edge function (lee store_dropi_config,
+      // normaliza prefijo CO/EC, valida membresía). El viejo RPC público
+      // dropi_fingerprint hardcodeaba app_settings.dropi_session_token +
+      // country=CO + ^57 → roto en EC y en cualquier tienda multi-tenant.
+      const { data: raw, error } = await supabase.functions.invoke('dropi-fingerprint', {
+        body: { phone, storeId },
+      });
+      const d = raw as Record<string, unknown> | null;
+      const phoneTag = phone ? `***${phone.slice(-4)}` : '<empty>';
+      if (error) {
+        console.error('[FingerprintBadge] edge error', { phoneTag, error });
+      } else if (d && (d as { ok?: boolean }).ok === false) {
+        console.error('[FingerprintBadge] edge ok=false', { phoneTag, payload: d });
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const dd = d as any;
+      if (!error && dd?.ok && dd.fingerprint?.found) {
+        const gp = dd.fingerprint.global_profile;
+        const next: FpState = {
+          kind: 'history',
+          data: {
+            risk: gp.risk_label,
+            color: gp.risk_color,
+            orders: gp.lifetime_totals.orders,
+            delivered: gp.lifetime_totals.delivered,
+            returned: gp.lifetime_totals.returned,
+            buyerType: gp.buyer_type,
+            // Detalle por transportadora/precio/otras tiendas (ya venía en la
+            // respuesta; el badge lo ignoraba). parseBuyerContext tolera que
+            // falte o sea de una versión vieja → null y la UI no lo muestra.
+            context: parseBuyerContext(dd.fingerprint.context_analysis),
+          },
+        };
+        setCachedFp(cacheKey, next);
+        return next;
+      }
+      if (!error && dd?.ok && dd.fingerprint && dd.fingerprint.found === false) {
+        // Cliente sin historial en Dropi (edge nueva mapea el 404 acá).
+        const next: FpState = { kind: 'new' };
+        setCachedFp(cacheKey, next);
+        return next;
+      }
+      // Error real (red / edge vieja / Dropi caído): visible + NO cachear.
+      return { kind: 'error' };
+    } catch (e) {
+      console.error('[FingerprintBadge] threw', e);
+      return { kind: 'error' };
+    } finally {
+      enVuelo.delete(cacheKey);
+    }
+  })();
+  enVuelo.set(cacheKey, p);
+  return p;
+}
+
+/**
+ * Pre-carga la huella del pedido que la asesora va a abrir DESPUÉS, mientras
+ * trabaja el actual (5-sep-2026).
+ *
+ * «Se demora en cargar la huella»: cada tarjeta le pedía a Dropi la huella en
+ * el momento de abrirse, y Dropi tarda —y devuelve 429 cuando el equipo abre
+ * varias seguidas, con reintentos de 400/800/1600 ms encima—. La asesora
+ * miraba un esqueleto en cada «Siguiente». Con la del próximo pedido ya en el
+ * caché, la tarjeta abre con la huella puesta.
+ *
+ * Solo UNA por delante, y nunca con el cortacircuitos de la base abierto: la
+ * pre-carga es lo primero que sobra cuando la base está ahogada.
+ */
+export function precargarHuella(phone: string | null | undefined, storeId: string | null | undefined): void {
+  if (!phone || !storeId) return;
+  if (frenoAbierto()) return;
+  void cargarHuella(phone, storeId);
+}
+
 export default function FingerprintBadge({ phone }: { phone: string }) {
   const { activeStoreId, activeStore } = useStore();
   const cacheKey = `${activeStoreId ?? 'none'}|${phone}`;
@@ -134,61 +229,14 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
       return;
     }
     let cancelled = false;
-    (async () => {
-      setLoading(true);
-      try {
-        // Multi-tienda + EC-aware: usa la edge function (lee store_dropi_config,
-        // normaliza prefijo CO/EC, valida membresía). El viejo RPC público
-        // dropi_fingerprint hardcodeaba app_settings.dropi_session_token +
-        // country=CO + ^57 → roto en EC y en cualquier tienda multi-tenant.
-        const { data: raw, error } = await supabase.functions.invoke('dropi-fingerprint', {
-          body: { phone, storeId: activeStoreId },
-        });
-        const d = raw as Record<string, unknown> | null;
-        const phoneTag = phone ? `***${phone.slice(-4)}` : '<empty>';
-        if (error) {
-          console.error('[FingerprintBadge] edge error', { phoneTag, error });
-        } else if (d && (d as { ok?: boolean }).ok === false) {
-          console.error('[FingerprintBadge] edge ok=false', { phoneTag, payload: d });
-        }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const dd = d as any;
-        if (cancelled) return;
-        if (!error && dd?.ok && dd.fingerprint?.found) {
-          const gp = dd.fingerprint.global_profile;
-          const next: FpState = {
-            kind: 'history',
-            data: {
-              risk: gp.risk_label,
-              color: gp.risk_color,
-              orders: gp.lifetime_totals.orders,
-              delivered: gp.lifetime_totals.delivered,
-              returned: gp.lifetime_totals.returned,
-              buyerType: gp.buyer_type,
-              // Detalle por transportadora/precio/otras tiendas (ya venía en la
-              // respuesta; el badge lo ignoraba). parseBuyerContext tolera que
-              // falte o sea de una versión vieja → null y la UI no lo muestra.
-              context: parseBuyerContext(dd.fingerprint.context_analysis),
-            },
-          };
-          setCachedFp(cacheKey, next);
-          setState(next);
-        } else if (!error && dd?.ok && dd.fingerprint && dd.fingerprint.found === false) {
-          // Cliente sin historial en Dropi (edge nueva mapea el 404 acá).
-          const next: FpState = { kind: 'new' };
-          setCachedFp(cacheKey, next);
-          setState(next);
-        } else {
-          // Error real (red / edge vieja / Dropi caído): visible + NO cachear.
-          setState({ kind: 'error' });
-        }
-      } catch (e) {
-        console.error('[FingerprintBadge] threw', e);
-        if (!cancelled) setState({ kind: 'error' });
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
+    setLoading(true);
+    // El mismo camino que la pre-carga: si el pedido siguiente ya se pidió
+    // mientras se trabajaba el anterior, esto resuelve del caché sin viaje.
+    void cargarHuella(phone, activeStoreId).then((next) => {
+      if (cancelled) return;
+      setState(next);
+      setLoading(false);
+    });
     return () => { cancelled = true; };
   }, [phone, activeStoreId, cacheKey, retryTick]);
 

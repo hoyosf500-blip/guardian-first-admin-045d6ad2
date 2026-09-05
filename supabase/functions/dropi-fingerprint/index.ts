@@ -1,6 +1,25 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, storeIdFromExternalId, isStoreMember } from "../_shared/dropiStoreConfig.ts";
+import { respuestaPing } from "../_shared/versionEdge.ts";
+
+const VERSION = "dropi-fingerprint 2026-09-05.1 cache-10min-y-lecturas-en-paralelo";
+
+/**
+ * Caché de huellas por (tienda, teléfono), 10 minutos, en la memoria de la
+ * instancia (5-sep-2026).
+ *
+ * «Se demora en cargar la huella»: cada tarjeta le pedía la huella a Dropi en
+ * vivo, y Dropi devuelve 429 cuando el equipo abre varias seguidas — con
+ * reintentos de 400/800/1600 ms encima. Dos asesoras mirando el mismo cliente,
+ * o la misma asesora yendo de la tarjeta a la ficha, pagaban dos viajes por
+ * un dato que no cambia en diez minutos.
+ *
+ * Solo se cachean respuestas BUENAS (`ok:true`, incluido "cliente nuevo"). Un
+ * error no se cachea: el próximo pedido vuelve a intentar.
+ */
+const CACHE_HUELLA_MS = 10 * 60_000;
+const cacheHuella = new Map<string, { at: number; cuerpo: string }>();
 
 // api-v2.dropi.{tld} — el fingerprint vive en un host por país. Antes estaba
 // hardcoded a .co y para tiendas EC devolvía 401 "Invalid token" porque el
@@ -18,6 +37,7 @@ Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
 
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  { const p = respuestaPing(req, VERSION, corsHeaders); if (p) return p; }
 
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
@@ -63,14 +83,19 @@ Deno.serve(async (req) => {
       });
     }
 
-    const isMember = await isStoreMember(sb, userAuth.id, storeId);
+    // Membresia y credenciales no dependen entre si: van juntas (5-sep-2026).
+    // La membresia se evalua primero igual; la config de un no-miembro se
+    // descarta sin salir de aca.
+    const [isMember, cfg] = await Promise.all([
+      isStoreMember(sb, userAuth.id, storeId),
+      loadStoreConfig(sb, storeId),
+    ]);
     if (!isMember) {
       return new Response(JSON.stringify({ ok: false, error: "No perteneces a esta tienda" }), {
         status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const cfg = await loadStoreConfig(sb, storeId);
     // 2026-05-22: usar INTEGRATIONS api_key (permanente). Verificado con curl real:
     // /bff/customers/fingerprint/v2 con session_token devuelve 401 "Invalid token",
     // con api_key devuelve 200 con data completa. El api_key es el correcto.
@@ -123,6 +148,23 @@ Deno.serve(async (req) => {
     // manual funcione. Es SOLO lectura (GET), así que reintentar es seguro: no crea
     // ni cancela nada. El 401 (token) y el 404 (cliente nuevo) NO se reintentan:
     // son respuestas definitivas que el flujo de abajo maneja aparte.
+    // Caché: la misma huella pedida hace menos de 10 min sale de acá, sin
+    // tocar a Dropi (ni comerse sus 429).
+    const claveCache = `${storeId}|${cleanPhone}`;
+    const guardada = cacheHuella.get(claveCache);
+    if (guardada && Date.now() - guardada.at < CACHE_HUELLA_MS) {
+      return new Response(guardada.cuerpo, {
+        headers: { ...corsHeaders, "Content-Type": "application/json", "X-Guardian-Cache": "hit" },
+      });
+    }
+    const recordar = (cuerpo: string) => {
+      cacheHuella.set(claveCache, { at: Date.now(), cuerpo });
+      // Que no crezca sin techo en una instancia que vive horas.
+      if (cacheHuella.size > 2000) {
+        const masViejo = [...cacheHuella.entries()].sort((a, b) => a[1].at - b[1].at)[0]?.[0];
+        if (masViejo) cacheHuella.delete(masViejo);
+      }
+    };
     const RETRIABLE_FP = [429, 500, 502, 503, 504];
     let apiRes: Response | undefined;
     for (let intento = 0; intento < 3; intento++) {
@@ -165,10 +207,9 @@ Deno.serve(async (req) => {
       // (indistinguible de "roto"). found:false deja al cliente pintar
       // "Cliente nuevo — sin historial" (señal útil para la asesora).
       if (apiRes.status === 404) {
-        return new Response(
-          JSON.stringify({ ok: true, fingerprint: { found: false } }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
+        const cuerpo = JSON.stringify({ ok: true, fingerprint: { found: false } });
+        recordar(cuerpo);
+        return new Response(cuerpo, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
       return new Response(
@@ -198,16 +239,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Return the fingerprint data
-    return new Response(
-      JSON.stringify({
-        ok: true,
-        fingerprint: apiData.data,
-      }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
-    );
+    // Return the fingerprint data (y recordarla 10 min)
+    const cuerpoOk = JSON.stringify({ ok: true, fingerprint: apiData.data });
+    recordar(cuerpoOk);
+    return new Response(cuerpoOk, {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("dropi-fingerprint error:", msg);

@@ -34,7 +34,7 @@ import { respuestaPing } from "../_shared/versionEdge.ts";
  * un deploy llegó era adivinar comparando comportamientos. Ese agujero ya costó
  * dos rondas enteras en agosto (ver `lovable_despliega_codigo_viejo`).
  */
-const VERSION = "importchat-chat 2026-09-02.1 primer-ping";
+const VERSION = "importchat-chat 2026-09-05.1 tres-consultas-en-paralelo-y-sin-escribir-de-mas";
 
 Deno.serve(async (req) => {
   const cors = getCorsHeaders(req);
@@ -60,21 +60,32 @@ Deno.serve(async (req) => {
     const auth = req.headers.get("Authorization") ?? "";
     const { data: u } = await sb.auth.getUser(auth.replace("Bearer ", ""));
     if (!u?.user) return json({ ok: false, error: "no autenticado" }, 401);
-    const { data: miembro } = await sb.from("store_members")
-      .select("role").eq("store_id", storeId).eq("user_id", u.user.id).maybeSingle();
+    // ── Tres lecturas independientes, EN PARALELO (5-sep-2026) ────────────
+    // Membresía, credenciales de la tienda y el pedido no dependen entre sí:
+    // iban en fila y cada apertura de chat pagaba tres viajes a la base antes
+    // de siquiera hablar con ImporChat (con la base lenta, tres esperas). Salen
+    // juntas y se cosechan EN EL MISMO ORDEN de siempre, así que quien no es
+    // miembro sigue viendo el 403 y una tienda sin ImporChat sigue viendo el
+    // 409 de "sin configurar" — nunca el "esperá al próximo sync" que le
+    // promete algo que no va a pasar (verificado el 25-ago-2026). El costo es
+    // una lectura indexada del pedido que, para un no-miembro, se descarta sin
+    // salir de acá.
+    const [{ data: miembro }, { data: cfg }, { data: pedido, error: pedErr }] = await Promise.all([
+      sb.from("store_members")
+        .select("role").eq("store_id", storeId).eq("user_id", u.user.id).maybeSingle(),
+      sb.from("store_importchat_config")
+        .select("id_configuracion, session_token, token_expira_at, habilitado, api_base")
+        .eq("store_id", storeId).maybeSingle(),
+      // Se traen también las tres columnas de actividad para no volver a
+      // escribirlas si no cambiaron (ver el parche de más abajo).
+      sb.from("orders")
+        .select("id, phone, nombre, importchat_chat_id, chat_entrante_at, chat_saliente_at, chat_saliente_tipo")
+        .eq("store_id", storeId).eq("external_id", externalId).maybeSingle(),
+    ]);
     if (!miembro) return json({ ok: false, error: "no sos miembro de esa tienda" }, 403);
 
     // ── Credenciales de la tienda ─────────────────────────────────────────
-    // ⚠️ Va ANTES del pedido a propósito. Al revés, una tienda que no usa
-    // ImporChat (los otros dueños, que usan otras IA) recibía "todavía no tiene
-    // conversación leída, esperá al próximo sync" — un mensaje que promete algo
-    // que nunca va a pasar, porque para esa tienda no hay ningún sync.
-    // Verificado en producción el 25-ago-2026 contra un pedido de Colombia.
-    // Además así ni se consulta la tabla de pedidos para quien no puede usar
-    // la función.
-    const { data: cfg } = await sb.from("store_importchat_config")
-      .select("id_configuracion, session_token, token_expira_at, habilitado, api_base")
-      .eq("store_id", storeId).maybeSingle();
+    // ⚠️ Se evalúa ANTES que el pedido a propósito (ver arriba).
     if (!cfg?.habilitado || !cfg?.session_token) {
       return json({ ok: false, sin_config: true, error: "Esta tienda no tiene ImporChat configurado" }, 409);
     }
@@ -90,10 +101,7 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "La credencial de ImporChat venció y no se pudo renovar. Hay que renovarla." }, 409);
     }
 
-    // ── El pedido y su conversación ───────────────────────────────────────
-    const { data: pedido, error: pedErr } = await sb.from("orders")
-      .select("id, phone, nombre, importchat_chat_id")
-      .eq("store_id", storeId).eq("external_id", externalId).maybeSingle();
+    // ── El pedido y su conversación (ya leído arriba, en paralelo) ────────
     if (pedErr) {
       if (/importchat_chat_id/i.test(pedErr.message)) {
         return json({ ok: false, error: "Falta aplicar la migración 20260825010000 (importchat_chat_id)" }, 503);
@@ -137,11 +145,26 @@ Deno.serve(async (req) => {
     // y borraría una medición buena; después `importchat-send` gatea la ventana
     // de 24 h con esa columna y bloquearía un envío legítimo (finding #6). Mismo
     // criterio "un null no borra un dato medido" que el saliente de acá abajo.
+    // ⛔ Y SOLO lo que de verdad CAMBIÓ (5-sep-2026). Antes se escribían las
+    // tres columnas en cada apertura aunque valieran lo mismo: un UPDATE de
+    // `orders` por cada chat que se abría → un evento de realtime para TODAS las
+    // pestañas de la tienda (la bandeja rehaciendo sus dos RPCs, el riesgo del
+    // chat, el parche de la cola…). Reabrir el mismo chat, que es lo normal en
+    // un turno, costaba una ola de consultas que no cambiaba ni un dato.
+    const yaTiene = pedido as { chat_entrante_at?: string | null; chat_saliente_at?: string | null; chat_saliente_tipo?: string | null };
+    const mismaMarca = (a: string | null | undefined, b: string) =>
+      !!a && Math.abs(Date.parse(a) - Date.parse(b)) < 1000;
     const parche: Record<string, unknown> = {};
-    if (entranteMs) parche.chat_entrante_at = new Date(entranteMs).toISOString();
+    if (entranteMs) {
+      const iso = new Date(entranteMs).toISOString();
+      if (!mismaMarca(yaTiene.chat_entrante_at, iso)) parche.chat_entrante_at = iso;
+    }
     if (saliente) {
-      parche.chat_saliente_at = new Date(saliente.fechaMs).toISOString();
-      parche.chat_saliente_tipo = saliente.tipo;
+      const iso = new Date(saliente.fechaMs).toISOString();
+      if (!mismaMarca(yaTiene.chat_saliente_at, iso) || yaTiene.chat_saliente_tipo !== saliente.tipo) {
+        parche.chat_saliente_at = iso;
+        parche.chat_saliente_tipo = saliente.tipo;
+      }
     }
     // Que no se pueda refrescar el pedido no invalida el hilo que ya leímos:
     // se avisa por consola y se devuelve la conversación igual.

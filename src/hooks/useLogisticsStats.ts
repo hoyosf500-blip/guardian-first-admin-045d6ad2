@@ -77,6 +77,14 @@ export function useLogisticsStats(
      * largas es de las más caras de /logistica.
      */
     soloResumen?: boolean;
+    /**
+     * Más fino que `soloResumen` (5-sep-2026): la pantalla dice qué pestaña
+     * tiene abierta y las RPCs de ciudades y productos —cada una una
+     * agregación sobre todos los pedidos del rango— solo corren si alguien las
+     * va a dibujar. Carriers no tiene flag: el Resumen la usa.
+     */
+    sinCiudades?: boolean;
+    sinProductos?: boolean;
   },
 ): UseLogisticsStatsResult {
   const { fromDate, toDate, ciudad } = filters;
@@ -126,7 +134,7 @@ export function useLogisticsStats(
     staleTime: STALE_5MIN,
     // Cuando hay filtro de ciudad, esta query no aporta (sería 1 sola fila).
     // La deshabilitamos para ahorrar round-trip.
-    enabled: detalleReady && !ciudadKey,
+    enabled: detalleReady && !ciudadKey && !opts?.sinCiudades,
   });
 
   const products = useQuery<ProductFailure[]>({
@@ -139,7 +147,7 @@ export function useLogisticsStats(
       p_limit: 50,
     }, ciudadKey),
     staleTime: STALE_5MIN,
-    enabled: detalleReady,
+    enabled: detalleReady && !opts?.sinProductos,
   });
 
   // Realtime: cualquier cambio en `orders` invalida los 4 queries
