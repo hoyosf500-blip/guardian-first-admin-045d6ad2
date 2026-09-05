@@ -51,6 +51,9 @@ import { ensureFreshImporchatToken, decodeJwtExp, IMPORCHAT_BASE_DEFAULT } from 
 import { fechaHoraLocal } from "../_shared/horaLocal.ts";
 import { respuestaPing } from "../_shared/versionEdge.ts";
 import { enviarPlantillaVerificada } from "../_shared/imporchatPlantillaVerificada.ts";
+import {
+  cuerpoDeRegistro, datosDeConexion, encargadoDelToken,
+} from "../_shared/imporchatRegistrarMensaje.ts";
 
 /**
  * ⛔ MARCA DE LA VERSIÓN DESPLEGADA. Subirla en el MISMO commit que cambie algo,
@@ -63,7 +66,7 @@ import { enviarPlantillaVerificada } from "../_shared/imporchatPlantillaVerifica
  * un deploy llegó era adivinar comparando comportamientos. Ese agujero ya costó
  * dos rondas enteras en agosto (ver `lovable_despliega_codigo_viejo`).
  */
-const VERSION = "importchat-plantillas 2026-09-04.1 no-se-canta-sin-verla";
+const VERSION = "importchat-plantillas 2026-09-05.1 tambien-la-dejo-escrita-en-el-chat";
 
 const BASE_IC = "https://chat.imporfactory.app/api/v1";
 const TIMEOUT_MS = 25_000;
@@ -330,7 +333,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Manda y RELEE el chat: solo se da por enviada si se la ve ahí.
+    // ⛔ MANDAR UNA PLANTILLA SON DOS LLAMADAS, NO UNA (corregido 4-sep-2026).
+    //
+    // La primera la entrega Meta; la segunda es la que la deja escrita en la
+    // conversación. Guardian hacía solo la primera, y por eso el equipo veía
+    // que "la plantilla no llega a ImporChat" — aunque el cliente SÍ la
+    // recibía. Ver el comentario largo de `imporchatRegistrarMensaje.ts`.
+    const conexion = await datosDeConexion(
+      (ruta, cuerpo) => postIC(ruta, token, cuerpo), token, idConf,
+    );
     const verificado = await enviarPlantillaVerificada({
       cred: { token, idConf: Number(idConf) },
       chatId: String(pedido.importchat_chat_id),
@@ -342,6 +353,22 @@ Deno.serve(async (req) => {
         id_cliente_chat_center: String(pedido.importchat_chat_id),
         header_default_asset: null,
       }),
+      registrar: (wamid) => postIC(
+        "clientes_chat_center/agregarMensajeEnviado",
+        token,
+        cuerpoDeRegistro({
+          cuerpoPlantilla: elegida.cuerpo,
+          nombrePlantilla: elegida.nombre,
+          idioma: elegida.idioma || "es",
+          valores,
+          telefonoDestino: destino,
+          chatId: String(pedido.importchat_chat_id),
+          idConf,
+          conexion,
+          wamid,
+          encargado: encargadoDelToken(token),
+        }),
+      ).then((r) => ({ ok: r.ok, detalle: r.detalle })),
     });
 
     /** Deja escrito qué pasó. La fila no se borra nunca: es la prueba. */
@@ -356,24 +383,31 @@ Deno.serve(async (req) => {
 
     if (verificado.estado !== "confirmado") {
       await cerrarFila({
-        estado: verificado.estado === "sin_lectura" ? "fallido" : verificado.estado,
+        estado: "fallido",
         respuesta: "respuesta" in verificado ? verificado.respuesta : null,
       });
       // ⛔ NI touchpoint NI `chat_saliente_at`: no se anota una gestión que no
       // ocurrió. Eso es lo que hacía que la tarjeta quedara pintada y la
       // productividad contara el trabajo mientras el cliente no tenía nada.
+      // Ya no hay "aceptado pero sin comprobar": o Meta dio recibo (y salió) o
+      // no salió. Las dos banderas viejas se mandan en `false` porque Colombia
+      // (Chatea Pro) todavía las usa y la pantalla las distingue.
       return json({
         ok: false,
         confirmado: false,
-        sin_confirmar: verificado.estado === "no_confirmado",
-        sin_lectura: verificado.estado === "sin_lectura",
+        sin_confirmar: false,
+        sin_lectura: false,
         error: verificado.motivo,
       }, 502);
     }
 
     await cerrarFila({
       estado: "confirmado", confirmado_at: new Date().toISOString(),
-      mensaje_id: verificado.mensajeId, senal: verificado.senal, respuesta: verificado.respuesta,
+      // El `mensaje_id` es el wamid de Meta cuando no se llegó a ver en el hilo:
+      // es la prueba que sirve para reclamar, y antes se guardaba `null`.
+      mensaje_id: verificado.mensajeId ?? verificado.wamid,
+      senal: verificado.senal ?? (verificado.registrado ? "registro" : "wamid"),
+      respuesta: verificado.respuesta,
     });
 
     // Recién con el envío CONFIRMADO se marca el pedido. `plantilla` (no
@@ -414,7 +448,12 @@ Deno.serve(async (req) => {
       enviado_a: destino,
       plantilla: elegida.nombre,
       senal: verificado.senal,
-      mensaje_id: verificado.mensajeId,
+      mensaje_id: verificado.mensajeId ?? verificado.wamid,
+      // `registrado:false` = el cliente LA TIENE (hay recibo de Meta) pero no
+      // quedó escrita en la conversación. La pantalla lo dice sin mandar a
+      // reenviar: reenviar le daría dos WhatsApp al mismo cliente.
+      registrado: verificado.registrado,
+      visto_en_el_chat: verificado.visto,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

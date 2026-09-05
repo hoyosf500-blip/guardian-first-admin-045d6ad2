@@ -240,8 +240,10 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
       return;
     }
     if ('sinConfirmar' in r && r.sinConfirmar) {
+      // ⛔ No se manda a reenviar: un mensaje puede estar ENTREGADO y no
+      // aparecer en la conversación. Ver el comentario de PlantillasWhatsapp.
       toast.error('No se pudo comprobar que saliera', {
-        description: `${canalNombre} aceptó el envío pero el mensaje NO aparece en la conversación. No lo des por enviado: abrí el chat y mirá. Si no está, reintentá.`,
+        description: `${canalNombre} aceptó el envío y el mensaje no aparece en la conversación. Puede haberle llegado igual: mirá el chat y, si dudás, llamalo antes de reenviar.`,
         duration: 12000,
       });
       return;
@@ -273,7 +275,12 @@ export default function AccionPrincipal({ externalId, phone, estado, nombre, dat
       // el mensaje se VIO en la conversación; con un servidor sin redesplegar
       // (`confirmado === undefined`) se dice lo justo y nada más.
       const confirmado = 'confirmado' in r && r.confirmado === true;
-      toast.success(gestion, confirmado ? { description: 'Se ve en el chat del cliente.' } : undefined);
+      // `sinRegistro` = salió (hay recibo de Meta) y no quedó escrita en la
+      // conversación. El cliente la tiene: se dice, y se pide NO reenviar.
+      const sinRegistro = 'sinRegistro' in r && r.sinRegistro === true;
+      toast.success(gestion, sinRegistro
+        ? { description: `Le llegó al cliente, pero no quedó escrita en ${canalNombre}. No la reenvíes.`, duration: 9000 }
+        : confirmado ? { description: 'Se ve en el chat del cliente.' } : undefined);
       setAbierto(false);
       onEnviado?.(gestion);
     } else {

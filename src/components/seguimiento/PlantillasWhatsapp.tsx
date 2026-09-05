@@ -251,15 +251,13 @@ export default function PlantillasWhatsapp({ externalId, fase, estadoPedido, pho
     // (4-sep-2026: 9 de 14 en once días). NO se cierra el panel, NO se pinta la
     // tarjeta y NO se anota la gestión: el cliente no tiene nada.
     if (r.sinConfirmar) {
-      // ⛔ Acá decía "si no está, reintentá". Se sacó el 4-sep-2026 a la noche
-      // con la medición en la mano: seis envíos seguidos por esta vía —los tres
-      // del código viejo (16:59, 19:37 y 20:54 UTC) y tres de prueba sobre el
-      // pedido 6856013— dieron todos `success:true` de ImporChat y NINGUNO
-      // entró al hilo. Mandar a reintentar un camino que hoy no entrega le come
-      // el turno a la asesora y, si el mensaje aparece tarde, el cliente recibe
-      // dos. El camino que sí funciona es el panel de ImporChat o el teléfono.
+      // ⛔ NO se manda a reenviar (4-sep-2026, noche). Se comprobó que un
+      // mensaje puede estar ENTREGADO y no aparecer en la conversación: en
+      // ImporChat pasaba porque faltaba la segunda llamada que lo escribe, y
+      // Ariana Cárdenas contestó el botón de una plantilla que su hilo no
+      // mostraba. Reenviar a ciegas le llega dos veces al cliente.
       toast.error('No se pudo comprobar que saliera', {
-        description: `${canalNombre} aceptó el envío pero el mensaje NO aparece en la conversación. No lo des por enviado. Mandásela desde el panel de ${canalNombre} o llamalo: reintentar acá viene dando lo mismo.`,
+        description: `${canalNombre} aceptó el envío y el mensaje no aparece en la conversación. Puede haberle llegado igual: mirá el chat y, si dudás, llamalo antes de reenviar.`,
         duration: 12000,
       });
       return;
@@ -291,7 +289,16 @@ export default function PlantillasWhatsapp({ externalId, fase, estadoPedido, pho
     if (r.ok) {
       // `confirmado === undefined` = servidor sin redesplegar: se dice lo justo,
       // sin afirmar que el cliente la recibió.
-      toast.success(r.confirmado ? 'Plantilla enviada — se ve en el chat del cliente' : 'Plantilla enviada');
+      if (r.sinRegistro) {
+        // Hay recibo de Meta: el cliente LA TIENE. Lo único que falló es que
+        // quede escrita en la conversación.
+        toast.success('Plantilla enviada — le llegó al cliente', {
+          description: `No quedó escrita en la conversación de ${canalNombre}. No la reenvíes: ya la recibió.`,
+          duration: 9000,
+        });
+      } else {
+        toast.success(r.confirmado ? 'Plantilla enviada — se ve en el chat del cliente' : 'Plantilla enviada');
+      }
       setElegida(null);
       onEnviado?.();
     } else {

@@ -192,6 +192,21 @@ export interface ResultadoPlantilla {
   confirmado?: boolean;
   /** ImporChat aceptó el envío y el mensaje NO apareció en el chat. */
   sinConfirmar?: boolean;
+  /**
+   * ⛔ true = SALIÓ (hay recibo de Meta) pero no quedó escrita en la
+   * conversación (4-sep-2026, noche).
+   *
+   * Mandar una plantilla por la API de ImporChat son DOS llamadas: la que la
+   * entrega y `clientes_chat_center/agregarMensajeEnviado`, que la deja en el
+   * hilo. Guardian hacía solo la primera, y de ahí salía el reporte del equipo
+   * —"la plantilla no llega a ImporChat"— sobre mensajes que el cliente SÍ
+   * recibía: Ariana Cárdenas contestó el botón de una plantilla que su
+   * conversación no mostraba.
+   *
+   * Cuando esto es `true` hay que decir que el cliente la tiene y pedir que NO
+   * se reenvíe. `undefined` = quedó bien, o servidor viejo, o Colombia.
+   */
+  sinRegistro?: boolean;
   /** No se pudo leer el chat, así que NO se mandó nada. */
   sinLectura?: boolean;
   /** Otra pestaña o una compañera la está mandando en este mismo momento. */
@@ -234,6 +249,10 @@ export function useEnviarPlantilla() {
         ok?: boolean; error?: string; faltantes?: number[]; ya_enviado?: boolean;
         confirmado?: boolean; sin_confirmar?: boolean; sin_lectura?: boolean;
         en_curso?: boolean; enviado_at?: string;
+        // `registrado:false` = salió (hay recibo de Meta) pero no quedó escrita
+        // en la conversación de ImporChat. Ausente en Colombia y en servidores
+        // sin redesplegar, y ahí se trata como "quedó bien".
+        registrado?: boolean;
       } | null;
       if (!r?.ok) {
         // ⛔ Se distinguen los tres "no salió" (4-sep-2026). Antes todos caían en
@@ -288,6 +307,8 @@ export function useEnviarPlantilla() {
         yaEnviado: r.ya_enviado === true,
         // `undefined` con un servidor viejo: la pantalla lo trata como antes.
         confirmado: r.confirmado,
+        // Solo `false` explícito significa "salió pero no quedó en el chat".
+        sinRegistro: r.registrado === false,
         enviadoAt: r.enviado_at,
       };
     } catch (e) {
