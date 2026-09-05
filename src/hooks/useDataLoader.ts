@@ -9,6 +9,20 @@ import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { toast } from 'sonner';
 
 /**
+ * Piso para la recarga AL VOLVER a la pestaña (5-sep-2026).
+ *
+ * El poll de abajo va con `runOnVisible: true`, y sin piso eso era: cada vez
+ * que la asesora volvía de WhatsApp Web o de Dropi —decenas de veces por hora—
+ * se relanzaba la carga COMPLETA de la cola (páginas de 1.000 pedidos en fila
+ * + devoluciones + sin estado, ~500 KB por vuelta en Ecuador), y desde
+ * CUALQUIER página, porque este loader vive en OrderContext y la barra «Lo que
+ * sigue» lo dispara en todas. El realtime ya mantiene la cola al día entre
+ * medio; la recarga al volver es la red de seguridad para un catch-up que
+ * falló, no la fuente. Cinco minutos: si volvió antes, lo que ve es lo que hay.
+ */
+const PISO_VOLVER_MS = 5 * 60_000;
+
+/**
  * Smart merge: preserva la referencia de objetos que no cambiaron en campos
  * relevantes para que React no re-renderice las cards intactas durante
  * refreshes periódicos (cron Dropi cada 1 min). Esto elimina el "parpadeo".
@@ -354,13 +368,14 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
   loadSegDataRef.current = (force = true) => { void loadSegData(force); };
 
   // COST-1: auto-refresh cada 15 min. runOnVisible:true → al volver a la
-  // pestaña refetchea de una (smartMerge evita el parpadeo/scroll-reset que
-  // motivó apagarlo); cubre el caso en que el catch-up de realtime falló.
+  // pestaña refetchea (smartMerge evita el parpadeo/scroll-reset que motivó
+  // apagarlo); cubre el caso en que el catch-up de realtime falló. Con PISO:
+  // ver `PISO_VOLVER_MS` arriba — volver a los 20 s no es "volver".
   useEffect(() => {
     if (!user) return;
     return pollWhenVisible(() => {
       if (segLoaded) loadSegData(true);
-    }, 15 * 60 * 1000, { runOnVisible: true });
+    }, 15 * 60 * 1000, { runOnVisible: true, pisoVisibleMs: PISO_VOLVER_MS });
   }, [user, segLoaded, loadSegData]);
 
   return {

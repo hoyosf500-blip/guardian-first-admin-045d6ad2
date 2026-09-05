@@ -19,15 +19,28 @@ import { abierto, onCambio } from './frenoBase';
 export function pollWhenVisible(
   fn: () => void,
   intervalMs: number,
-  opts: { runOnVisible?: boolean } = {},
+  opts: { runOnVisible?: boolean; pisoVisibleMs?: number } = {},
 ): () => void {
-  const { runOnVisible = true } = opts;
+  // `pisoVisibleMs` (5-sep-2026): la corrida AL VOLVER a la pestaña solo sale si
+  // la última corrida es más vieja que el piso. Sin esto, `runOnVisible` corría
+  // `fn` en CADA vuelta — y una asesora alterna con WhatsApp Web y Dropi
+  // decenas de veces por hora. En `useDataLoader` cada vuelta era la recarga
+  // COMPLETA de la cola de Seguimiento (~500 KB en Ecuador), desde cualquier
+  // página. El intervalo periódico NO mira el piso: esa cadencia ya la eligió
+  // quien llamó. Con 0 (el default) se comporta como siempre.
+  const { runOnVisible = true, pisoVisibleMs = 0 } = opts;
   let intervalId: ReturnType<typeof setInterval> | null = null;
   let seSaltoUno = false;
+  // Se arranca "recién corrido": quien monta el poll acaba de cargar el dato.
+  let ultimaCorrida = Date.now();
 
+  const correr = () => {
+    ultimaCorrida = Date.now();
+    fn();
+  };
   const tick = () => {
     if (abierto()) { seSaltoUno = true; return; }
-    fn();
+    correr();
   };
   const start = () => {
     if (intervalId !== null) return;
@@ -38,7 +51,7 @@ export function pollWhenVisible(
   const bajaFreno = onCambio((e) => {
     if (!e.abierto && seSaltoUno && document.visibilityState === 'visible') {
       seSaltoUno = false;
-      fn();
+      correr();
     }
   });
   const stop = () => {
@@ -49,7 +62,7 @@ export function pollWhenVisible(
 
   const onVisibility = () => {
     if (document.visibilityState === 'visible') {
-      if (runOnVisible) tick();
+      if (runOnVisible && Date.now() - ultimaCorrida >= pisoVisibleMs) tick();
       start();
     } else {
       stop();

@@ -314,7 +314,19 @@ export default function ProductivityDashboard() {
     // _resolve_scope_store() (admin → su tienda activa, profiles.active_store_id).
     // No pasamos p_store_id: así NO dependemos de que la migration del parámetro
     // esté aplicada (evita el PGRST202 "function ... does not exist").
-    const [productivity, activity, worked, inactivity] = await Promise.all([
+    //
+    // Las fechas del contador de acciones y de los cierres se calculan ANTES,
+    // porque esas dos consultas van en el mismo viaje que las RPCs (ver abajo).
+    const hoy = bogotaToday();
+    const desde = range === 'today'
+      ? hoy
+      : new Date(Date.now() - (range === '7d' ? 6 : 29) * 86400000)
+          .toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+    // ⛔ SEIS consultas, UN viaje (5-sep-2026). Antes eran cuatro esperas en
+    // fila: set_active_store → las 4 RPCs → el contador de order_results → los
+    // cierres de turno. Las dos últimas no dependen de nada de lo anterior; con
+    // la base lenta cada eslabón de más era otro segundo de spinner bajo «Hoy».
+    const [productivity, activity, worked, inactivity, acciones, cierresRes] = await Promise.all([
       supabase.rpc('operator_productivity_stats' as never, { p_range: range } as never),
       // Jornada — heartbeat de entrada/salida (operator_activity_stats). Si la
       // migration no se aplicó, capturamos el PGRST202 silencioso y la sección
@@ -327,6 +339,33 @@ export default function ProductivityDashboard() {
       // operadora se quedó +6 min quieta CON cola, dentro de su horario. Es el
       // "cuánto tiempo perdió" que pidió el dueño. Error silencioso como los otros.
       supabase.rpc('operator_inactivity_stats' as never, { p_range: range } as never),
+      // Conteo CRUDO de acciones del período — sin excluir admins ni nada.
+      //
+      // Existe por un caso real (2026-07-20): el dueño marcó un pedido, la tabla
+      // siguió vacía y leyó "está roto". No lo estaba: `operator_productivity_stats`
+      // excluye a los admin a propósito, y esa era la ÚNICA acción del día. El
+      // cartel decía "Todavía sin gestiones" cuando la verdad era "hubo una, pero
+      // no se cuenta acá". Con este número el estado vacío puede decir cuál de las
+      // dos cosas pasó. Es best-effort: si falla, el cartel cae al texto genérico.
+      supabase
+        .from('order_results')
+        .select('id', { count: 'exact', head: true })
+        .eq('store_id', activeStoreId ?? '')
+        .gte('result_date', desde)
+        .lte('result_date', hoy),
+      // Cierres de turno del período. Nos quedamos con el MÁS RECIENTE por
+      // operadora: en un rango de varios días la columna muestra el último.
+      // Filtrado por tienda ACTIVA: un supervisor con membresía en CO y EC ve
+      // por RLS los cierres de ambas — sin este filtro, su "SALIÓ" acá podía
+      // ser el cierre del otro país (mezclar países está prohibido).
+      supabase
+        .from('operator_daily_reports')
+        .select('user_id, closing_at')
+        .eq('store_id', activeStoreId ?? '')
+        .gte('report_date', desde)
+        .lte('report_date', hoy)
+        .not('closing_at', 'is', null)
+        .order('closing_at', { ascending: false }),
     ]);
     if (runStoreRef.current !== runStore) return;
     const { data, error: rpcErr } = productivity;
@@ -341,66 +380,24 @@ export default function ProductivityDashboard() {
       setError(null);
     }
     let cierresFallo = false;
-    // Conteo CRUDO de acciones del período — sin excluir admins ni nada.
-    //
-    // Existe por un caso real (2026-07-20): el dueño marcó un pedido, la tabla
-    // siguió vacía y leyó "está roto". No lo estaba: `operator_productivity_stats`
-    // excluye a los admin a propósito, y esa era la ÚNICA acción del día. El
-    // cartel decía "Todavía sin gestiones" cuando la verdad era "hubo una, pero
-    // no se cuenta acá". Con este número el estado vacío puede decir cuál de las
-    // dos cosas pasó. Es best-effort: si falla, el cartel cae al texto genérico.
-    try {
-      const hoy = bogotaToday();
-      const desde = range === 'today'
-        ? hoy
-        : new Date(Date.now() - (range === '7d' ? 6 : 29) * 86400000)
-            .toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
-      const { count, error: cntErr } = await supabase
-        .from('order_results')
-        .select('id', { count: 'exact', head: true })
-        .eq('store_id', activeStoreId ?? '')
-        .gte('result_date', desde)
-        .lte('result_date', hoy);
-      // supabase-js NO lanza en un SELECT fallido (resuelve con error en el
-      // objeto), así que el try/catch no lo atrapa: sin este check un fallo de
-      // red/RLS se mostraba como "0 medido" y el estado vacío afirmaba "Nadie
-      // marcó pedidos" — el cero falso que este contador vino a evitar. Con
-      // null, el cartel cae al texto genérico que no afirma nada.
-      setAccionesPeriodo(cntErr ? null : (count ?? 0));
-      if (runStoreRef.current !== runStore) return;
-
-      // Cierres de turno del período. Nos quedamos con el MÁS RECIENTE por
-      // operadora: en un rango de varios días la columna muestra el último.
-      // Filtrado por tienda ACTIVA: un supervisor con membresía en CO y EC ve
-      // por RLS los cierres de ambas — sin este filtro, su "SALIÓ" acá podía
-      // ser el cierre del otro país (mezclar países está prohibido).
-      const { data: cierres, error: cierresErr } = await supabase
-        .from('operator_daily_reports')
-        .select('user_id, closing_at')
-        .eq('store_id', activeStoreId ?? '')
-        .gte('report_date', desde)
-        .lte('report_date', hoy)
-        .not('closing_at', 'is', null)
-        .order('closing_at', { ascending: false });
-      if (runStoreRef.current !== runStore) return;
-      // Mismo criterio que el contador de acciones de arriba: supabase-js no
-      // lanza en un SELECT fallido, y sin este check el mapa vacío hacía que la
-      // columna SALIÓ dijera "sin cierre" para TODAS — dato falso, no medición.
-      if (cierresErr) {
-        console.warn('[productivity] cierres query error', cierresErr);
-        cierresFallo = true;
-        setClosingByOp({});
-      } else {
-        const mapa: Record<string, string> = {};
-        for (const c of (cierres ?? []) as { user_id: string; closing_at: string }[]) {
-          if (!mapa[c.user_id]) mapa[c.user_id] = c.closing_at;
-        }
-        setClosingByOp(mapa);
-      }
-    } catch {
-      setAccionesPeriodo(null);
-      setClosingByOp({});
+    // supabase-js NO lanza en un SELECT fallido (resuelve con error en el
+    // objeto), así que un try/catch no lo atrapa: sin este check un fallo de
+    // red/RLS se mostraba como "0 medido" y el estado vacío afirmaba "Nadie
+    // marcó pedidos" — el cero falso que este contador vino a evitar. Con
+    // null, el cartel cae al texto genérico que no afirma nada.
+    setAccionesPeriodo(acciones.error ? null : (acciones.count ?? 0));
+    // Mismo criterio para los cierres: sin el check, el mapa vacío hacía que la
+    // columna SALIÓ dijera "sin cierre" para TODAS — dato falso, no medición.
+    if (cierresRes.error) {
+      console.warn('[productivity] cierres query error', cierresRes.error);
       cierresFallo = true;
+      setClosingByOp({});
+    } else {
+      const mapa: Record<string, string> = {};
+      for (const c of (cierresRes.data ?? []) as { user_id: string; closing_at: string }[]) {
+        if (!mapa[c.user_id]) mapa[c.user_id] = c.closing_at;
+      }
+      setClosingByOp(mapa);
     }
     setClosingError(cierresFallo);
 
