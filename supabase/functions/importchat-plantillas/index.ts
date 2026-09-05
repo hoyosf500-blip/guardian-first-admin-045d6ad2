@@ -66,7 +66,7 @@ import {
  * un deploy llegó era adivinar comparando comportamientos. Ese agujero ya costó
  * dos rondas enteras en agosto (ver `lovable_despliega_codigo_viejo`).
  */
-const VERSION = "importchat-plantillas 2026-09-05.1 tambien-la-dejo-escrita-en-el-chat";
+const VERSION = "importchat-plantillas 2026-09-05.2 tambien-la-dejo-escrita-en-el-chat";
 
 const BASE_IC = "https://chat.imporfactory.app/api/v1";
 const TIMEOUT_MS = 25_000;
