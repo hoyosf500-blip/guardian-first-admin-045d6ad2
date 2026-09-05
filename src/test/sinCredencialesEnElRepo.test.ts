@@ -29,9 +29,45 @@ import { readFileSync, statSync } from 'fs';
  * ROTAR la credencial, porque ya se publicó.
  */
 
+/** Sleep sincrónico: `execSync` es bloqueante, así que el reintento necesita
+ *  esperar sin async. Es el modismo estándar de Node para esto. */
+function dormir(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * ⛔ ESTA PRUEBA FALLA CERRADA: si no puede leer la lista de archivos se pone
+ * ROJA, en vez de dar verde sin haber mirado nada. Eso está bien y no se toca.
+ *
+ * Pero "no pude mirar" y "encontré una clave" NO son lo mismo, y en rojo se
+ * leían igual. El 4-sep-2026 esta prueba se puso roja en una corrida y verde en
+ * la siguiente: la máquina venía tirando `fork: Resource temporarily
+ * unavailable` y el `git ls-files` ni arrancaba. Un guardián de seguridad que
+ * grita "fuga" por un hipo de la máquina enseña a ignorarlo -- y que se lo
+ * ignore es la única forma de que una fuga de verdad pase desapercibida.
+ *
+ * Así que se reintenta (el fallo es transitorio por definición) y, si aun así
+ * no se pudo, el mensaje dice CUÁL de las dos cosas pasó.
+ */
 function archivosTrackeados(): string[] {
-  return execSync('git ls-files', { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
-    .split('\n').map(s => s.trim()).filter(Boolean);
+  let ultimo: unknown = null;
+  for (let intento = 0; intento < 3; intento++) {
+    try {
+      const salida = execSync('git ls-files', { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
+        .split('\n').map((x) => x.trim()).filter(Boolean);
+      if (salida.length) return salida;
+      ultimo = new Error('`git ls-files` devolvió una lista vacía');
+    } catch (e) { ultimo = e; }
+    if (intento < 2) dormir(400 * (intento + 1));
+  }
+  throw new Error(
+    'NO SE PUDO LEER EL REPO — esto NO es una fuga de credenciales. ' +
+    '`git ls-files` falló 3 veces; casi siempre es la máquina sin poder crear ' +
+    'procesos (fork: Resource temporarily unavailable), no un hallazgo. ' +
+    'La prueba queda ROJA a propósito: sin la lista de archivos no se miró ' +
+    'nada, y un verde ahí sería mentira. Volvé a correrla. ' +
+    'Último error: ' + String((ultimo as Error)?.message ?? ultimo),
+  );
 }
 
 function payloadDeJwt(jwt: string): Record<string, unknown> | null {

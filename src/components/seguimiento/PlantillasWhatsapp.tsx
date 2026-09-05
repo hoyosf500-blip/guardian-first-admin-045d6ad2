@@ -251,8 +251,15 @@ export default function PlantillasWhatsapp({ externalId, fase, estadoPedido, pho
     // (4-sep-2026: 9 de 14 en once días). NO se cierra el panel, NO se pinta la
     // tarjeta y NO se anota la gestión: el cliente no tiene nada.
     if (r.sinConfirmar) {
+      // ⛔ Acá decía "si no está, reintentá". Se sacó el 4-sep-2026 a la noche
+      // con la medición en la mano: seis envíos seguidos por esta vía —los tres
+      // del código viejo (16:59, 19:37 y 20:54 UTC) y tres de prueba sobre el
+      // pedido 6856013— dieron todos `success:true` de ImporChat y NINGUNO
+      // entró al hilo. Mandar a reintentar un camino que hoy no entrega le come
+      // el turno a la asesora y, si el mensaje aparece tarde, el cliente recibe
+      // dos. El camino que sí funciona es el panel de ImporChat o el teléfono.
       toast.error('No se pudo comprobar que saliera', {
-        description: `${canalNombre} aceptó el envío pero el mensaje NO aparece en la conversación. No lo des por enviado: abrí el chat y mirá. Si no está, reintentá.`,
+        description: `${canalNombre} aceptó el envío pero el mensaje NO aparece en la conversación. No lo des por enviado. Mandásela desde el panel de ${canalNombre} o llamalo: reintentar acá viene dando lo mismo.`,
         duration: 12000,
       });
       return;
