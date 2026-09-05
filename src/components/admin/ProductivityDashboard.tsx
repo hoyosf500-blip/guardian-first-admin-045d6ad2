@@ -452,6 +452,33 @@ export default function ProductivityDashboard() {
 
   useEffect(() => { load(); }, [load]);
 
+  /**
+   * ⛔ El canal NO puede depender de `load`.
+   *
+   * `load` se rehace cada vez que cambia el rango (`useCallback(..., [range,
+   * activeStoreId])`), así que tenerlo en las deps del efecto de realtime hacía
+   * que tocar «7 días» desuscribiera el canal y suscribiera uno nuevo **con el
+   * mismo nombre** (`admin-productivity-<tienda>`, fijo). `removeChannel` es
+   * asincrónico: el `subscribe()` nuevo llega mientras el viejo todavía se está
+   * yendo, con el mismo topic. Es exactamente el choque que tumbó `/seguimiento`
+   * entera el 22-ago («cannot add postgres_changes callbacks after subscribe()»)
+   * y que vigila `canalRealtimeUnico` — que solo mira `src/hooks`, así que a un
+   * componente no lo alcanzaba.
+   *
+   * Acá no se veía como pantalla caída sino como algo peor de detectar: el panel
+   * se quedaba mudo y el rótulo seguía diciendo «auto-refresh activo».
+   *
+   * Con el ref, el canal se abre UNA vez por tienda y no se entera de los
+   * cambios de rango; adentro siempre llama a la versión más fresca. Es el
+   * mismo patrón de `refreshFnsRef` en OrderContext.
+   */
+  const loadRef = useRef(load);
+  useEffect(() => { loadRef.current = load; });
+
+  /** ¿El canal está de verdad escuchando? El rótulo lo dice, así que no puede
+   *  ser una suposición. */
+  const [enVivo, setEnVivo] = useState(false);
+
   // Realtime debounced 1s: cambios en orders/order_results/touchpoints de LA
   // TIENDA ACTIVA disparan un refetch silencioso. El filtro por store_id no es
   // solo ruido: sin él, el payload completo de las filas de OTRAS tiendas
@@ -464,7 +491,7 @@ export default function ProductivityDashboard() {
       if (conMapa) mapaPendiente = true;
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
-        load(true);
+        loadRef.current(true);
         // El mapa de calor comparte este mismo canal (no abre otro): sin esto
         // era una foto del momento en que se montó, y a las 15:00 seguía
         // mostrando las gestiones de hasta las 9:10 (4-sep-2026). Pero SOLO
@@ -492,12 +519,15 @@ export default function ProductivityDashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'operator_activity_daily', filter: storeFilter }, debounced)
       // Un aviso de inactividad nuevo aparece en vivo en la columna "Sin trabajar".
       .on('postgres_changes', { event: '*', schema: 'public', table: 'operator_inactivity_warnings', filter: storeFilter }, debounced)
-      .subscribe();
+      // El rótulo de abajo promete «auto-refresh activo»: acá se mide si es
+      // cierto en vez de darlo por hecho.
+      .subscribe((status) => { setEnVivo(status === 'SUBSCRIBED'); });
     return () => {
       if (timer) clearTimeout(timer);
+      setEnVivo(false);
       void supabase.removeChannel(channel);
     };
-  }, [load, activeStoreId]);
+  }, [activeStoreId]);
 
   // Cruce jornada ↔ productividad por operadora (para la alerta "sin confirmar"
   // en la tabla Confirmar). Si no hay fila de actividad, no se alerta.
@@ -647,7 +677,13 @@ export default function ProductivityDashboard() {
             Por operadora
           </h2>
           <p className="text-sm text-muted-foreground">
-            {RANGE_LABELS[range]} · auto-refresh activo
+            {/* No se afirma «activo» sin saberlo: `enVivo` sale del status real
+                del canal. Un rótulo que promete algo que no está pasando es la
+                misma familia del badge verde de la billetera. */}
+            {RANGE_LABELS[range]}
+            {enVivo
+              ? ' · auto-refresh activo'
+              : ' · sin conexión en vivo — usá «Actualizar» para traer lo último'}
           </p>
         </div>
 

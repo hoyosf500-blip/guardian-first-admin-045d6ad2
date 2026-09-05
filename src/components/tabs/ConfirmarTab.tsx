@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { paginarQuery } from '@/lib/paginarQuery';
+import { matchesQuery } from '@/lib/textSearch';
 import { findSupersededPendingConfDetailed, findClienteYaDespachado, isLocallyDead, type ProgressedOrder } from '@/lib/duplicateOrders';
 import { detectDuplicatePairs } from '@/lib/duplicatePairs';
 import { buildActiveDupIndex, type ConfirmarOrderAlerts } from '@/lib/orderAlerts';
@@ -539,8 +540,19 @@ export default function ConfirmarTab({ profile }: Props) {
       if (dateTo && orderDateStr > dateTo) return false;
     }
     if (search) {
-      const s = search.toLowerCase();
-      return o.nombre.toLowerCase().includes(s) || o.phone.includes(s) || o.ciudad.toLowerCase().includes(s);
+      // ⛔ Antes esto era `.toLowerCase().includes(...)` a mano, y fallaba dos
+      // veces sobre la pantalla donde la asesora pasa el turno entero:
+      //
+      //  1. Sin quitar tildes: buscar «bogota» NO encontraba «Bogotá», ni
+      //     «duran» a «DURÁN». La ciudad casi siempre viene con tilde.
+      //  2. Sin canonizar el teléfono: el cliente manda `0986255535`, en la
+      //     base está `986255535`, y `'986255535'.includes('0986255535')` es
+      //     false. El pedido estaba ahí y el buscador decía que no.
+      //
+      // `matchesQuery` hace las dos cosas y es la misma vara que ya usan
+      // Seguimiento, la bandeja y el panel de Shopify: un buscador que se
+      // comporta distinto según la pantalla es su propia trampa.
+      return matchesQuery([o.nombre, o.phone, o.ciudad], search);
     }
     return true;
   }).sort((a, b) => {

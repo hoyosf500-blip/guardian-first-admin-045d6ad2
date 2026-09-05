@@ -242,18 +242,45 @@ export default function SimuladorUnitEconomics({
           porque acá el valor ya viene formateado como string ("38.5%",
           formatCOP) y StatTile sólo acepta un number crudo. */}
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 p-4">
-        <UnitKpi label="Tasa de despachos" value={pct1(kpis.tasaDespachos)} icon={Truck} tone="info"
-          hint={`${despachadosCount} de ${generadosSinCancel} generados salieron a la calle`} />
-        <UnitKpi label="Tasa de entrega" value={pct1(kpis.tasaEntrega)} icon={PackageCheck} tone="success"
-          hint={`${entregadosCount} de ${resueltos} que ya concluyeron · sin rechazos`} />
-        <UnitKpi label="% Devolución" value={pct1(kpis.pctDevolucion)} icon={Undo2} tone="danger"
-          hint={`${devueltosCount} de ${resueltos} que ya concluyeron · cuenta PEDIDOS, no plata`} />
-        <UnitKpi label="% Rechazo" value={pct1(kpis.pctRechazo)} icon={Undo2} tone="warning"
-          hint={`${rechazadosCount} rechazados / despachado`} />
-        <UnitKpi label="% Inefectividad" value={pct1(kpis.pctInefectividad)} icon={TrendingDown} tone="warning"
-          hint="no entregado / generado · incluye lo aún en camino: baja solo al madurar el mes" />
-        <UnitKpi label="Ticket promedio" value={formatCOP(kpis.ticketPromedio)} icon={Receipt} tone="accent"
-          hint="por pedido entregado" />
+        {/* ⛔ SIN DENOMINADOR NO HAY PORCENTAJE — se muestra «—», no un cero.
+            `safeDiv` devuelve 0 cuando el divisor es 0, y eso pintaba «Tasa de
+            entrega 0.0%» en VERDE con el chip de éxito. /logistica abre por
+            defecto en el mes calendario corriente, así que el 1 y el 2 de cada
+            mes ningún pedido creado ese mes llegó todavía a ENTREGADO ni a
+            DEVOLUCION: el dueño veía su operación con 0% de entrega y 0% de
+            devolución al mismo tiempo, que es imposible, sobre un mes que
+            simplemente no concluyó nada todavía.
+            `UnitKpi` ya sabe tratar «—» como hueco: atenúa la tarjeta y no le
+            pone color. Su propio comentario decía que era «una defensa por si
+            mañana alguna cifra puede venir vacía». Es hoy. */}
+        <UnitKpi label="Tasa de despachos"
+          value={generadosSinCancel > 0 ? pct1(kpis.tasaDespachos) : '—'} icon={Truck} tone="info"
+          hint={generadosSinCancel > 0
+            ? `${despachadosCount} de ${generadosSinCancel} generados salieron a la calle`
+            : 'todavía no hay pedidos generados en este rango'} />
+        <UnitKpi label="Tasa de entrega"
+          value={resueltos > 0 ? pct1(kpis.tasaEntrega) : '—'} icon={PackageCheck} tone="success"
+          hint={resueltos > 0
+            ? `${entregadosCount} de ${resueltos} que ya concluyeron · sin rechazos`
+            : 'ningún pedido del rango concluyó todavía: no se puede medir'} />
+        <UnitKpi label="% Devolución"
+          value={resueltos > 0 ? pct1(kpis.pctDevolucion) : '—'} icon={Undo2} tone="danger"
+          hint={resueltos > 0
+            ? `${devueltosCount} de ${resueltos} que ya concluyeron · cuenta PEDIDOS, no plata`
+            : 'ningún pedido del rango concluyó todavía: no se puede medir'} />
+        <UnitKpi label="% Rechazo"
+          value={despachadosCount > 0 ? pct1(kpis.pctRechazo) : '—'} icon={Undo2} tone="warning"
+          hint={despachadosCount > 0
+            ? `${rechazadosCount} rechazados / despachado`
+            : 'todavía no salió nada a la calle en este rango'} />
+        <UnitKpi label="% Inefectividad"
+          value={generadosSinCancel > 0 ? pct1(kpis.pctInefectividad) : '—'} icon={TrendingDown} tone="warning"
+          hint={generadosSinCancel > 0
+            ? 'no entregado / generado · incluye lo aún en camino: baja solo al madurar el mes'
+            : 'todavía no hay pedidos generados en este rango'} />
+        <UnitKpi label="Ticket promedio"
+          value={entregadosCount > 0 ? formatCOP(kpis.ticketPromedio) : '—'} icon={Receipt} tone="accent"
+          hint={entregadosCount > 0 ? 'por pedido entregado' : 'todavía no se entregó nada en este rango'} />
       </div>
 
       {/* El puente que faltaba: el dueño comparaba el "% Devolución" de acá
