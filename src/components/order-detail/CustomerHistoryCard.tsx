@@ -880,10 +880,15 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
 
             <ResponsiveContainer width="100%" height={130}>
               <BarChart data={chartData} barGap={1} margin={{ top: 8, right: 10, bottom: 0, left: -22 }}>
-                <BarGradientDefs
-                  prefix="huellaMes"
-                  entries={MONTHLY_SERIES.map(s => ({ key: s.key, color: s.color }))}
-                />
+                {/* El <defs> va SIEMPRE: recharts descarta los componentes
+                    propios que cuelgan del chart y las barras quedarían
+                    pintadas con un gradiente inexistente = invisibles. */}
+                <defs>
+                  <BarGradientDefs
+                    prefix="huellaMes"
+                    entries={MONTHLY_SERIES.map(s => ({ key: s.key, color: s.color }))}
+                  />
+                </defs>
                 <CartesianGrid {...CHART_GRID_PROPS} />
                 <XAxis
                   dataKey="month"

@@ -243,13 +243,18 @@ export default function CfoPaymentsVsDebt() {
           <div className="h-[240px]">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={chartRows} margin={{ top: 8, right: 10, bottom: 5, left: -10 }}>
-                <BarGradientDefs
-                  prefix="pagosVsDeuda"
-                  entries={[
-                    { key: 'cargado', color: CHART_DANGER },
-                    { key: 'pagado',  color: CHART_SUCCESS },
-                  ]}
-                />
+                {/* El <defs> va SIEMPRE: recharts descarta los componentes
+                    propios que cuelgan del chart y las barras quedarían
+                    pintadas con un gradiente inexistente = invisibles. */}
+                <defs>
+                  <BarGradientDefs
+                    prefix="pagosVsDeuda"
+                    entries={[
+                      { key: 'cargado', color: CHART_DANGER },
+                      { key: 'pagado',  color: CHART_SUCCESS },
+                    ]}
+                  />
+                </defs>
                 <CartesianGrid {...CHART_GRID_PROPS} />
                 <XAxis
                   dataKey="year_month"

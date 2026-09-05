@@ -966,13 +966,24 @@ export default function ProductivityDashboard() {
             <div className="h-72 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{ top: 8, right: 10, bottom: 5, left: -10 }}>
-                  <BarGradientDefs
-                    prefix="prodComp"
-                    entries={[
-                      { key: 'conf', color: CHART_SUCCESS },
-                      { key: 'canc', color: CHART_DANGER },
-                    ]}
-                  />
+                  {/* ⛔ El <defs> de afuera NO es decorativo: recharts SOLO deja
+                      pasar los hijos que reconoce, y un componente propio como
+                      <BarGradientDefs/> lo DESCARTA en silencio. Sin él, los
+                      gradientes nunca llegan al DOM y las barras quedan con
+                      fill="url(#prodComp-conf)" apuntando a nada: invisibles.
+                      Medido en producción el 5-sep-2026 en esta misma pantalla
+                      —ejes escalados 0..400, los nombres de las dos asesoras, y
+                      cero barras dibujadas—. `DailyReportsView` ya lo envolvía
+                      así y por eso era el único de los cinco que se veía. */}
+                  <defs>
+                    <BarGradientDefs
+                      prefix="prodComp"
+                      entries={[
+                        { key: 'conf', color: CHART_SUCCESS },
+                        { key: 'canc', color: CHART_DANGER },
+                      ]}
+                    />
+                  </defs>
                   <CartesianGrid {...CHART_GRID_PROPS} />
                   <XAxis
                     dataKey="name"

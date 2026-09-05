@@ -382,13 +382,18 @@ function SplitView({ months, businessByMonth, personalByMonth }: SplitViewProps)
           <div className="h-[240px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 8, right: 10, bottom: 5, left: -10 }}>
-                <BarGradientDefs
-                  prefix="splitGasto"
-                  entries={[
-                    { key: 'negocio',  color: CHART_INFO },
-                    { key: 'personal', color: CHART_WARNING },
-                  ]}
-                />
+                {/* El <defs> va SIEMPRE: recharts descarta los componentes
+                    propios que cuelgan del chart y las barras quedarían
+                    pintadas con un gradiente inexistente = invisibles. */}
+                <defs>
+                  <BarGradientDefs
+                    prefix="splitGasto"
+                    entries={[
+                      { key: 'negocio',  color: CHART_INFO },
+                      { key: 'personal', color: CHART_WARNING },
+                    ]}
+                  />
+                </defs>
                 <CartesianGrid {...CHART_GRID_PROPS} />
                 <XAxis
                   dataKey="mes"
