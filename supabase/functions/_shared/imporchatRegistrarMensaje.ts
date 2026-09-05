@@ -107,18 +107,28 @@ export async function datosDeConexion(
   const guardado = cacheConexion.get(clave);
   if (guardado && Date.now() - guardado.at < CACHE_MS) return guardado.datos;
 
-  const vacio: ConexionIC = { telefono: null, idTelefono: null };
+  // ⛔ Cada salida en vacío se DICE. Degradar en silencio es la familia de la
+  // que salió este bug: el mensaje se registraría con dos campos en null y
+  // nadie se enteraría hasta que alguien mirara un hilo raro semanas después.
+  // No se cachea el vacío a propósito: así el próximo envío vuelve a intentar.
+  const vacio = (motivo: string): ConexionIC => {
+    console.warn(`[plantilla] sin datos de la conexión ${clave} (${motivo}): el mensaje se registra igual, con teléfono y mid en null`);
+    return { telefono: null, idTelefono: null };
+  };
   const idUsuario = idUsuarioDelToken(token);
-  if (idUsuario == null) return vacio;
+  if (idUsuario == null) return vacio("el token de sesión no trae id_usuario");
 
   const r = await post("configuraciones/listar_conexiones", { id_usuario: idUsuario });
-  if (!r.ok || !r.datos) return vacio;
+  if (!r.ok || !r.datos) return vacio(`listar_conexiones falló: ${r.detalle || "sin cuerpo"}`);
   const lista = (r.datos.data ?? r.datos.conexiones ?? r.datos) as unknown;
-  if (!Array.isArray(lista)) return vacio;
+  if (!Array.isArray(lista)) return vacio("listar_conexiones no devolvió una lista");
   const fila = lista.find((x) => String((x as Record<string, unknown>)?.id) === clave) as
     | Record<string, unknown>
     | undefined;
-  if (!fila) return vacio;
+  // Verificado el 4-sep-2026 contra la cuenta real: la lista trae 13 conexiones
+  // y la 277 (Rushmira Ecuador) está ahí, con `telefono` de 12 dígitos e
+  // `id_telefono` de 15. Si un día el token es de otro usuario, esto avisa.
+  if (!fila) return vacio(`la conexión no está entre las ${lista.length} del usuario`);
 
   const datos: ConexionIC = {
     telefono: fila.telefono == null ? null : String(fila.telefono),
