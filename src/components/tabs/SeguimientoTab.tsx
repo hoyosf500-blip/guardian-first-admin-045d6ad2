@@ -353,15 +353,23 @@ export default function SeguimientoTab() {
     return dedupedByDate.filter((o) => listaActiva.matches(o));
   }, [dedupedByDate, listaActiva]);
 
-  // Auto-sync suave contra Dropi al entrar a Seguimiento. El throttle de 4 min
-  // vive en el hook (una sola query de lista con backoff), así no satura el
-  // rate-limit de Dropi. El botón "Sincronizar Dropi" fuerza una corrida.
-  useEffect(() => {
-    if (!activeStoreId) return;
-    const t = setTimeout(() => { void refreshNow(activeStoreId, { silent: true }); }, 800);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeStoreId]);
+  // ⛔ ACÁ VIVÍA EL AUTO-SYNC AL ENTRAR (quitado 5-sep-2026).
+  //
+  // Cada vez que alguien abría Seguimiento, esta pantalla lanzaba
+  // `dropi-refresh-batch`: hasta 20 páginas de Dropi y, por cada una, dos RPCs
+  // de upsert (lotes de 50), un SELECT de los 100 ids y el upsert del historial
+  // — unas 80 operaciones contra la base durante ~30 segundos, POR NAVEGADOR.
+  // El throttle de 4 min vivía en el navegador, así que cuatro asesoras
+  // entrando a las 8:00 eran cuatro barridos simultáneos. Y no dejaba rastro
+  // en `sync_logs`: era el escritor invisible de la mañana en que la base se
+  // congeló 20 minutos.
+  //
+  // El cron ya sincroniza cada ~10 min (lo dice el banner de arriba, «se
+  // revisa sola cada ~11 min») y el botón «Sincronizar Dropi» sigue ahí para
+  // quien necesite el dato AHORA. Lo automático se quedó sin motivo suficiente
+  // para su costo.
+
+  // Feed base que ve la LISTA (CrmTable): lista SLA activa (o el total
 
   // Feed base que ve la LISTA (CrmTable): lista SLA activa (o el total
   // deduplicado). CrmTable ya oculta los gestionados con su propia lógica

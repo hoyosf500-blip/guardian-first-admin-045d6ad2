@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { abierto as frenoAbierto } from '@/lib/frenoBase';
 import { useAuth } from './AuthContext';
 import { setTrackingCountry } from '@/lib/orderUtils';
 import { setCurrencyCountry } from '@/lib/utils';
@@ -359,6 +360,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const otraVez = () => {
       if (document.visibilityState !== 'visible') return;
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      // Con la base ahogada (5-sep-2026) este reintento cada 30 s, desde cada
+      // pestaña, era una escritura más en la cola. Espera a que respire.
+      if (frenoAbierto()) return;
       void sincronizarScope(id);
     };
     window.addEventListener('online', otraVez);

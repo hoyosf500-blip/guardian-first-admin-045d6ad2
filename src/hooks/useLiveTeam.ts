@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { crearRefetchConPiso } from '@/lib/refetchConPiso';
+import { abierto as frenoAbierto } from '@/lib/frenoBase';
 import { useStore } from '@/contexts/StoreContext';
 import { bogotaToday } from '@/lib/utils';
 import { bogotaSecondsOfDay } from '@/lib/inactivityWindow';
@@ -30,6 +32,8 @@ import { bogotaSecondsOfDay } from '@/lib/inactivityWindow';
 const EN_LINEA_MAX_MIN = 10;   // señal < 10 min = en línea
 const SIN_MARCAR_MIN = 20;     // presente (mouse) pero sin marcar hace +20 min
 const POLL_MS = 30_000;
+/** Piso entre recargas disparadas por realtime. Ver el efecto de abajo. */
+const PISO_REALTIME_MS = 20_000;
 // Filas recientes para hallar la última por operadora. Era 400 y se alcanzaba en
 // un día normal de Ecuador (3-sep-2026: 181 confirmaciones + 98 gestiones de
 // seguimiento → las dos tarjetas decían "no se pudo medir" en el ritmo de
@@ -318,11 +322,13 @@ export function useLiveTeam(): LiveTeam {
   // Realtime (store-scoped) + poll de 30s para refrescar "hace Xm".
   useEffect(() => {
     if (!storeId) return;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const debounced = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => { void load(); }, 800);
-    };
+    // ⛔ Piso de 20 s, no debounce de 800 ms (5-sep-2026). `load` son SEIS
+    // consultas —dos de ellas RPCs de agregación— y salía por cada gestión de
+    // cualquier asesora, en cada pestaña con /admin abierto. Con el equipo
+    // marcando, eran cientos de consultas por minuto que nadie miraba cambiar.
+    // Y con el freno: si la base está ahogada, espera. Ver `refetchConPiso`.
+    const recarga = crearRefetchConPiso(() => { void load(); }, PISO_REALTIME_MS);
+    const debounced = recarga.pedir;
     const filter = `store_id=eq.${storeId}`;
     // NO escuchamos `orders`: el sync la reescribe sin parar y disparaba un refetch
     // de las 6 consultas de este hook en bucle (parte de la lentitud del panel,
@@ -336,10 +342,14 @@ export function useLiveTeam(): LiveTeam {
       .subscribe();
     // Poll solo con la pestaña visible (no gastar en background).
     const interval = setInterval(() => {
-      if (typeof document === 'undefined' || document.visibilityState === 'visible') void load();
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        // El poll también respeta el freno: insistir contra una base que no
+        // contesta no trae el dato, solo alarga la cola.
+        if (!frenoAbierto()) void load();
+      }
     }, POLL_MS);
     return () => {
-      if (timer) clearTimeout(timer);
+      recarga.cancelar();
       clearInterval(interval);
       void supabase.removeChannel(channel);
     };

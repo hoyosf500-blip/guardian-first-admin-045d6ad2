@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { crearRefetchConPiso } from '@/lib/refetchConPiso';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { CheckCircle2, ListChecks, Hourglass, Users, AlertTriangle, Eye, SkipForward, Target } from 'lucide-react';
@@ -90,20 +91,18 @@ export default function SegCounterBar() {
 
   useEffect(() => {
     if (!user || !activeStoreId) return;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const debounced = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => { void refetch(); }, 400);
-    };
+    // Piso de 5 s y freno (5-sep-2026): una gestión de cualquier compañera
+    // recargaba esto en cada pestaña a los 400 ms. Ver `refetchConPiso`.
+    const recarga = crearRefetchConPiso(() => { void refetch(); }, 5_000);
     const channel = supabase
       .channel(`tp-stats-seg-${user.id}-${activeStoreId}`)
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'touchpoints', filter: `store_id=eq.${activeStoreId}` },
-        debounced,
+        recarga.pedir,
       )
       .subscribe();
     return () => {
-      if (timer) clearTimeout(timer);
+      recarga.cancelar();
       void supabase.removeChannel(channel);
     };
   }, [user, activeStoreId, refetch]);

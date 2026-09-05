@@ -9,6 +9,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import ProtectedLayout from "@/components/ProtectedLayout";
 import IndexRedirect from "@/components/IndexRedirect";
 import { RefreshCw } from 'lucide-react';
+import { abierto as frenoAbierto } from '@/lib/frenoBase';
 
 // Lazy-load page components so the initial bundle only contains the auth page
 // and shared layout. Each route chunk loads on first navigation (~2-5 KB each).
@@ -42,6 +43,14 @@ const queryClient = new QueryClient({
       // dashboard/logística/CFO de golpe — molesto y caro. Los datos siguen
       // refrescándose por realtime + polls explícitos cuando corresponde.
       refetchOnWindowFocus: false,
+      // ⛔ UN reintento, y ninguno con la base ahogada (5-sep-2026). El default
+      // de react-query es 3 reintentos con backoff: cuando la base se congeló,
+      // cada consulta que moría por `statement_timeout` (30 s) generaba tres
+      // más — la app multiplicaba por cuatro justo la carga que la estaba
+      // matando. Un reintento sobrevive un parpadeo de red; el resto lo cubre
+      // el cortacircuitos: mientras `frenoBase` esté abierto, no se reintenta.
+      retry: (fallos) => fallos < 1 && !frenoAbierto(),
+      retryDelay: 4_000,
     },
   },
 });

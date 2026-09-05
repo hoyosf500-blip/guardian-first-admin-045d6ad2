@@ -26,6 +26,7 @@ import { computeDailyCounter, computeDailyCounterByOperator, type ResumenAsesora
 import { buildGestionPorPedido, buildGestionSegPorTelefono, aplicarGestionEnVivo, mismaGestion, type GestionDelPedido } from '@/lib/gestionPorPedido';
 import { onGestion } from '@/lib/eventosGestion';
 import { aplicarPedidosTocados } from '@/lib/aplicarPedidosTocados';
+import { abierto as frenoAbierto } from '@/lib/frenoBase';
 
 /** Cuánto se juntan los avisos de realtime antes de ir a buscar. 5 s no se
  *  notan en el tablero y convierten una ráfaga del cron en UNA consulta. */
@@ -42,7 +43,7 @@ const PISO_REFRESCO_TOTAL_MS = 90_000;
  * los 5 s del parche del cron. 1,2 s alcanza para juntar la ráfaga de un equipo
  * marcando a la vez sin que ninguna sienta que la pantalla se quedó dura.
  */
-const VENTANA_COLA_MS = 1_200;
+const VENTANA_COLA_MS = 4_000;
 
 interface Counter { conf: number; canc: number; noresp: number; }
 
@@ -448,6 +449,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const debouncedRefreshAll = useCallback(() => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     refreshTimerRef.current = setTimeout(() => {
+      // ⛔ Las TRES cargas completas no salen contra una base ahogada
+      // (5-sep-2026): se vuelve a intentar en un rato. Los polls de respaldo
+      // recuperan la frescura solos cuando el freno se cierra.
+      if (frenoAbierto()) {
+        refreshTimerRef.current = null;
+        setTimeout(() => debouncedRefreshAll(), 15_000);
+        return;
+      }
       ultimoRefrescoTotalRef.current = Date.now();
       void refreshFnsRef.current.loadNovedades(true);
       void refreshFnsRef.current.loadSegData(true);
@@ -483,6 +492,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     if (timerColaRef.current) return; // ya hay una salida programada
     timerColaRef.current = setTimeout(() => {
       timerColaRef.current = null;
+      // Con la base ahogada (5-sep-2026) la recarga espera una ventana más en
+      // vez de sumarse a la cola: la gestión ya quedó guardada, lo que se
+      // posterga es solo verla reflejada en las OTRAS pestañas.
+      if (frenoAbierto()) { recargarColaAgrupado(); return; }
       void refreshFnsRef.current.loadWorkQueue();
     }, VENTANA_COLA_MS);
   }, []);

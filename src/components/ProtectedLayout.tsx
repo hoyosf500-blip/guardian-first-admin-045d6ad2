@@ -24,6 +24,7 @@ import { leerTiendaPendiente, olvidarTiendaPendiente, type TiendaPendiente } fro
 import { esSesionFantasma, MENSAJE_SESION_FANTASMA } from '@/lib/sesionFantasma';
 import StoreSelector from '@/components/StoreSelector';
 import SyncFreshness from '@/components/SyncFreshness';
+import FrenoBaseAviso from '@/components/FrenoBaseAviso';
 import ImporchatSyncBadge from '@/components/chat/ImporchatSyncBadge';
 import type { LucideIcon } from 'lucide-react';
 import { IconRail, HudTopbar } from '@/components/ui3d';
@@ -570,6 +571,11 @@ function ProtectedLayoutInner() {
                     — el "cero que sustituye a no se pudo medir", aplicado a
                     todas las etiquetas a la vez.
                     En tiendas sin ImporChat el badge devuelve `null`. */}
+                {/* El cortacircuitos de la base, con palabras. Solo aparece
+                    mientras `frenoBase` está abierto: la asesora tiene que
+                    saber que la base está lenta y que NO es que Guardian se
+                    rompió (5-sep-2026). */}
+                <FrenoBaseAviso />
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   <div className="min-w-0 flex-1"><SyncFreshness /></div>
                   <ImporchatSyncBadge />

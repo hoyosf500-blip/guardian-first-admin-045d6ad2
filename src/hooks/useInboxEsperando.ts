@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { crearRefetchConPiso, type RefetchConPiso } from '@/lib/refetchConPiso';
 import { supabase } from '@/integrations/supabase/client';
 import { estadoConversacion } from '@/lib/actividadChat';
 import {
@@ -211,7 +212,7 @@ const VACIO: Snapshot = {
  */
 const SNAPSHOT = new Map<string, Snapshot>();
 const SUSCRIPTORES = new Map<string, Set<(s: Snapshot) => void>>();
-const CANALES = new Map<string, { ch: ReturnType<typeof supabase.channel>; n: number }>();
+const CANALES = new Map<string, { ch: ReturnType<typeof supabase.channel>; n: number; recarga: RefetchConPiso }>();
 /** Corrida en curso por tienda: descarta respuestas viejas que llegan tarde. */
 const SECUENCIA = new Map<string, number>();
 
@@ -612,13 +613,21 @@ function suscribir(storeId: string, avisar: (s: Snapshot) => void): () => void {
   } else {
     // Inbound EN VIVO: cuando un cliente escribe (o una asesora responde), la
     // bandeja se re-arma sola. UN canal por tienda, no uno por componente.
-    let t: ReturnType<typeof setTimeout> | null = null;
+    // ⛔ Piso de 20 s, no debounce de 1,5 s (5-sep-2026). CUALQUIER UPDATE de
+    // `orders` de la tienda —abrir una tarjeta, cerrarla, el cron, el sync del
+    // chat— disparaba las dos RPCs de la bandeja más la lectura de promesas, en
+    // cada pestaña, porque este canal vive en el layout. Con el equipo
+    // trabajando eran decenas de barridos por minuto sobre una base chica. La
+    // bandeja es una cola de espera medida en horas: 20 s de atraso no cambian
+    // a quién hay que atender primero. Y con el freno: si la base está
+    // ahogada, espera. Ver `refetchConPiso`.
+    const recarga = crearRefetchConPiso(() => { void cargarTienda(storeId); }, 20_000);
     const ch = supabase
       .channel(`inbox-espera-${storeId}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `store_id=eq.${storeId}` },
-        () => { if (t) clearTimeout(t); t = setTimeout(() => { void cargarTienda(storeId); }, 1500); })
+        recarga.pedir)
       .subscribe();
-    CANALES.set(storeId, { ch, n: 1 });
+    CANALES.set(storeId, { ch, n: 1, recarga });
   }
 
   // La primera carga la dispara el primero que llega; los demás reciben lo que
@@ -649,7 +658,7 @@ function suscribir(storeId: string, avisar: (s: Snapshot) => void): () => void {
     c.n -= 1;
     // El último que se va apaga la luz. Se conserva el snapshot: volver a la
     // pantalla muestra lo último que se supo en vez de un "cargando" en blanco.
-    if (c.n <= 0) { CANALES.delete(storeId); void supabase.removeChannel(c.ch); }
+    if (c.n <= 0) { CANALES.delete(storeId); c.recarga.cancelar(); void supabase.removeChannel(c.ch); }
   };
 }
 

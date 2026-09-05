@@ -1,5 +1,9 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { crearRefetchConPiso } from '@/lib/refetchConPiso';
+
+/** Piso entre recargas del panel disparadas por realtime. Ver el efecto del canal. */
+const PISO_REALTIME_MS = 30_000;
 import {
   Loader2, RefreshCw, TrendingUp, AlertTriangle, Clock, CheckCircle2,
   Inbox, Users, PhoneCall, BarChart3, ShoppingBag, Radio,
@@ -485,22 +489,28 @@ export default function ProductivityDashboard() {
   // (teléfonos, acciones) llegaba a este navegador por el socket.
   useEffect(() => {
     if (!activeStoreId) return;
-    let timer: ReturnType<typeof setTimeout> | null = null;
     let mapaPendiente = false;
+    // ⛔ Piso de 30 s, no debounce de 1 s (5-sep-2026). Cada recarga son
+    // `set_active_store` + CUATRO RPCs de agregación + el mapa de calor (dos
+    // tablas paginadas del día). Salía por cada gestión de cualquier asesora:
+    // en la pestaña del dueño, quieta, se midieron 13 recargas en 20 minutos
+    // —65 consultas pesadas— mientras la base se ahogaba. Un panel de
+    // agregados del día no necesita reflejar cada clic al segundo. Y con el
+    // freno: si la base está ahogada, espera. Ver `refetchConPiso`.
+    const recarga = crearRefetchConPiso(() => {
+      loadRef.current(true);
+      // El mapa de calor comparte este mismo canal (no abre otro): sin esto
+      // era una foto del momento en que se montó, y a las 15:00 seguía
+      // mostrando las gestiones de hasta las 9:10 (4-sep-2026). Pero SOLO
+      // se relee con una gestión nueva: el mapa sale de order_results y
+      // touchpoints, y releer el día entero (dos tablas paginadas) por cada
+      // heartbeat de 5 min de cada asesora era una recarga por minuto que no
+      // cambiaba nada (revisión 3-sep-2026).
+      if (mapaPendiente) { mapaPendiente = false; setMapaTick((t) => t + 1); }
+    }, PISO_REALTIME_MS);
     const recargar = (conMapa: boolean) => () => {
       if (conMapa) mapaPendiente = true;
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        loadRef.current(true);
-        // El mapa de calor comparte este mismo canal (no abre otro): sin esto
-        // era una foto del momento en que se montó, y a las 15:00 seguía
-        // mostrando las gestiones de hasta las 9:10 (4-sep-2026). Pero SOLO
-        // se relee con una gestión nueva: el mapa sale de order_results y
-        // touchpoints, y releer el día entero (dos tablas paginadas) por cada
-        // heartbeat de 5 min de cada asesora era una recarga por minuto que no
-        // cambiaba nada (revisión 3-sep-2026).
-        if (mapaPendiente) { mapaPendiente = false; setMapaTick((t) => t + 1); }
-      }, 1000);
+      recarga.pedir();
     };
     const debounced = recargar(false);
     const conGestion = recargar(true);
@@ -523,7 +533,7 @@ export default function ProductivityDashboard() {
       // cierto en vez de darlo por hecho.
       .subscribe((status) => { setEnVivo(status === 'SUBSCRIBED'); });
     return () => {
-      if (timer) clearTimeout(timer);
+      recarga.cancelar();
       setEnVivo(false);
       void supabase.removeChannel(channel);
     };
