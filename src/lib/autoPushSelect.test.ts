@@ -158,3 +158,25 @@ describe("selectAutoPushCandidates", () => {
     expect(out.map((o) => o.shopify_order_id)).toEqual(["v1", "otra"]);
   });
 });
+
+describe("una orden CANCELADA sigue siendo la contraparte de su venta (5-sep-2026, Felipe Flores EC)", () => {
+  // Dropify creó la orden el 4-sep 22:25Z a partir de la venta de Shopify de las
+  // 22:20Z; alguien la canceló el 5-sep a la mañana. El robot, que hasta hoy no
+  // metía las canceladas en `contraparteDropiMs`, volvió a subir la MISMA venta.
+  const ventaMs = NOW - 20 * HOUR;
+  const ordenCanceladaMs = ventaMs + 5 * MIN;
+  const venta: ShopifyPendingLike = { shopify_order_id: "SHOP-1", phoneLast9: "967818548", createdAtMs: ventaMs };
+
+  it("con la orden cancelada como contraparte (nació DESPUÉS de la venta) NO se vuelve a subir", () => {
+    const contraparte = new Map([["967818548", ordenCanceladaMs]]);
+    const out = selectAutoPushCandidates([venta], new Set(), new Map(), baseOpts(), contraparte);
+    expect(out).toHaveLength(0);
+  });
+
+  it("una recompra real (venta MÁS NUEVA que la orden cancelada) sí pasa", () => {
+    const recompra: ShopifyPendingLike = { shopify_order_id: "SHOP-2", phoneLast9: "967818548", createdAtMs: ordenCanceladaMs + 2 * HOUR };
+    const contraparte = new Map([["967818548", ordenCanceladaMs]]);
+    const out = selectAutoPushCandidates([recompra], new Set(), new Map(), baseOpts(), contraparte);
+    expect(out.map((o) => o.shopify_order_id)).toEqual(["SHOP-2"]);
+  });
+});

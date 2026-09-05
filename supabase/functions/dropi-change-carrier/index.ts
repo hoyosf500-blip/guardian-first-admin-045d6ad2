@@ -1212,7 +1212,11 @@ function parseOrderLines(body: Record<string, unknown>): LineDetail[] {
     // producto X es variable, por lo tanto debe indicar una variación" y no
     // crea nada: el 84,6% de los pedidos de Colombia no se podían editar.
     const variation = (d.variation ?? d.product_variation ?? {}) as Record<string, unknown>;
-    const variationId = Number(d.variation_id ?? d.product_variation_id ?? variation.id ?? 0) || null;
+    // `variacion` como número: la misma clave que usa el detalle V2 (ver parseV2Lines).
+    const variacionInt = typeof d.variacion === "object" && d.variacion
+      ? (d.variacion as Record<string, unknown>).id
+      : d.variacion;
+    const variationId = Number(d.variation_id ?? d.product_variation_id ?? variation.id ?? variacionInt ?? 0) || null;
     // La etiqueta ("OSCURO", "38 / NEGRO") viaja aparte del id: si el id no
     // vino, la cotización la busca por nombre en el catálogo (5-sep-2026).
     const variante = etiquetaVariante(variation) || null;
@@ -1235,11 +1239,20 @@ function parseV2Lines(body: Record<string, unknown>): LineDetail[] {
     // Misma variante que en `parseOrderLines`: este camino es el fallback para
     // los pedidos de bot, y si pierde la talla el recreate falla igual.
     const v2var = (p.variation ?? p.product_variation ?? {}) as Record<string, unknown>;
-    // Los candidatos conocidos del id de variante, como en `mode: "variants"`.
-    // Si el V2 lo nombra de otra forma, la línea igual sale con la etiqueta y
-    // `resolveClientAndLines` la completa con la lectura de integración.
-    const variationId = Number(p.variation_id ?? p.product_variation_id ?? v2var.id ?? 0) || null;
-    const variante = etiquetaVariante(v2var) || null;
+    // ⛔ El detalle V2 nombra la variante `variacion` (5-sep-2026, leído en vivo
+    // sobre el pedido 6866089 del shampoo 147152): `products[]` trae
+    // `{ details_id, id, type_variacion: "BM176", variacion: 56322,
+    //    attribute_value: "", attribute: "" }` — un NÚMERO en `variacion`, y
+    // NADA en `variation` / `variation_id`. Como acá solo se miraban esas
+    // claves, la línea salía sin variante, la bodega se pedía con el id del
+    // producto y Dropi contestaba `data: []`: «no tiene stock en bodega» con
+    // 75 unidades de CAFE OSCURO en la bodega. Los pedidos de bot no aparecen
+    // en la integración, así que este camino era el ÚNICO para ellos.
+    const variacionV2 = typeof p.variacion === "object" && p.variacion
+      ? (p.variacion as Record<string, unknown>).id
+      : p.variacion;
+    const variationId = Number(p.variation_id ?? p.product_variation_id ?? variacionV2 ?? v2var.id ?? 0) || null;
+    const variante = etiquetaVariante(v2var) || String(p.attribute_value ?? "").trim() || null;
     lines.push({ dropiId, quantity, price, variationId, ...(variante ? { variante } : {}), ...(name ? { name } : {}) });
   }
   return lines;
@@ -1336,7 +1349,7 @@ async function resolveClientAndLines(
  *  Esta funcion es parte de la cadena que puede DUPLICAR un pedido en Dropi,
  *  y hasta hoy no habia forma de saber que version corria: el arreglo
  *  "exactamente UNO vivo" de julio-2026 se desplego sin poder comprobarlo. */
-const VERSION = "dropi-change-carrier 2026-09-05.1 la-variante-no-se-pierde-entre-cotizar-y-aplicar";
+const VERSION = "dropi-change-carrier 2026-09-05.2 el-v2-dice-variacion-y-ahora-se-lee";
 
 Deno.serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);

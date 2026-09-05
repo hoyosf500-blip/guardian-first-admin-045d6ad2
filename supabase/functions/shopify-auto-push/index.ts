@@ -33,7 +33,7 @@ import { respuestaPing } from "../_shared/versionEdge.ts";
 const SHOPIFY_API_VERSION = "2024-10";
 /** Se despliega A MANO. `POST .../shopify-auto-push?ping=1` contesta esta marca:
  *  sin ella no hay forma de saber si el robot que corre cada 15 min es el nuevo. */
-const VERSION = "shopify-auto-push 2026-09-04.1 deja-de-martillar-lo-que-no-sale";
+const VERSION = "shopify-auto-push 2026-09-05.1 cancelar-no-resucita-la-venta";
 /** Gracia: dejar que Dropify (la app de Shopify de Dropi) lo suba solo primero.
  *
  *  Era 30 min. Medido el 4-sep-2026 en Ecuador (25-ago → 4-sep): Dropify tarda
@@ -183,11 +183,26 @@ async function processStore(
       const k = last9(r.phone);
       if (k.length < 7) continue;
       if (isActiveDropiEstado(r.estado)) dropiActivePhones.add(k);
-      // Las MUERTAS (cancelada / reemplazada / anulada / archivada) quedan fuera
-      // a propósito: no despacharon nada, así que no son contraparte de nada y
-      // seguir tratándolas como tal bloquearía una venta legítima.
+      // ⛔ Una orden CANCELADA SÍ es contraparte de su venta (5-sep-2026).
+      //
+      // Acá se saltaban también las canceladas/anuladas, con el argumento de que
+      // "no despacharon nada, así que no son contraparte de nada". Es al revés:
+      // la orden que nació DESPUÉS de la venta ES la orden de esa venta, y
+      // cancelarla fue una decisión sobre esa venta. Saltarla dejaba la venta
+      // como "sin subir" y el robot la volvía a crear: Felipe Flores, EC —
+      // Dropify creó #6863541 el 4-sep, alguien la canceló el 5-sep a la mañana
+      // y a las 16:48Z el robot creó #6873393 de la MISMA venta de Shopify
+      // (`sync_logs` "1 de 1 subidos" + `shopify_pushed_orders`). La operadora
+      // la canceló como "Duplicado" y reportó que el pedido "vuelve a salir".
+      //
+      // Una recompra real no se frena con esto: su venta de Shopify es MÁS
+      // NUEVA que la orden cancelada, así que `contraparte >= createdAt` no se
+      // cumple y pasa. Se saltan solo REEMPLAZADA (su reemplazo, más nuevo, ya
+      // cuenta) y ARCHIVADO GHOST (borrada en Dropi): la MISMA regla que usa
+      // `shopify-reconcile` para el panel de pendientes (`ESTADOS_MUERTOS`).
+      // El robot y el panel tienen que contestar lo mismo sobre la misma venta.
       const e = String(r.estado || "").toUpperCase();
-      if (/CANCEL|REEMPLAZ|ANULAD|ARCHIVADO/.test(e)) continue;
+      if (/REEMPLAZ|ARCHIVADO/.test(e)) continue;
       const ms = r.created_at ? new Date(r.created_at).getTime() : 0;
       if (!Number.isFinite(ms) || ms <= 0) continue;
       const prev = contraparteDropiMs.get(k);

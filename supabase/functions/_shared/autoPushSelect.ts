@@ -28,8 +28,13 @@
 //     4-5 días, la venta de Shopify ya salió de la ventana antes de entregarse y
 //     el bug no se ve; en Ecuador con LAAR entregando al otro día, sí.
 //     Defensa: `contraparteDropiMs` mapea teléfono → fecha de la orden Dropi MÁS
-//     RECIENTE de ese teléfono, EN CUALQUIER ESTADO (entregadas incluidas). Si esa
-//     orden nació DESPUÉS de la venta de Shopify, ES su contraparte y no se sube.
+//     RECIENTE de ese teléfono, EN CUALQUIER ESTADO (entregadas Y CANCELADAS
+//     incluidas; solo REEMPLAZADA y ARCHIVADO GHOST quedan fuera, igual que en
+//     shopify-reconcile). Si esa orden nació DESPUÉS de la venta de Shopify, ES
+//     su contraparte y no se sube — aunque alguien la haya cancelado: cancelar
+//     fue una decisión sobre ESA venta, no una venta nueva (5-sep-2026, caso
+//     Felipe Flores EC: el robot recreó una venta cuya orden acababan de
+//     cancelar, y la operadora la vio "volver a la cola").
 //     Una recompra real es al revés: su venta de Shopify es más nueva que la
 //     orden anterior, así que sigue pasando.
 //     Ojo: la idempotencia por `shopify_order_id` NO cubre esto — solo conoce lo

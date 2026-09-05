@@ -76,9 +76,14 @@ describe('las dos lecturas del pedido se completan entre sí', () => {
       expect(fn, `${nombre} no guarda la etiqueta`).toMatch(/variante\s*=\s*etiquetaVariante\(/);
       expect(fn, `${nombre} no la pone en la línea`).toMatch(/\{\s*variante\s*\}/);
     }
-    // El V2 puede nombrar el id de otra forma: se prueban los candidatos conocidos.
-    const v2 = carrier.slice(carrier.indexOf('function parseV2Lines('));
-    expect(v2.slice(0, 1200)).toMatch(/p\.product_variation_id/);
+    // El V2 nombra la variante `variacion` (número), leído en vivo el 5-sep-2026
+    // sobre el pedido 6866089: `{ type_variacion: "BM176", variacion: 56322 }`.
+    // Sin esta clave, los pedidos de bot (invisibles en la integración) pierden
+    // la variante y la bodega se pide con el id del producto.
+    const v2 = carrier.slice(carrier.indexOf('function parseV2Lines('), carrier.indexOf('\n}\n', carrier.indexOf('function parseV2Lines(')));
+    expect(v2).toMatch(/p\.variacion/);
+    expect(v2).toMatch(/p\.product_variation_id/);
+    expect(v2).toMatch(/p\.attribute_value/);
   });
 });
 
