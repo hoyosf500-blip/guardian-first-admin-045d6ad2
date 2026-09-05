@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pareceTelefono, variantesDeBusqueda, fusionarResultados, MIN_DIGITOS_TELEFONO } from './busquedaTelefono';
+import { pareceTelefono, variantesDeBusqueda, fusionarResultados, telefonoParaBuscarEnDropi, MIN_DIGITOS_TELEFONO } from './busquedaTelefono';
 
 describe('el caso que lo motivó: #6853503, Néstor Isaías Ayme', () => {
   it('⛔ el cliente escribe con cero inicial y el pedido está guardado sin él', () => {
@@ -102,5 +102,33 @@ describe('fusionar sin repetir y sin perder', () => {
   it('⛔ sin external_id NI teléfono la fila pasa: perder un resultado es peor que repetirlo', () => {
     const x = { external_id: null, phone: null };
     expect(fusionarResultados([[x], [{ ...x }]], 50)).toHaveLength(2);
+  });
+});
+
+describe('el número que SÍ encuentra Dropi', () => {
+  it('⛔ saca el +593 que Guardian venía mostrando y Dropi no encuentra', () => {
+    // Medido: '+593967107198' → 0 resultados; '967107198' → 2.
+    expect(telefonoParaBuscarEnDropi('+593967107198')).toBe('967107198');
+    expect(telefonoParaBuscarEnDropi('593967107198')).toBe('967107198');
+  });
+
+  it('saca el cero inicial y los espacios', () => {
+    expect(telefonoParaBuscarEnDropi('0967107198')).toBe('967107198');
+    expect(telefonoParaBuscarEnDropi('096 710 7198')).toBe('967107198');
+  });
+
+  it('un número ya limpio se deja igual', () => {
+    expect(telefonoParaBuscarEnDropi('967107198')).toBe('967107198');
+  });
+
+  it('Colombia: la forma canónica sigue siendo subcadena de la guardada', () => {
+    // Dropi CO guarda 10 dígitos; buscar los últimos 9 los encuentra igual.
+    const q = telefonoParaBuscarEnDropi('+573122781823');
+    expect('3122781823'.includes(q)).toBe(true);
+  });
+
+  it('sin nada que normalizar devuelve los dígitos crudos, no vacío', () => {
+    expect(telefonoParaBuscarEnDropi('12345')).toBe('12345');
+    expect(telefonoParaBuscarEnDropi(null)).toBe('');
   });
 });

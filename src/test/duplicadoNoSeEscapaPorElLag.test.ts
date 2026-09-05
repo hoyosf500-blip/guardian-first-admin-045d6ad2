@@ -206,8 +206,16 @@ describe('⛔ el duplicado no se escapa por el lag del espejo', () => {
     expect(iMeti, 'no encontré el botón de "Ya lo metí"').toBeGreaterThan(-1);
     expect(panel.slice(iMeti, iMeti + 300), 'se puede volver a marcar "Ya lo metí" sobre algo que Guardian ya subió')
       .toMatch(/!!yaSubido/);
-    // Y el aviso dice lo único que destraba al operador: buscar por teléfono.
-    expect(panel).toMatch(/por TEL[ÉE]FONO, no por el n[úu]mero de la venta/);
+    // Y el aviso dice lo único que destraba al operador: cómo encontrarlo en
+    // Dropi. ⛔ Ya no alcanza con decirle "buscá por teléfono" (que es lo que
+    // esta prueba exigía antes): medido el 4-sep-2026 contra el panel real,
+    // el buscador de Dropi es coincidencia por SUBCADENA y con `+593…` devuelve
+    // CERO — y Guardian le venía dando justo ese formato (15 de 16 teléfonos en
+    // pantalla). El consejo correcto sin el número correcto igual termina en un
+    // duplicado, así que la franja tiene que dar los DÍGITOS EXACTOS.
+    expect(panel).toMatch(/Busc[áa] en Dropi con estos d[íi]gitos/);
+    const iFranja = panel.indexOf('Buscá en Dropi con estos dígitos');
+    expect(panel.slice(iFranja, iFranja + 400)).toContain('telefonoParaBuscarEnDropi(p.phone)');
   });
 
   it('la pantalla usa la MISMA ventana y la misma llave que el candado del servidor', () => {

@@ -7,6 +7,7 @@ import DropiProductSearch from '@/components/DropiProductSearch';
 import { useShopifyManualMarks } from '@/hooks/useShopifyManualMarks';
 import { useShopifyPushAttempts } from '@/hooks/useShopifyPushAttempts';
 import { armarBacklogDropi } from '@/lib/backlogDropi';
+import { telefonoParaBuscarEnDropi } from '@/lib/busquedaTelefono';
 import { usePushesRecientes, tel9 } from '@/hooks/usePushesRecientes';
 import { useDuplicatePhones } from '@/hooks/useDuplicatePhones';
 import { useAutoPushHealth } from '@/hooks/useAutoPushHealth';
@@ -420,11 +421,34 @@ export default function ShopifyPendingPanel() {
   }, [activeStoreId]);
 
   const copyPhone = useCallback(async (phone: string) => {
+    // ⛔ SE COPIA EL NÚMERO QUE DROPI ENCUENTRA, no el que se ve (4-sep-2026).
+    //
+    // El equipo revisa en Dropi ANTES de cargar a mano, justamente para no
+    // duplicar. Pero el buscador de Dropi es una coincidencia por SUBCADENA
+    // sobre lo que Dropi guarda (9 dígitos limpios), así que cualquier prefijo
+    // devuelve CERO — medido contra el panel real ese día:
+    //
+    //     967107198     → 2 pedidos      +593967107198 → 0
+    //     67107198      → 2 pedidos      0967107198    → 0
+    //
+    // Y Guardian les venía dando justo el formato que no sirve: 15 de los 16
+    // teléfonos en pantalla eran `+593…`. Copiaban de acá, pegaban allá, no
+    // aparecía nada, y cargaban el duplicado encima de uno que ya existía.
+    const paraDropi = telefonoParaBuscarEnDropi(phone) || phone;
+    const ok = await copiarAlPortapapeles(paraDropi);
     // `copiarAlPortapapeles` dice la verdad: antes el catch era mudo y la asesora
     // no sabía si pegar o transcribir el número a mano (4-sep-2026).
-    const ok = await copiarAlPortapapeles(phone);
-    if (ok) { setCopied(phone); setTimeout(() => setCopied(null), 1500); }
-    else toast.error('No se pudo copiar el teléfono', { description: 'Copialo a mano desde la tarjeta.' });
+    if (ok) {
+      setCopied(phone);
+      setTimeout(() => setCopied(null), 1500);
+      if (paraDropi !== phone) {
+        toast.success(`Copiado ${paraDropi}`, {
+          description: 'Sin el +593: así es como lo encuentra el buscador de Dropi.',
+        });
+      }
+    } else {
+      toast.error('No se pudo copiar el teléfono', { description: `Copialo a mano: ${paraDropi}` });
+    }
   }, []);
 
   const visible = useMemo(
@@ -1219,7 +1243,10 @@ export default function ShopifyPendingPanel() {
                           </div>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                             {p.phone
-                              ? <button onClick={() => copyPhone(p.phone)} className="font-mono hover:text-foreground flex items-center gap-1">
+                              ? <button onClick={() => copyPhone(p.phone)} className="font-mono hover:text-foreground flex items-center gap-1"
+                                  title={telefonoParaBuscarEnDropi(p.phone) !== p.phone
+                                    ? `Copia ${telefonoParaBuscarEnDropi(p.phone)} — así lo encuentra Dropi (con el +593 no aparece nada)`
+                                    : 'Copiar el teléfono'}>
                                   {p.phone} {copied === p.phone ? <Check size={11} className="text-success" /> : <Copy size={10} />}
                                 </button>
                               : <span className="italic">—</span>}
@@ -1256,8 +1283,11 @@ export default function ShopifyPendingPanel() {
                           </p>
                           <p className="text-[11px] text-muted-foreground mt-0.5">
                             Si la cargás a mano, el cliente recibe <strong>dos envíos</strong> y se paga doble flete.
-                            {' '}<strong>Buscá en Dropi por TELÉFONO, no por el número de la venta:</strong> la orden que
-                            creó Guardian está ahí con otro número, y el espejo tarda hasta 15 minutos en mostrarla.
+                            {' '}<strong>Buscá en Dropi con estos dígitos:</strong>{' '}
+                            <code className="font-mono bg-background/60 px-1 rounded">{telefonoParaBuscarEnDropi(p.phone)}</code>
+                            {' '}— con el <code className="font-mono">+593</code> el buscador de Dropi no devuelve nada.
+                            La orden que creó Guardian está ahí con otro número, y el espejo tarda hasta 15 minutos
+                            en mostrarla.
                           </p>
                           <p className="text-[11px] text-muted-foreground mt-1">
                             Si de verdad son dos pedidos distintos, marcalo con <strong>«No es duplicado»</strong> y dejalo

@@ -100,3 +100,34 @@ export function fusionarResultados<T extends { external_id?: string | null; phon
   }
   return out;
 }
+
+/**
+ * El teléfono tal como hay que escribirlo para que el buscador de DROPI lo
+ * encuentre.
+ *
+ * ── Medido contra el panel real de Dropi (4-sep-2026, cuenta de Ecuador) ───
+ * `textToSearch` es una coincidencia por SUBCADENA sobre lo que Dropi tiene
+ * guardado, y Dropi guarda 9 dígitos limpios. O sea que cualquier prefijo lo
+ * rompe:
+ *
+ *     967107198        → 2 pedidos   ✅
+ *     67107198         → 2 pedidos   ✅  (subcadena, también sirve)
+ *     0967107198       → 0           ❌  el cero que escribe el cliente
+ *     +593967107198    → 0           ❌
+ *     593967107198     → 0           ❌
+ *     096 710 7198     → 0           ❌  con espacios
+ *
+ * ⛔ POR QUÉ IMPORTA: el equipo revisa en Dropi ANTES de cargar a mano, para no
+ * duplicar. Y Guardian les venía dando el número EN EL FORMATO QUE NO SIRVE —
+ * medido en /confirmar el 4-sep: 15 de 16 teléfonos en pantalla eran `+593…`.
+ * Copiaban de acá, pegaban en Dropi, no aparecía nada, y cargaban el duplicado.
+ * De los 21 duplicados de la quincena, 5 son exactamente esa forma: Guardian ya
+ * lo había creado y la persona no lo vio.
+ *
+ * Devuelve `''` si no hay con qué buscar, para que quien lo use pueda decidir
+ * mostrar el original en vez de un vacío.
+ */
+export function telefonoParaBuscarEnDropi(phone: string | null | undefined): string {
+  const canonico = normalizePhone(phone);
+  return canonico.length >= 7 ? canonico : String(phone ?? '').replace(/\D/g, '');
+}
