@@ -225,9 +225,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const ownerStoreIds = memberships
       .filter(m => m.role === 'owner').map(m => m.store_id);
     type EstadoDropi = { data: { store_id: string; has_api_key: boolean }[] | null; error: { message?: string } | null };
+    // ⛔ `Promise.resolve(...)` ALREDEDOR NO ES DECORACIÓN — tumbó la app.
+    //
+    // `supabase.rpc()` NO devuelve una Promise: devuelve un builder de
+    // PostgREST que es *thenable* (tiene `.then()`, y por eso el `await` de
+    // toda la vida funciona) pero **no tiene `.catch()`**. Encadenarle un
+    // `.catch` tira `TypeError: rpc(...).catch is not a function` de forma
+    // SINCRÓNICA, dentro de `refresh()` — y el `.catch` de abajo lo convertía
+    // en `storesError`, o sea la pantalla completa «No se pudieron cargar tus
+    // tiendas», para todo el equipo. Producción caída, 5-sep-2026.
+    //
+    // TypeScript no lo vio porque el cast `as unknown as (...) => Promise<...>`
+    // le AFIRMA que es una Promise. Un cast así apaga la única red que había.
+    //
+    // `Promise.resolve(thenable)` devuelve una Promise nativa de verdad que
+    // adopta al builder — y dispara la consulta, que es justo lo que se quiere
+    // acá: que salga YA, en paralelo con `stores`.
     const pDropi: Promise<EstadoDropi> = ownerStoreIds.length > 0
-      ? (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<EstadoDropi>)(
-          'get_my_stores_dropi_status', {},
+      ? Promise.resolve(
+          (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => PromiseLike<EstadoDropi>)(
+            'get_my_stores_dropi_status', {},
+          ),
         ).catch((e) => ({ data: null, error: { message: String(e) } }))
       : Promise.resolve({ data: null, error: null });
 
