@@ -64,7 +64,7 @@ import { linkRastreoConGuia } from "../_shared/rastreo.ts";
 import type { MensajeConversacion } from "../_shared/conversacion.ts";
 
 /** ⛔ Subirla en el MISMO commit que cambie algo, o el ping miente. */
-const VERSION = "importchat-responder 2026-09-04.4 el-numero-que-el-cliente-escribe";
+const VERSION = "importchat-responder 2026-09-04.5 mil-filas-no-son-cuarenta-y-cinco-dias";
 const SOURCE = "importchat-responder";
 const AUTOR = "Guardian · respuesta automática";
 
@@ -82,6 +82,10 @@ const DIAS_PEDIDOS = 45;
  *  resumen lo dice — un silencio por truncamiento se lee igual que "no había
  *  nada que hacer", que es la clase de mentira que este proyecto persigue. */
 const LIMITE_PEDIDOS = 5000;
+/** Tamano de pagina. NO subirlo: PostgREST corta en 1.000 filas en este
+ *  proyecto (`max-rows`) y pedir mas devuelve 1.000 igual, en silencio — que es
+ *  como el limite de 5.000 quedo inerte durante todo el 4-sep-2026. */
+const PAGINA_PEDIDOS = 1000;
 /** Cuántos envíos por corrida puede hacer una vía que NO es el enlace del chat.
  *  El primer día, chats viejos que nunca se miraron pasan a ser candidatos de
  *  golpe: que no dominen la corrida mientras se mira si funciona bien. */
@@ -281,19 +285,42 @@ Deno.serve(async (req) => {
         // indexa por chat Y por teléfono, y las vías nuevas solo corren donde
         // antes no se hacía nada. `order` por fecha desc para que un recorte del
         // límite se lleve lo más viejo, no lo más nuevo.
-        const { data: pedidos, error: pedErr } = await sb.from("orders")
-          .select("external_id, phone, nombre, estado, guia, transportadora, importchat_chat_id, chat_entrante_at, chat_leido_at, last_movement_at, created_at")
-          .eq("store_id", storeId)
-          .gte("created_at", desde)
-          .order("created_at", { ascending: false })
-          .limit(LIMITE_PEDIDOS);
-        if (pedErr) throw new Error(`orders: ${pedErr.message}`);
-        const filas = (pedidos ?? []) as PedidoConChat[];
+        // ⛔ SE PAGINA (medido el 4-sep-2026 en produccion). Antes esto era un
+        // solo `.limit(LIMITE_PEDIDOS)` con LIMITE_PEDIDOS = 5000, y estaba MAL
+        // de dos formas a la vez:
+        //   1. PostgREST corta en 1.000 filas en este proyecto (`max-rows`), asi
+        //      que el limite de 5.000 no se alcanzaba NUNCA: el respondedor veia
+        //      solo los 1.000 pedidos mas nuevos, unos 8 dias de Ecuador, no los
+        //      45 que dice la ventana.
+        //   2. Y por eso mismo `pedidos_truncado` daba SIEMPRE false: comparaba
+        //      1.000 contra 5.000. Una bandera de "no se recorto" que no puede
+        //      dispararse es peor que no tenerla — es exactamente la clase de
+        //      cero afirmado que este arreglo vino a matar.
+        // El dry run lo delato: `pedidos: 1000, pedidos_truncado: false`.
+        const filas: PedidoConChat[] = [];
+        let pedidosTruncado = false;
+        for (let desplazamiento = 0; desplazamiento < LIMITE_PEDIDOS; desplazamiento += PAGINA_PEDIDOS) {
+          const hasta = Math.min(desplazamiento + PAGINA_PEDIDOS, LIMITE_PEDIDOS) - 1;
+          const { data: pagina, error: pedErr } = await sb.from("orders")
+            .select("external_id, phone, nombre, estado, guia, transportadora, importchat_chat_id, chat_entrante_at, chat_leido_at, last_movement_at, created_at")
+            .eq("store_id", storeId)
+            .gte("created_at", desde)
+            // Orden ESTABLE: sin desempate por `external_id`, dos filas con la
+            // misma fecha pueden repetirse o perderse entre paginas.
+            .order("created_at", { ascending: false })
+            .order("external_id", { ascending: false })
+            .range(desplazamiento, hasta);
+          if (pedErr) throw new Error(`orders: ${pedErr.message}`);
+          const trozo = (pagina ?? []) as PedidoConChat[];
+          filas.push(...trozo);
+          // Menos de lo pedido = se acabaron las filas, no hay mas paginas.
+          if (trozo.length < hasta - desplazamiento + 1) break;
+          // Se llego al tope propio con la base todavia devolviendo lleno: ahi si
+          // la foto esta recortada, y hay que DECIRLO.
+          if (filas.length >= LIMITE_PEDIDOS) { pedidosTruncado = true; break; }
+        }
         const idx = indexarPedidos(filas, cc);
         const porChat = idx.porChat;
-        // Si esto llega al límite, la foto está recortada y hay que decirlo: un
-        // silencio por truncamiento se lee igual que "no había nada que hacer".
-        const pedidosTruncado = filas.length >= LIMITE_PEDIDOS;
         if (filas.length === 0) { resumen.push({ store_id: storeId, ok: true, chats: 0, enviados: 0 }); continue; }
 
         // ── El último mensaje de cada chat (listado liviano) ─────────────────

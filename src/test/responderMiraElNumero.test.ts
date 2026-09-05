@@ -74,6 +74,39 @@ describe('⛔ el respondedor mira el número que el cliente escribe', () => {
   });
 
   it('la marca de versión subió con el arreglo', () => {
-    expect(src).toMatch(/const VERSION = "importchat-responder 2026-09-04\.4 /);
+    // La marca sube con CADA arreglo desplegable: es lo unico que permite
+    // comprobar con ?ping=1 que el runtime es el del commit.
+    expect(src).toMatch(/const VERSION = "importchat-responder 2026-09-04\.\d+ /);
+  });
+
+  /**
+   * ⛔ ESTE DEFECTO LLEGO A PRODUCCION (4-sep-2026) y lo delato un dry run:
+   * devolvia `pedidos: 1000, pedidos_truncado: false`.
+   *
+   * La consulta era un solo `.limit(5000)`, pero PostgREST corta en 1.000 filas
+   * en este proyecto (`max-rows`). O sea que el limite de 5.000 no se alcanzaba
+   * NUNCA: el respondedor veia solo los 1.000 pedidos mas nuevos —unos 8 dias de
+   * Ecuador, no los 45 de la ventana— y la bandera de truncamiento daba SIEMPRE
+   * false. Una bandera de "no se recorto" que no puede dispararse es peor que no
+   * tenerla: afirma una cobertura que no existe.
+   */
+  it('⛔ la foto de pedidos se pagina: 1.000 filas no son 45 dias', () => {
+    expect(
+      /PAGINA_PEDIDOS\s*=\s*1000/.test(src),
+      'el tamano de pagina tiene que ser el tope real de PostgREST, no uno inventado',
+    ).toBe(true);
+    expect(
+      /\.range\(desplazamiento, hasta\)/.test(src),
+      'sin paginar, el limite de LIMITE_PEDIDOS es inalcanzable y la ventana es una mentira',
+    ).toBe(true);
+    // Orden ESTABLE: sin desempate, dos filas con la misma fecha se repiten o se
+    // pierden entre paginas.
+    expect(/\.order\("external_id", \{ ascending: false \}\)/.test(src)).toBe(true);
+    // Y el truncamiento solo se declara si de verdad se llego al tope propio.
+    expect(/pedidosTruncado = true/.test(src)).toBe(true);
+    expect(
+      /const pedidosTruncado = filas\.length >= LIMITE_PEDIDOS/.test(src),
+      'esa comparacion es la que daba siempre false',
+    ).toBe(false);
   });
 });
