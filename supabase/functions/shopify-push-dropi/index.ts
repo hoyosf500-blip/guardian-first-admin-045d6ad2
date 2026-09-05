@@ -18,7 +18,8 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, isStoreMember } from "../_shared/dropiStoreConfig.ts";
 import { ensureFreshSessionToken } from "../_shared/dropiSessionLogin.ts";
 import { loadShopifyConfig, getShopifyAccessToken } from "../_shared/shopifyStoreConfig.ts";
-import { WebFallbackError, normUp, decodeJwtSub, dropiWebFetch, quoteCarriers, productEntry } from "../_shared/dropiWebQuote.ts";
+import { WebFallbackError, decodeJwtSub, dropiWebFetch, quoteCarriers, productEntry } from "../_shared/dropiWebQuote.ts";
+import { ordenarCandidatas, preferenciaTransportadora, esRechazoPorMetodoDeEnvio, motivoEleccion } from "../_shared/politicaTransportadora.ts";
 
 import { resolveDestCity, noCoverageMessage } from "../_shared/dropiCityCatalog.ts";
 import { dropiCountryNameFor, paisUsaCentavos } from "../_shared/dropiCountry.ts";
@@ -34,7 +35,7 @@ const SHOPIFY_API_VERSION = "2024-10";
 // 2026-09-05.1: sin cambios en este archivo — cambió `_shared/dropiWebQuote.ts`
 // (variante por etiqueta / única variante, y "variable sin variante" ya no se
 // reporta como "sin stock"). La marca sube para que el deploy se pueda comprobar.
-const VERSION = "shopify-push-dropi 2026-09-05.1 variable-sin-variante-no-es-sin-stock";
+const VERSION = "shopify-push-dropi 2026-09-05.2 la-transportadora-que-elige-el-equipo";
 
 interface ShopifyLineItem {
   product_id: number;
@@ -526,6 +527,8 @@ async function createOrderViaWeb(
      *  el fix del caller — la ciudad GT se resolvía contra el catálogo
      *  COLOMBIANO. NUNCA derivar el código desde el nombre: viaja explícito. */
     countryCode: string;
+    /** Tienda: decide la PREFERENCIA de transportadora (politicaTransportadora.ts). */
+    storeId: string;
     client: ClientFields;
     resolved: ResolvedLine[];
     total: number;
@@ -555,19 +558,28 @@ async function createOrderViaWeb(
   });
   const { dest, origin, products, supplierId } = ctx;
 
-  // Política al crear: la más barata ≠ VELOCES (options viene ordenado asc por precio).
-  const candidate = ctx.options.find((o) => normUp(o.name) !== "VELOCES");
-  if (!candidate) {
+  // Política al crear (5-sep-2026): la transportadora que el equipo elige a
+  // mano va PRIMERO — ver `_shared/politicaTransportadora.ts` y sus números
+  // (Ecuador: 127 cambios a mano para salir de GINTRACOM en dos días; el robot
+  // la elegía por ser la más barata). Sin preferencia en la tienda, la regla
+  // vieja: la más barata ≠ VELOCES. Y es una LISTA: si Dropi rechaza el POST
+  // con «la ciudad no tiene habilitado el método de envío» para la primera, se
+  // prueba la siguiente en vez de dejar la venta trabada (7 veces en 2 días).
+  const preferidas = preferenciaTransportadora(args.storeId);
+  const candidatas = ordenarCandidatas(ctx.options, preferidas);
+  if (candidatas.length === 0) {
     throw new WebFallbackError("Ninguna transportadora cotizó este envío (todas con error o solo VELOCES disponible).", 422);
   }
+  const userId = decodeJwtSub(cfg.sessionToken);
+  for (const [intento, candidata] of candidatas.entries()) {
+  console.log(`[web] transportadora ${candidata.name} (${motivoEleccion(candidata, preferidas)}) para ${args.client.city}/${args.client.state}${intento > 0 ? ` — reintento ${intento + 1} de ${candidatas.length}` : ""}`);
   const quote = {
-    distributionCompany: { id: candidate.id, name: candidate.name },
-    typeService: candidate.typeService,
-    shippingAmount: candidate.shippingAmount,
+    distributionCompany: { id: candidata.id, name: candidata.name },
+    typeService: candidata.typeService,
+    shippingAmount: candidata.shippingAmount,
   };
 
   // PASO E — crear la orden.
-  const userId = decodeJwtSub(cfg.sessionToken);
   const orderBody = {
     total_order: args.total,
     notes: args.client.notes || "",
@@ -639,9 +651,19 @@ async function createOrderViaWeb(
     // 2xx sin id = probablemente creada; 5xx/0/408/429 = no se sabe. Solo un
     // 4xx de validación es un rechazo seguro.
     err.incierto = ok || !esRechazoSeguro(status, body);
+    // Rechazo SEGURO de ESTA transportadora para ESTE destino (no de la orden):
+    // hay otra candidata → se prueba. Con `incierto` jamás: la orden pudo
+    // haberse creado y una segunda sería un doble envío.
+    if (!err.incierto && esRechazoPorMetodoDeEnvio(detail) && intento < candidatas.length - 1) {
+      console.warn(`[web] ${candidata.name} no cubre ${args.client.city} con recaudo; pruebo ${candidatas[intento + 1].name}: ${detail.slice(0, 160)}`);
+      continue;
+    }
     throw err;
   }
   return String(orderId);
+  }
+  // Inalcanzable: el for devuelve o tira en la última candidata.
+  throw new WebFallbackError("Ninguna transportadora aceptó el envío.", 422);
 }
 
 /** Anti-duplicado con SERVICE ROLE (camino de cron): frena una nueva subida solo
@@ -1590,6 +1612,7 @@ Deno.serve(async (req: Request) => {
           const webOrderId = await createOrderViaWeb(sb, dropiCfg, {
             country: DROPI_COUNTRY,
             countryCode: dropiCfg.countryCode,
+            storeId,
             client,
             resolved,
             total: webTotal,

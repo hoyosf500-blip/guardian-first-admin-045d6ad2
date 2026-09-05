@@ -12,7 +12,8 @@ import GeoCombobox from '@/components/confirmar/GeoCombobox';
 import { useStore } from '@/contexts/StoreContext';
 import { AddressAutocomplete } from '@/components/address/AddressAutocomplete';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
-import { User, MapPin } from 'lucide-react';
+import { User, MapPin, Phone } from 'lucide-react';
+import { agregarLlamarParaLaEntrega, yaPideLlamar } from '@/lib/direccionEntrega';
 
 // Formulario de datos del cliente + dirección del editor unificado de orden.
 // Migración 1:1 del viejo EditOrderDialog (mismos campos, misma normalización
@@ -381,6 +382,20 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
                 }));
               }}
             />
+            {/* La coletilla que la asesora escribía a mano en 7 de cada 10 pedidos
+                confirmados (Ecuador, sep-2026). Un toque, idempotente, y desaparece
+                cuando la dirección ya la tiene. */}
+            {form.direccion.trim() && !yaPideLlamar(form.direccion) && (
+              <button
+                type="button"
+                onClick={() => onChange(prev => ({ ...prev, direccion: agregarLlamarParaLaEntrega(prev.direccion) }))}
+                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 py-1 text-xs text-foreground/80 hover:bg-accent/10 hover:text-foreground transition-colors"
+                aria-label="Agregar «llamar para la entrega» al final de la dirección"
+              >
+                <Phone className="h-3 w-3" aria-hidden="true" />
+                + llamar para la entrega
+              </button>
+            )}
             <AddressFeedbackCard
               decision={form.validationDecision}
               missingFields={form.missingFields ?? []}
