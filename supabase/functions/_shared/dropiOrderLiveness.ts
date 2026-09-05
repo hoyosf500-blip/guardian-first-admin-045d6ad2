@@ -174,6 +174,38 @@ export async function listActiveOrdersByPhone(
   cfg: LivenessCfg,
   opts: { phone: string; fallbackName?: string; excludeIds?: string[] },
 ): Promise<SiblingOrder[]> {
+  return (await buscarHermanasVivas(cfg, opts)).hermanas;
+}
+
+export interface BusquedaHermanas {
+  /** Órdenes activas encontradas. */
+  hermanas: SiblingOrder[];
+  /** ⛔ `false` = NO se le pudo preguntar a Dropi (sin token de sesión, o el
+   *  listado no respondió). Un `hermanas: []` con `consultado: false` NO
+   *  significa "no tiene pedidos": significa "no sé". Quien decide bloquear un
+   *  push tiene que poder distinguir las dos cosas, o repite el error de
+   *  afirmar un cero sobre algo que no se midió. */
+  consultado: boolean;
+  /** Por qué no se pudo, si no se pudo. Va al log y a la respuesta. */
+  motivo: string | null;
+}
+
+/**
+ * Igual que `listActiveOrdersByPhone`, pero diciendo si la consulta CORRIÓ.
+ *
+ * Es la misma implementación —una sola definición de "hermana viva"— con la
+ * forma que necesita el candado anti-duplicados del push, que sí tiene que
+ * distinguir el silencio de la negativa.
+ */
+export async function buscarHermanasVivas(
+  cfg: LivenessCfg,
+  opts: { phone: string; fallbackName?: string; excludeIds?: string[] },
+): Promise<BusquedaHermanas> {
+  // Sin token de sesión el listado web no se puede leer (la api-key da 401 en
+  // /api/*). Es el caso de Colombia, que no tiene login automático por el 2FA.
+  if (!cfg.sessionToken) {
+    return { hermanas: [], consultado: false, motivo: "sin token de sesión de Dropi" };
+  }
   const exclude = new Set((opts.excludeIds || []).map((x) => String(x)));
   const digits = String(opts.phone || "").replace(/\D/g, "").slice(-9);
   const terms: string[] = [];
@@ -181,7 +213,12 @@ export async function listActiveOrdersByPhone(
   const name = String(opts.fallbackName || "").trim();
   if (name.length >= 4) terms.push(name);
 
+  if (terms.length === 0) {
+    return { hermanas: [], consultado: false, motivo: "sin teléfono ni nombre con el que buscar" };
+  }
   const seen = new Map<string, SiblingOrder>();
+  let alguna = false;   // ¿alguna consulta respondió 2xx?
+  let ultimoFallo: string | null = null;
   for (const term of terms) {
     try {
       const { status, body } = await dropiWebFetch(
@@ -189,7 +226,8 @@ export async function listActiveOrdersByPhone(
         `/api/orders/myorders?result_number=15&start=0&textToSearch=${encodeURIComponent(term)}`,
         { method: "GET", logBody: false },
       );
-      if (status < 200 || status >= 300) continue;
+      if (status < 200 || status >= 300) { ultimoFallo = `el listado de Dropi respondió ${status}`; continue; }
+      alguna = true;
       // deno-lint-ignore no-explicit-any
       const objs: any[] = Array.isArray((body as Record<string, unknown>)?.objects)
         ? (body as { objects: unknown[] }).objects as any[]
@@ -209,8 +247,13 @@ export async function listActiveOrdersByPhone(
       // El teléfono matcheó → suficiente (no mezclar con homónimos por nombre).
       if (seen.size > 0) break;
     } catch (e) {
+      ultimoFallo = e instanceof Error ? e.message : String(e);
       console.error("[dropiOrderLiveness] listado de hermanas falló:", e);
     }
   }
-  return [...seen.values()].sort((a, b) => Number(b.id) - Number(a.id));
+  return {
+    hermanas: [...seen.values()].sort((a, b) => Number(b.id) - Number(a.id)),
+    consultado: alguna,
+    motivo: alguna ? null : (ultimoFallo ?? "el listado de Dropi no respondió"),
+  };
 }

@@ -24,13 +24,14 @@ import { resolveDestCity, noCoverageMessage } from "../_shared/dropiCityCatalog.
 import { dropiCountryNameFor, paisUsaCentavos } from "../_shared/dropiCountry.ts";
 import { allocateOrderDiscount, isCodOvercharge } from "./discount.ts";
 import { elegirGemeloCiego, VENTANA_GEMELO_MS, type FilaPush, type Gemelo } from "../_shared/gemeloInvisible.ts";
+import { buscarHermanasVivas } from "../_shared/dropiOrderLiveness.ts";
 import { respuestaPing } from "../_shared/versionEdge.ts";
 
 const SHOPIFY_API_VERSION = "2024-10";
 /** Se despliega A MANO: Lovable no redespliega edge functions al publicar.
  *  `POST .../shopify-push-dropi?ping=1` contesta esta marca — es la unica forma de saber si
  *  el arreglo del gemelo invisible llego de verdad al runtime. */
-const VERSION = "shopify-push-dropi 2026-09-04.3 el-cuerpo-que-crea-tambien-lleva-la-variante";
+const VERSION = "shopify-push-dropi 2026-09-04.4 le-pregunto-a-dropi-no-al-espejo";
 
 interface ShopifyLineItem {
   product_id: number;
@@ -1219,6 +1220,10 @@ Deno.serve(async (req: Request) => {
     // vía el cliente con JWT del usuario. Cubre AMBOS caminos de creación
     // (integraciones y fallback web, que vienen después). Degrada sin bloquear si la
     // RPC no está desplegada o falla por infra (no rompe el push honesto).
+    /** Se llena cuando una capa del candado no pudo correr. Viaja en la
+     *  respuesta para que un push sin todas las defensas no se vea igual
+     *  que uno con todas. */
+    let avisoAntiDup: string | null = null;
     const phoneNorm = String(client.phone || "").replace(/\D/g, "").slice(-9);
     const ventaShopifyMs = ord.created_at ? new Date(ord.created_at).getTime() : undefined;
     if (!allowDuplicate && phoneNorm.length >= 7) {
@@ -1280,6 +1285,49 @@ Deno.serve(async (req: Request) => {
               `Si es una recompra real, subilo con "No es duplicado".`,
             duplicates: top,
           }, 409, cors);
+        }
+
+        // ── CUARTA CAPA: PREGUNTARLE A DROPI, EN VIVO ─────────────────────────
+        // ⛔ Las tres capas de arriba leen NUESTRA base: el espejo `orders` (que
+        // llega hasta 15 min tarde) y `shopify_pushed_orders` (solo lo que subió
+        // ESTE robot). Un pedido que el equipo cargó a mano en el panel de Dropi,
+        // o que creó Dropify, no está en ninguna de las dos hasta que sincroniza.
+        //
+        // MEDIDO (Ecuador, 7 días al 4-sep-2026): 20 duplicados reales, ~3 por
+        // día. En 10 de los 20 el segundo lo creó GUARDIAN, entre 12 segundos y
+        // 2 horas después de uno que ya existía y que Guardian no podía ver.
+        // Guardian nunca se duplica contra sí mismo (0 de 20) — el hueco es
+        // exactamente este: lo que Guardian no sabe que existe.
+        //
+        // La consulta es la MISMA que ya usan `dropi-change-carrier` y
+        // `dropiConfirmOrder` para buscar hermanas vivas, así que no hay una
+        // segunda definición de "el cliente ya tiene un pedido en curso".
+        const hermanas = await buscarHermanasVivas(
+          { base: dropiCfg.base, sessionToken: dropiCfg.sessionToken, apiKey: dropiCfg.apiKey, storeUrl: dropiCfg.storeUrl },
+          { phone: phoneNorm, fallbackName: String(client.nombre || "") },
+        );
+        if (hermanas.consultado && hermanas.hermanas.length > 0) {
+          const top = hermanas.hermanas.slice(0, 3);
+          const detalle = top.map((h) => `#${h.id}${h.status ? ` (${h.status})` : ""}`).join(", ");
+          return json({
+            ok: false,
+            blocked: "duplicate_phone",
+            via: "dropi_en_vivo",
+            error: `Este cliente YA tiene un pedido en curso en Dropi: ${detalle}. ` +
+              `Lo pregunté en Dropi directamente, así que no depende de que el CRM ya lo haya sincronizado. ` +
+              `Si de verdad es una compra nueva, subilo con "No es duplicado".`,
+            duplicates: top.map((h) => ({ external_id: h.id, estado: h.status })),
+          }, 409, cors);
+        }
+        // ⛔ NO se bloquea cuando no se pudo preguntar. Colombia no tiene login
+        // automático (2FA), así que ahí nunca hay token de sesión: bloquear
+        // dejaría al país entero sin poder subir. Se deja pasar con las otras
+        // tres capas puestas —exactamente como funcionaba hasta hoy, ni mejor ni
+        // peor— pero queda DICHO, en el log y en la respuesta, para que "no
+        // encontré hermanas" no se confunda nunca con "no pude buscarlas".
+        if (!hermanas.consultado) {
+          console.warn(`[anti-dup] no pude preguntarle a Dropi por ${phoneNorm}: ${hermanas.motivo}`);
+          avisoAntiDup = `No pude preguntarle a Dropi en vivo si este cliente ya tiene un pedido (${hermanas.motivo}); se subió con los otros tres candados.`;
         }
       } catch (guardErr) {
         // ⛔ FAIL-CLOSED (4-sep-2026). Antes: `catch {}` y el push seguía. En un
@@ -1546,7 +1594,7 @@ Deno.serve(async (req: Request) => {
           await sb.from("shopify_pushed_orders").update({
             status: "created", dropi_order_id: webOrderId, payload: dropiPayload, error_message: null,
           }).eq("id", claimId);
-          return json({ ok: true, mode: "confirm", dropi_order_id: webOrderId, shopify_name: ord.name, via: "web" }, 200, cors);
+          return json({ ok: true, mode: "confirm", dropi_order_id: webOrderId, shopify_name: ord.name, via: "web", aviso: avisoAntiDup }, 200, cors);
         } catch (webErr) {
           const webMsg = webErr instanceof Error ? webErr.message : String(webErr);
           const webStatus = webErr instanceof WebFallbackError ? webErr.status : 502;
@@ -1636,7 +1684,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    return json({ ok: true, mode: "confirm", dropi_order_id: String(dropiOrderId), shopify_name: ord.name }, 200, cors);
+    return json({ ok: true, mode: "confirm", dropi_order_id: String(dropiOrderId), shopify_name: ord.name, aviso: avisoAntiDup }, 200, cors);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("shopify-push-dropi error:", msg);

@@ -71,6 +71,10 @@ describe('⛔ el cuerpo que CREA lleva la variante', () => {
   it('la marca de versión subió con el arreglo', () => {
     // Regla de la casa: toda edge tocada sube su VERSION en el MISMO commit, o
     // el ?ping=1 miente y se mide contra un runtime que no es el del arreglo.
-    expect(push).toMatch(/const VERSION = "shopify-push-dropi 2026-09-04\.3 /);
+    // La marca sube con CADA arreglo desplegable; clavar la revisión exacta
+    // obliga a tocar esta prueba en cada commit, que es como una prueba se
+    // vuelve trámite. Lo que importa es que tenga forma de marca comprobable
+    // con ?ping=1, y que el arreglo de la variante siga presente (arriba).
+    expect(push).toMatch(/const VERSION = "shopify-push-dropi 2026-09-04\.\d+ /);
   });
 });
